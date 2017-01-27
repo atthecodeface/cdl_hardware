@@ -1,0 +1,70 @@
+#a Copyright
+#  
+#  This file 'model_list' copyright Gavin J Stark 2016, 2017
+#  
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# @file  model_list
+# @brief Description of modules/models for CDL building
+#
+# Standard CDL descriptor file, to enable building/linking of verilog and C sims
+# with python simulation library
+#
+
+cdl_options ass:on
+
+c_model cmodel/src   srams
+c_model cmodel/src   bbc_display     inc:cmodel/inc
+c_model cmodel/src   bbc_floppy      inc:cmodel/inc
+c_src cmodel/src     bbc_floppy_disk inc:cmodel/inc
+c_src cmodel/src     image_io        inc:cmodel/inc
+c_src cmodel/src     fb              inc:cmodel/inc
+c_src cmodel/src     vnc_rfb         inc:cmodel/inc
+#c_src cmodel/src    bbc_display_vnc inc:cmodel/inc
+c_src cmodel/src     bbc_shm         inc:cmodel/inc
+
+cdl cdl/src saa5050 inc:cdl/inc
+cdl cdl/src cpu6502 inc:cdl/inc
+cdl cdl/src via6522 inc:cdl/inc
+cdl cdl/src crtc6845 inc:cdl/inc
+cdl cdl/src acia6850 inc:cdl/inc
+cdl cdl/src fdc8271 inc:cdl/inc
+cdl cdl/src bbc_vidproc         inc:cdl/inc
+cdl cdl/src bbc_micro_keyboard  inc:cdl/inc
+cdl cdl/src bbc_display_sram  inc:cdl/inc
+cdl cdl/src bbc_floppy_sram  inc:cdl/inc
+cdl cdl/src bbc_micro_clocking  inc:cdl/inc
+cdl cdl/src bbc_micro_rams      inc:cdl/inc
+cdl cdl/src bbc_micro_with_rams  inc:cdl/inc
+cdl cdl/src bbc_csr_interface   inc:cdl/inc
+
+cdl cdl/src tb_6502 inc:cdl/inc
+
+cdl_options mul:on
+cdl cdl/src bbc_micro inc:cdl/inc
+cdl_options mul:off
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell ***
+# outline-regexp: "#[a!]\\\|#[	 ]*[b-z][	 ]" ***
+# End: ***
+

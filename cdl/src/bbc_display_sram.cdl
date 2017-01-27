@@ -1,0 +1,527 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_display_sram.cdl
+ * @brief  BBC micro display to SRAM write interface module
+ *
+ * CDL implementation of a module to map from the t_bbc_display
+ * interface to an SRAM write interface, hence supporting a simple
+ * framebuffer for the output displayed by a BBC micro. The module
+ * requires configuration at run-time, so has a CSR request/response
+ * bus, and hence uses the bbc_csr_interface.
+ *
+ * The basic operation is to gather together pixel data along a
+ * display line and generate SRAM writes when enough pixels are
+ * gathered.
+ *
+ * The sync signals are used to determine where a field and where a
+ * line starts; pixels are captured after the 'back porch' of a line
+ * up to a certain amount of SRAM writes (16 pixels each) per line.
+ *
+ * Interlace is supported - if the vsync occurs at non-consistent
+ * points in a line then it is deemed to be indicating odd or even
+ * field; the SRAM is then written in alternate lines.
+ *
+ * This module needs an update to support an 'amount to add per line',
+ * and a register of 'address at start of line' - this will help
+ * support teletext better.
+ *
+ */
+/*a Includes */
+include "bbc_submodules.h"
+include "bbc_micro_types.h"
+
+/*a Types */
+/*t t_pixel_counter */
+constant integer pixel_counter_width=11;
+typedef bit[pixel_counter_width] t_pixel_counter;
+
+/*t t_display_combs */
+typedef struct {
+    bit hsync_detected;
+    bit vsync_detected;
+    bit vsync_late_in_line;
+    bit[8] pixels_valid_per_clock;
+    bit[8] pixels_valid_by_x;
+    bit[8] pixels_valid;
+    bit[3][8] new_pixels;
+} t_display_combs;
+
+/*t t_display_state */
+typedef struct {
+    bit last_vsync;
+    bit last_hsync;
+    bit even_field;
+    bit restart_line;
+    bit last_field_was_even;
+    bit interlaced;
+    bit restart_frame_even_field;
+    bit restart_frame_odd_field;
+    t_pixel_counter scanlines_since_vsync;
+    t_pixel_counter clocks_since_hsync;
+    t_pixel_counter clocks_wide;
+    t_pixel_counter x_back_porch;
+    t_pixel_counter pixel_x;
+    t_pixel_counter pixel_y;
+    bit[4]    num_pixels_to_add_valid;
+    bit[8] pixels_to_add_red;
+    bit[8] pixels_to_add_green;
+    bit[8] pixels_to_add_blue;
+} t_display_state;
+
+/*t t_csrs */
+typedef struct {
+    t_pixel_counter h_back_porch;
+    t_pixel_counter v_back_porch;
+    bit reset_pressed;
+    bit[8] reset_counter;
+    bit[64] keys_down_cols_0_to_7;
+    bit[16] keys_down_cols_8_to_9;
+    bit[16] sram_base_address;
+    bit[10] sram_scanlines;
+    bit[10] sram_writes_per_scanline;
+} t_csrs;
+
+/*t t_keyboard_state */
+typedef struct {
+    bit[8] reset_counter;
+    bit    reset_out;
+} t_keyboard_state;
+
+/*t t_sram_combs */
+typedef struct {
+    bit write;
+    bit[5]    total_valid;
+    bit[24]   barrel_shift_red;
+    bit[24]   barrel_shift_green;
+    bit[24]   barrel_shift_blue;
+    bit[24]   shifted_red;
+    bit[24]   shifted_green;
+    bit[24]   shifted_blue;
+} t_sram_combs;
+
+/*t t_sram_state */
+typedef struct {
+    bit write_enable;
+    bit[16] write_address;
+    bit[48] write_data;
+    bit[16] address;
+    bit[10] scanline_writes_left;
+    bit[10] scanlines_left;
+    bit[4] num_pixels_held_valid;
+    bit[16] pixels_held_valid_mask;
+    bit[16] pixels_held_red;
+    bit[16] pixels_held_green;
+    bit[16] pixels_held_blue;
+} t_sram_state;
+
+/*a Module
+ */
+module bbc_display_sram( clock clk "Clock running at 2MHz",
+                         input bit reset_n,
+                         output t_bbc_keyboard keyboard,
+                         input t_bbc_display display,
+                         input bit keyboard_reset_n,
+                         output t_bbc_display_sram_write sram_write,
+                         input t_bbc_csr_request csr_request,
+                         output t_bbc_csr_response csr_response
+    )
+"""
+This module mimics a monitor attached to the BBC video output, generating a
+stream of SRAM write requests as pixels are driven by the video output signals.
+
+A regular video stream (from the BBC micro) runs at 2MHz with either 6 or 8 pixels per tick.
+On the BBC micro this is a pixel clock of either 16MHz or 12MHz.
+
+The 't_bbc_display' indicates 1, 2, 4, 6 or 8 pixels per clock - but the interpretation here
+is for either 6 or 8 - since 1, 2 and 4 'pixels per clock' is the internal BBC pixels, which have
+been replicated on the bus. This should probably be fixed rather than explained.
+
+The module is designed with a display input stage that manages vsync
+and hsync, and which then handles the 'back porch' for both vertical
+and horizontal blanking. The 'back porch' is the number of pixel
+clocks or scanlines that should not be captured following the
+detection of hsync/vsync respectively.
+
+The display input stage then combines the input pixel data with the
+blanking for back porches to produce a validated pixel stream for the
+second stage of the module. Coupled to this are restart frame/line
+indicators.
+
+For interlaced capture (which most monitors would be) the vsync will
+occur at different points in a line for even and odd fields. Even
+fields are SRAM addresses 0, 2, 4 (in 'line' terms), and odd fields
+are SRAM address 1, 3, 5 (again in 'line' terms). So the display input
+stage determines if a vsync corresponds to an odd or an even field.
+
+The second stage is the SRAM data collation stage.  This gathers the
+valid pixels from the display input stage into a shift register, and
+when 16 pixels are ready to be written they are passed to the SRAM
+write output stage. This SRAM data collation stage manages the SRAM
+addresses, resetting to the base address on a frame restart (plus a a
+single line of an odd field, interlaced), and incrementing the address
+on every write. A fixed number of SRAM writes is permitted per line
+(to set the captured display width). A fixed number of scanlines is
+permitted per frame (field).
+
+Note that at the end of a line, for interlaced frames, the SRAM
+address is moved down by a line too, so that even fields do write to
+even 'lines' in SRAM, and odd lines just to the odd 'lines'.
+
+"""
+{
+    /*b Defaults */
+    default reset active_low reset_n;
+    default clock clk;
+
+    clocked t_csrs          csrs = {*=0, sram_writes_per_scanline=40,
+                                    sram_scanlines=500,
+                                    h_back_porch=-280,
+                                    v_back_porch=-70 };
+    clocked t_keyboard_state keyboard_state = {*=0, reset_counter=-1};
+    clocked t_bbc_keyboard  keyboard={*=0};
+    clocked t_display_state display_state={*=0};
+    comb    t_display_combs display_combs;
+    clocked t_sram_state    sram_state={*=0};
+    comb    t_sram_combs    sram_combs;
+
+    /*b Display input state, control logics */
+    display_input_state_control_logic """
+    Manage display input signals to generate screen coordinates and pixel validity
+    Possible should use display.clock_enable, which would enable a 1MHz pixel clock, although
+    that is probably not necessary - and currently that signal is tied low...
+    """: {
+        display_state.last_vsync <= display.vsync;
+        display_state.last_hsync <= display.hsync;
+
+        display_combs.hsync_detected = display.hsync && !display_state.last_hsync;
+        display_combs.vsync_detected = display.vsync && !display_state.last_vsync;
+
+        display_state.x_back_porch       <= display_state.x_back_porch + 8;
+        display_state.clocks_since_hsync <= display_state.clocks_since_hsync+1;
+        display_state.restart_line <= 0;
+        display_state.restart_frame_even_field <= 0;
+        display_state.restart_frame_odd_field  <= 0;
+        if (display_combs.hsync_detected) {
+            display_state.scanlines_since_vsync <= display_state.scanlines_since_vsync + 1;
+            display_state.clocks_wide           <= display_state.clocks_since_hsync;
+            display_state.clocks_since_hsync    <= 0;
+            display_state.x_back_porch          <= csrs.h_back_porch;
+        }
+        display_state.pixel_x <= display_state.pixel_x+1;
+        if (display_state.x_back_porch[pixel_counter_width-3;3]==-1) { // back porch finishing
+            display_state.pixel_x <= 0;
+        }
+        if (display_state.pixel_x+8 == display_state.clocks_wide) {
+            if (display_state.interlaced) {
+                display_state.pixel_y  <= display_state.pixel_y + 2;
+            } else {
+                display_state.pixel_y  <= display_state.pixel_y + 1;
+            }
+            if (!display_state.pixel_y[pixel_counter_width-1]) {
+                display_state.restart_line <= 1;
+            }
+        }
+
+        display_combs.vsync_late_in_line = ( display_state.clocks_since_hsync > bundle(1b0, display_state.clocks_wide[pixel_counter_width-1;1]) );
+        if (display_combs.vsync_detected) {
+            display_state.scanlines_since_vsync <= 0;
+            display_state.last_field_was_even <= display_state.even_field;
+            display_state.even_field          <= display_combs.vsync_late_in_line;
+            if (display_state.even_field==display_state.last_field_was_even) { // non-interlaced
+                display_state.interlaced <= 0;
+                display_state.restart_frame_even_field <= 1;
+                display_state.pixel_y <= csrs.v_back_porch;
+            } elsif  (display_combs.vsync_late_in_line){ // even field
+                display_state.interlaced <= 1;
+                display_state.restart_frame_even_field <= 1;
+                display_state.pixel_y <= csrs.v_back_porch; // negative value
+            } else { // odd field
+                display_state.interlaced <= 1;
+                display_state.pixel_y <= csrs.v_back_porch+1; // negative value
+                display_state.restart_frame_odd_field  <= 1;
+            }
+        }
+    }
+    display_input_state2 """
+    Manage display input signals to generate screen coordinates and pixel validity
+    Possible used display.clock_enable
+    """: {
+        full_switch (display_state.pixel_x) {
+        case -7: { display_combs.pixels_valid_by_x = 8b00000001; }
+        case -6: { display_combs.pixels_valid_by_x = 8b00000011; }
+        case -5: { display_combs.pixels_valid_by_x = 8b00000111; }
+        case -4: { display_combs.pixels_valid_by_x = 8b00001111; }
+        case -3: { display_combs.pixels_valid_by_x = 8b00011111; }
+        case -2: { display_combs.pixels_valid_by_x = 8b00111111; }
+        case -1: { display_combs.pixels_valid_by_x = 8b01111111; }
+        default: {
+            display_combs.pixels_valid_by_x = -1;
+            if (display_state.pixel_x[pixel_counter_width-1]) { display_combs.pixels_valid_by_x = 0; }
+        }
+        }
+
+        full_switch (display.pixels_per_clock) {
+        case bbc_ppc_6: { display_combs.pixels_valid_per_clock = 8b00111111; }
+        default:        { display_combs.pixels_valid_per_clock = 8b11111111; }
+        }
+
+        display_combs.pixels_valid = display_combs.pixels_valid_per_clock & display_combs.pixels_valid_by_x;
+        if (display_state.pixel_y[pixel_counter_width-1] || display_combs.hsync_detected || display_combs.vsync_detected) {
+            display_combs.pixels_valid = 0;
+        }
+
+        for (i; 8) {
+            display_combs.new_pixels[i]  = bundle(display.blue[i], display.green[i], display.red[i]);
+        }
+
+        display_state.num_pixels_to_add_valid <= 0;
+        if (display_combs.pixels_valid[0]) {
+            display_state.num_pixels_to_add_valid <= 1;
+            display_state.pixels_to_add_red[7]   <= display.red[0];
+            display_state.pixels_to_add_green[7] <= display.green[0];
+            display_state.pixels_to_add_blue[7]  <= display.blue[0];
+        }
+        if (display_combs.pixels_valid[1]) {
+            display_state.num_pixels_to_add_valid <= 2;
+            display_state.pixels_to_add_red[2;6]   <= display.red[2;0];
+            display_state.pixels_to_add_green[2;6] <= display.green[2;0];
+            display_state.pixels_to_add_blue[2;6]  <= display.blue[2;0];
+        }
+        if (display_combs.pixels_valid[2]) {
+            display_state.num_pixels_to_add_valid <= 3;
+            display_state.pixels_to_add_red[3;5]   <= display.red[3;0];
+            display_state.pixels_to_add_green[3;5] <= display.green[3;0];
+            display_state.pixels_to_add_blue[3;5]  <= display.blue[3;0];
+        }
+        if (display_combs.pixels_valid[3]) {
+            display_state.num_pixels_to_add_valid <= 4;
+            display_state.pixels_to_add_red[4;4]   <= display.red[4;0];
+            display_state.pixels_to_add_green[4;4] <= display.green[4;0];
+            display_state.pixels_to_add_blue[4;4]  <= display.blue[4;0];
+        }
+        if (display_combs.pixels_valid[4]) {
+            display_state.num_pixels_to_add_valid <= 5;
+            display_state.pixels_to_add_red[5;3]   <= display.red[5;0];
+            display_state.pixels_to_add_green[5;3] <= display.green[5;0];
+            display_state.pixels_to_add_blue[5;3]  <= display.blue[5;0];
+        }
+        if (display_combs.pixels_valid[5]) {
+            display_state.num_pixels_to_add_valid <= 6;
+            display_state.pixels_to_add_red[6;2]   <= display.red[6;0];
+            display_state.pixels_to_add_green[6;2] <= display.green[6;0];
+            display_state.pixels_to_add_blue[6;2]  <= display.blue[6;0];
+        }
+        if (display_combs.pixels_valid[6]) {
+            display_state.num_pixels_to_add_valid <= 7;
+            display_state.pixels_to_add_red[7;1]   <= display.red[7;0];
+            display_state.pixels_to_add_green[7;1] <= display.green[7;0];
+            display_state.pixels_to_add_blue[7;1]  <= display.blue[7;0];
+        }
+        if (display_combs.pixels_valid[7]) {
+            display_state.num_pixels_to_add_valid <= 8;
+            display_state.pixels_to_add_red[8;0]   <= display.red[8;0];
+            display_state.pixels_to_add_green[8;0] <= display.green[8;0];
+            display_state.pixels_to_add_blue[8;0]  <= display.blue[8;0];
+        }
+    }
+    
+    sram_read_write """
+    """: {
+        full_switch(sram_state.num_pixels_held_valid) {
+        case 0:  { sram_combs.barrel_shift_red = bundle(      display_state.pixels_to_add_red, 16b0); }
+        case 1:  { sram_combs.barrel_shift_red = bundle(1b0,  display_state.pixels_to_add_red, 15b0); }
+        case 2:  { sram_combs.barrel_shift_red = bundle(2b0,  display_state.pixels_to_add_red, 14b0); }
+        case 3:  { sram_combs.barrel_shift_red = bundle(3b0,  display_state.pixels_to_add_red, 13b0); }
+        case 4:  { sram_combs.barrel_shift_red = bundle(4b0,  display_state.pixels_to_add_red, 12b0); }
+        case 5:  { sram_combs.barrel_shift_red = bundle(5b0,  display_state.pixels_to_add_red, 11b0); }
+        case 6:  { sram_combs.barrel_shift_red = bundle(6b0,  display_state.pixels_to_add_red, 10b0); }
+        case 7:  { sram_combs.barrel_shift_red = bundle(7b0,  display_state.pixels_to_add_red,  9b0); }
+        case 8:  { sram_combs.barrel_shift_red = bundle(8b0,  display_state.pixels_to_add_red,  8b0); }
+        case 9:  { sram_combs.barrel_shift_red = bundle(9b0,  display_state.pixels_to_add_red,  7b0); }
+        case 10: { sram_combs.barrel_shift_red = bundle(10b0, display_state.pixels_to_add_red,  6b0); }
+        case 11: { sram_combs.barrel_shift_red = bundle(11b0, display_state.pixels_to_add_red,  5b0); }
+        case 12: { sram_combs.barrel_shift_red = bundle(12b0, display_state.pixels_to_add_red,  4b0); }
+        case 13: { sram_combs.barrel_shift_red = bundle(13b0, display_state.pixels_to_add_red,  3b0); }
+        case 14: { sram_combs.barrel_shift_red = bundle(14b0, display_state.pixels_to_add_red,  2b0); }
+        default: { sram_combs.barrel_shift_red = bundle(15b0, display_state.pixels_to_add_red,  1b0); }
+        }
+        full_switch(sram_state.num_pixels_held_valid) {
+        case 0:  { sram_combs.barrel_shift_green = bundle(      display_state.pixels_to_add_green, 16b0); }
+        case 1:  { sram_combs.barrel_shift_green = bundle(1b0,  display_state.pixels_to_add_green, 15b0); }
+        case 2:  { sram_combs.barrel_shift_green = bundle(2b0,  display_state.pixels_to_add_green, 14b0); }
+        case 3:  { sram_combs.barrel_shift_green = bundle(3b0,  display_state.pixels_to_add_green, 13b0); }
+        case 4:  { sram_combs.barrel_shift_green = bundle(4b0,  display_state.pixels_to_add_green, 12b0); }
+        case 5:  { sram_combs.barrel_shift_green = bundle(5b0,  display_state.pixels_to_add_green, 11b0); }
+        case 6:  { sram_combs.barrel_shift_green = bundle(6b0,  display_state.pixels_to_add_green, 10b0); }
+        case 7:  { sram_combs.barrel_shift_green = bundle(7b0,  display_state.pixels_to_add_green,  9b0); }
+        case 8:  { sram_combs.barrel_shift_green = bundle(8b0,  display_state.pixels_to_add_green,  8b0); }
+        case 9:  { sram_combs.barrel_shift_green = bundle(9b0,  display_state.pixels_to_add_green,  7b0); }
+        case 10: { sram_combs.barrel_shift_green = bundle(10b0, display_state.pixels_to_add_green,  6b0); }
+        case 11: { sram_combs.barrel_shift_green = bundle(11b0, display_state.pixels_to_add_green,  5b0); }
+        case 12: { sram_combs.barrel_shift_green = bundle(12b0, display_state.pixels_to_add_green,  4b0); }
+        case 13: { sram_combs.barrel_shift_green = bundle(13b0, display_state.pixels_to_add_green,  3b0); }
+        case 14: { sram_combs.barrel_shift_green = bundle(14b0, display_state.pixels_to_add_green,  2b0); }
+        default: { sram_combs.barrel_shift_green = bundle(15b0, display_state.pixels_to_add_green,  1b0); }
+        }
+        full_switch(sram_state.num_pixels_held_valid) {
+        case 0:  { sram_combs.barrel_shift_blue = bundle(      display_state.pixels_to_add_blue, 16b0); }
+        case 1:  { sram_combs.barrel_shift_blue = bundle(1b0,  display_state.pixels_to_add_blue, 15b0); }
+        case 2:  { sram_combs.barrel_shift_blue = bundle(2b0,  display_state.pixels_to_add_blue, 14b0); }
+        case 3:  { sram_combs.barrel_shift_blue = bundle(3b0,  display_state.pixels_to_add_blue, 13b0); }
+        case 4:  { sram_combs.barrel_shift_blue = bundle(4b0,  display_state.pixels_to_add_blue, 12b0); }
+        case 5:  { sram_combs.barrel_shift_blue = bundle(5b0,  display_state.pixels_to_add_blue, 11b0); }
+        case 6:  { sram_combs.barrel_shift_blue = bundle(6b0,  display_state.pixels_to_add_blue, 10b0); }
+        case 7:  { sram_combs.barrel_shift_blue = bundle(7b0,  display_state.pixels_to_add_blue,  9b0); }
+        case 8:  { sram_combs.barrel_shift_blue = bundle(8b0,  display_state.pixels_to_add_blue,  8b0); }
+        case 9:  { sram_combs.barrel_shift_blue = bundle(9b0,  display_state.pixels_to_add_blue,  7b0); }
+        case 10: { sram_combs.barrel_shift_blue = bundle(10b0, display_state.pixels_to_add_blue,  6b0); }
+        case 11: { sram_combs.barrel_shift_blue = bundle(11b0, display_state.pixels_to_add_blue,  5b0); }
+        case 12: { sram_combs.barrel_shift_blue = bundle(12b0, display_state.pixels_to_add_blue,  4b0); }
+        case 13: { sram_combs.barrel_shift_blue = bundle(13b0, display_state.pixels_to_add_blue,  3b0); }
+        case 14: { sram_combs.barrel_shift_blue = bundle(14b0, display_state.pixels_to_add_blue,  2b0); }
+        default: { sram_combs.barrel_shift_blue = bundle(15b0, display_state.pixels_to_add_blue,  1b0); }
+        }
+        
+        sram_combs.shifted_red   = bundle(sram_state.pixels_held_valid_mask & sram_state.pixels_held_red,   8b0) | sram_combs.barrel_shift_red;
+        sram_combs.shifted_green = bundle(sram_state.pixels_held_valid_mask & sram_state.pixels_held_green, 8b0) | sram_combs.barrel_shift_green;
+        sram_combs.shifted_blue  = bundle(sram_state.pixels_held_valid_mask & sram_state.pixels_held_blue,  8b0) | sram_combs.barrel_shift_blue;
+        sram_combs.total_valid = bundle(1b0, sram_state.num_pixels_held_valid) + bundle(1b0,display_state.num_pixels_to_add_valid);
+        sram_combs.write = 0;
+        if (sram_combs.total_valid[4]) {
+            sram_combs.write = 1;
+            sram_state.pixels_held_red   <= bundle(sram_combs.shifted_red[8;0],   8b0);
+            sram_state.pixels_held_green <= bundle(sram_combs.shifted_green[8;0], 8b0);
+            sram_state.pixels_held_blue  <= bundle(sram_combs.shifted_blue[8;0],  8b0);
+        } else {
+            sram_state.pixels_held_red   <= sram_combs.shifted_red[16;8];
+            sram_state.pixels_held_green <= sram_combs.shifted_green[16;8];
+            sram_state.pixels_held_blue  <= sram_combs.shifted_blue[16;8];
+        }
+        full_switch (sram_combs.total_valid[4;0]) {
+        case  0: { sram_state.pixels_held_valid_mask <= 16h0000; }
+        case  1: { sram_state.pixels_held_valid_mask <= 16h8000; }
+        case  2: { sram_state.pixels_held_valid_mask <= 16hc000; }
+        case  3: { sram_state.pixels_held_valid_mask <= 16he000; }
+        case  4: { sram_state.pixels_held_valid_mask <= 16hf000; }
+        case  5: { sram_state.pixels_held_valid_mask <= 16hf800; }
+        case  6: { sram_state.pixels_held_valid_mask <= 16hfc00; }
+        case  7: { sram_state.pixels_held_valid_mask <= 16hfe00; }
+        case  8: { sram_state.pixels_held_valid_mask <= 16hff00; }
+        case  9: { sram_state.pixels_held_valid_mask <= 16hff80; }
+        case 10: { sram_state.pixels_held_valid_mask <= 16hffc0; }
+        case 11: { sram_state.pixels_held_valid_mask <= 16hffe0; }
+        case 12: { sram_state.pixels_held_valid_mask <= 16hfff0; }
+        case 13: { sram_state.pixels_held_valid_mask <= 16hfff8; }
+        case 14: { sram_state.pixels_held_valid_mask <= 16hfffc; }
+        case 15: { sram_state.pixels_held_valid_mask <= 16hfffe; }
+        }
+        sram_state.num_pixels_held_valid <= sram_combs.total_valid[4;0];
+        sram_state.write_data <= bundle(sram_combs.shifted_blue[16;8], sram_combs.shifted_green[16;8], sram_combs.shifted_red[16;8]);
+        sram_state.write_enable <= 0;
+        if (sram_combs.write) {
+            if (sram_state.scanline_writes_left!=0) {
+                sram_state.write_enable  <= 1;
+                sram_state.write_address <= sram_state.address;
+                sram_state.address       <= sram_state.address+1;
+                sram_state.scanline_writes_left <= sram_state.scanline_writes_left-1;
+            }
+        }
+        
+        if (display_state.restart_line) {
+            sram_state.scanline_writes_left <= csrs.sram_writes_per_scanline;
+            sram_state.num_pixels_held_valid <= 0;
+            if (sram_state.scanlines_left!=0) {
+                sram_state.scanlines_left <= sram_state.scanlines_left-1;
+            }
+            if (display_state.interlaced) {
+                sram_state.address <= sram_state.address + bundle(6b0,csrs.sram_writes_per_scanline);
+                if (sram_state.scanlines_left==1) {
+                    sram_state.scanlines_left <= 0;
+                } elsif (sram_state.scanlines_left!=0) {
+                    sram_state.scanlines_left <= sram_state.scanlines_left-2;
+                }
+            }
+        }
+        if (display_state.restart_frame_even_field || display_state.restart_frame_odd_field) {
+            sram_state.scanline_writes_left <= csrs.sram_writes_per_scanline;
+            sram_state.num_pixels_held_valid <= 0;
+            sram_state.scanlines_left <= csrs.sram_scanlines;
+            sram_state.address <= csrs.sram_base_address;
+            if (display_state.restart_frame_odd_field) {
+                sram_state.address <= csrs.sram_base_address + bundle(6b0,csrs.sram_writes_per_scanline);
+            }
+        }
+
+        sram_write.enable = sram_state.write_enable;
+        sram_write.data = sram_state.write_data;
+        sram_write.address = sram_state.write_address;
+    }
+
+    net t_bbc_csr_response      csr_response;
+    net t_bbc_csr_access      csr_access;
+    comb t_bbc_csr_access_data csr_read_data;
+    control_logic """
+    """: {
+        bbc_csr_interface csri( clk <- clk,
+                                reset_n <= reset_n,
+                                csr_request <= csr_request,
+                                csr_response => csr_response,
+                                csr_access => csr_access,
+                                csr_read_data <= csr_read_data,
+                                csr_select <= bbc_csr_select_display );
+        if (csr_access.valid && !csr_access.read_not_write) {
+            part_switch (csr_access.address[4;0]) {
+            case 0: { csrs.sram_base_address <= csr_access.data[16;0]; }
+            case 1: {
+                csrs.sram_writes_per_scanline <= csr_access.data[10;0];
+                csrs.sram_scanlines           <= csr_access.data[10;16];
+            }
+            case 2: {
+                csrs.h_back_porch <= csr_access.data[pixel_counter_width;0];
+                csrs.v_back_porch <= csr_access.data[pixel_counter_width;16];
+            }
+            case 4: {
+                csrs.reset_pressed <= csr_access.data[0];
+                csrs.reset_counter <= csr_access.data[8;24];
+            }
+            case 8: {
+                csrs.keys_down_cols_0_to_7 <= bundle(csrs.keys_down_cols_0_to_7[32;32], csr_access.data );
+            }
+            case 9: {
+                csrs.keys_down_cols_0_to_7 <= bundle(csr_access.data, csrs.keys_down_cols_0_to_7[32;0] );
+            }
+            case 10: {
+                csrs.keys_down_cols_8_to_9 <= csr_access.data[16;0];
+            }
+            }
+        }
+        csr_read_data = 0;
+    }
+    reset_and_keys """
+    """: {
+        keyboard_state.reset_out <= 0;
+        if (keyboard_state.reset_counter!=0) {
+            keyboard_state.reset_out <= 1;
+            keyboard_state.reset_counter <= keyboard_state.reset_counter - 1;
+        }
+        if (keyboard.reset_pressed) {
+            keyboard_state.reset_out <= 1;
+            keyboard_state.reset_counter <= csrs.reset_counter;
+        }
+        keyboard.reset_pressed          <= csrs.reset_pressed;
+        keyboard.keys_down_cols_0_to_7  <= csrs.keys_down_cols_0_to_7;
+        keyboard.keys_down_cols_8_to_9  <= csrs.keys_down_cols_8_to_9;
+    }
+}

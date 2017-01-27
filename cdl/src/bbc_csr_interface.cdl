@@ -1,0 +1,74 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_csr_interface.cdl
+ * @brief  BBC micro CSR interface logic
+ *
+ * CDL implementation of a CSR request/response interface, providing
+ * the 't_bbc_csr_access' interface to a target. This module abstracts
+ * the supermodule from needing to implement the intricacies of the
+ * t_bbc_csr_request/response interface.
+ *
+ */
+/*a Includes */
+include "bbc_micro_types.h"
+
+/*a Module
+ */
+module bbc_csr_interface( clock clk "4MHz clock in as a minimum",
+                          input bit reset_n,
+                          input t_bbc_csr_request csr_request,
+                          output t_bbc_csr_response csr_response,
+                          output t_bbc_csr_access      csr_access,
+                          input  t_bbc_csr_access_data csr_read_data,
+                          input bit[16] csr_select
+    )
+{
+    default clock clk;
+    default reset active_low reset_n;
+
+    clocked t_bbc_csr_response csr_response={*=0};
+    clocked t_bbc_csr_access   csr_access={*=0};
+    clocked bit last_csr_request_valid = 0;
+
+    access """
+    """: {
+        if (csr_response.read_data_valid) {
+            csr_response.read_data_valid <= 0;
+            csr_response.read_data <= 0;
+        }
+        if (csr_access.valid) {
+            csr_access.valid <= 0;
+            csr_response.ack <= 0;
+            if (csr_access.read_not_write) {
+                csr_response.read_data_valid <= 1;
+                csr_response.read_data <= csr_read_data;
+            }
+        }
+
+        if (!csr_request.valid && last_csr_request_valid) {
+            last_csr_request_valid <= 0;
+        }
+        if (csr_request.valid && !last_csr_request_valid) {
+            last_csr_request_valid <= 1;
+            if (csr_request.select==csr_select) {
+                csr_access <= {valid = 1,
+                        read_not_write = csr_request.read_not_write,
+                        address = csr_request.address,
+                        data    = csr_request.data };
+                csr_response.ack <= 1;
+            }
+        }
+    }
+}

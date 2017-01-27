@@ -1,0 +1,672 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  via6522.cdl
+ * @brief CDL implementation of a 6522 versatile interface adaptor (VIA)
+ *
+ * This is currently somewhat messy in the clocking - which clock
+ * edges do what. The 6522 was not well documented, so it is not clear
+ * that this correctly handles the timers either.
+ *
+ */
+/*a Types */
+/*t t_port */
+typedef struct {
+    bit last_c1;
+    bit last_c2;
+    bit c2_out;
+    bit[8] ddr;
+    bit[8] outr;
+    //bit[8] inr;
+} t_port;
+
+/*t t_port_edges */
+typedef struct {
+    bit c1;
+    bit c2;
+} t_port_edges;
+
+/*t t_edge */
+typedef enum[1] {
+    ctl_negedge=1,
+    ctl_posedge=0
+} t_edge;
+
+/*t t_c2_ctl */
+typedef enum[3] {
+    input_negedge,
+    input_negedge_independent,
+    input_posedge,
+    input_posedge_independent,
+    output_handshake,
+    output_pulse,
+    output_high,
+    output_low,
+} t_c2_ctl;
+
+/*t t_pcr */
+typedef struct {
+    t_edge   ca1_control;
+    t_c2_ctl ca2_control;
+    t_edge   cb1_control;
+    t_c2_ctl cb2_control;
+} t_pcr;
+
+/*t t_read_action */
+typedef enum[3] {
+    read_action_none,
+    read_action_port_a_handshake,
+    read_action_port_b_handshake,
+    read_action_clear_timer_1_irq,
+    read_action_clear_timer_2_irq,
+} t_read_action;
+
+/*t t_write_action */
+typedef enum[4] {
+    write_action_none,
+    write_action_ora_handshake,
+    write_action_orb_handshake,
+    write_action_ora,
+    write_action_ddra,
+    write_action_ddrb,
+    write_action_t1ll_write,
+    write_action_t1lh_write,
+    write_action_t1ch_write,
+    write_action_t2ll_write,
+    write_action_t2ch_write,
+    write_action_ier,
+    write_action_ifr,
+    write_action_sr,
+    write_action_pcr,
+    write_action_acr,
+} t_write_action;
+
+/*t t_timer_value */
+typedef struct {
+    bit[8] low;
+    bit[8] high;
+} t_timer_value;
+
+/*t t_timer */
+typedef struct {
+    t_timer_value latch;
+    t_timer_value counter;
+    bit has_expired;
+} t_timer;
+
+/*t t_acr */
+typedef struct {
+    bit pa_latch;
+    bit pb_latch;
+    bit timer_pb7;
+    bit timer_continuous;
+    bit timer_count_pulses;
+} t_acr;
+
+/*t t_irq */
+typedef struct {
+    bit ca1;
+    bit ca2;
+    bit cb1;
+    bit cb2;
+    bit timer1;
+    bit timer2;
+    bit sr;
+    bit irq;
+} t_irq;
+
+/*t t_address */
+typedef enum[16] {
+    addr_orb_irb      = 0,
+    addr_ora_ira      = 1,
+    addr_ddrb         = 2,
+    addr_ddra         = 3,
+    addr_t1c_l        = 4,
+    addr_t1c_h        = 5,
+    addr_t1l_l        = 6,
+    addr_t1l_h        = 7,
+    addr_t2c_l        = 8,
+    addr_t2c_h        = 9,
+    addr_sr           = 10,
+    addr_acr          = 11,
+    addr_pcr          = 12,
+    addr_ifr          = 13,
+    addr_ier          = 14,
+    addr_ora_ira_no_hs = 15
+} t_address;
+
+/*a Module via6522 */
+module via6522( clock clk                "1MHz clock rising when bus cycle finishes",
+                clock clk_io             "1MHz clock rising when I/O should be captured - can be antiphase to clk",
+                input bit reset_n,
+                input bit read_not_write "Indicates a read transaction if asserted and chip selected",
+                input bit chip_select    "Active high chip select",
+                input bit chip_select_n  "Active low chip select",
+                input bit[4] address     "Changes during phase 1 (phi[0] high) with address to read or write",
+                input bit[8] data_in     "Data in (from CPU)",
+                output bit[8] data_out   "Read data out (to CPU)",
+                output bit irq_n         "Active low interrupt",
+                input  bit ca1            "Port a control 1 in",
+                input  bit ca2_in         "Port a control 2 in",
+                output bit ca2_out       "Port a control 2 out",
+                output bit[8] pa_out     "Port a data out",
+                input  bit[8] pa_in      "Port a data in",
+                input  bit cb1            "Port b control 1 in",
+                input  bit cb2_in         "Port b control 2 in",
+                output bit cb2_out       "Port b control 2 out",
+                output bit[8] pb_out     "Port b data out",
+                input  bit[8] pb_in      "Port b data in"
+       )
+{
+    /*b Defaults */
+    default reset active_low reset_n;
+    default clock clk;
+
+    comb bit chip_selected;
+
+    clocked t_irq ier={*=0};
+    clocked t_irq ifr={*=0};
+    comb t_irq next_ier;
+    comb t_irq next_ifr;
+    clocked t_pcr pcr={*=0};
+    clocked t_acr acr={*=0};
+    clocked t_timer timer1={*=-1,latch={high=8hfe}};
+    clocked t_timer timer2={*=0};
+    comb bit timer1_expired;
+    comb bit timer2_expired;
+    clocked t_port port_a={*=0};
+    clocked clock clk_io bit[8] port_a_inr=0;
+    clocked clock clk_io bit[8] port_b_inr=0;
+    comb t_port_edges port_a_edges;
+    clocked t_port port_b={*=0};
+    comb t_port_edges port_b_edges;
+    comb t_read_action read_action;
+    comb t_write_action write_action;
+    clocked bit pb6_last_value=0;
+    clocked bit[8] shift_register=0;
+    comb bit pb6_negedge;
+
+    /*b Port controls */
+    port_controls """
+    Port control logic.
+
+    control 2 output may be undriven (if the control pin is in one of the 4 'input' modes), or it may be tied high or low.
+    Alternatively it may be in 'pulse' mode or 'handshake' mode
+    In pulse mode it goes low for a single cycle when inr is read (port A only)
+    In pulse mode it goes low for a single cycle when outr is written (port A only)
+    Handshake goes low when inr is read (port A only), and pops high when the control 1 active edge occurs
+    Handshake goes low when outr is written (ports A and B only), and pops high when the control 1 active edge occurs
+    POSSIBLY: The handshakes and pulse changes are on 'rising phi2' as opposed to the general operation which is on 'falling phi2'
+    BUT: seems not to be true for read handshake, and specsheet waveforms are dodgy for write handshake...
+    """: {
+        /*b Record the control signals for edge detection */
+        port_a.last_c1 <= ca1;
+        port_b.last_c1 <= cb1;
+        port_a.last_c2 <= ca2_in;
+        port_b.last_c2 <= cb2_in;
+
+        /*b Edge detection for active edges for both ports */
+        port_a_edges.c1 = 0;
+        port_a_edges.c2 = 0;
+        if (pcr.ca1_control==ctl_negedge) {
+            port_a_edges.c1 = (!ca1) & port_a.last_c1;
+        } else {
+            port_a_edges.c1 = ca1 & (!port_a.last_c1);
+        }
+        part_switch (pcr.ca2_control) {
+        case input_negedge,
+            input_negedge_independent: {
+            port_a_edges.c2 = (!ca2_in) & port_a.last_c2;
+        }
+        case input_posedge,
+            input_posedge_independent: {
+            port_a_edges.c2 = ca2_in & (!port_a.last_c2);
+        }
+        }
+        port_b_edges.c1 = 0;
+        port_b_edges.c2 = 0;
+        if (pcr.cb1_control==ctl_negedge) {
+            port_b_edges.c1 = (!cb1) & port_b.last_c1;
+        } else {
+            port_b_edges.c1 = cb1 & (!port_b.last_c1);
+        }
+        part_switch (pcr.cb2_control) {
+        case input_negedge,
+            input_negedge_independent: {
+            port_b_edges.c2 = (!cb2_in) & port_b.last_c2;
+        }
+        case input_posedge,
+            input_posedge_independent: {
+            port_b_edges.c2 = cb2_in & (!port_b.last_c2);
+        }
+        }
+
+        /*b Generate control 2 output for both ports  */
+        part_switch (pcr.ca2_control) {
+        case output_low: {
+            port_a.c2_out <= 0;
+        }
+        case output_high: {
+            port_a.c2_out <= 1;
+        }
+        case output_handshake: {
+            if (port_a_edges.c1) {
+                port_a.c2_out <= 1;
+            }
+            if (read_action == read_action_port_a_handshake) {
+                port_a.c2_out <= 0;
+            }
+            if (write_action == write_action_ora_handshake) {
+                port_a.c2_out <= 0;
+            }
+        }
+        case output_pulse:     {
+            port_a.c2_out <= 1;
+            if (read_action == read_action_port_a_handshake) {
+                port_a.c2_out <= 0;
+            }
+            if (write_action == write_action_ora_handshake) {
+                port_a.c2_out <= 0;
+            }
+        }
+        }
+
+        part_switch (pcr.cb2_control) {
+        case output_low: {
+            port_b.c2_out <= 0;
+        }
+        case output_high: {
+            port_b.c2_out <= 1;
+        }
+        case output_handshake: {
+            if (port_b_edges.c1) {
+                port_b.c2_out <= 1;
+            }
+            if (write_action == write_action_orb_handshake) {
+                port_b.c2_out <= 0;
+            }
+        }
+        case output_pulse:     {
+            port_b.c2_out <= 1;
+            if (write_action == write_action_orb_handshake) {
+                port_b.c2_out <= 0;
+            }
+        }
+        }
+
+        /*b Drive control outputs */
+        ca2_out=1;
+        part_switch (pcr.ca2_control) {
+        case output_handshake: { ca2_out=port_a.c2_out; }
+        case output_pulse:     { ca2_out=port_a.c2_out; }
+        case output_low:       { ca2_out=port_a.c2_out; }
+        case output_high:      { ca2_out=port_a.c2_out; }
+        }
+        cb2_out=1;
+        part_switch (pcr.cb2_control) {
+        case output_handshake: { cb2_out=port_b.c2_out; }
+        case output_pulse:     { cb2_out=port_b.c2_out; }
+        case output_low:       { cb2_out=port_b.c2_out; }
+        case output_high:      { cb2_out=port_b.c2_out; }
+        }
+
+        /*b All done */
+    }
+
+    /*b Port data in and out */
+    port_data_logic """
+    Port data logic.
+
+    Port A latches the input pins on the 'active edge of CA1' or it presents a synchronized version of the pins.
+
+    Port B latches the input pin signals for non-outputs, and the output data for outputs, on the 'active edge of CB1' or it presents a synchronized version of the pins.
+
+    The original 6522 does not synchronize the inputs pins, but it is cleaner for simulation and modern design to do so.
+    Because of this it might be that switching to 'active edge' on a real 6522 would present the last 'active edge' data, whereas this design will present the last cycle data.
+    """: {
+        /*b Port data out */
+        pa_out = ~port_a.ddr; // if not driving, then pull high (gently...)
+        pa_out |= port_a.ddr & port_a.outr;
+
+        pb_out = ~port_b.ddr; // if not driving, then pull high (gently...)
+        pb_out |= port_b.ddr & port_b.outr;
+
+        /*b Record pin levels (output/input depending on port) in 'inr' */
+        if (port_a_edges.c1 || !acr.pa_latch) {
+            port_a_inr <= pa_in; // input data is latched on PA
+        }
+        if (port_b_edges.c1 || !acr.pb_latch) {
+            port_b_inr <= (pb_in | port_b.ddr) &~ (port_b.ddr & port_b.outr); // output priority over input on PB
+        }
+
+        /*b Handle setting of port DDR and output data */
+        if ((write_action==write_action_ora) ||
+            (write_action==write_action_ora_handshake)) {
+            port_a.outr <= data_in;
+        }
+        if (write_action==write_action_ddra) {
+            port_a.ddr <= data_in;
+        }
+        if (write_action==write_action_orb_handshake) {
+            port_b.outr <= data_in;
+        }
+        if (write_action==write_action_ddrb) {
+            port_b.ddr <= data_in;
+        }
+        if (port_b.ddr[7] && acr.timer_pb7) {
+            if (timer1_expired) {
+                port_b.outr[7] <= 1;
+                if (acr.timer_continuous) {
+                    port_b.outr[7] <= ~port_b.outr[7];
+                }
+            }
+            if (write_action==write_action_t1ch_write) {
+                port_b.outr[7] <= 0;
+            }
+        }
+        pb6_last_value <= port_b_inr[6];
+        pb6_negedge = pb6_last_value && !port_b_inr[6];
+
+        /*b All done */
+    }
+
+    /*b Timers */
+    timer_logic """
+    Timers.
+
+    The timers can be configured to be one-shot or free-running.
+    The timers clock on every phi2 clock, except for timer 2 when it is in 'pb6 counting mode', where it clockes on negative edges of pb6
+    Timer 1 can be made to toggle pb7 when it expires; pb7 is also cleared to low each time the counter is written (in this mode)
+    This means that timer 1 expiring can be used to generate a width-controlled pulse on pb7.
+
+    Each timer has a 16-bit down-counter that expires when it is at zero.
+    In one-shot mode the timer can only expire once; the 'has_expired' signal has to be reset with a write to the timer counter.
+
+    In continuous mode the timer never 'has expired'.
+
+    The timers all generate interrupts when they expire (reach zero) and have not previously expired.
+    
+    """: {
+        /*b Timer 1 */
+        timer1.counter.low <= timer1.counter.low-1;
+        timer1.counter.high <= timer1.counter.high - ((timer1.counter.low==0) ? 1:0);
+        timer1_expired = 0;
+        if ((timer1.counter.low==-1) && (timer1.counter.high==-1)) {
+            timer1.counter <= timer1.latch;
+        }
+        if ((timer1.counter.low==0) && (timer1.counter.high==0)) {
+            timer1_expired = !timer1.has_expired;
+            timer1.has_expired <= 1;
+            if (acr.timer_continuous) {
+                timer1.has_expired <= 0;
+            }
+        }
+        if (write_action == write_action_t1ll_write) {
+            timer1.latch.low <= data_in;
+        }
+        if (write_action == write_action_t1lh_write) {
+            timer1.latch.high <= data_in;
+        }
+        if (write_action == write_action_t1ch_write) {
+            timer1.counter.low  <= timer1.latch.low;
+            timer1.counter.high <= data_in;
+            timer1.has_expired <= 0;
+        }
+
+        /*b Timer 2 */
+        timer2_expired = 0;
+        if (!acr.timer_count_pulses || pb6_negedge) {
+            timer2.counter.low <= timer2.counter.low-1;
+            timer2.counter.high <= timer2.counter.high - ((timer2.counter.low==0) ? 1:0);
+            if ((timer2.counter.low==0) && (timer2.counter.high==0)) {
+                timer2_expired = !timer2.has_expired;
+                timer2.has_expired <= 1;
+            }
+        }
+        if (write_action == write_action_t2ll_write) {
+            timer2.latch.low <= data_in;
+        }
+        if (write_action == write_action_t2ch_write) {
+            timer2.counter.low  <= timer2.latch.low;
+            timer2.counter.high <= data_in;
+            timer2.has_expired <= 0;
+        }
+        timer2.latch.high <= 0; // actually unused
+    }
+
+    /*b Interrupts */
+    interrupt_logic """
+    The interrupt enable register has bits set by a write to IER with data[7] set,
+    in which case the respective bits of data[0..6] set the ier bits.
+
+    The interrupt enable register has bits cleared by a write to IER with data[7] clear,
+    in which case the respective bits of data[0..6] clear the ier bits.
+
+    The interrupt flag register can have bits cleared by writing to the IFR, with 
+    the respective bits of data[0..6] set forcing a clear.
+
+    Port control lines can have their interrupts cleared by handshake reads and writes.
+
+    Timers can be cleared by reading, or by writing the counter to start the timer.
+    """: {
+        /*b Next interrupt enable register value */
+        next_ier = ier;
+        next_ier.irq = 1; // wired high
+        if (write_action == write_action_ier) {
+            if (data_in[0]) { next_ier.ca2=data_in[7]; }
+            if (data_in[1]) { next_ier.ca1=data_in[7]; }
+            if (data_in[2]) { next_ier.sr =data_in[7]; }
+            if (data_in[3]) { next_ier.cb2=data_in[7]; }
+            if (data_in[4]) { next_ier.cb1=data_in[7]; }
+            if (data_in[5]) { next_ier.timer2=data_in[7]; }
+            if (data_in[6]) { next_ier.timer1=data_in[7]; }
+        }
+
+        /*b Next interrupt flag register value clearing */
+        next_ifr = ifr;
+        if ((read_action==read_action_port_a_handshake) ||
+            (write_action==write_action_ora_handshake)) {
+            next_ifr.ca1 = 0;
+            part_switch (pcr.ca2_control) {
+            case input_posedge, input_negedge: {
+                next_ifr.ca2 = 0;
+            }
+            }
+        }
+        if ((read_action==read_action_port_b_handshake) ||
+            (write_action==write_action_orb_handshake)) {
+            next_ifr.cb1 = 0;
+            part_switch (pcr.cb2_control) {
+            case input_posedge, input_negedge: {
+                next_ifr.cb2 = 0;
+            }
+            }
+        }
+        if ((write_action == write_action_t1ch_write) ||
+            (read_action == read_action_clear_timer_1_irq)) {
+            next_ifr.timer1 = 0;
+        }
+        if ((write_action == write_action_t2ch_write) ||
+            (read_action == read_action_clear_timer_2_irq)) {
+            next_ifr.timer2 = 0;
+        }
+        if (write_action == write_action_ifr) {
+            if (data_in[0]) { next_ifr.ca2=0; }
+            if (data_in[1]) { next_ifr.ca1=0; }
+            if (data_in[2]) { next_ifr.sr =0; }
+            if (data_in[3]) { next_ifr.cb2=0; }
+            if (data_in[4]) { next_ifr.cb1=0; }
+            if (data_in[5]) { next_ifr.timer2=0; }
+            if (data_in[6]) { next_ifr.timer1=0; }
+        }
+
+        /*b Next interrupt flag register value setting */
+        if (port_a_edges.c1) { next_ifr.ca1 = 1; }
+        if (port_a_edges.c2) { next_ifr.ca2 = 1; }
+        if (port_b_edges.c1) { next_ifr.cb1 = 1; }
+        if (port_b_edges.c2) { next_ifr.cb2 = 1; }
+        if (timer1_expired)  { next_ifr.timer1 = 1; }
+        if (timer2_expired)  { next_ifr.timer2 = 1; }
+
+        next_ifr.irq = 0;
+        if ((next_ifr.ca1    & next_ier.ca1) ||
+            (next_ifr.ca2    & next_ier.ca2) ||
+            (next_ifr.cb1    & next_ier.cb1) ||
+            (next_ifr.cb2    & next_ier.cb2) ||
+            (next_ifr.timer1 & next_ier.timer1) ||
+            (next_ifr.timer2 & next_ier.timer2) ||
+            (next_ifr.sr     & next_ier.sr) ) {
+            next_ifr.irq = 1;
+        }
+
+        /*b Store 'next values' */
+        ifr <= next_ifr;
+        ier <= next_ier;
+        irq_n = !ifr.irq;
+
+        /*b All done */
+    }
+
+    /*b Control registers */
+    control_register_logic "Control registers": {
+        shift_register <= 0;
+        if (write_action == write_action_pcr) {
+            pcr <= { cb2_control=data_in[3;5],
+                    cb1_control=data_in[4],
+                    ca2_control=data_in[3;1],
+                    ca1_control=data_in[0] };
+        }
+        if (write_action == write_action_acr) {
+            acr <= {timer_pb7          = data_in[7],
+                    timer_continuous   = data_in[6],
+                    timer_count_pulses = data_in[5],
+                    // 3;2 for sr
+                    pb_latch           = data_in[1],
+                    pa_latch           = data_in[0] };
+        }
+    }
+    /*b Read/write interface */
+    read_write_interface : {
+        chip_selected = (!chip_select_n) && chip_select;
+        data_out = -1;
+        read_action  = read_action_none;
+        write_action = write_action_none;
+        if (chip_selected) {
+            full_switch (address) {
+            case addr_ora_ira: {
+                data_out = port_a_inr;
+                read_action  = read_action_port_a_handshake;
+                write_action = write_action_ora_handshake;
+            }
+            case addr_orb_irb: {
+                data_out = port_b_inr;
+                read_action  = read_action_port_b_handshake;
+                write_action = write_action_orb_handshake;
+            }
+            case addr_ddra: {
+                data_out = port_a.ddr;
+                write_action = write_action_ddra;
+            }
+            case addr_ddrb: {
+                data_out = port_b.ddr;
+                write_action = write_action_ddrb;
+            }
+            case addr_t1c_l: {
+                data_out = timer1.counter.low;
+                read_action = read_action_clear_timer_1_irq;
+                write_action = write_action_t1ll_write;
+            }
+            case addr_t1c_h: {
+                data_out = timer1.counter.high;
+                write_action = write_action_t1ch_write;
+            }
+            case addr_t1l_l: {
+                data_out = timer1.latch.low;
+                write_action = write_action_t1ll_write;
+            }
+            case addr_t1l_h: {
+                data_out = timer1.latch.high;
+                write_action = write_action_t1lh_write;
+            }
+            case addr_t2c_l: {
+                data_out = timer2.counter.low;
+                read_action = read_action_clear_timer_2_irq;
+                write_action = write_action_t2ll_write;
+            }
+            case addr_t2c_h: {
+                data_out = timer2.counter.high;
+                write_action = write_action_t2ch_write;
+            }
+            case addr_sr: {
+                data_out = shift_register;
+                write_action = write_action_sr;
+            }
+            case addr_acr: {
+                data_out = bundle(acr.timer_pb7,
+                                  acr.timer_continuous,
+                                  acr.timer_count_pulses,
+                                  3b0,
+                                  acr.pb_latch,
+                                  acr.pa_latch);
+                write_action = write_action_acr;
+            }
+            case addr_pcr: {
+                data_out = bundle(pcr.cb2_control,
+                                  pcr.cb1_control,
+                                  pcr.ca2_control,
+                                  pcr.ca1_control);
+                write_action = write_action_pcr;
+            }
+            case addr_ifr: {
+                data_out = bundle(ifr.irq,
+                                  ifr.timer1,
+                                  ifr.timer2,
+                                  ifr.cb1,
+                                  ifr.cb2,
+                                  ifr.sr,
+                                  ifr.ca1,
+                                  ifr.ca2);
+                write_action = write_action_ifr;
+            }
+            case addr_ier: {
+                data_out = bundle(ier.irq,
+                                  ier.timer1,
+                                  ier.timer2,
+                                  ier.cb1,
+                                  ier.cb2,
+                                  ier.sr,
+                                  ier.ca1,
+                                  ier.ca2);
+                write_action = write_action_ier;
+            }
+            case addr_ora_ira_no_hs: {
+                data_out = port_a_inr;
+                write_action = write_action_ora;
+            }
+            }
+        }
+
+        /*b Kill data out if not reading, and actions appropriately */
+        if (!read_not_write) {
+            data_out = -1;
+            read_action = read_action_none;
+        } else {
+            write_action = write_action_none;
+        }
+
+        /*b All done */
+    }
+
+    /*b All done */
+}

@@ -1,0 +1,331 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_floppy_sram.cdl
+ * @brief  BBC micro floppy to SRAM read/write interface module
+ *
+ * CDL implementation of a module to map from the
+ * t_bbc_floppy_op/response (interface to a floppy disk drive) and an
+ * SRAM read/write interface, so that a floppy may be emulated in an
+ * FPGA (or simulation).
+ * 
+ * This module needs an update to implement the 'csr interface' to
+ * permit setting up of the SRAM base addresses and so on, that help
+ * describe the floppy. Currently these values are hard-coded.
+ *
+ */
+/*a Includes */
+include "bbc_micro_types.h"
+
+/*a Types */
+
+/*t t_sram_combs */
+typedef struct {
+    bit ack;
+    bit read_data_valid;
+    bit[32] read_data;
+} t_sram_combs;
+
+/*t t_sram_state */
+typedef struct {
+    bit write_enable;
+} t_sram_state;
+
+/*t t_floppy_fsm */
+typedef fsm {
+    floppy_fsm_idle;
+    floppy_fsm_read_data_prepare_sram_request;
+    floppy_fsm_read_data_sram_requesting;
+    floppy_fsm_read_data_sram_wait_for_data;
+    floppy_fsm_read_data_present_data;
+    floppy_fsm_read_id_prepare_sram_request;
+    floppy_fsm_read_id_sram_requesting;
+    floppy_fsm_read_id_sram_wait_for_data;
+    floppy_fsm_read_id_present_data;
+} t_floppy_fsm;
+
+/*t t_floppy_state */
+typedef struct {
+    t_floppy_fsm fsm_state;
+    t_bbc_floppy_sram_request sram_request;
+} t_floppy_state;
+
+/*t t_floppy_combs */
+typedef enum[2] {
+    floppy_fsm_request_none,
+    floppy_fsm_request_read_id,
+    floppy_fsm_request_read_data
+} t_floppy_fsm_request;
+
+typedef struct {
+    t_floppy_fsm_request fsm_request;
+    bit[20] sram_data_address;
+    bit[20] sram_id_address;
+} t_floppy_combs;
+
+/*t t_drive_combs */
+typedef struct {
+    bit do_step_in;
+    bit do_step_out;
+    bit get_next_id;
+    bit do_read_data;
+} t_drive_combs;
+
+/*t t_drive_state */
+typedef struct {
+    bit[2] selected_floppy;
+    t_bbc_floppy_op floppy_op;
+    t_bbc_floppy_op last_floppy_op;
+} t_drive_state;
+
+/*t t_floppy_disk_state */
+typedef struct {
+    bit    disk_ready;
+    bit    write_protect;
+    bit[8]  num_tracks;
+    bit[20] sram_data_base_address;
+    bit[20] sram_id_base_address;
+    bit[8]  sectors_per_track;
+
+    bit[8]  current_track;
+    bit[8]  current_physical_sector;
+    bit     next_sector_is_zero;
+    bit[12] data_words_per_track;   // at most 8kB per track is 2kW
+    bit[20] track_data_sram_offset;
+    bit[12] track_id_sram_offset;   // at most 4k sectors per disk (256 tracks at 16 sectors per track)
+    bit[12] data_word_offset;       // cannot be larger than data words per track, presumably
+    t_bbc_floppy_sector_id sector_id;
+} t_floppy_disk_state;
+
+/*a Module
+ */
+module bbc_floppy_sram( clock clk "Clock running at 2MHz",
+                        input bit reset_n,
+                        input t_bbc_floppy_op floppy_op,
+                        output t_bbc_floppy_response floppy_response,
+                        output t_bbc_floppy_sram_request sram_request,
+                        input t_bbc_floppy_sram_response sram_response,
+                        input t_bbc_csr_request csr_request,
+                        output t_bbc_csr_response csr_response
+    )
+"""
+This module provides an SRAM-fakeout of a set of floppy disks, tied to the BBC
+micro floppy disc controller.
+"""
+{
+    /*b Defaults */
+    default reset active_low reset_n;
+    default clock clk;
+
+    comb t_drive_combs drive_combs;
+    clocked t_floppy_disk_state[4] floppy_disk_state = {*=0};
+    comb t_floppy_disk_state current_floppy;
+    clocked t_drive_state drive_state={*=0};
+    clocked t_floppy_state floppy_state={*=0, fsm_state=floppy_fsm_idle};
+    comb t_floppy_combs floppy_combs;
+    clocked t_bbc_floppy_response floppy_response={*=0};
+    comb    t_sram_combs    sram_combs;
+    clocked t_bbc_csr_response csr_response={*=0};
+
+    /*b Inputs and outputs */
+    inputs_and_outputs """
+    """: {
+        drive_state.selected_floppy <= 0;//floppy_op.
+        floppy_response.index         <= (current_floppy.current_physical_sector==0);
+        floppy_response.track_zero    <= (current_floppy.current_track==0);
+        floppy_response.write_protect <= current_floppy.write_protect;
+        floppy_response.disk_ready    <= current_floppy.disk_ready;
+
+        drive_state.floppy_op      <= floppy_op;
+        drive_state.last_floppy_op <= drive_state.floppy_op;
+
+        drive_combs = {*=0};
+        if (drive_state.floppy_op.step_in && !drive_state.last_floppy_op.step_in) {
+            drive_combs.do_step_in  = 1;
+        }
+        if (drive_state.floppy_op.step_out && !drive_state.last_floppy_op.step_out) {
+            drive_combs.do_step_in  = 0;
+            drive_combs.do_step_out  = 1;
+        }
+        if (drive_state.floppy_op.next_id && !drive_state.last_floppy_op.next_id) {
+            drive_combs.get_next_id = 1;
+        }
+        if (drive_state.floppy_op.read_data_enable && !drive_state.last_floppy_op.read_data_enable) {
+            drive_combs.do_read_data = 1;
+        }
+    }
+
+    /*b Floppy logic */
+    floppy_logic """
+    """: {
+        if (current_floppy.current_track==0) {
+            floppy_disk_state[drive_state.selected_floppy].track_id_sram_offset   <= 0;
+            floppy_disk_state[drive_state.selected_floppy].track_data_sram_offset <= 0;
+        }
+        if (drive_combs.do_step_in) {
+            if (current_floppy.current_track != current_floppy.num_tracks) {
+                floppy_disk_state[drive_state.selected_floppy].current_track <= current_floppy.current_track+1;
+                floppy_disk_state[drive_state.selected_floppy].current_physical_sector <= 0;
+                floppy_disk_state[drive_state.selected_floppy].track_id_sram_offset <= current_floppy.track_id_sram_offset + bundle(4b0,current_floppy.sectors_per_track);
+                floppy_disk_state[drive_state.selected_floppy].track_data_sram_offset <= current_floppy.track_data_sram_offset + bundle(6b0,current_floppy.sectors_per_track,6b0);
+            }
+            floppy_disk_state[drive_state.selected_floppy].next_sector_is_zero <= 1;
+        }
+        if (drive_combs.do_step_out) {
+            if (current_floppy.current_track != 0) {
+                floppy_disk_state[drive_state.selected_floppy].current_track <= current_floppy.current_track-1;
+                floppy_disk_state[drive_state.selected_floppy].track_id_sram_offset <= current_floppy.track_id_sram_offset - bundle(4b0,current_floppy.sectors_per_track);
+                floppy_disk_state[drive_state.selected_floppy].track_data_sram_offset <= current_floppy.track_data_sram_offset - bundle(6b0,current_floppy.sectors_per_track,6b0);
+                floppy_disk_state[drive_state.selected_floppy].current_physical_sector <= 0;
+            } else {
+                floppy_disk_state[drive_state.selected_floppy].current_track <= 0;
+                floppy_disk_state[drive_state.selected_floppy].current_physical_sector <= 0;
+                floppy_disk_state[drive_state.selected_floppy].track_id_sram_offset <= 0;
+                floppy_disk_state[drive_state.selected_floppy].track_data_sram_offset <= 0;
+            }
+            floppy_disk_state[drive_state.selected_floppy].next_sector_is_zero <= 1;
+        }
+
+        floppy_combs.fsm_request = floppy_fsm_request_none;
+        if (drive_combs.get_next_id) {
+            if (current_floppy.next_sector_is_zero) {
+                floppy_disk_state[drive_state.selected_floppy].current_physical_sector <= 0;
+            } else {
+                floppy_disk_state[drive_state.selected_floppy].current_physical_sector <= current_floppy.current_physical_sector + 1;
+                if (current_floppy.current_physical_sector == current_floppy.sectors_per_track-1) {
+                    floppy_disk_state[drive_state.selected_floppy].current_physical_sector <= 0;
+                }
+            }
+            floppy_disk_state[drive_state.selected_floppy].next_sector_is_zero <= 0;
+            floppy_combs.fsm_request = floppy_fsm_request_read_id;
+        }
+
+        if (drive_combs.do_read_data) {
+            floppy_combs.fsm_request = floppy_fsm_request_read_data;
+        }
+    }
+
+    floppy_fsm """
+    Floppy FSM - read or write SRAM as requested
+    """: {
+        current_floppy = floppy_disk_state[drive_state.selected_floppy];
+        floppy_combs.sram_data_address = (current_floppy.sram_data_base_address +
+                                          current_floppy.track_data_sram_offset +
+                                          bundle(6b0, current_floppy.current_physical_sector, 6b0) +
+                                          bundle(8b0, current_floppy.data_word_offset) ); // 256 byte sectors fixed
+        floppy_combs.sram_id_address   = (current_floppy.sram_id_base_address +
+                                          bundle(8b0,current_floppy.track_id_sram_offset) +
+                                          bundle(12b0,current_floppy.current_physical_sector) );
+        
+        floppy_state.sram_request.enable <= 0;
+        floppy_state.sram_request.write_data <= 0;
+        if (drive_combs.do_step_out || drive_combs.do_step_in || drive_combs.get_next_id) {
+            floppy_disk_state[drive_state.selected_floppy].data_word_offset <= 0;
+        }
+        full_switch (floppy_state.fsm_state) {
+        case floppy_fsm_idle: {
+            if (floppy_combs.fsm_request == floppy_fsm_request_read_data) {
+                floppy_state.fsm_state <= floppy_fsm_read_data_prepare_sram_request;
+            } elsif (floppy_combs.fsm_request == floppy_fsm_request_read_id) {
+                floppy_state.fsm_state <= floppy_fsm_read_id_prepare_sram_request;
+            }
+        }
+        case floppy_fsm_read_data_prepare_sram_request: {
+            floppy_state.sram_request.address <= floppy_combs.sram_data_address;
+            floppy_state.sram_request.enable <= 1;
+            floppy_state.sram_request.read_not_write <= 1;
+            floppy_state.fsm_state <= floppy_fsm_read_data_sram_requesting;
+        }
+        case floppy_fsm_read_data_sram_requesting: {
+            floppy_state.sram_request.enable <= 1;
+            if (sram_combs.ack) {
+                floppy_state.sram_request.enable <= 0;
+                floppy_state.fsm_state <= floppy_fsm_read_data_sram_wait_for_data;
+            }
+        }
+        case floppy_fsm_read_data_sram_wait_for_data: {
+            if (sram_combs.read_data_valid) {
+                floppy_state.fsm_state <= floppy_fsm_read_data_present_data;
+            }
+        }
+        case floppy_fsm_read_data_present_data: {
+            floppy_disk_state[drive_state.selected_floppy].data_word_offset <= current_floppy.data_word_offset+1;
+            floppy_state.fsm_state <= floppy_fsm_idle;
+        }
+        case floppy_fsm_read_id_prepare_sram_request: {
+            floppy_state.sram_request.address <= floppy_combs.sram_id_address;
+            floppy_state.sram_request.enable <= 1;
+            floppy_state.sram_request.read_not_write <= 1;
+            floppy_state.fsm_state <= floppy_fsm_read_id_sram_requesting;
+        }
+        case floppy_fsm_read_id_sram_requesting: {
+            floppy_state.sram_request.enable <= 1;
+            if (sram_combs.ack) {
+                floppy_state.sram_request.enable <= 0;
+                floppy_state.fsm_state <= floppy_fsm_read_id_sram_wait_for_data;
+            }
+        }
+        case floppy_fsm_read_id_sram_wait_for_data: {
+            if (sram_combs.read_data_valid) {
+                floppy_state.fsm_state <= floppy_fsm_read_id_present_data;
+                floppy_disk_state[drive_state.selected_floppy].sector_id <= {
+                    bad_crc       = sram_combs.read_data[23],
+                    bad_data_crc  = sram_combs.read_data[22],
+                    deleted_data  = sram_combs.read_data[21],
+                    head          = sram_combs.read_data[20],
+                    sector_length = sram_combs.read_data[2;16],
+                    sector_number = sram_combs.read_data[6;8],
+                    track         = sram_combs.read_data[7;0]
+                };
+            }
+        }
+        case floppy_fsm_read_id_present_data: {
+            floppy_state.fsm_state <= floppy_fsm_idle;
+        }
+        }
+
+        floppy_response.read_data_valid <= 0;
+        floppy_response.read_data <= sram_combs.read_data;
+        if (floppy_state.fsm_state==floppy_fsm_read_data_present_data) {
+            floppy_response.read_data_valid <= 1;
+        }
+
+        floppy_response.sector_id_valid <= 0;
+        if (floppy_state.fsm_state==floppy_fsm_read_id_present_data) {
+            floppy_response.sector_id_valid <= 1;
+        }
+        floppy_response.sector_id <= current_floppy.sector_id;
+    }
+
+    sram_interface """
+    """: {
+        sram_combs.ack = sram_response.ack;
+        sram_combs.read_data_valid = sram_response.read_data_valid;
+        sram_combs.read_data = sram_response.read_data;
+        sram_request = floppy_state.sram_request;
+    }
+
+    csrs_read_write """
+    """: {
+        csr_response <= {*=0};
+        floppy_disk_state[0] <= {disk_ready=1,
+                num_tracks = 80,
+                sectors_per_track = 10,
+                sram_id_base_address   = 20hf000,
+                sram_data_base_address = 0,
+                data_words_per_track=10*256,
+                write_protect = 1
+                };
+    }
+}

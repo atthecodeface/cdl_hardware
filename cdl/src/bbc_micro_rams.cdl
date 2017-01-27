@@ -1,0 +1,311 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_micro_rams.cdl
+ * @brief  BBC microcomputer RAMs module
+ *
+ * CDL implementation of RAMs to enable a BBC microcomputer to be
+ * mapped to simulation or FPGA.
+ *
+ * This module provides SRAMs for a display frame buffer and for
+ * floppy disks, to enable a BBC microcomputer emulation cleanly.
+ * These memories must be programmable in an FPGA, as must the BBC
+ * microcomputer memories. For this purpose, this module takes a host
+ * SRAM request/response interface, and allows for reading/writing the
+ * display framebuffer and floppy RAMs. It also provides a bridge to
+ * reading/writing the BBC microcomputer RAMs through the same kinds
+ * of interface - hence in an FPGA the host SRAM bus connects only to
+ * this module, and this module masters accesses to the BBC
+ * microcomputer SRAMs.
+ *
+ */
+/*a Includes */
+include "bbc_micro_types.h"
+include "bbc_submodules.h"
+
+/*a Types */
+typedef struct {
+    bit select;
+    bit read_not_write;
+    bit write_enable;
+    bit[20] address;
+    bit[64] write_data;
+} t_sram_inputs;
+
+typedef enum[2] {
+    host_grant_none,
+    host_grant_display,
+    host_grant_floppy,
+    host_grant_bbc_micro,
+} t_host_grant;
+
+/*a Module */
+module bbc_micro_rams( clock clk "4MHz clock in as a minimum",
+                       input bit reset_n,
+                       input t_bbc_clock_control clock_control,
+                       input t_bbc_micro_sram_request host_sram_request,
+                       output t_bbc_micro_sram_response host_sram_response,
+                       input t_bbc_display_sram_write display_sram_write,
+                       input t_bbc_floppy_sram_request floppy_sram_request,
+                       output t_bbc_floppy_sram_response floppy_sram_response,
+                       output t_bbc_micro_sram_request bbc_micro_host_sram_request,
+                       input t_bbc_micro_sram_response bbc_micro_host_sram_response )
+{
+    /*b Defaults */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b SRAM arbitration and request signals */
+    comb bit sram_grant_display_write;
+    comb bit sram_grant_floppy;
+    comb t_host_grant sram_grant_host_request;
+    clocked bit sram_reading_floppy=0;
+    clocked bit floppy_sram_reading_host=0;
+    clocked bit display_sram_reading_host=0;
+    net bit[32] floppy_sram_read_data;
+    net bit[64] display_sram_read_data;
+
+    /*b Display SRAM interface */
+    clocked t_bbc_display_sram_write pending_display_sram_write={*=0};
+    display_sram_interface """
+    The display SRAM interface is write-only from the BBC micro
+    It writes on the 2MHz video clock with 48-bits of RGB data,
+    which has to be expanded to 64-bits of SRAM write data
+
+    The display SRAM interface assumes that the VIDEO clock is
+    slower than the main clock (which it has to be) and so if
+    the display SRAM interface has high priority for its SRAM there is
+    no need to buffer and acknowledge write requests
+    """: {
+        /*b Generate pending display SRAM access */
+        if (clock_control.enable_2MHz_video && display_sram_write.enable) {
+            pending_display_sram_write <= display_sram_write;
+        }
+        if (sram_grant_display_write) {
+            pending_display_sram_write.enable <= 0;
+        }
+    }
+
+    /*b Floppy SRAM interface */
+    clocked t_bbc_floppy_sram_request  pending_floppy_sram_request={*=0};
+    clocked t_bbc_floppy_sram_response floppy_sram_response={*=0};
+    clocked t_bbc_floppy_sram_response pending_floppy_sram_response={*=0};
+    
+    floppy_sram_interface """
+    The floppy SRAM interface is read-write from the BBC micro,
+    operating on the CPU clock.
+
+    Requests have to be acknowledged, but the FDC is guaranteed not
+    to present back-to-back requests (i.e. if ack is asserted for one
+    cycle then valid && !ack indicates a valid request in).
+
+    A valid read request will not be followed by another request until
+    valid read data is returned.
+
+    The interface to the BBC micro should only change on the CPU clock,
+    but the SRAM runs at the faster standard clock. However, the logic
+    here does not care about SRAM priority access.
+    """: {
+        pending_floppy_sram_response.ack <= 0; // Not used
+        /*b Generate pending floppy SRAM access */
+        if (clock_control.enable_cpu) {
+            if (floppy_sram_request.enable) {
+                pending_floppy_sram_request <= floppy_sram_request;
+                if (floppy_sram_response.ack) {
+                    pending_floppy_sram_request.enable <= 0;
+                }
+            }
+            floppy_sram_response.ack <= floppy_sram_request.enable;
+            floppy_sram_response.read_data_valid <= 0;
+            if (pending_floppy_sram_response.read_data_valid) {
+                pending_floppy_sram_response.read_data_valid <= 0;
+                floppy_sram_response.read_data_valid <= 1;
+                floppy_sram_response.read_data <= pending_floppy_sram_response.read_data;
+            }
+        }
+        if (sram_grant_floppy) {
+            pending_floppy_sram_request.enable <= 0;
+        }
+        if (sram_reading_floppy) {
+            pending_floppy_sram_response.read_data_valid <= 1;
+            pending_floppy_sram_response.read_data  <= floppy_sram_read_data;
+        }
+    }
+
+    /*b Host access */
+    clocked bit host_sram_pending=0;
+    clocked t_bbc_micro_sram_request  pending_host_sram_request={*=0};
+    clocked t_bbc_micro_sram_request  bbc_micro_host_sram_request={*=0};
+    clocked t_bbc_micro_sram_response host_sram_response={*=0};
+    host_access """
+    """: {
+        /*b Generate pending incoming SRAM access */
+        if (host_sram_request.valid && !host_sram_response.ack && !host_sram_pending) {
+            pending_host_sram_request <= host_sram_request;
+        }
+        if (sram_grant_host_request != host_grant_none) {
+            pending_host_sram_request.valid <= 0;
+        }
+
+        if (!host_sram_request.valid) {
+            host_sram_response.ack <= 0;
+        }
+        host_sram_response.read_data_valid <= 0;
+        if ( (sram_grant_host_request == host_grant_display) ||
+             (sram_grant_host_request == host_grant_floppy) ) {
+            host_sram_response.ack <= 1;
+            if (pending_host_sram_request.read_enable) {
+                host_sram_pending <= 1; // removes request
+            }
+        }
+        if (host_sram_response.ack) {
+            host_sram_pending <= 0; // removes request
+        }
+
+        /*b Handle request to BBC micro from host and response back */
+        if (sram_grant_host_request == host_grant_bbc_micro) {
+            host_sram_pending <= 1;
+            bbc_micro_host_sram_request <= pending_host_sram_request;
+        }
+        if (host_sram_pending) {
+            if (bbc_micro_host_sram_request.valid && bbc_micro_host_sram_response.ack) {
+                host_sram_response.ack <= 1;
+                bbc_micro_host_sram_request.valid <= 0;
+                if (!bbc_micro_host_sram_request.read_enable) {
+                    host_sram_pending <= 0;
+                }
+            }
+            if (bbc_micro_host_sram_response.read_data_valid) {
+                host_sram_response.read_data_valid <= 1;
+                host_sram_response.read_data <= bbc_micro_host_sram_response.read_data;
+                host_sram_pending <= 0;
+            }
+        }
+
+        /*b Handle response from reading display or floppy SRAM */
+        if (floppy_sram_reading_host) {
+            host_sram_response.read_data_valid <= 1;
+            host_sram_response.read_data  <= bundle(32b0,floppy_sram_read_data);
+        }
+        if (display_sram_reading_host) {
+            host_sram_response.read_data_valid <= 1;
+            host_sram_response.read_data  <= display_sram_read_data;
+        }
+    }
+
+    /*b SRAM arbitration */
+    sram_arbitration """
+    For speed of operation the SRAM arbiters or prioritized for the BBC micro
+    accesses - host accesses are lower priority.
+    """: {
+        /*b Arbiters for SRAMs */
+        sram_grant_host_request = host_grant_none;
+        sram_grant_floppy = 0;
+        sram_grant_display_write = 0;
+        if (pending_display_sram_write.enable) {
+            sram_grant_display_write = 1;
+        }
+        if (pending_floppy_sram_request.enable) {
+            sram_grant_floppy = 1;
+        }
+        if (pending_host_sram_request.valid && !host_sram_pending) {
+            if ((pending_host_sram_request.select==bbc_sram_select_display) && !sram_grant_display_write) {
+                sram_grant_host_request = host_grant_display;
+            }
+            if ((pending_host_sram_request.select==bbc_sram_select_floppy) && !sram_grant_floppy) {
+                sram_grant_host_request = host_grant_floppy;
+            }
+            if ((pending_host_sram_request.select & bbc_sram_select_cpu)!=0) {
+                sram_grant_host_request = host_grant_bbc_micro;
+            }
+        }
+    }
+
+    /*b Display SRAM */
+    comb t_sram_inputs display_sram;
+    display_sram_logic """
+    The display SRAM is 4bpp at a max resolution of (say) 1024x512, so 256kB max
+    The memory is read/written at 64-bits per cycle, so 32kx64
+    """: {
+        /*b Generate request */
+        display_sram = {select     = 0,
+                        read_not_write = 0,
+                        write_enable = 1,
+                        address    = bundle(4b0,pending_display_sram_write.address[16;0]),
+                        write_data = bundle(16b0, pending_display_sram_write.data[48;0])};
+        if (sram_grant_display_write) {
+            display_sram.select = 1;
+        }
+        if (sram_grant_host_request==host_grant_display) {
+            display_sram = {select         = 1,
+                            read_not_write = pending_host_sram_request.read_enable,
+                            write_enable   = pending_host_sram_request.write_enable,
+                            address        = pending_host_sram_request.address[20;0],
+                            write_data     = pending_host_sram_request.write_data};
+        }
+            
+        /*b SRAM instance and pipeline registers */
+        se_sram_srw_32768x64 display(sram_clock <- clk,
+                                     select         <= display_sram.select,
+                                     read_not_write <= display_sram.read_not_write,
+                                     write_enable   <= display_sram.write_enable,
+                                     address        <= display_sram.address[15;0],
+                                     write_data     <= display_sram.write_data,
+                                     data_out       => display_sram_read_data );
+        display_sram_reading_host <= 0;
+        if ( (sram_grant_host_request==host_grant_display) && pending_host_sram_request.read_enable) {
+            display_sram_reading_host <= 1;
+        }
+    }
+
+    /*b Floppy SRAM */
+    comb t_sram_inputs floppy_sram;
+    floppy_sram_logic """
+    The floppy SRAM is 32 bits wide, and must accommodate at least 100kB plus IDs, so must be at least 128kB
+    Hence it should be 32kx32, or larger
+    """: {
+        /*b Generate request */
+        floppy_sram = {select     = 0,
+                       read_not_write = pending_floppy_sram_request.read_not_write,
+                       write_enable   = pending_host_sram_request.write_enable,
+                       address        = pending_floppy_sram_request.address[20;0],
+                       write_data     = bundle(32b0,pending_floppy_sram_request.write_data) };
+        if (sram_grant_floppy) {
+            floppy_sram.select = 1;
+        }
+        if (sram_grant_host_request==host_grant_floppy) {
+            floppy_sram = {select         = 1,
+                           read_not_write = pending_host_sram_request.read_enable,
+                           write_enable   = pending_host_sram_request.write_enable,
+                           address        = pending_host_sram_request.address[20;0],
+                           write_data     = pending_host_sram_request.write_data};
+        }
+            
+        /*b SRAM instance and pipeline registers */
+        se_sram_srw_65536x32 floppy(sram_clock <- clk,
+                                    select         <= floppy_sram.select,
+                                    read_not_write <= floppy_sram.read_not_write,
+                                    write_enable   <= floppy_sram.write_enable,
+                                    address        <= floppy_sram.address[16;0],
+                                    write_data     <= floppy_sram.write_data[32;0],
+                                    data_out       => floppy_sram_read_data );
+        sram_reading_floppy <= sram_grant_floppy;
+        floppy_sram_reading_host <= 0;
+        if ( (sram_grant_host_request==host_grant_floppy) && pending_host_sram_request.read_enable) {
+            floppy_sram_reading_host <= 1;
+        }
+    }
+
+    /*b All done */
+}    

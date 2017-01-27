@@ -1,0 +1,91 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_6502.cdl
+ * @brief Testbench for 6502 CDL source
+ *
+ * This is a simple testbench for the 6502 CDL model with SRAM, build
+ * so that the 6502 instruction regressions can be run on the CDL
+ * model.
+ */
+/*a Includes */
+include "bbc_submodules.h"
+
+/*a Module */
+module tb_6502( clock clk,
+                input bit reset_n
+)
+{
+
+    /*b Nets */
+    net bit ba             "Goes high during phase 2 if ready was low in phase 1 if read_not_write is 1, to permit someone else to use the memory bus";
+    net bit[16] address    "Changes during phase 1 (phi[0] high) with address to read or write";
+    net bit read_not_write "Changes during phase 1 (phi[0] high) with whether to read or write";
+    net bit[8] data_out    "Changes during phase 2 (phi[1] high) with data to write";
+    net bit[8] data_in     "Captured at the end of phase 2 (rising clock with phi[1] high)";
+
+    /*b Interrupt and nmi test in */
+    default clock clk;
+    default reset active_low reset_n;
+    clocked bit irq_n=1;
+    clocked bit nmi_n=1;
+    clocked bit[16] cycle_counter=0;
+
+    comb bit enable_cpu_clk;
+    comb bit enable_sram_clk;
+    gated_clock clock clk active_high enable_cpu_clk  cpu_clk;
+    gated_clock clock clk active_high enable_sram_clk sram_clk;
+
+    /*b Interrupt and NMI, and clock gating */
+    interrupt_and_nmi """
+    The interrupt and NMI are not currently configured to fire - they perhaps ought to be controlled.
+
+    The clock gating is to ping-pong the CPU and the SRAM - to mimick the 6502 phi 1 / 2 latch operation.
+    """ : {
+        cycle_counter <= cycle_counter+1;
+        enable_sram_clk = cycle_counter[0];
+        enable_cpu_clk = !cycle_counter[0];
+        if (cycle_counter[8;0]==0xff) {
+            irq_n <= 1;//!irq_n;
+            nmi_n <= 1;
+        }
+    }
+
+    /*b Instantiate srams and 6502 */
+    cpu_and_srams """
+    Instantiate the CPU and SRAMs
+    """: {
+        se_sram_srw_65536x8 imem(sram_clock <- sram_clk,
+                                 select         <= 1,
+                                 read_not_write <= read_not_write,
+                                 write_enable   <= !read_not_write,
+                                 address        <= address,
+                                 write_data     <= data_out,
+                                 data_out       => data_in );
+        
+        cpu6502 cpu6502_0( clk <- cpu_clk,
+                           reset_n <= reset_n,
+                           ready <= 1b1,
+                           irq_n <= irq_n,
+                           nmi_n <= nmi_n,
+                           ba => ba,
+                           address => address,
+                           read_not_write => read_not_write,
+                           data_out => data_out,
+                           data_in <= data_in
+                         );
+    }
+
+    /*b All done */
+}

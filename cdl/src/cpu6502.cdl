@@ -1,0 +1,1353 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  cpu6502.cdl
+ * @brief CDL implementation of 6502 CPU core
+ *
+ * This is a (fairly) complete implementation of the original 6502
+ * processor; currently it is missing the decimal mode for add,
+ * though.
+ *
+ * The original 6502 is latch-based, using both levels of the clock.
+ *
+ * This implementation is fully synchronous, running from a single
+ * clock edge (although it used to use two edges to match the 6502
+ * behavior, this proved to be unnecessary).
+ *
+ * Because of this, read and write controls, addresses and write data
+ * are valid at the start of a cycle, and read data is expected to be
+ * valid at the end of the cycle - i.e. an asynchronous RAM is
+ * required. This asynchronous behavior is best handled by having an
+ * intermediate clock edge (i.e. using a faster clock to generate the
+ * CPU clock and an SRAM clock, which alternate).
+ *
+ * The BBC microcomputer effectively did just this, actually using one
+ * clock phase for CPU memory reads, and the other clock phase for
+ * video memory reads (oh for the days when memories were faster than
+ * logic...)
+ *
+ */
+
+/*a Types */
+/*t t_src_enable */
+typedef enum[4] {
+    src_en_acc  = 0,
+    src_en_x    = 1,
+    src_en_y    = 2,
+    src_en_sp   = 3,
+    src_en_psr  = 4,
+    src_en_zero = 5,
+    src_en_pcl  = 6,
+    src_en_pch  = 7,
+    src_en_num  = 8,
+} t_src_enable;
+
+/*t t_src_enables */
+typedef bit[src_en_num] t_src_enables;
+
+/*t t_src_write_enable */
+typedef enum[3] {
+    src_wr_en_acc   = 0,
+    src_wr_en_x     = 1,
+    src_wr_en_y     = 2,
+    src_wr_en_sp    = 3,
+    src_wr_en_psr   = 4,
+    src_wr_en_flags = 5,
+    src_wr_en_num   = 6,
+} t_src_write_enable;
+
+/*t t_src_write_enables */
+typedef bit[src_wr_en_num] t_src_write_enables;
+
+/*t t_ids_enable */
+typedef enum[3] {
+    ids_en_pc  = 0,
+    ids_en_src = 1,
+    ids_en_sp  = 2,
+    ids_en_pch = 3,
+    ids_en_dl  = 4,
+    ids_en_num = 5,
+} t_ids_enable;
+
+/*t t_ids_enables */
+typedef bit[ids_en_num] t_ids_enables;
+
+/*t t_mem_data_src */
+typedef enum[2] {
+    mem_data_src_src,
+    mem_data_src_pcl,
+    mem_data_src_pch,
+    mem_data_src_dl
+} t_mem_data_src;
+
+/*t t_dl_src */
+typedef enum[2] {
+    dl_src_data,
+    dl_src_alu,
+    dl_src_hold
+} t_dl_src;
+
+/*t t_pc_op */
+typedef enum[3] {
+    pc_op_hold,
+    pc_op_inc,
+    pc_op_branch_low,  // set PCL from ALU
+    pc_op_branch_high, // set PCH from ALU
+    pc_op_jump,        // set PCL,PCH from DL,data_in
+    pc_op_vector,      // set PCL,PCH to 0xfffa, 0xfffc or 0xfffe
+} t_pc_op;
+
+/*t t_useq_cycle */
+typedef enum[5] {
+    cycle_decode,
+    cycle_fetch,
+    cycle_alu_complete,
+    cycle_calc_zp_offset,
+    cycle_read_zp,
+    cycle_read_zp_inc_adl,
+    cycle_read_zp_adl_address_calc_index,
+    cycle_alu,
+    cycle_write_zp,
+    cycle_read_high,
+    cycle_dl_inc,
+    cycle_read_dl_adl,
+    cycle_write_dl_adl,
+    cycle_write_adh_adl,
+    cycle_read_pch_pcl_indirect,
+    cycle_read_dl_inc_pc,
+    cycle_read_pch_pcl,
+    cycle_push_src,
+    cycle_push_psr,
+    cycle_push_pch,
+    cycle_push_pcl,
+    cycle_inc_sp,
+    cycle_read_sp,
+    cycle_read_sp_psr_from_dl,
+    cycle_read_sp_to_pch_pcl,
+    cycle_bcc_pcl,
+    cycle_bcc_pch_bwd,
+    cycle_bcc_pch_fwd,
+} t_useq_cycle;
+
+/*t t_addressing_mode */
+typedef enum[4] {
+    am_implied,
+    am_immediate,
+    am_zero_page,
+    am_absolute,
+    am_zero_indexed,
+    am_absolute_indexed,
+    am_indirect_x,
+    am_indirect_y,
+    am_branch,
+    am_brk,
+    am_rts,
+    am_rti,
+    am_jsr,
+    am_jump,
+    am_jump_indirect,
+} t_addressing_mode;
+
+/*t t_flags */
+typedef struct {
+    bit z;
+    bit n;
+    bit c;
+    bit v;
+    bit i;
+    bit d;
+    bit b;
+} t_flags;
+
+/*t t_interrupt_reason */
+typedef enum[2] {
+    interrupt_reason_reset=0,
+    interrupt_reason_nmi  =1,
+    interrupt_reason_irq  =2,
+    interrupt_reason_brk  =3,
+} t_interrupt_reason;
+
+/*t t_interrupt_state */
+typedef struct {
+    bit nmi_last;
+    bit nmi_pending;
+    bit irq_pending;
+} t_interrupt_state;
+
+/*t t_state */
+typedef struct {
+    bit[8] acc;
+    bit[8] x;
+    bit[8] y;
+    bit[8] sp;
+    bit[8] pcl;
+    bit[8] pch;
+    bit[8] ir;
+    bit[8] dl;
+    t_flags psr;
+    bit[8] adl;
+    bit[8] adh;
+    t_useq_cycle cycle;
+    t_interrupt_reason interrupt_reason;
+} t_state;
+
+/*t t_ids_op */
+typedef enum[3] {
+    ids_op_lsl,
+    ids_op_rol,
+    ids_op_lsr,
+    ids_op_ror,
+    ids_op_pass,
+    ids_op_pass_2,
+    ids_op_dec,
+    ids_op_inc
+} t_ids_op;
+
+/*t t_add_a_in_a_op */
+typedef enum[2] {
+    add_a_in_op_pcl,
+    add_a_in_op_src,
+    add_a_in_op_zero,
+} t_add_a_in_op;
+
+/*t t_add_b_in_op */
+typedef enum[2] {
+    add_b_in_op_dl,
+    add_b_in_op_ids,
+    add_b_in_op_not_ids,
+} t_add_b_in_op;
+
+/*t t_alu_op */
+typedef enum[4] {
+    alu_op_or,
+    alu_op_and,
+    alu_op_bit,
+    alu_op_eor,
+    alu_op_a,
+    alu_op_b,
+    alu_op_adc,
+    alu_op_sbc,
+    alu_op_cmp, // does not set overflow, carry in of 1, unaffected by 'decimal'
+    alu_op_flags,
+} t_alu_op;
+
+/*t t_ir_decode */
+typedef struct {
+    bit bcc_passed;
+    t_addressing_mode addressing_mode;
+    bit memory_read  "For zero page/absolute/indirect addressing modes, indicates memory read is required";
+    bit memory_write "For zero page/absolute/indirect addressing modes, indicates memory write is required";
+    bit index_is_x   "Asserted unless indirect Y, absolute Y or zero page Y (if indexed at all)";
+    t_ids_enables     ids_enable;
+    t_src_enables       srcs     "Sources enabled for the instruction";
+    t_src_write_enables src_write_enable "Sources write-enabled for the instruction";
+    t_ids_op      ids_op "Inc/decrement/shift operation for the instruction";
+    t_add_a_in_op add_a_in_op;
+    t_add_b_in_op add_b_in_op;
+    bit           alu_carry_in_zero;
+    bit           alu_carry_in_one;
+    t_alu_op      alu_op;
+} t_ir_decode;
+
+/*t t_mem_request */
+typedef struct {
+    bit enable;
+    bit read_not_write;
+    bit[16] address;
+} t_mem_request;
+
+/*t t_useq_decode */
+typedef struct {
+    t_useq_cycle      next_cycle;
+    bit               last_cycle;
+    t_pc_op           pc_op;
+    t_src_enables     src_enable;
+    t_src_write_enables src_write_enable "Sources write-enabled for the instruction";
+    t_ids_enables     ids_enable;
+    t_ids_op          ids_op;
+    t_dl_src          dl_src;
+    t_mem_data_src    mem_data_src;
+    t_mem_request     mem_request;
+    t_add_a_in_op add_a_in_op;
+    t_add_b_in_op add_b_in_op;
+    t_alu_op      alu_op;
+} t_useq_decode;
+
+/*t t_alu_result */
+typedef struct {
+    bit[8] data;
+    bit carry;
+    bit overflow;
+    bit zero;
+    bit negative;
+    bit irq;
+    bit decimal;
+} t_alu_result;
+
+/*t t_data_path_decode */
+typedef struct {
+    bit carry_in;
+    bit[8] src_data;
+    bit[16] ids_data_in  "Data in to the increment/decrement/shift logic";
+    bit[16] ids_data_out "Data out of the increment/decrement/shift logic";
+    bit[8] add_a_in;
+    bit[8] add_b_in;
+    bit    add_carry_in;
+    bit[8] add_sum_lower;
+    bit[2] add_sum_higher;
+    bit[8] logical_result;
+    bit[8] mem_data_out "Data out to memory";
+    t_alu_result add_result;
+    t_alu_result result;
+} t_data_path;
+
+/*a Module cpu6502 */
+module cpu6502( clock clk "Clock, rising edge is start of phi1, end of phi2 - the phi1/phi2 boundary is not required",
+                input bit reset_n,
+                input bit ready "Stops processor during current instruction. Does not stop a write phase. Address bus reflects current address being read. Stops the phase 2 from happening.",
+                input bit irq_n "Active low interrupt in",
+                input bit nmi_n "Active low non-maskable interrupt in",
+                output bit ba "Goes high during phase 2 if ready was low in phase 1 if read_not_write is 1, to permit someone else to use the memory bus",
+                output bit[16] address    "In real 6502, changes during phi 1 with address to read or write",
+                output bit read_not_write "In real 6502, changes during phi 1 with whether to read or write",
+                output bit[8] data_out    "In real 6502, valid at end of phi2 with data to write",
+                input bit[8] data_in      "Captured at the end of phi2 (rising clock in here)"
+       )
+{
+    /*b Defaults */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Clock control variables */
+    comb bit clock_complete;
+
+    /*b State variables */
+    clocked t_state state = {*=0, cycle=cycle_decode, ir=0x00, interrupt_reason=interrupt_reason_reset};
+    comb bit irq_will_be_disabled;
+    clocked t_interrupt_state interrupt_state = {*=0};
+
+    /*b Decodes */
+    comb t_mem_request mem_request;
+    comb bit ir_fetch_required;
+    comb bit ir_fetch_brk;
+    comb t_useq_decode useq_decode;
+    comb t_ir_decode   ir_decode;
+
+    /*b Data path signals */
+    comb t_data_path data_path;
+
+    /*b Clock control logic */
+    clock_control "Clock control logic - phase 0 is always one tick, phase 1 can be extended for reads by 'ready'": {
+        clock_complete = ready;
+        if (mem_request.enable && !mem_request.read_not_write) {
+            clock_complete = 1;
+        }
+    }
+
+    /*b Memory interface logic */
+    memory_interface : {
+        ba = 0;
+
+        mem_request = useq_decode.mem_request;
+        if (ir_fetch_required) {
+            mem_request.enable = 1;
+            mem_request.read_not_write = 1;
+            mem_request.address = bundle(state.pch, state.pcl);
+        }
+
+        read_not_write = mem_request.read_not_write || !mem_request.enable;
+        address        = mem_request.address;
+        data_out       = data_path.mem_data_out;
+
+        if (clock_complete) {
+            if (ir_fetch_required) {
+                state.ir <= data_in;
+            }
+            if (ir_fetch_brk) {
+                state.ir <= 0;
+            }
+        }
+    }
+
+    /*b Interrupt handling */
+    interrupt_logic: {
+        interrupt_state.nmi_last    <= !nmi_n;
+        if (!nmi_n && !interrupt_state.nmi_last) {
+            interrupt_state.nmi_pending <= 1;
+        }
+        interrupt_state.irq_pending <= !irq_n;
+        ir_fetch_required = 0;
+        ir_fetch_brk      = 0;
+        if (useq_decode.last_cycle) {
+            state.interrupt_reason <= interrupt_reason_brk;
+            ir_fetch_required = 1;
+            ir_fetch_brk = 0;
+            if (interrupt_state.nmi_pending) {
+                state.interrupt_reason <= interrupt_reason_nmi;
+                ir_fetch_required = 0;
+                ir_fetch_brk = 1;
+            } elsif (interrupt_state.irq_pending && !irq_will_be_disabled) {
+                state.interrupt_reason <= interrupt_reason_irq;
+                ir_fetch_required = 0;
+                ir_fetch_brk = 1;
+            }
+        }
+        if (state.interrupt_reason==interrupt_reason_nmi) {
+            interrupt_state.nmi_pending <= 0;
+        }
+        if (!clock_complete) {
+            state.interrupt_reason <= state.interrupt_reason;
+        }
+    }
+
+    /*b State update */
+    state_update_logic: {
+        /* Update registers */
+        irq_will_be_disabled = state.psr.i;
+        if (useq_decode.src_write_enable[src_wr_en_acc])   { state.acc <= data_path.result.data; }
+        if (useq_decode.src_write_enable[src_wr_en_x])     { state.x <= data_path.result.data; }
+        if (useq_decode.src_write_enable[src_wr_en_y])     { state.y <= data_path.result.data; }
+        if (useq_decode.src_write_enable[src_wr_en_sp])    { state.sp <= data_path.result.data; }
+        if (useq_decode.src_write_enable[src_wr_en_flags]) {
+            irq_will_be_disabled = data_path.result.irq;
+            state.psr <= { c=data_path.result.carry,
+                    v=data_path.result.overflow,
+                    z=data_path.result.zero,
+                    n=data_path.result.negative,
+                    i=data_path.result.irq,
+                    d=data_path.result.decimal
+                    };
+        }
+        if (state.cycle==cycle_read_sp_psr_from_dl) {
+            state.psr <= { c=state.dl[0],
+                    z=state.dl[1],
+                    i=state.dl[2],
+                    v=state.dl[6],
+                    n=state.dl[7] };
+        }
+        if (state.cycle==cycle_push_psr) { 
+            irq_will_be_disabled = 1;
+            state.psr.i <= 1;
+        }
+        state.pcl <= state.pcl;
+        state.pch <= state.pch;
+
+        /*b adl, adh */
+        state.adl <= state.adl;
+        state.adh <= state.adh;
+        if (useq_decode.mem_request.enable) {
+            state.adl <= useq_decode.mem_request.address[8;0];
+            state.adh <= useq_decode.mem_request.address[8;8];
+        }
+        if (state.cycle==cycle_read_zp_inc_adl) {
+            state.adl <= state.dl+1; // from ids path, alu op pass, ids op inc
+        }
+        if (state.cycle==cycle_read_high) {
+            state.adl <= data_path.result.data;
+        }
+        if (state.cycle==cycle_read_zp_adl_address_calc_index) {
+            state.adl <= data_path.result.data; // from ids path, alu op add, index of 0 for indx, Y for indy
+        }
+
+        /*b dl */
+        full_switch (useq_decode.dl_src) {
+        case dl_src_alu:  {state.dl <= data_path.result.data;} // for dl_inc, dl_index, dl <= ALU src op dl
+        case dl_src_data: {state.dl <= data_in;} // for reads
+        case dl_src_hold: {state.dl <= state.dl;} // for holding while PC is pushed, for example
+        }
+
+        /*b PC (l and h) */
+        full_switch (useq_decode.pc_op) {
+        case pc_op_hold: {
+            state.pcl <= state.pcl;
+            state.pch <= state.pch; }
+        case pc_op_inc: { // fetch, decode, alu_complete
+            state.pcl <= state.pcl+1;
+            state.pch <= state.pch + ((state.pcl==-1)?1:0); }
+        case pc_op_branch_low: {
+            state.pcl <= data_path.result.data;
+            state.pch <= state.pch; }
+        case pc_op_branch_high: {
+            state.pcl <= state.pcl;
+            state.pch <= data_path.result.data; }
+        case pc_op_jump: {
+            state.pcl <= state.dl;
+            state.pch <= data_in; }
+        case pc_op_vector: {
+            state.pcl <= 0xfe; // IRQ/BRK
+            if (state.interrupt_reason==interrupt_reason_reset) {
+                state.pcl <= 0xfc; // reset
+            } elsif (state.interrupt_reason==interrupt_reason_nmi) {
+                state.pcl <= 0xfa; // NMI
+            }
+            state.pch <= 0xff; }
+        }
+
+        if (!clock_complete) {
+            state.dl <= state.dl;
+        state.acc <= state.acc;
+        state.x <= state.x;
+        state.y <= state.y;
+        state.psr <= state.psr;
+        state.sp <= state.sp;
+        state.pcl <= state.pcl;
+        state.pch <= state.pch;
+        state.adl <= state.adl;
+        state.adh <= state.adh;
+        }
+
+        /*b All done */
+    }
+
+    /*b Instruction decode logic - decode IR to ir_decode, for use in microsequencer */
+    instruction_decode "Decode 'ir' register (and other state, but not microsequencer)": {
+        /*b Decode addressing mode */
+        ir_decode.addressing_mode = am_implied;
+        full_switch (state.ir[5;0]) {
+        case 0, 2 : { ir_decode.addressing_mode = am_immediate; } // override for 0246.0 (brk, jsr, rti, rts)
+        case 1, 3 : { ir_decode.addressing_mode = am_indirect_x; }
+        case 4, 5, 6, 7 : { ir_decode.addressing_mode = am_zero_page; }
+        case 8, 10 : { ir_decode.addressing_mode = am_implied; } // override for 0246.8 (puhses)
+        case 9, 11 : { ir_decode.addressing_mode = am_immediate; }
+        case 12, 13, 14, 15 : { ir_decode.addressing_mode = am_absolute; } // override of jmp, jmp()
+        case 16 : { ir_decode.addressing_mode = am_branch; }
+        case 17, 19 : { ir_decode.addressing_mode = am_indirect_y; }
+        case 18 : { ir_decode.addressing_mode = am_implied; }
+        case 20, 21, 22, 23 : { ir_decode.addressing_mode = am_zero_indexed; }
+        case 24, 26 : { ir_decode.addressing_mode = am_implied; }
+        case 25, 27, 28, 29, 30, 31 : { ir_decode.addressing_mode = am_absolute_indexed; }
+        }
+        if (state.ir==0x00) { ir_decode.addressing_mode = am_brk; }
+        if (state.ir==0x20) { ir_decode.addressing_mode = am_jsr; }
+        if (state.ir==0x40) { ir_decode.addressing_mode = am_rti; }
+        if (state.ir==0x60) { ir_decode.addressing_mode = am_rts; }
+        if (state.ir==0x4c) { ir_decode.addressing_mode = am_jump; }
+        if (state.ir==0x6c) { ir_decode.addressing_mode = am_jump_indirect; }
+ 
+        /*b Decode inc/dec/shift operation */
+        ir_decode.ids_op = ids_op_pass;
+        part_switch (state.ir[3;5]) {
+        case 0: { ir_decode.ids_op = ids_op_lsl; } // 01.2367abef (kill later if x.014589cd)
+        case 1: { ir_decode.ids_op = ids_op_rol; } // 23.2367abef (kill later if x.014589cd)
+        case 2: { ir_decode.ids_op = ids_op_lsr; } // 45.2367abef (kill later if x.014589cd)
+        case 3: { ir_decode.ids_op = ids_op_ror; } // 67.2367abef (kill later if x.014589cd)
+        case 6: { ir_decode.ids_op = ids_op_dec; } // cd.2367abef (kill later if x.014589cd)
+        case 7: { ir_decode.ids_op = ids_op_inc; } // ef.2367abef (kill later if x.014589cd)
+        }
+        if (state.ir[1]==0) {ir_decode.ids_op = ids_op_pass;} // kill if x.014589cd
+        if (state.ir==8h88) {ir_decode.ids_op = ids_op_dec;} // for dey - a bit specific...
+        if (state.ir==8hc8) {ir_decode.ids_op = ids_op_inc;} // for iny - a bit specific...
+        if (state.ir==8he8) {ir_decode.ids_op = ids_op_inc;} // for inx - a bit specific...
+
+        /*b Decode ALU operation */
+        ir_decode.add_a_in_op = add_a_in_op_src;
+        ir_decode.add_b_in_op = add_b_in_op_ids;
+        ir_decode.alu_op  = alu_op_a;
+        part_switch (state.ir[3;5]) {
+        case 0: { ir_decode.alu_op = alu_op_or;  } // or  01.13579bdf (kill later if x.02468ace)
+        case 1: { ir_decode.alu_op = alu_op_and; } // and 23.13579bdf (kill later if x.02468ace)
+        case 2: { ir_decode.alu_op = alu_op_eor; } // eor 45.13579bdf (kill later if x.02468ace)
+        case 3: { ir_decode.alu_op = alu_op_adc; } // adc 67.13579bdf (kill later if x.02468ace)
+        case 4: { ir_decode.alu_op = alu_op_a;   } // st  89.13579bdf (kill later if x.02468ace)
+        case 5: { ir_decode.alu_op = alu_op_b;   } // ld  ab.13579bdf (kill later if x.02468ace)
+        case 6: { ir_decode.alu_op = alu_op_cmp; } // cmp cd.013579bdf (kill later if x.02468ace)
+        case 7: { ir_decode.alu_op = alu_op_sbc; } // sbc ef.013579bdf (kill later if x.02468ace)
+        }
+        if (state.ir[8;0]==8h24) { ir_decode.alu_op = alu_op_bit; }
+        if (state.ir[8;0]==8h2c) { ir_decode.alu_op = alu_op_bit; }
+        if (state.ir[8;0]==8he0) { ir_decode.alu_op = alu_op_cmp; } // for cpx really
+        if (state.ir[8;0]==8he4) { ir_decode.alu_op = alu_op_cmp; } // for cpx really
+        if (state.ir[8;0]==8hec) { ir_decode.alu_op = alu_op_cmp; } // for cpx really
+        if (state.ir[2;0]==2b10) {ir_decode.alu_op = alu_op_b;}     // kill if x.26ae
+        if (state.ir[5;0]==5h18) {ir_decode.alu_op = alu_op_flags;} // set flags unless 98, tya
+        if (state.ir==8h98)      {ir_decode.alu_op = alu_op_b;} // tya
+        if (state.ir[5;0]==5h08) {ir_decode.alu_op = alu_op_b;}     // for inx/iny,pla,plp etc
+        ir_decode.alu_carry_in_zero = 0; // possibly for lsl/lsr (0145.x)?
+        ir_decode.alu_carry_in_one = 0;  // 1 for x.048c except inc/decs and...
+        if ((state.ir[2;6]==3) && (state.ir[2;0]==0)) {ir_decode.alu_carry_in_one=1;} // for various unusual compares in cdef.x
+        if (state.ir[3;5]==6) {
+            if (state.ir[2;0]!=2) { // for the main compares (but not decrement
+                ir_decode.alu_carry_in_one=1;
+            }
+        }
+        if (state.ir[4;0]==8) {ir_decode.alu_carry_in_one=0;} // No forcing for the implied (inxy, dexy, etc)
+
+        /*b Decode inc/dec/shift source read enables */
+        ir_decode.ids_enable = 0;
+        ir_decode.ids_enable[ids_en_dl] = 1; // Should be all memory ops
+        if (state.ir[4;0]==4ha) { // x.a
+            ir_decode.ids_enable = 0;
+            ir_decode.ids_enable[ids_en_src] = 1; // shf.A, dex, some transfers
+        }
+        if (state.ir[3;5]==3h4) { // 89.x LOSE THIS? COVERED BY x.8?
+            ir_decode.ids_enable = 0;
+            ir_decode.ids_enable[ids_en_src] = 1; // dey particularly, but basically stores
+        }
+        if (state.ir[4;0]==4h8) { // x.8
+            ir_decode.ids_enable = 0;
+            if (state.ir[7]==0) { // 0-7.8 PLA,PLP
+                ir_decode.ids_enable[ids_en_dl] = 1;
+            } else {
+                ir_decode.ids_enable[ids_en_src] = 1; // dey,inx
+            }
+        }
+
+        /*b Decode source read enables */
+        ir_decode.srcs = 0;
+        if (state.ir[7]==0)      { ir_decode.srcs[src_en_acc] = 1; } // 01234567.x
+        if (state.ir[2;0]==2b01) { ir_decode.srcs[src_en_acc] = 1; } // x.159d
+        if (state.ir[2;0]==2b11) { ir_decode.srcs[src_en_acc] = 1; } // x.37bf (need to kill for b.x (TSX, ASX#)
+        if (state.ir[4;4]==4ha)  { ir_decode.srcs[src_en_acc] = 1; } // a.x (for tax, tay really)
+        if (state.ir[3;5]==3b100) { // 89.x
+            if (state.ir[1])         { ir_decode.srcs[src_en_x] = 1; } // STX, SAX, TXx
+            if (state.ir[2;0]==2b00) { ir_decode.srcs[src_en_y] = 1; } // STY, INY, TYA, DEY
+        }
+        if (state.ir[7;1]==(0xca>>1)) { ir_decode.srcs[src_en_x] = 1; } // c.ab DEX, ASX#
+        if (state.ir[2;0]==0) {
+            if (state.ir[3;5] == 3b110) { ir_decode.srcs[src_en_y] = 1; } // CPY, INY
+            if (state.ir[3;5] == 3b111) { ir_decode.srcs[src_en_x] = 1; } // CPX, INX
+        }
+        if (state.ir[4;4]==4hb)  { // TSX (and ASX#)
+            ir_decode.srcs=0;
+            ir_decode.srcs[src_en_sp] = 1;
+        }
+        if ((state.ir[2;6]==0) && (state.ir[4;0]==4h8))  { // 0-3.8 for php
+            ir_decode.srcs=0;
+            ir_decode.srcs[src_en_psr] = 1;
+        }
+
+        /*b Decode source write enables during ALU */
+        ir_decode.src_write_enable = 0;
+        ir_decode.src_write_enable[src_wr_en_flags] = 1;
+        if ((state.ir[3;5]!=6) && (state.ir[0]==1)) { ir_decode.src_write_enable[src_wr_en_acc] = 1; } // 0-bef.13579bdf
+        if (state.ir[7]==0) { // 0-7.a
+            if (state.ir[4;0]==4ha)  { ir_decode.src_write_enable[src_wr_en_acc] = 1; } // 0-7.a (for asl, rol, lsr, ror A)
+        }
+        if (state.ir==8h8a) { ir_decode.src_write_enable[src_wr_en_acc] = 1; } // 8.a, TXA
+        if (state.ir==8h98) { ir_decode.src_write_enable[src_wr_en_acc] = 1; } // 98, TYA
+        if (state.ir==8h68) { ir_decode.src_write_enable[src_wr_en_acc] = 1; } // 68, PLA
+
+        if ((state.ir[3;5]==5) && (state.ir[1]==1)) { ir_decode.src_write_enable[src_wr_en_x] = 1; } // ab.2367abef
+        if (state.ir==8hca)  { ir_decode.src_write_enable[src_wr_en_x] = 1; } // dex
+        if (state.ir==8hcb)  { ir_decode.src_write_enable[src_wr_en_x] = 1; } // undocumented x<=(X&A) - immediates
+        if (state.ir==8he8)  { ir_decode.src_write_enable[src_wr_en_x] = 1; } // inx
+
+        if ((state.ir==8h88) || (state.ir==8hc8))  { ir_decode.src_write_enable[src_wr_en_y] = 1; } // iny/dey
+        if ((state.ir==8hb4) || (state.ir==8hbc))  { ir_decode.src_write_enable[src_wr_en_y] = 1; } // ldy
+        if ((state.ir[4;4]==4ha) && (state.ir[2;0]==0))  { ir_decode.src_write_enable[src_wr_en_y] = 1; } // ldy, tay
+
+        if (state.ir==8h9a)  { ir_decode.src_write_enable[src_wr_en_sp] = 1; } // txs
+        if (state.ir==8h9a)  { ir_decode.src_write_enable[src_wr_en_flags] = 0; } // txs - could be some others too
+        if (state.ir==8h48)  { ir_decode.src_write_enable[src_wr_en_flags] = 0; } // nop - could be some others too
+        if (state.ir==8h08)  { ir_decode.src_write_enable[src_wr_en_flags] = 0; } // nop - could be some others too
+        if (state.ir==8hea)  { ir_decode.src_write_enable[src_wr_en_flags] = 0; } // nop - could be some others too
+
+        /*b Decode which index register */
+        ir_decode.index_is_x = 1;
+        if (state.ir[4] && (state.ir[2;2]==0)) { ir_decode.index_is_x=0; } // for indirect,Y (13579bdef.0123)
+        if (state.ir[4] && (state.ir[2;2]==2)) { ir_decode.index_is_x=0; } // for abs,y (13579bdef.89ab)
+        if ((state.ir[2;6]==2) && (state.ir[2;1]==3)) { ir_decode.index_is_x=0; } // ld/st zp,Y 89ab.67ef
+
+        /*b Decode instruction memory read or write intention (for zero/absolute/indirect addressing modes) */
+        ir_decode.memory_read = 1;
+        ir_decode.memory_write = 0;
+        if (state.ir[3;5]==3b100) { // 8x, 9x are stores
+            ir_decode.memory_read = 0;
+            ir_decode.memory_write = 1;
+        } elsif (state.ir[3;5]==3b101) { // ax, bx are loads
+            ir_decode.memory_read = 1;
+            ir_decode.memory_write = 0;
+        } else { // For all others, x2367abef are read-modify-write
+            ir_decode.memory_read = 1;
+            ir_decode.memory_write = 0;
+            if (state.ir[1]) {
+                ir_decode.memory_write = 1;
+            }
+        }
+
+        /*b Decode branch condition */
+        ir_decode.bcc_passed = 0;
+        full_switch (state.ir[3;5]) {
+        case 0: { ir_decode.bcc_passed = !state.psr.n; } // bpl
+        case 1: { ir_decode.bcc_passed =  state.psr.n; } // bmi
+        case 2: { ir_decode.bcc_passed = !state.psr.v; } // bvc
+        case 3: { ir_decode.bcc_passed =  state.psr.v; } // bvs
+        case 4: { ir_decode.bcc_passed = !state.psr.c; } // bcc
+        case 5: { ir_decode.bcc_passed =  state.psr.c; } // bcs
+        case 6: { ir_decode.bcc_passed = !state.psr.z; } // bne
+        case 7: { ir_decode.bcc_passed =  state.psr.z; } // beq
+        }
+
+        /*b Tick on cycle of instruction */
+        if (clock_complete) {
+            state.cycle <= useq_decode.next_cycle;
+            if (useq_decode.last_cycle) {
+                state.cycle <= cycle_decode;
+            }
+        }
+
+        /*b All done */
+    }
+
+    /*b Microsequencer decode - use ir_decode and cycle to create useq_decode, controls for the cycle */
+    microsequencer_decode : {
+        /*b Decode src sources */
+        useq_decode.src_enable = 0;
+        if (ir_decode.index_is_x) {
+            useq_decode.src_enable[src_en_x] = 1;
+        } else {
+            useq_decode.src_enable[src_en_y] = 1;
+        }
+        part_switch (state.cycle) {
+        case cycle_alu, cycle_alu_complete, cycle_write_zp, cycle_write_dl_adl, cycle_push_src: {
+            useq_decode.src_enable = ir_decode.srcs;
+        }
+        case cycle_bcc_pcl, cycle_push_pcl: {
+            useq_decode.src_enable = 0;
+            useq_decode.src_enable[src_en_pcl] = 1;
+        }
+        case cycle_push_pch: {
+            useq_decode.src_enable = 0;
+            useq_decode.src_enable[src_en_pch] = 1;
+        }
+        case cycle_push_psr: {
+            useq_decode.src_enable = 0;
+            useq_decode.src_enable[src_en_psr] = 1;
+        }
+        }
+
+        /*b Decode inc/dec/shift source - depends on pc_op
+          inc/dec/shift source is src for the ALU cycle
+          for SP increment it is SP
+          for read indirect address calculation it is DL
+          for branch calculation it is PCL
+          for branch crossing page it is PCH
+         */
+        useq_decode.ids_enable = 0;
+        if (state.cycle==cycle_alu_complete) {
+            useq_decode.ids_enable = ir_decode.ids_enable;
+        }
+        if (state.cycle==cycle_alu) {
+            useq_decode.ids_enable = ir_decode.ids_enable;
+        }
+        if (state.cycle==cycle_calc_zp_offset) { // calculate dl + index (low address)
+            useq_decode.ids_enable[ids_en_dl] = 1;
+        }
+        if (state.cycle==cycle_read_high) { // calculate dl + index (low address)
+            useq_decode.ids_enable[ids_en_dl] = 1;
+        }
+        if (state.cycle==cycle_read_zp_adl_address_calc_index) { // calculate dl + index (low address)
+            useq_decode.ids_enable[ids_en_dl] = 1;
+        }
+        if (state.cycle==cycle_dl_inc) { // calculate dl + 1 (high address)
+            useq_decode.ids_enable[ids_en_dl] = 1;
+        }
+        if (state.cycle==cycle_bcc_pcl) {
+            useq_decode.ids_enable[ids_en_dl] = 1;
+        }
+        if (state.cycle==cycle_bcc_pch_bwd) {
+            useq_decode.ids_enable[ids_en_pch] = 1;
+        }
+        if (state.cycle==cycle_bcc_pch_fwd) {
+            useq_decode.ids_enable[ids_en_pch] = 1;
+        }
+        if ( (state.cycle==cycle_push_src) ||
+             (state.cycle==cycle_push_psr) ||
+             (state.cycle==cycle_push_pcl) ||
+             (state.cycle==cycle_push_pch) ) {
+            useq_decode.ids_enable[ids_en_sp] = 1;
+        }
+        if ((state.cycle==cycle_inc_sp) ||
+            (state.cycle==cycle_read_sp_psr_from_dl)||
+            (state.cycle==cycle_read_sp)) {
+            useq_decode.ids_enable[ids_en_sp] = 1;
+        }
+
+        /*b Decode inc/dec operation - depends on pc_op */
+        useq_decode.ids_op = ids_op_pass;
+        if (state.cycle==cycle_alu_complete) {
+            useq_decode.ids_op = ir_decode.ids_op;
+        }
+        if (state.cycle==cycle_alu) {
+            useq_decode.ids_op = ir_decode.ids_op;
+        }
+        if (state.cycle==cycle_bcc_pch_bwd) {
+            useq_decode.ids_op  = ids_op_dec;
+        }
+        if (state.cycle==cycle_bcc_pch_fwd) {
+            useq_decode.ids_op  = ids_op_inc;
+        }
+        if (state.cycle==cycle_dl_inc) {
+            useq_decode.ids_op  = ids_op_inc;
+        }
+        if ( (state.cycle==cycle_push_src) ||
+             (state.cycle==cycle_push_psr) ||
+             (state.cycle==cycle_push_pcl) ||
+             (state.cycle==cycle_push_pch) ) {
+            useq_decode.ids_op  = ids_op_dec;
+        }
+        if ((state.cycle==cycle_inc_sp) ||
+            (state.cycle==cycle_read_sp_psr_from_dl)||
+            (state.cycle==cycle_read_sp)) {
+            useq_decode.ids_op  = ids_op_inc;
+        }
+
+        /*b Decode ALU operation */
+        useq_decode.add_a_in_op = add_a_in_op_src; // zero, pcl, src
+        useq_decode.add_b_in_op = add_b_in_op_ids; // ids, not_ids, dl
+        useq_decode.alu_op  = alu_op_a;
+        if ((state.cycle==cycle_alu_complete) || (state.cycle==cycle_alu)) {
+            useq_decode.alu_op  = ir_decode.alu_op;
+            if (ir_decode.alu_op==alu_op_sbc) { useq_decode.add_b_in_op = add_b_in_op_not_ids; }
+            if (ir_decode.alu_op==alu_op_cmp) { useq_decode.add_b_in_op = add_b_in_op_not_ids; }
+        }
+        if (state.cycle==cycle_calc_zp_offset) {
+            useq_decode.alu_op  = alu_op_adc;
+            if (ir_decode.addressing_mode==am_zero_page) {useq_decode.add_a_in_op = add_a_in_op_zero;}
+        }
+        if (state.cycle==cycle_read_high) {
+            useq_decode.alu_op  = alu_op_adc;
+            if (ir_decode.addressing_mode==am_absolute) {useq_decode.add_a_in_op = add_a_in_op_zero;}
+        }
+        if (state.cycle==cycle_read_zp_adl_address_calc_index) {
+            useq_decode.alu_op  = alu_op_adc;
+            if (ir_decode.addressing_mode==am_indirect_x) {useq_decode.add_a_in_op = add_a_in_op_zero;}
+        }
+        if (state.cycle==cycle_bcc_pcl) {
+            useq_decode.alu_op  = alu_op_adc;
+        }
+        if (state.cycle==cycle_bcc_pch_bwd) {
+            useq_decode.alu_op  = alu_op_b;
+        }
+        if (state.cycle==cycle_bcc_pch_fwd) {
+            useq_decode.alu_op  = alu_op_b;
+        }
+        if (state.cycle==cycle_dl_inc) {
+            useq_decode.alu_op  = alu_op_b;
+        }
+        if ( (state.cycle==cycle_push_src) ||
+             (state.cycle==cycle_push_psr) ||
+             (state.cycle==cycle_push_pcl) ||
+             (state.cycle==cycle_push_pch) ) {
+            useq_decode.alu_op  = alu_op_b;
+        }
+        if ((state.cycle==cycle_inc_sp) ||
+            (state.cycle==cycle_read_sp_psr_from_dl)||
+            (state.cycle==cycle_read_sp)) {
+            useq_decode.alu_op  = alu_op_b;
+        }
+
+        /*b Decode DL source */
+        useq_decode.dl_src = dl_src_data;
+        if (state.cycle==cycle_calc_zp_offset) {
+            useq_decode.dl_src = dl_src_alu;
+        }
+        if (state.cycle==cycle_dl_inc) {
+            useq_decode.dl_src = dl_src_alu;
+        }
+        if (state.cycle==cycle_alu) {
+            useq_decode.dl_src = dl_src_alu;
+        }
+        if ((state.cycle==cycle_push_pcl) || (state.cycle==cycle_push_pch)) {
+            useq_decode.dl_src = dl_src_hold;
+        }
+
+        /*b Decode write of registers */
+        useq_decode.src_write_enable = 0;
+        if ((state.cycle==cycle_alu_complete) || (state.cycle==cycle_alu)) {
+            useq_decode.src_write_enable = ir_decode.src_write_enable;
+        }
+        if ( (state.cycle==cycle_push_src) ||
+             (state.cycle==cycle_push_psr) ||
+             (state.cycle==cycle_push_pcl) ||
+             (state.cycle==cycle_push_pch) ) {
+            useq_decode.src_write_enable[src_wr_en_sp] = 1;
+        }
+        if (state.cycle==cycle_inc_sp) {
+            useq_decode.src_write_enable[src_wr_en_sp] = 1;
+        }
+        if (state.cycle==cycle_read_sp) {
+            if (ir_decode.addressing_mode==am_rts) { // When reading for RTS there is a simultaneous inc
+                useq_decode.src_write_enable[src_wr_en_sp] = 1;
+            }
+            if (ir_decode.addressing_mode==am_rti) { // When reading for RTI there is a simultaneous inc
+                useq_decode.src_write_enable[src_wr_en_sp] = 1;
+            }
+        }
+        if (state.cycle==cycle_read_sp_psr_from_dl) {
+            useq_decode.src_write_enable[src_wr_en_sp] = 1;
+        }
+
+        /*b Decode actual memory read or write intention (for zero/absolute/indirect addressing modes) */
+        useq_decode.mem_request = {enable=0, read_not_write=1, address=bundle(state.pch, state.pcl)};
+        useq_decode.mem_data_src = mem_data_src_src;
+        
+        part_switch (state.cycle) {
+        case cycle_decode:         { useq_decode.mem_request.enable = 1; }
+        case cycle_read_dl_inc_pc: { useq_decode.mem_request.enable = 1; }
+        case cycle_fetch:          { useq_decode.mem_request.enable = 1; }
+        case cycle_read_high:      { useq_decode.mem_request.enable = 1; }
+        case cycle_alu_complete:   { useq_decode.mem_request.enable = 0; }
+        case cycle_calc_zp_offset: { useq_decode.mem_request.enable = 0; }
+        case cycle_read_zp, cycle_read_zp_inc_adl: {
+            useq_decode.mem_request = {enable=1, read_not_write=1, address=bundle(8b0,state.dl)};
+        }
+        case cycle_write_zp: {
+            useq_decode.mem_request = {enable=1, read_not_write=0, address=bundle(8b0,state.dl)};
+        }
+        case cycle_read_zp_adl_address_calc_index: {
+            useq_decode.mem_request = {enable=1, read_not_write=1, address=bundle(8b0, state.adl)};
+        }
+        case cycle_read_dl_adl: {
+            useq_decode.mem_request = {enable=1, read_not_write=1, address=bundle(state.dl, state.adl)};
+        }
+        case cycle_write_dl_adl: {
+            useq_decode.mem_request = {enable=1, read_not_write=0, address=bundle(state.dl, state.adl)};
+        }
+        case cycle_write_adh_adl: {
+            useq_decode.mem_request = {enable=1, read_not_write=0, address=bundle(state.adh, state.adl)};
+            useq_decode.mem_data_src = mem_data_src_dl;
+        }
+        case cycle_read_pch_pcl: { useq_decode.mem_request.enable = 1; }
+        case cycle_read_pch_pcl_indirect: { useq_decode.mem_request.enable = 1; }
+        case cycle_push_src, cycle_push_psr, cycle_push_pcl, cycle_push_pch: {
+            useq_decode.mem_request = {enable=1, read_not_write=0, address=bundle(8b1,state.sp)};
+        }
+        case cycle_read_sp, cycle_read_sp_psr_from_dl, cycle_read_sp_to_pch_pcl: {
+            useq_decode.mem_request = {enable=1, read_not_write=1, address=bundle(8b1,state.sp)};
+        }
+        }
+
+        /*b Microcode sequencer itself - decode cycle (and branch condition and carry from adder) and addressing mode to pc_op, next_cycle, last_cycle */
+        useq_decode.next_cycle = cycle_decode;   
+        useq_decode.last_cycle = 0;
+        useq_decode.pc_op = pc_op_hold;
+        full_switch (state.cycle) {
+          /*b case cycle_decode */
+        case cycle_decode: {
+            /*b Decode cycle - always reads into DL, increments PC unless in RTx, SEx/CLx, Txx, INXY, DEXY, PHx, PLx, SHF A */
+            useq_decode.pc_op = pc_op_inc;
+            if (ir_decode.addressing_mode==am_implied) {
+                useq_decode.pc_op = pc_op_hold;
+            }
+            if ((ir_decode.addressing_mode==am_brk) && (state.interrupt_reason!=interrupt_reason_brk)) { // quite possibly we should really decrement on interrupt and not kill a previous increment?
+                useq_decode.pc_op = pc_op_hold;
+            }
+            /*b Next cycle
+            implied (SHF A, transfer, INXY, DEXY, SEx/CLx) => src=src ALU incdec(dl) or src=src ALU incdec(src)
+            zero page    => if memory_read,read (zero,dl); else write (zero,dl)
+            zero indexed => calculate offset (dl + index)
+            absolute     => read high and calculate offset (dl+0/index)
+            indirect_x   => calculate offset (dl + index)
+            indirect_y   => read (zero,dl) and increment adl
+            branch       => condition ? bcc_pcl else fetch
+            */
+            useq_decode.next_cycle = cycle_alu_complete;
+            part_switch (ir_decode.addressing_mode) {
+            case am_implied:          {
+                useq_decode.next_cycle = cycle_alu_complete;
+                if ((state.ir==8h08) || (state.ir==8h48)) { useq_decode.next_cycle = cycle_push_src; }
+                if ((state.ir==8h28) || (state.ir==8h68)) { useq_decode.next_cycle = cycle_inc_sp; }
+            }
+            case am_immediate:        { useq_decode.next_cycle = cycle_alu_complete; }
+            case am_branch:           { useq_decode.next_cycle = ir_decode.bcc_passed ? cycle_bcc_pcl : cycle_fetch; }
+            case am_zero_page:        { useq_decode.next_cycle = ir_decode.memory_read ? cycle_read_zp : cycle_write_zp; }
+            case am_zero_indexed:     { useq_decode.next_cycle = cycle_calc_zp_offset; }
+            case am_indirect_x:       { useq_decode.next_cycle = cycle_calc_zp_offset; }
+            case am_indirect_y:       { useq_decode.next_cycle = cycle_read_zp_inc_adl; }
+            case am_absolute:         { useq_decode.next_cycle = cycle_read_high; }
+            case am_absolute_indexed: { useq_decode.next_cycle = cycle_read_high; }
+            case am_brk:              { useq_decode.next_cycle = cycle_push_pch; }
+            case am_rti:              { useq_decode.next_cycle = cycle_inc_sp; }   // decode, inc_sp, read_psr, read_sp, read_sp_to_pch_pcl, fetch
+            case am_rts:              { useq_decode.next_cycle = cycle_inc_sp; }   // decode, inc_sp, read_sp, read_sp_to_pch_pcl, read_dl_inc_pc, fetch
+            case am_jsr:              { useq_decode.next_cycle = cycle_push_pch; }     // decode, push_pch, push_pcl, read_pch_pcl, fetch
+            case am_jump:             { useq_decode.next_cycle = cycle_read_pch_pcl; } // decode, read_pch_pcl, fetch
+            case am_jump_indirect:    { useq_decode.next_cycle = cycle_read_pch_pcl_indirect; } // decode, read_pch_pcl_indirect, readl_dl_inc_pc, read_pch_pcl, fetch
+            }
+        }
+          /*b case cycle_fetch - fetch and increment PC */
+        case cycle_fetch: {
+            useq_decode.pc_op = pc_op_inc;
+            useq_decode.last_cycle = 1;
+        }
+          /*b case cycle_alu_complete - do ALU and fetch and increment PC */
+        case cycle_alu_complete: {
+            useq_decode.pc_op = pc_op_inc;
+            useq_decode.last_cycle = 1;
+        }
+          /*b case cycle_calc_zp_offset - add index to dl */
+        case cycle_calc_zp_offset: {
+            useq_decode.next_cycle = ir_decode.memory_read ? cycle_read_zp : cycle_write_zp;
+            if (ir_decode.addressing_mode==am_indirect_x) { useq_decode.next_cycle = cycle_read_zp_inc_adl;}
+        }
+          /*b case cycle_read_zp - read zero page, keeping adl/adh the same*/
+        case cycle_read_zp: {
+            useq_decode.next_cycle = cycle_alu_complete;
+            if (ir_decode.memory_write) { // must be read-modify-write - so do ALU calculation in next tick
+                useq_decode.next_cycle = cycle_alu;
+            }
+        }
+          /*b case cycle_read_zp_inc_adl - read zero page (0,dl) to dl, incrementing adl for next cycle */
+        case cycle_read_zp_inc_adl: {
+            useq_decode.next_cycle = cycle_read_zp_adl_address_calc_index;
+        }
+          /*b case cycle_read_zp_adl_address_calc_index - read zero page (0,adl) (to dl), storing dl in adl */
+        case cycle_read_zp_adl_address_calc_index: {
+            useq_decode.next_cycle = cycle_dl_inc;
+            if (data_path.result.carry==0) {
+                useq_decode.next_cycle = cycle_read_dl_adl;
+                if (!ir_decode.memory_read && ir_decode.memory_write) {
+                    useq_decode.next_cycle = cycle_write_dl_adl;
+                }
+            }
+        }
+          /*b case cycle_bcc_pcl */
+        case cycle_bcc_pcl: {
+            useq_decode.pc_op = pc_op_branch_low;
+            useq_decode.next_cycle = state.dl[7] ? cycle_bcc_pch_bwd : cycle_bcc_pch_fwd;
+            if (data_path.result.carry==state.dl[7]) {
+                useq_decode.next_cycle = cycle_fetch;
+            }
+        }
+          /*b case cycle_bcc_pch_fwd */
+        case cycle_bcc_pch_fwd: {
+            useq_decode.pc_op = pc_op_branch_high;
+            useq_decode.next_cycle = cycle_fetch;
+        }
+          /*b case cycle_bcc_pch_bwd */
+        case cycle_bcc_pch_bwd: {
+            useq_decode.pc_op = pc_op_branch_high;
+            useq_decode.next_cycle = cycle_fetch;
+        }
+          /*b case cycle_alu */
+        case cycle_alu: {
+            useq_decode.next_cycle = cycle_write_adh_adl;
+        }
+          /*b case cycle_write_zp */
+        case cycle_write_zp: {
+            useq_decode.next_cycle = cycle_fetch;
+        }
+          /*b case cycle_write_dl_adl */
+        case cycle_write_dl_adl: {
+            useq_decode.next_cycle = cycle_fetch;
+        }
+          /*b case cycle_write_adh_adl */
+        case cycle_write_adh_adl: {
+            useq_decode.next_cycle = cycle_fetch;
+        }
+          /*b case cycle_read_high - read into DL for ADH, adding zero/index to DL and storing in ADL */
+        case cycle_read_high: {
+            useq_decode.pc_op = pc_op_inc;
+            useq_decode.next_cycle = cycle_dl_inc;
+            if (data_path.result.carry==0) {
+                useq_decode.next_cycle = cycle_read_dl_adl;
+                if (!ir_decode.memory_read && ir_decode.memory_write) {
+                    useq_decode.next_cycle = cycle_write_dl_adl;
+                }
+            }
+        }
+          /*b case cycle_dl_inc - Increment DL for ADH (as carry from previous read_high) */
+        case cycle_dl_inc: {
+            useq_decode.next_cycle = cycle_read_dl_adl;
+            if (!ir_decode.memory_read && ir_decode.memory_write) {
+                useq_decode.next_cycle = cycle_write_dl_adl;
+            }
+        }
+          /*b case cycle_read_dl_adl - read from (dl,adl) and then later do ALU and if necessary writeback to same address */
+        case cycle_read_dl_adl: {
+            useq_decode.next_cycle = cycle_alu_complete;
+            if (ir_decode.memory_write) { // must be read-modify-write - so do ALU calculation in next tick
+                useq_decode.next_cycle = cycle_alu;
+            }
+        }
+          /*b case cycle_push_src - Write src to (sp) and decrement sp */
+        case cycle_push_src: {
+            useq_decode.next_cycle = cycle_fetch;
+        }
+          /*b case cycle_push_pch - Write PCH to (sp) and decrement sp (for JSR, BRK) */
+        case cycle_push_pch: {
+            useq_decode.next_cycle = cycle_push_pcl;
+        }
+          /*b case cycle_push_pcl - Write PCL to (sp) and decrement sp (for JSR, BRK) */
+        case cycle_push_pcl: {
+            useq_decode.next_cycle = cycle_read_pch_pcl;
+            if (ir_decode.addressing_mode == am_brk) {
+                useq_decode.next_cycle = cycle_push_psr;
+            }
+        }
+          /*b case cycle_push_psr - Write src to (sp) and decrement sp */
+        case cycle_push_psr: {
+            useq_decode.pc_op = pc_op_vector;
+            useq_decode.next_cycle = cycle_read_dl_inc_pc;
+        }
+          /*b case cycle_inc_sp - Increment sp as first step of pop */
+        case cycle_inc_sp: {
+            useq_decode.next_cycle = cycle_read_sp;
+        }
+          /*b case cycle_read_sp - read into DL from sp */
+        case cycle_read_sp: {
+            useq_decode.next_cycle = cycle_alu_complete; // for pla, plp
+            if (ir_decode.addressing_mode==am_rts) {
+                useq_decode.next_cycle = cycle_read_sp_to_pch_pcl;
+            }
+            if (ir_decode.addressing_mode==am_rti) {
+                useq_decode.next_cycle = cycle_read_sp_psr_from_dl;
+            }
+        }
+          /*b case cycle_read_sp_psr_from_dl - read into DL from sp, move DL to PSR */
+        case cycle_read_sp_psr_from_dl: {
+            useq_decode.next_cycle = cycle_read_sp_to_pch_pcl;
+        }
+          /*b case cycle_read_sp_to_pch_pcl - read into PCH from SP and current DL -> PCL */
+        case cycle_read_sp_to_pch_pcl: {
+            useq_decode.pc_op = pc_op_jump;
+            useq_decode.next_cycle = cycle_read_dl_inc_pc;
+            if (ir_decode.addressing_mode==am_rti) {
+                useq_decode.next_cycle = cycle_fetch;
+            }
+        }
+          /*b case cycle_read_pch_pcl_indirect - read into PCH from PC, copying DL in to PCL, for JMP() */
+        case cycle_read_pch_pcl_indirect: {
+            useq_decode.pc_op = pc_op_jump;
+            useq_decode.next_cycle = cycle_read_dl_inc_pc;
+        }
+          /*b case cycle_read_dl_inc_pc - effectively same as decode but always doing a jump */
+        case cycle_read_dl_inc_pc: {
+            useq_decode.pc_op = pc_op_inc;
+            useq_decode.next_cycle = cycle_read_pch_pcl; // for jump, jump indirect
+            if (state.ir==8h60) { // for RTS
+                useq_decode.next_cycle = cycle_fetch;
+            }
+        }
+          /*b case cycle_read_pch_pcl - read into PCH, copying DL in to PCL, for JMP, JSR, JMP() */
+        case cycle_read_pch_pcl: {
+            useq_decode.pc_op = pc_op_jump;
+            useq_decode.next_cycle = cycle_fetch;
+        }
+        }
+
+        /*b Kill pc op if interrupt etc */
+        if (ir_fetch_brk) {
+            useq_decode.pc_op = pc_op_hold;
+        }
+
+        /*b All done */
+    }
+
+    /*b Data path logic - use useq_decode and state to control the whole data_path */
+    datapath "Data path - drive buses, perform shift, inc/dec, ALU operations": {
+        /*b data_path.src_data - drive with one (or more) of A, X, Y, SP */
+        data_path.src_data = 0;
+        if (useq_decode.src_enable[src_en_acc])  { data_path.src_data |= ~state.acc; }
+        if (useq_decode.src_enable[src_en_x])    { data_path.src_data |= ~state.x;   }
+        if (useq_decode.src_enable[src_en_y])    { data_path.src_data |= ~state.y;   }
+        if (useq_decode.src_enable[src_en_sp])   { data_path.src_data |= ~state.sp;  }
+        if (useq_decode.src_enable[src_en_pcl])  { data_path.src_data |= ~state.pcl;  }
+        if (useq_decode.src_enable[src_en_pch])  { data_path.src_data |= ~state.pch;  }
+        if (useq_decode.src_enable[src_en_psr])  { data_path.src_data |= ~bundle(state.psr.n,
+                                                                                 state.psr.v,
+                                                                                 1b0,
+                                                                                 (1b1 & ((ir_decode.addressing_mode==am_brk) & (state.interrupt_reason==interrupt_reason_brk))),
+                                                                                 state.psr.d,
+                                                                                 state.psr.i,
+                                                                                 state.psr.z,
+                                                                                 state.psr.c); }
+        if (useq_decode.src_enable[src_en_zero]) { data_path.src_data |= -1;  } // Possibly this is not a source
+        data_path.src_data = ~data_path.src_data;
+
+        /*b data_path.ids_data_in - drive with one (or more) of PC (for increment PC), SRC (index or data source), PCH (for branch across page), DL (for ADL<=DL+1) */
+        // data_path.ids_data_in is 16 bits of PC, or (7 bits 1, carry in, src) for shift
+        data_path.ids_data_in = 0;
+        // consider useq_decode.alu_carry_in_zero which should be set for index adds...
+        data_path.carry_in = 0;
+        if ((state.cycle==cycle_alu) || (state.cycle==cycle_alu_complete)) {
+            data_path.carry_in = state.psr.c;
+            if (ir_decode.alu_carry_in_zero) { data_path.carry_in = 0; }
+            if (ir_decode.alu_carry_in_one)  { data_path.carry_in = 1; }
+        }
+        if (useq_decode.ids_enable[ids_en_pc])  { data_path.ids_data_in |= ~bundle(state.pch, state.pcl); } // for incrementing pc
+        if (useq_decode.ids_enable[ids_en_sp])  { data_path.ids_data_in |= ~bundle(8b1, state.sp); } // for incrementing/decrementing sp
+        if (useq_decode.ids_enable[ids_en_src]) { data_path.ids_data_in |= ~bundle(7b1, data_path.carry_in, data_path.src_data); } // for shift, inc, dec
+        if (useq_decode.ids_enable[ids_en_pch]) { data_path.ids_data_in |= ~bundle(state.pch, state.pch); } // for branch across page
+        if (useq_decode.ids_enable[ids_en_dl])  { data_path.ids_data_in |= ~bundle(7b1, data_path.carry_in, state.dl); } // for indirect addressing, most ALU
+        data_path.ids_data_in = ~data_path.ids_data_in;
+
+        /*b data_path.ids_data_out - perform increment, decrement, shift, or pass */
+        // Note that data_path.ids_data_out is a 16-bit increment, or (xxx_xxxx, shift carry, 8-bit shift result)
+        data_path.ids_data_out = data_path.ids_data_in;
+        full_switch (useq_decode.ids_op) {
+        case ids_op_inc: {
+            data_path.ids_data_out = bundle(data_path.ids_data_in[8;8], data_path.ids_data_in[8;0]+1);
+        }
+        case ids_op_dec: {
+            data_path.ids_data_out = bundle(data_path.ids_data_in[8;8], data_path.ids_data_in[8;0]-1);
+        }
+        case ids_op_lsl: {
+            data_path.ids_data_out = bundle(data_path.ids_data_in[7;8], data_path.ids_data_in[8;0], 1b0);
+        }
+        case ids_op_rol: {
+            data_path.ids_data_out = bundle(data_path.ids_data_in[7;8], data_path.ids_data_in[8;0], data_path.ids_data_in[8]);
+        }
+        case ids_op_lsr: {
+            data_path.ids_data_out = bundle(data_path.ids_data_in[7;8], data_path.ids_data_in[0], 1b0, data_path.ids_data_in[7;1]);
+        }
+        case ids_op_ror: {
+            data_path.ids_data_out = bundle(data_path.ids_data_in[7;8], data_path.ids_data_in[0], data_path.ids_data_in[8;1]);
+        }
+        default: {
+            data_path.ids_data_out = data_path.ids_data_in;
+        }
+        }
+
+        /*b add_carry_in - zero, one, carry flag */
+        data_path.add_carry_in = data_path.ids_data_out[8];
+
+        /*b add_a_in - zero, index (src in fact) or pcl for microsequencer, else src for adc/sbc/cmp for operation */
+        data_path.add_a_in = data_path.src_data;
+        full_switch (useq_decode.add_a_in_op) {
+        case add_a_in_op_src:  { data_path.add_a_in = data_path.src_data; }
+        case add_a_in_op_zero: { data_path.add_a_in = 0; }
+        case add_a_in_op_pcl:  { data_path.add_a_in = state.pcl; }
+        }
+
+        /*b add_b_in - dl for microsequencer, else ids (^0xff possibly) for adc/sbc/cmp for operation */
+        data_path.add_b_in = state.dl;
+        full_switch (useq_decode.add_b_in_op) {
+        case add_b_in_op_dl:       { data_path.add_b_in = state.dl; }
+        case add_b_in_op_ids:      { data_path.add_b_in = data_path.ids_data_out[8;0]; }
+        case add_b_in_op_not_ids:  { data_path.add_b_in = ~data_path.ids_data_out[8;0]; }
+        }
+
+        /*b Adder (no decimal mode support yet) */
+        data_path.add_sum_lower = ( bundle(1b0, data_path.add_a_in[7;0]) + 
+                                    bundle(1b0, data_path.add_b_in[7;0]) + 
+                                    bundle(7b0, data_path.add_carry_in) );
+        data_path.add_sum_higher = ( bundle(1b0, data_path.add_a_in[7]) + 
+                                     bundle(1b0, data_path.add_b_in[7]) + 
+                                     bundle(1b0, data_path.add_sum_lower[7]) );
+        data_path.add_result = { *=0,
+                                 data     = bundle(data_path.add_sum_higher[0], data_path.add_sum_lower[7;0]),
+                                 carry    = data_path.add_sum_higher[1],
+                                 //overflow = data_path.add_sum_higher[1] ^ data_path.add_sum_lower[7] };
+                                 overflow = ( ((data_path.add_a_in[7] & data_path.add_b_in[7])&!data_path.add_sum_higher[0]) |
+                                              ((!data_path.add_a_in[7]&!data_path.add_b_in[7])& data_path.add_sum_higher[0]) )};
+
+        
+        /*b Logical operation */
+        data_path.logical_result = state.dl;
+        part_switch (useq_decode.alu_op) {
+        case alu_op_a:   { data_path.logical_result = data_path.add_a_in; }
+        case alu_op_and: { data_path.logical_result = data_path.add_a_in & data_path.add_b_in; }
+        case alu_op_bit: { data_path.logical_result = data_path.add_a_in & data_path.add_b_in; }
+        case alu_op_or:  { data_path.logical_result = data_path.add_a_in | data_path.add_b_in; }
+        case alu_op_eor: { data_path.logical_result = data_path.add_a_in ^ data_path.add_b_in; }
+        }
+
+        /*b ALU operation */
+        data_path.result = { data     = data_path.add_result.data,
+                             carry    = data_path.add_result.carry,
+                             overflow = data_path.add_result.overflow,
+                             zero     = (data_path.add_result.data==0),
+                             negative = (data_path.add_result.data[7]),
+                             decimal  = state.psr.d,
+                             irq      = state.psr.i };
+        part_switch (useq_decode.alu_op) {
+        case alu_op_b:   {
+            data_path.result = { data     = data_path.ids_data_out[8;0],
+                                 carry    = data_path.ids_data_out[8],
+                                 overflow = state.psr.v,
+                                 zero     = (data_path.ids_data_out[8;0]==0),
+                                 negative = (data_path.ids_data_out[7]) };
+            //if (useq_decode.ids_op==ids_op_lsr) {
+            //    data_path.result.negative=state.psr.n; // it is not clear if LSR effects N - it does not need to - it does not help BASIC though
+            //}
+            if (state.ir==0x28) {
+                data_path.result.negative = data_path.ids_data_out[7];
+                data_path.result.overflow = data_path.ids_data_out[6];
+                    //data_path.result.break = data_path.ids_data_out[4],
+                data_path.result.decimal = data_path.ids_data_out[3];
+                data_path.result.irq = data_path.ids_data_out[2];
+                data_path.result.zero = data_path.ids_data_out[1];
+                data_path.result.carry = data_path.ids_data_out[0];
+            }
+        }
+        case alu_op_cmp:   {
+            data_path.result.overflow = state.psr.v;
+        }
+        case alu_op_eor, alu_op_and, alu_op_or:   {
+            data_path.result = { data     = data_path.logical_result,
+                                 carry    = data_path.add_carry_in,
+                                 overflow = state.psr.v,
+                                 zero     = (data_path.logical_result==0),
+                                 negative = (data_path.logical_result[7]) };
+        }
+        case alu_op_bit:   {
+            data_path.result = { data     = data_path.logical_result,
+                                 carry    = data_path.add_carry_in,
+                                 overflow = data_path.add_b_in[6],
+                                 zero     = (data_path.logical_result==0),
+                                 negative = data_path.add_b_in[7] };
+        }
+        case alu_op_flags:   {
+            data_path.result = { data     = data_path.add_a_in,
+                                 carry    = state.psr.c,
+                                 overflow = state.psr.v,
+                                 zero     = state.psr.z,
+                                 negative = state.psr.n };
+            if (state.ir==0x18) {data_path.result.carry=0;}
+            if (state.ir==0x38) {data_path.result.carry=1;}
+            if (state.ir==0x58) {data_path.result.irq=0;}
+            if (state.ir==0x78) {data_path.result.irq=1;}
+            if (state.ir==0xb8) {data_path.result.overflow=0;}
+            if (state.ir==0xd8) {data_path.result.decimal=0;}
+            if (state.ir==0xf8) {data_path.result.decimal=1;}
+        }
+        }
+
+        /*b mem_data_out */
+        data_path.mem_data_out = data_path.src_data;
+        full_switch (useq_decode.mem_data_src) {
+        case mem_data_src_src: {data_path.mem_data_out = data_path.src_data;}
+        case mem_data_src_pcl: {data_path.mem_data_out = state.pcl;}
+        case mem_data_src_pch: {data_path.mem_data_out = state.pch;}
+        case mem_data_src_dl:  {data_path.mem_data_out = state.dl;}
+        }
+
+        if (state.psr.d) {print("Decimal flag set");}
+        /*b All done */
+    }
+    /*b Logging */
+    logging """
+    """: {
+        if (clock_complete) {
+            if (state.cycle==0) {
+                log("Instruction started",
+                    "pc",bundle(state.pch,state.pcl),
+                    "ir",state.ir,
+                    "acc",state.acc,
+                    "x",state.x,
+                    "y",state.y,
+                    "z",state.psr.z,
+                    "n",state.psr.n,
+                    "c",state.psr.c,
+                    "v",state.psr.v,
+                    "i",state.psr.i,
+                    "sp",state.sp
+                    );
+            }
+        }
+    }
+
+    /*b All done */
+}

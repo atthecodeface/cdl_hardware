@@ -1,0 +1,422 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  crtc6845.cdl
+ * @brief CDL implementation of 6845 CRTC
+ *
+ * This is an implementaion of the Motorola 6845 CRTC, which was used
+ * in the BBC microcomputer for sync and video memory address
+ * generation.
+ *
+ */
+/*a Types */
+/*t t_horizontal */
+typedef struct {
+    bit    complete;
+    bit    sync_start;
+    bit    sync_done;
+    bit    display_end;
+    bit    halfway;
+    bit[8] next_counter;
+} t_horizontal;
+
+/*t t_horizontal_state */
+typedef struct {
+    bit[8] counter;
+    bit[4] sync_counter;
+    bit    sync;
+    bit    display_enable;
+} t_horizontal_state;
+
+/*t t_vertical */
+typedef struct {
+    bit    field_restart;
+    bit    sync_start;
+    bit    sync_done;
+    bit    display_end;
+    bit    max_scan_line;
+    bit    row_restart;
+    bit    field_rows_complete;
+    bit    adjust_complete;
+    bit    start_vsync;
+    bit    cursor_start "Asserted if the next scan line is the cursor start scan line";
+    bit    cursor_end   "Asserted if the current scan line is the cursor end scan line";
+    bit[7] next_character_row_counter;
+    bit[5] next_scan_line_counter;
+    bit[5] next_adjust_counter;
+} t_vertical;
+
+/*t t_vertical_state */
+typedef struct {
+    bit[7] character_row_counter "Character row of video field, incremented when scan_line_counter indicates end of character row";
+    bit[5] scan_line_counter "Scan line within the character row, 0 to control.max_scan_line inclusive";
+    bit[5] adjust_counter    "Counter of number of 'adjust' row for fractional rows-per-field; 1 if in first adjust row...";
+    bit[4] sync_counter      "Counter for vsync pulse width";
+    bit[6] vsync_counter     "Counter incrementing on every vsync, for cursor blinking";
+    bit    doing_adjust      "Asserted for scan lines in 'adjust' row";
+    bit    cursor_line       "Asserted for scan lines >= control.cursor_start <= control.cursor_end";
+    bit    sync;
+    bit    display_enable;
+    bit    even_field;
+} t_vertical_state;
+
+/*t t_address_state */
+typedef struct {
+    bit[14] memory_address;
+    bit[14] memory_address_line_start;
+} t_address_state;
+
+/*t t_cursor_decode */
+typedef struct {
+    bit disabled;
+    bit enable;
+    bit address_match;
+} t_cursor_decode;
+
+/*t t_cursor_mode */
+typedef enum[2] {
+    cursor_mode_steady = 2b00,
+    cursor_mode_invisible = 2b01,
+    cursor_mode_flash_vsync_16 = 2b10,
+    cursor_mode_flash_vsync_32 = 2b11,
+} t_cursor_mode;
+
+/*t t_cursor_control */
+typedef struct {
+    t_cursor_mode mode;
+    bit[5] start;
+    bit[5] end;
+    bit[14] address;
+} t_cursor_control;
+
+/*t t_interlace_mode */
+typedef enum[2] {
+    interlace_mode_normal          =2b00,
+    interlace_mode_sync            =2b01,
+    interlace_mode_sync_and_video  =2b11,
+} t_interlace_mode;
+
+/*t t_control */
+typedef struct {
+    bit[8] h_total;
+    bit[8] h_displayed;
+    bit[8] h_sync_pos;
+    bit[4] h_sync_width;
+    bit[7] v_total;
+    bit[5] v_total_adjust;
+    bit[7] v_displayed;
+    bit[7] v_sync_pos;
+    bit[4] v_sync_width;
+    bit[5] v_max_scan_line;
+    t_cursor_control cursor;
+    t_interlace_mode interlace_mode;
+    bit[6] start_addr_h;
+    bit[8] start_addr_l;
+} t_control;
+
+/*t t_address */
+typedef enum[5] {
+    addr_h_total           =  0,
+    addr_h_displayed       =  1,
+    addr_h_sync_pos        =  2,
+    addr_h_sync_width      =  3,
+    addr_v_total           =  4,
+    addr_v_total_adjust    =  5,
+    addr_v_displayed       =  6,
+    addr_v_sync_pos        =  7,
+    addr_interlace_mode    =  8,
+    addr_max_scan_line     =  9,
+    addr_cursor_start      =  10,
+    addr_cursor_end        =  11,
+    addr_start_addr_h      =  12,
+    addr_start_addr_l      =  13,
+    addr_cursor_addr_h     =  14,
+    addr_cursor_addr_l     =  15,
+    addr_lightpen_addr_h   =  16,
+    addr_lightpen_addr_l   =  17,
+} t_address;
+
+/*a Module crtc6845 */
+module crtc6845( clock clk_2MHz,
+                 clock clk_1MHz       "Clock that rises when the 'enable' of the 6845 completes - but a real clock for this model",
+                 input bit reset_n,
+                 output bit[14] ma        "Memory address",
+                 output bit[5] ra         "Row address",
+                 input bit read_not_write "Indicates a read transaction if asserted and chip selected",
+                 input bit chip_select_n  "Active low chip select",
+                 input bit rs             "Register select - address line really",
+                 input bit[8] data_in     "Data in (from CPU)",
+                 output bit[8] data_out   "Data out (to CPU)",
+                 input bit lpstb_n "Light pen strobe",
+                 input bit crtc_clock_enable "Not on the real chip - really CLK - the character clock - but this is an enable for clk_2MHz",
+                 output bit de,
+                 output bit cursor,
+                 output bit hsync,
+                 output bit vsync                 
+       )
+{
+    /*b Defaults */
+    default reset active_low reset_n;
+    default clock clk_1MHz;
+    clocked bit[5] address_register=0;
+    clocked t_control control={*=0};
+
+    gated_clock clock clk_2MHz active_high crtc_clock_enable clk_pixel;
+    default clock clk_pixel;
+    comb t_horizontal     horizontal;
+    comb t_vertical       vertical;
+    comb t_cursor_decode  cursor_decode;
+    clocked t_horizontal_state horizontal_state={*=0};
+    clocked t_vertical_state vertical_state={*=0};
+    clocked t_address_state  address_state={*=0};
+
+    /*b Outputs  */
+    outputs """
+    """: {
+        de = 1;
+        if (!horizontal_state.display_enable) { de=0; }
+        if (!vertical_state.display_enable)   { de=0; }
+
+        ra = vertical_state.scan_line_counter;
+        if (control.interlace_mode==interlace_mode_sync_and_video) {
+            ra = bundle(vertical_state.scan_line_counter[4;0],vertical_state.even_field);
+        }
+        ma = address_state.memory_address;
+        cursor = 0;
+        hsync = horizontal_state.sync;
+        vsync = vertical_state.sync;
+    }
+
+    /*b Horizontal and vertical timing */
+    horizontal_timing """
+    Horizontal timing is control.h_total+1 characters wide (count from 0 to control.h_total inclusive)
+    At control.h_displayed characters (count+1 == control.h_displayed) front porch starts (disen low)
+    At control.h_sync_pos characters (count+1 == control.h_sync_pos) hsync asserted, sync down count reset
+    After control.h_sync_width characters hsync deasserted (back porch starts)
+    Back porch continues until control.h_total+1 characters wide reached, then disen rises (if vertical permis) and the next row starts
+
+    With interlace the odd field is done first.
+    Then a horizontal half line is counted off, the even field starts at 0.
+
+    VSync for the even field is 16 horizontal rows starting at half the horizontal row in to Nvsp (number of vertical sync pos) row.
+    After line Nvl and AdjustRaster lines the half horizontal row is added in to delay the data.
+    Probably at the start of the odd field another half horizontal rows is added in to delay the data (i.e. the data just has an idle row...)
+    The odd field is then done, with Vsync of 16 rows starting at the start of row Nvsp.
+
+    If it is interlace sync mode, then the even and odd fields have the same data
+    If it is interlace sync and video then the even field has RA0 clear, and odd fields have RA1 set
+
+    The upshot of the sync stuff is that even fields have vsync starting half a scanline in to row Nvsp, odd fields have it starting at the beginning of row Nvsp.
+    Hence vsync runs at a constant frequency, but even fields have vsync occuring half a scan-line later than odd fields, and hence there is a dead row between even and odd fields
+    to make vsync occur at even spacing
+
+    Because the vsync has to start half-way through the row, h_total must be odd (hence h_total+1 characters is even, and divisible by 2)
+    
+    """: {
+        /*b Horizontal timing */
+        horizontal.next_counter      = horizontal_state.counter+1;
+        horizontal.halfway      = (horizontal_state.counter==bundle(1b0,control.h_total[7;1]));
+        horizontal.display_end  = (horizontal.next_counter==control.h_displayed);
+        horizontal.sync_start   = (horizontal_state.counter==control.h_sync_pos);
+        horizontal.sync_done    = (horizontal_state.sync_counter==control.h_sync_width);
+        horizontal.complete     = (horizontal_state.counter==control.h_total);
+
+        horizontal_state.counter <= horizontal.next_counter;
+        if (horizontal.complete) { // Start new line
+            horizontal_state.counter <= 0;
+            horizontal_state.display_enable <= 1;
+        }
+        if (horizontal.display_end) { // Front porch start - go to black
+            horizontal_state.display_enable <= 0;
+        }
+        if (horizontal_state.sync) {
+            horizontal_state.sync_counter <= horizontal_state.sync_counter+1;
+        }
+        if (horizontal.sync_start) {  // Horizontal sync start
+            if (control.h_sync_width!=0) {
+                horizontal_state.sync <= 1;
+                horizontal_state.sync_counter <= 1;
+            }
+        } elsif (horizontal.sync_done) {  // Horizontal sync done
+            horizontal_state.sync <= 0;
+        }
+
+        /*b Vertical timing - no interlace handling yet */
+        vertical.next_character_row_counter = vertical_state.character_row_counter;
+        vertical.next_scan_line_counter     = vertical_state.scan_line_counter;
+        vertical.next_adjust_counter        = vertical_state.adjust_counter;
+        vertical.max_scan_line   = (vertical_state.scan_line_counter == control.v_max_scan_line);
+        if (control.interlace_mode==interlace_mode_sync_and_video) {
+            vertical.max_scan_line   = (vertical_state.scan_line_counter == bundle(1b0,control.v_max_scan_line[4;1]));
+        }
+        vertical.field_rows_complete = (vertical_state.character_row_counter==control.v_total);
+
+        vertical.adjust_complete = (vertical_state.adjust_counter==control.v_total_adjust+1);
+        if (!vertical_state.doing_adjust) { vertical.adjust_complete = 0; }
+        if ((control.interlace_mode == interlace_mode_normal) ||
+            !vertical_state.even_field) {
+            vertical.adjust_complete = (vertical_state.adjust_counter==control.v_total_adjust);
+            if (!vertical_state.doing_adjust) {
+                vertical.adjust_complete = (control.v_total_adjust==0);
+            }
+        }
+ 
+        vertical.field_restart = 0;
+        vertical.row_restart = 0;
+        if (horizontal.complete) {
+            vertical.next_scan_line_counter = vertical_state.scan_line_counter + 1;
+            if (vertical_state.doing_adjust) {
+                vertical.next_adjust_counter = vertical_state.adjust_counter+1;
+                if (vertical.adjust_complete) {
+                    vertical.field_restart = 1;
+                }
+            } elsif (vertical.max_scan_line) {
+                vertical.row_restart = 1;
+                vertical.next_character_row_counter = vertical_state.character_row_counter+1;
+                vertical.next_scan_line_counter     = 0;
+                vertical.next_adjust_counter        = 0;
+                if (vertical.field_rows_complete) {
+                    if (vertical.adjust_complete) {
+                        vertical.field_restart = 1;
+                    } else {
+                        vertical.next_adjust_counter = 1;
+                    }
+                }
+            }
+        }
+
+        vertical.sync_start   = (vertical_state.scan_line_counter==0) && (vertical_state.character_row_counter==control.v_sync_pos);
+        if ((control.interlace_mode == interlace_mode_normal) ||
+            !vertical_state.even_field) {
+            vertical.sync_start   = vertical.max_scan_line && (vertical.next_character_row_counter==control.v_sync_pos);
+        }
+        vertical.display_end  = (vertical_state.character_row_counter==control.v_displayed);
+        vertical.sync_done    = (vertical_state.sync_counter==control.v_sync_width);
+        vertical.cursor_start = (vertical.next_scan_line_counter==control.cursor.start);
+        vertical.cursor_end   = (vertical_state.scan_line_counter==control.cursor.end);
+
+        if (horizontal.complete) {
+            vertical_state.character_row_counter <= vertical.next_character_row_counter;
+            vertical_state.scan_line_counter     <= vertical.next_scan_line_counter;
+            vertical_state.adjust_counter        <= vertical.next_adjust_counter;
+            if (vertical.cursor_end || vertical.row_restart) {
+                vertical_state.cursor_line <= 0;
+            }
+            if (vertical.cursor_start) {
+                vertical_state.cursor_line <= 1;
+            }
+            if (vertical.max_scan_line && vertical.display_end) {
+                vertical_state.display_enable <= 0;
+            }
+            if (vertical.max_scan_line && vertical.field_rows_complete) {
+                vertical_state.doing_adjust <= 1;
+            }
+        }
+        if (vertical.field_restart) {
+            vertical_state.even_field <= !vertical_state.even_field;
+            vertical_state.doing_adjust <= 0;
+            vertical_state.scan_line_counter <= 0;
+            vertical_state.character_row_counter <= 0;
+            vertical_state.display_enable <= 1;
+        }
+
+        vertical.start_vsync = horizontal.halfway;
+        // if interlace and even field, then use horizontal.halfway
+        if ((control.interlace_mode == interlace_mode_normal) ||
+            !vertical_state.even_field) {
+            vertical.start_vsync = horizontal.complete;
+        }
+        if (vertical.start_vsync) {
+            if (vertical_state.sync) {
+                vertical_state.sync_counter <= vertical_state.sync_counter+1;
+            }
+            if (vertical.sync_done) {
+                vertical_state.sync <= 0;
+            }
+            if (vertical.sync_start) {
+                vertical_state.sync <= 1;
+                vertical_state.sync_counter <= 1;
+                vertical_state.vsync_counter <= vertical_state.vsync_counter+1; // used in cursor blinking
+            }
+        }
+    }
+
+    /*b Address register and cursor */
+    address_and_cursor """
+    """: {
+        if (horizontal_state.display_enable) {
+            address_state.memory_address <= address_state.memory_address+1;
+        }
+        if (horizontal.complete) {
+            if (vertical.row_restart) {
+                address_state.memory_address_line_start <= address_state.memory_address;
+            } else {
+                address_state.memory_address <= address_state.memory_address_line_start;
+            }
+        }
+        if (vertical.field_restart) {
+            address_state.memory_address            <= bundle(control.start_addr_h, control.start_addr_l);
+            address_state.memory_address_line_start <= bundle(control.start_addr_h, control.start_addr_l);
+        }
+        cursor_decode.address_match = (control.cursor.address == address_state.memory_address);
+        cursor_decode.disabled = 0;
+        full_switch (control.cursor.mode)
+        {
+        case cursor_mode_steady:         { cursor_decode.disabled=0; }
+        case cursor_mode_invisible:      { cursor_decode.disabled=1; }
+        case cursor_mode_flash_vsync_16: { cursor_decode.disabled = vertical_state.vsync_counter[4];}
+        case cursor_mode_flash_vsync_32: { cursor_decode.disabled = vertical_state.vsync_counter[5];}
+        }
+        cursor_decode.enable = !cursor_decode.disabled && cursor_decode.address_match && vertical_state.cursor_line;
+
+    }
+
+    /*b Read/write interface */
+    read_write_interface : {
+
+        /*b Chip selection, read/write action, data_out */
+        data_out = -1;
+        if (!chip_select_n && (rs==0) && !read_not_write) {
+            address_register <= data_in[5;0];
+        }
+        if (!chip_select_n && (rs==1) && !read_not_write) {
+            full_switch (address_register) {
+            case addr_h_total:        { control.h_total <= data_in; }
+            case addr_h_displayed:    { control.h_displayed <= data_in; }
+            case addr_h_sync_pos:     { control.h_sync_pos <= data_in; }
+            case addr_h_sync_width:   {
+                control.h_sync_width <= data_in[4;0];
+                control.v_sync_width <= data_in[4;4];
+            }
+            case addr_v_total:        { control.v_total <= data_in[7;0]; }
+            case addr_v_total_adjust: { control.v_total_adjust <= data_in[5;0]; }
+            case addr_v_displayed:    { control.v_displayed <= data_in[7;0]; }
+            case addr_v_sync_pos:     { control.v_sync_pos <= data_in[7;0]; }
+            case addr_interlace_mode: { control.interlace_mode <= data_in[2;0]; }
+            case addr_max_scan_line:  { control.v_max_scan_line <= data_in[5;0]; }
+            case addr_cursor_start:   { control.cursor <= {mode=data_in[2;5],
+                            start=data_in[5;0]}; }
+            case addr_cursor_end:     { control.cursor.end <= data_in[5;0]; }
+            case addr_start_addr_l:   { control.start_addr_l <= data_in; }
+            case addr_start_addr_h:   { control.start_addr_h <= data_in[6;0]; }
+            case addr_cursor_addr_l:  { control.cursor.address[8;0] <= data_in; }
+            case addr_cursor_addr_h:  { control.cursor.address[6;8] <= data_in[6;0]; }
+            }
+        }
+
+        /*b All done */
+    }
+
+    /*b All done */
+}

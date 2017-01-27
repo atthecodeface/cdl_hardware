@@ -1,0 +1,9 @@
+*~
+*pyc
+build/*/sim
+build/*/*o
+build/*/*cdlh
+build/*/*cpp
+*vcd
+*log
+models.make

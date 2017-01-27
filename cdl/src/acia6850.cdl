@@ -1,0 +1,605 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   acia6850.cdl
+ * @brief  6850 async communications chip CDL implementation
+ *
+ * CDL implementation of the 6850 (from Motorola originally?)
+ *
+ */
+
+/*a Types */
+/*t t_counter */
+/**
+ * Counter mode for recieve, specifying how the relevant
+ * clock is divided to determine the bit timings for RxD.
+ *
+ * This is used in the control register (bottom 2 bits when written)
+ */
+typedef enum[2] {
+    counter_x1   = 0,
+    counter_x16  = 1,
+    counter_x64  = 2,
+    counter_master_reset = 3
+} t_counter;
+
+/*t t_stop_bits */
+typedef enum[1] {
+    stop_1,
+    stop_2
+} t_stop_bits;
+
+/*t t_data_bits */
+typedef enum[1] {
+    bits_7,
+    bits_8,
+} t_data_bits;
+
+/*t t_parity */
+typedef enum[2] {
+    parity_odd,
+    parity_even,
+    parity_none
+} t_parity;
+
+/*t t_rxtx */
+typedef struct {
+    t_data_bits bits;
+    t_stop_bits stop;
+    t_parity    parity;
+} t_rxtx;
+
+/*t t_control */
+typedef struct {
+    t_counter counter_divide_select;
+    bit[3] word_select;
+    bit[2] tx_ctl;
+    bit rx_int_en;
+} t_control;
+
+/*t t_bit_action - used by tx and rx*/
+typedef enum[4] {
+    bit_action_none,
+    bit_action_reset,
+    bit_action_load,
+    bit_action_shift,
+    bit_action_stop_bit,
+    bit_action_framing_error,
+    bit_action_complete,
+} t_bit_action;
+
+/*t t_tx_if - combinatorial tx interface signals */
+typedef struct {
+    bit divide_complete;
+    bit data_odd_parity;
+    bit last_bit;
+    bit[4] bits_required;
+    bit[10] shift_register_from_data;
+    t_bit_action bit_action;
+} t_tx_if;
+
+/*t t_tx_if_fsm state machine */
+typedef fsm {
+    tx_wait_for_start;
+    tx_data_bits;
+    tx_stop_bit;
+} t_tx_if_fsm;
+
+/*t t_tx_if_state - state of tx interface, the deserializer itself */
+typedef struct {
+    t_tx_if_fsm fsm_state;
+    bit last_tx_clk;
+    bit clk_edge_detected;
+    bit[7] divide;
+    bit[4] bits_remaining;
+} t_tx_if_state;
+
+/*t t_transmit_status - Rx status of rx data register and other cpu-side */
+typedef struct {
+    bit data_register_empty;
+} t_transmit_status;
+
+/*t t_transmit_if - State of CPU side transmit logic */
+typedef struct {
+    bit data_register_full;
+    bit overrun;
+    bit dcd;
+    bit cts;
+} t_transmit_if;
+
+/*t t_rx_if - combinatorial rx interface signals */
+typedef struct {
+    bit divide_complete;
+    bit[8] data          "Data ";
+    bit data_odd_parity  "Parity generated from the data in the shift register";
+    bit parity_bit       "Parity bit extracted from the shift register";
+    bit parity_error     "Asserted if the parity bit does not match what is required - deasserted if no parity";
+    bit last_data_bit;
+    bit last_stop_bit;
+    t_bit_action bit_action;
+    bit ready "Asserted if the data is ready to be moved to the receive data register - asserted for a single clock tick";
+} t_rx_if;
+
+/*t t_rx_if_fsm state machine */
+typedef fsm {
+    rx_wait_for_start;
+    rx_wait_for_middle;
+    rx_data_bits;
+    rx_stop_bit;
+    rx_framing_error;
+} t_rx_if_fsm;
+
+/*t t_rx_if_state - state of rx interface, the deserializer itself */
+typedef struct {
+    t_rx_if_fsm fsm_state;
+    bit last_rx_clk;
+    bit clk_edge_detected;
+    bit[7] divide;
+    bit[2] stop_bits_remaining;
+    bit[4] data_parity_bits_remaining;
+    bit[9] shift_register "Shift register of data, shifted in top down, so parity is the top bit";
+    bit framing_error  "Single clock tick pulse indicating a framing error - will restart receive"; 
+    bit complete       "Single clock tick pulse indicating framed data receive (possibly a parity error though) - will restart receive"; 
+} t_rx_if_state;
+
+/*t t_receive_status - Rx status of rx data register and other cpu-side */
+typedef struct {
+    bit data_register_full;
+    bit parity_error;
+    bit framing_error;
+    bit overrun;
+    bit overrun_pending;
+    bit dcd;
+    bit dcd_acknowledged;
+    bit cts;
+} t_receive_status;
+
+/*t t_read_action */
+typedef enum[2] {
+    read_action_none,
+    read_action_receive_data,
+    read_action_status,
+} t_read_action;
+
+/*t t_write_action */
+typedef enum[2] {
+    write_action_none,
+    write_action_transmit_data,
+    write_action_control,
+} t_write_action;
+
+/*t t_address */
+typedef enum[1] {
+    addr_control_status      = 0,
+    addr_transmit_receive      = 1,
+} t_address;
+
+/*a Module acia6850 */
+module acia6850( clock clk                "Clock that rises when the 'enable' of the 6850 completes - but a real clock for this model",
+                 input bit reset_n,
+                 input bit read_not_write "Indicates a read transaction if asserted and chip selected",
+                 input bit[2] chip_select "Active high chip select",
+                 input bit chip_select_n  "Active low chip select",
+                 input bit address        "Changes during phase 1 (phi[0] high) with address to read or write",
+                 input bit[8] data_in     "Data in (from CPU)",
+                 output bit[8] data_out   "Read data out (to CPU)",
+                 output bit irq_n         "Active low interrupt",
+                 input bit tx_clk         "Clock used for transmit data - must be really about at most quarter the speed of clk",
+                 input bit rx_clk         "Clock used for receive data - must be really about at most quarter the speed of clk",
+                 output bit txd,
+                 input bit cts,
+                 input bit rxd,
+                 output bit rts,
+                 input bit dcd
+       )
+{
+    /*b Defaults */
+    default reset active_low reset_n;
+    default clock clk;
+
+    comb bit chip_selected;
+
+    clocked t_control control={*=0};
+    comb t_rxtx rxtx;
+    comb t_read_action read_action;
+    comb t_write_action write_action;
+    comb t_tx_if tx_if;
+    comb t_rx_if rx_if;
+    clocked t_transmit_status transmit_status={*=0};
+    clocked t_transmit_if transmit_if={*=0};
+    clocked bit[8] transmit_data=0;
+    clocked bit[10] transmit_shift_register=0;
+    clocked t_tx_if_state tx_if_state={*=0};
+    clocked t_rx_if_state rx_if_state={*=0};
+    clocked t_receive_status   receive_status={*=0};
+    clocked bit[8] receive_data=0;
+    comb bit receive_irq;
+    comb bit master_reset;
+
+    /*b Transmit */
+    transmit_logic """
+    Transmit bits are driven out with a clock of x1, x16 or x64.
+    For x1, the transmit data bitstream is changed on every clock
+    For x16, the transmit data bitstream is changed on every 16th clock
+    For x64, the transmit data bitstream is changed on every 64th clock
+
+    The state machine is:
+    wait_for_data -> transmit_data
+    transmit_data -> if divider ready then shift out bit -> stop if last_stop_bit
+    last_stop_bit -> if divider ready then if data ready -> transmit data, else -> wait_for_data
+
+    The data is shifted out of the shift register based on 'bit_action'
+    The shift register is loaded on 'bit_action_load', in wait_for_data or last_stop_bit
+    """: {
+        /*b Decode config and transmit data register to get data to load in to transmitter */
+        tx_if.data_odd_parity = transmit_data[7];
+        if (rxtx.bits==bits_7) { tx_if.data_odd_parity=0; }
+        for (i; 7) {
+            if (transmit_data[i]) { tx_if.data_odd_parity = tx_if.data_odd_parity ^ 1; }
+        }
+
+        tx_if.shift_register_from_data = bundle(1b1, transmit_data, 1b0); // 8 bits, no parity, 1 or 2 stop bits
+        if ((rxtx.bits==bits_7) && (rxtx.parity==parity_even)) {
+            tx_if.shift_register_from_data[8] = !tx_if.data_odd_parity;
+        }
+        if ((rxtx.bits==bits_7) && (rxtx.parity==parity_odd)) {
+            tx_if.shift_register_from_data[8] = tx_if.data_odd_parity;
+        }
+        if ((rxtx.bits==bits_8) && (rxtx.parity==parity_even)) {
+            tx_if.shift_register_from_data[9] = !tx_if.data_odd_parity;
+        }
+        if ((rxtx.bits==bits_8) && (rxtx.parity==parity_odd)) {
+            tx_if.shift_register_from_data[9] = tx_if.data_odd_parity;
+        }
+
+        tx_if.bits_required = 10;
+        if ((rxtx.bits==bits_7) && (rxtx.stop==stop_1))        { tx_if.bits_required=9; } // 7+parity+1 stop
+        if ((rxtx.bits==bits_8) && (rxtx.parity==parity_none)) { tx_if.bits_required=9; } // 8+1 stop
+
+        /*b Decode divider and bit counts for state machine decode */
+        tx_if.divide_complete = 0;
+        full_switch (control.counter_divide_select) {
+        case counter_x1:  {tx_if.divide_complete = 1;}
+        case counter_x16: {tx_if.divide_complete = tx_if_state.divide[4];}
+        case counter_x64: {tx_if.divide_complete = tx_if_state.divide[6];}
+        default:          {tx_if.divide_complete = 0;}
+        }
+        tx_if.last_bit = (tx_if_state.bits_remaining == 0);
+
+        /*b Handle transmit state machine and generate 'bit_action' */
+        tx_if.bit_action = bit_action_none;
+        full_switch (tx_if_state.fsm_state) {
+        case tx_wait_for_start : {
+            tx_if.bit_action = bit_action_none;
+            tx_if_state.divide <= 0;
+            if (!transmit_status.data_register_empty) {
+                tx_if_state.fsm_state <= tx_data_bits;
+                tx_if.bit_action = bit_action_load;
+            }
+        }
+        case tx_data_bits: {
+            tx_if_state.divide <= tx_if_state.divide+1;
+            if (tx_if.divide_complete) {
+                tx_if_state.divide <= 0;
+                tx_if.bit_action = bit_action_shift;
+                if (tx_if.last_bit) {
+                    tx_if_state.fsm_state <= tx_stop_bit;
+                }
+            }
+        }
+        case tx_stop_bit: {
+            tx_if_state.divide <= tx_if_state.divide+1;
+            if (tx_if.divide_complete) {
+                tx_if_state.divide <= 0;
+                if (!transmit_status.data_register_empty) {
+                    tx_if_state.fsm_state <= tx_data_bits;
+                    tx_if.bit_action = bit_action_load;
+                }
+            }
+        }
+        }
+
+        /*b Tx bit action */
+        full_switch (tx_if.bit_action) {
+        case bit_action_none: {
+            transmit_shift_register <= transmit_shift_register;
+        }
+        case bit_action_load: {
+            tx_if_state.bits_remaining <= tx_if.bits_required;
+            transmit_shift_register <= tx_if.shift_register_from_data; // start bit, data, parity, zero or one stop bits
+        }
+        case bit_action_shift: {
+            tx_if_state.bits_remaining <= tx_if_state.bits_remaining - 1;
+            transmit_shift_register <= bundle(1b1, transmit_shift_register[9;1]);
+        }
+        }
+
+        /*b Tx outputs */
+        rts = 0;
+        txd = 1;
+        if (tx_if_state.fsm_state==tx_data_bits) {
+            txd = transmit_shift_register[0];
+        }
+        if (master_reset) {
+            txd = 1;
+        }
+
+        /*b Freeze tx interface if not an rx clk edge, and ensure complete/framing_error are pulses */
+        if (!tx_if_state.clk_edge_detected) {
+            tx_if_state <= tx_if_state;
+        }
+        tx_if_state.last_tx_clk <= tx_clk;
+        tx_if_state.clk_edge_detected <= tx_clk && !tx_if_state.last_tx_clk;
+
+        /*b Handle 'master_reset' */
+        if (master_reset) {
+            tx_if_state.fsm_state <= tx_wait_for_start;
+            transmit_if <= {*=0};
+        }
+    }
+
+    /*b Receive */
+    receive_logic """
+    Receive bits are read with a clock of x1, x16 or x64.
+    For x1, the receive data bitstream is every rxd data input value
+    For x16, the receive data bitstream is every 16th rxd data input value after 8 successive low input values
+    For x64, the receive data bitstream is every 64th rxd data input value after 32 successive low input values
+
+    The state machine is:
+    wait_for_start and rxd low -> wait_for_middle (if not x1) or data bit (if x1)
+    wait_for_middle and waited long enough -> data bit
+    data bit -> if divider ready then shift in bit, -> stop bit if last bit
+    stop bit -> if divider ready then check stop bit (else framing error) -> wait_for_start if complete
+    framing_error -> wait_for_start - get here if start bit does not complete, or stop bit is not 1
+
+    The data is shifted in to the shift register based on 'bit_action'
+    The shift register is ready when either 'complete' or 'framing error' is set.
+
+    At the point 'complete' is set the shift register data can be made ready - checking parity as required
+    """: {
+        /*b Decode divider and bit counts for state machine decode */
+        rx_if.divide_complete = 0;
+        full_switch (control.counter_divide_select) {
+        case counter_x1:  {rx_if.divide_complete = 1;}
+        case counter_x16: {rx_if.divide_complete = rx_if_state.divide[4];}
+        case counter_x64: {rx_if.divide_complete = rx_if_state.divide[6];}
+        default:          {rx_if.divide_complete = 0;}
+        }
+        rx_if.last_data_bit = (rx_if_state.data_parity_bits_remaining == 0);
+        rx_if.last_stop_bit = (rx_if_state.stop_bits_remaining == 0);
+
+        /*b Handle receive state machine and generate 'bit_action' */
+        rx_if.bit_action = bit_action_none;
+        full_switch (rx_if_state.fsm_state) {
+        case rx_wait_for_start : {
+            rx_if.bit_action = bit_action_reset;
+            rx_if_state.divide <= 0;
+            rx_if_state.fsm_state <= rx_wait_for_middle;
+            if (rx_if.divide_complete) { rx_if_state.fsm_state <= rx_data_bits; }
+            if (rxd) { rx_if_state.fsm_state <= rx_wait_for_start; }
+        }
+        case rx_wait_for_middle: {
+            rx_if_state.divide <= rx_if_state.divide+2;
+            if (rx_if.divide_complete) {
+                rx_if_state.divide <= 0;
+                rx_if_state.fsm_state <= rx_data_bits; }
+            if (rxd) { rx_if_state.fsm_state <= rx_framing_error; }
+        }
+        case rx_data_bits: {
+            rx_if_state.divide <= rx_if_state.divide+1;
+            if (rx_if.divide_complete) {
+                rx_if_state.divide <= 0;
+                rx_if.bit_action = bit_action_shift;
+                if (rx_if.last_data_bit) {
+                    rx_if.bit_action = bit_action_stop_bit;
+                    rx_if_state.fsm_state <= rx_stop_bit;
+                }
+            }
+        }
+        case rx_stop_bit: {
+            rx_if_state.divide <= rx_if_state.divide+1;
+            if (rx_if.divide_complete) {
+                rx_if_state.divide <= 0;
+                rx_if.bit_action = bit_action_stop_bit;
+                if (rx_if.last_stop_bit) {
+                    rx_if.bit_action = bit_action_complete;
+                    rx_if_state.fsm_state <= rx_wait_for_start;
+                }
+        }
+            if (!rxd) { rx_if_state.fsm_state <= rx_framing_error; }
+        }
+        case rx_framing_error: {
+            rx_if.bit_action = bit_action_framing_error;
+            rx_if_state.fsm_state <= rx_wait_for_start;
+        }
+        }
+
+        /*b Using 'bit_action' update the shift register and completion/framing error state */
+        full_switch (rx_if.bit_action) {
+        case bit_action_reset: {
+            rx_if_state.shift_register <= 0;
+            rx_if_state.data_parity_bits_remaining <= 0;
+            rx_if_state.stop_bits_remaining <= 0;
+        }
+        case bit_action_shift: {
+            rx_if_state.shift_register <= bundle(rxd,rx_if_state.shift_register[8;1]);
+            rx_if_state.data_parity_bits_remaining <= rx_if_state.data_parity_bits_remaining-1;
+        }
+        case bit_action_stop_bit: {
+            rx_if_state.stop_bits_remaining <= rx_if_state.stop_bits_remaining-1;
+        }
+        case bit_action_framing_error: {
+            rx_if_state.framing_error <= 1;
+        }
+        case bit_action_complete: {
+            rx_if_state.complete <= 1;
+        }
+        case bit_action_none: {
+            rx_if_state.shift_register <= rx_if_state.shift_register;
+        }
+        }
+
+        /*b Freeze rx interface if not an rx clk edge, and ensure complete/framing_error are pulses */
+        if (!rx_if_state.clk_edge_detected) {
+            rx_if_state <= rx_if_state;
+            rx_if_state.complete <= 0;      // single cycle pulse, so don't hold this
+            rx_if_state.framing_error <= 0; // single cycle pulse, so don't hold this
+        }
+        rx_if_state.last_rx_clk <= rx_clk;
+        rx_if_state.clk_edge_detected <= rx_clk && !rx_if_state.last_rx_clk;
+
+        /*b Interpret rx_if_state to get data, parity, parity error, and data ready */
+        rx_if.data = rx_if_state.shift_register[8;0]; // 8 bits with parity
+        rx_if.parity_bit = rx_if_state.shift_register[8]; // always the last bit in the shift register
+        if (rxtx.parity==parity_none) { rx_if.data = rx_if_state.shift_register[8;1]; }     // 8 bits with no parity
+        if (rxtx.bits==bits_7)         { rx_if.data = bundle(1b0,rx_if_state.shift_register[7;1]); } // 7 bits always has parity
+        rx_if.data_odd_parity = 0;
+        for (i; 8) {
+            if (rx_if.data[i]) { rx_if.data_odd_parity = rx_if.data_odd_parity ^ 1; }
+        }
+        rx_if.parity_error = 0;
+        if ((rxtx.parity==parity_odd)  && (rx_if.data_odd_parity == rx_if.parity_bit)) { rx_if.parity_error = 1; }
+        if ((rxtx.parity==parity_even) && (rx_if.data_odd_parity != rx_if.parity_bit)) { rx_if.parity_error = 1; }
+
+        rx_if.ready = 0;
+        if (rx_if_state.framing_error) { rx_if.ready = 1; }
+        if (rx_if_state.complete)      { rx_if.ready = 1; }
+
+        /*b If data ready or framing error and data register full then overrun pending, drop character
+          if data ready or framing error and data regsiter not full then copy framing error, parity error and data from shift register, set register full
+          */
+        /*b Update status and receive data register */
+        receive_status <= receive_status;
+        if (read_action == read_action_receive_data) {
+            receive_status.data_register_full <= 0;
+            receive_status.overrun            <= 0;
+        }
+        receive_status.cts <= cts;
+        // dcd should actually be rising-edge detect to set
+        // have an acknowledge bit that is set on some read, which clears the status bit
+        // if dcd input is high after acknowledge then the status bit follows dcd as it goes low
+        // when low the acknowledge can be cleared then
+        receive_status.dcd <= dcd; 
+
+        if (rx_if_state.framing_error) {
+            receive_status.framing_error      <= 1;
+        }
+        if (rx_if_state.complete) {
+            if (!receive_status.data_register_full) {
+                receive_status.data_register_full <= 1;
+                receive_status.overrun            <= receive_status.overrun_pending;
+                receive_status.parity_error       <= rx_if.parity_error;
+                receive_data                      <= rx_if.data;
+                receive_status.overrun_pending    <= 0;
+            } else {
+                receive_status.overrun_pending <= 1;
+            }
+        }
+
+        receive_irq = receive_status.dcd || receive_status.data_register_full || receive_status.overrun ;
+        if (!control.rx_int_en) {
+            receive_irq = 0;
+        }
+
+        /*b Handle 'master_reset' */
+        if (master_reset) {
+            rx_if_state.fsm_state <= rx_wait_for_start;
+            receive_status <= {*=0};
+        }
+        
+    }
+
+    /*b Control register and interrupt */
+    control_register_logic """
+    The control register is write-only on the bus
+
+    It contains the counter divide register, data bits / stop bits / parity configuration,
+    rts control and transmit interrupt generation, and receive interrupt enable.
+    """: {
+        
+        if (write_action == write_action_control) {
+            control <= { counter_divide_select=data_in[2;0],
+                    word_select = data_in[3;2],
+                    tx_ctl = data_in[2;5],
+                    rx_int_en = data_in[7] };
+        }
+        rxtx = {bits=bits_7, stop=stop_2, parity=parity_even};
+        full_switch (control.word_select) {
+        case 0: { rxtx = {bits=bits_7, stop=stop_2, parity=parity_even}; }
+        case 1: { rxtx = {bits=bits_7, stop=stop_2, parity=parity_odd}; }
+        case 2: { rxtx = {bits=bits_7, stop=stop_1, parity=parity_even}; }
+        case 3: { rxtx = {bits=bits_7, stop=stop_1, parity=parity_odd}; }
+        case 4: { rxtx = {bits=bits_8, stop=stop_2, parity=parity_none}; }
+        case 5: { rxtx = {bits=bits_8, stop=stop_1, parity=parity_none}; }
+        case 6: { rxtx = {bits=bits_8, stop=stop_1, parity=parity_even}; }
+        case 7: { rxtx = {bits=bits_8, stop=stop_1, parity=parity_odd}; }
+        }
+        master_reset = (control.counter_divide_select == counter_master_reset);
+
+        irq_n = 1;
+        if (receive_irq) { irq_n=0; }
+    }
+
+    /*b Read/write interface */
+    read_write_interface : {
+
+        /*b Chip selection, read/write action, data_out */
+        chip_selected = (!chip_select_n) && (chip_select==2b11);
+        data_out = -1;
+        read_action  = read_action_none;
+        write_action = write_action_none;
+        if (chip_selected) {
+            full_switch (address) {
+            case addr_control_status: {
+                data_out = bundle(receive_irq,
+                                  receive_status.parity_error,
+                                  receive_status.overrun,
+                                  receive_status.framing_error,
+                                  receive_status.cts,
+                                  receive_status.dcd,
+                                  transmit_status.data_register_empty,
+                                  receive_status.data_register_full);
+                read_action  = read_action_status;
+                write_action = write_action_control;
+            }
+            case addr_transmit_receive: {
+                data_out = receive_data;
+                read_action  = read_action_receive_data;
+                write_action = write_action_transmit_data;
+            }
+            }
+        }
+
+        /*b Kill data out if not reading, and actions appropriately */
+        if (!read_not_write) {
+            data_out = -1;
+            read_action = read_action_none;
+        } else {
+            write_action = write_action_none;
+        }
+
+        /*b Read/write action */
+        if (tx_if.bit_action == bit_action_load) {
+            transmit_status.data_register_empty <= 1;
+        }
+        if (write_action == write_action_transmit_data) {
+            transmit_status.data_register_empty <= 0;
+            transmit_data <= data_in;
+        }
+
+        /*b All done */
+    }
+
+    /*b All done */
+}

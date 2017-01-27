@@ -1,0 +1,807 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_micro.cdl
+ * @brief  BBC microcomputer implementation module
+ *
+ * CDL implementation of a BBC microcomputer.
+ *
+ * This implementation supports a 6502, mimicking a BBC model B. It
+ * uses SRAMs for the 32kB DRAM, OS ROM and sideways ROMS (four
+ * supported currently). It includes an 8271 FDC, 6850, two 6522s
+ * (system VIA and user VIA), 6845, and video ULA.
+ *
+ * It also supports the 1MHz clocking of the system bus that the BBC
+ * micro implements - this is a reduction of the CPU clock to 1MHz
+ * when the 1MHz peripherals are accessed.
+ *
+ * Clock control is handled outside of this module; this module
+ * requires a '4MHz' or greater clock and clock enables for the CPU
+ * clock, 2MHz video clock, and 1MHz clock edges.
+ *
+ */
+/*a Documentation
+
+Clocking
+
+IC33 pin 1 is low for VIA A, VIA B, 0xfe00-0xfe1f, ADC, JIM and FRED accesses - 1MHz required
+IC33 pin 1 is high for 1MHz required address decode
+
+IC30.1 is high if !1MHzAddr OR !PHI1 OR !1MhzE
+IC30.5 is low if !IC30.1, else 2MHz_dly at last 8MHz
+IC31.8 is 1MHzAddr at last 1MHzE rising, but cleared if IC34.6 is low - this is 'extension of phi2 completed'
+IC34.2 is !1MHzAddr or IC31.8 - this is 'please dont extend phi2 at 2MHz clock dly'
+IC34.6 is !IC34.2 at last rising I30.5 - this is 'extend phi2'
+IC29.11 is high if IC30.5 or IC34.6
+
+8MHz  4MHz 2MHz 1MHzE 2Mhz_dly IC30.1 IC30.5  IC31.8 IC34.2 IC34.6 IC29.11 PHI1 PHI2 1MHzAddr 1MHzAccess ExtHapp  6502Enabled
+ 0     H    .      H     H        1     H        0     1      .      H      .    H      0        0          0          0  
+ 1     .    .      H     .        1     H        0     1      .      H      .    H      0        0          0          1  
+ 2     H    H      .     .        1     .        0     1      .      .      H    .      0        0          0          0             
+ 3     .    H      .     H        1     .        0     0      .      .      H    .      1        0          0          1              
+ 4     H    .      .     H        1     H        0     0      H      H      .    H      1        1          0          0
+ 5     .    .      .     .        1     H        0     0      H      H      .    H      1        1          0          0 
+ 6     H    H      H     .        1     .        1     1      H      H      .    H      1        1          0          0 
+ 7     .    H      H     H        1     .        1     1      H      H      .    H      1        1          0          0 
+ 8     H    .      H     H        1     H        1     1      .      H      .    H      1        1          1          0       
+ 9     .    .      H     .        1     H        0     0      .      H      .    H      1        1          1          1    
+ 10    H    H      .     .        1     .        0     0      .      .      H    .      1        1          1          0    
+ 11    .    H      .     H        1     .        0     1      .      .      H    .      0        1          1          1 
+ 12    H    .      .     H        1     H        0     1      .      H      .    H      0        0          0          0
+ 13    .    .      .     .        1     H        0     1      .      H      .    H      0        0          0          1
+ 14    H    H      H     .        1     .        0     1      .      .      H    .      0        0          0          0
+ 15    .    H      H     H        0     .        0     0      .      .      H    .      1        0          0          0
+ 16    H    .      H     H        0     .        0     0      .      .      H    .      1        1          0          0  
+ 17    .    .      H     .        0     .        0     0      .      .      H    .      1        1          0          0   
+ 18    H    H      .     .        1     .        0     0      .      .      H    .      1        1          0          0  
+ 19    .    H      .     H        1     .        0     0      .      .      H    .      1        1          0          1  
+ 20    H    .      .     H        1     H        0     0      H      H      .    H      1        1          0          0  
+ 21    .    .      .     .        1     H        0     0      H      H      .    H      1        1          0          0  
+ 22    H    H      H     .        1     .        1     1      H      H      .    H      1        1          0          0  
+ 23    .    H      H     H        1     .        1     1      H      H      .    H      1        1          0          0 
+ 24    H    .      H     H        1     H        1     1      .      H      .    H      1        1          1          0       
+ 25    .    .      H     .        1     H        0     0      .      H      .    H      1        1          1          1                                                              
+ 26    H    H      .     .        1     .        0     0      .      .      H    .      1        1          1          0
+
+The clocking scheme is something like:
+
+PHI1 is extended if 1MHz address and PHI1 and 1MHzE
+PHI2 is extended if 1MHz address and was PHI1 
+
+So using a 4MHz clock in, the 6502 should clock on every edge except:
+if extending PHI1 then skip first 2 edges when PHI1 is asserted
+if extending PHI2 then skip first 2 edges when PHI2 is asserted
+
+The 1MHzE signal can be a straight clock gate of 4MHz to be 'active' on the 'falling' edge of the 6502 clock
+Hence keep a 2MHz_high signal that is asserted on every other tick. This is the gate for the 1MHzE signal.
+
+IC22 pin 8 is low if address is 0xfc00-0xffff
+IC24 is Sheila decode of 0xfe00-feff, in lumps of 32
+IC24.15 is low for 0xfe00-fe1f,  (1MHz)
+IC24.14 is low for 0xfe20-fe3f
+IC24.13 is low for 0xfe40-fe5f, VIAA (1MHz)
+IC24.12 is low for 0xfe60-fe7f, VIAB (1MHz)
+IC24.11 is low for 0xfe80-fe9f, FDC - 8271 controller
+IC24.10 is low for 0xfea0-febf, ADLC
+IC24.9  is low for 0xfec0-fedf, ADC (1MHz)
+IC24.7  is low for 0xfee0-feff, TUBE
+IC26.12 is low for 0xfe00-fe07 (CRTC)
+IC26.13 is low for 0xfe08-fe0f (ACIA)
+IC26.14 is low for 0xfe10-fe17 (SERPROC)
+IC26.15 is low for 0xfe18-fe1f (INTOFF/STATID)
+IC26.4  is low for 0xfe20-fe2f writes (VIDPROC)
+IC26.5  is low for 0xfe30-fe3f writes (ROMSEL)
+IC26.6  is low for 0xfe20-fe2f reads (INTON)
+IC26.7  is low for 0xfe30-fe3f reads (-)
+
+IC20.4 is low for 0xfc00-fcff (FRED)
+IC20.5 is low for 0xfd00-fdff (JIM)
+IC20.6 is low for 0xfe00-feff (SHEILA)
+IC20.7 is low for 0xff00-ffff
+
+6502
+32kB SRAM - drives databus if (A15 is low and vidproc_n is low) and during phi2 (actually phi1 low) of CPU access and clock high in to CPU
+ROMS drive the bus if 2MHzE (phi 2 high) and not FRED, JIM or SHEILA
+CS for ROMS handle paging of ROMs
+6522 via A
+
+2MHzE is high in phi2 (actually phi1 low)
+
+fred fc00-fcff
+jim fd00-fdff
+sheila fe00-feff
+
+
+The heart of the paged ROM system is IC 76, a 74LS163 quad latch known as ROMSEL. It appears in SHEILA in the low four bits of address &FE30. It is a write-only register but the MOS maintains a copy of the current ROM selection, in RAM at address &F4. A paged ROM can therefore discover its slot number by reading this address.
+
+Only the low two outputs of ROMSEL are connected, to a quad decoder in IC 20 which provides Chip Select signals to four of the ROM sockets. The easternmost of these is assigned slot number 15, which has highest priority for all ROM service calls and resources. The others are assigned slot numbers 14 13, and 12; the fifth, westernmost socket contains the MOS. The table below lists the slot assignments according to the circuit diagram, though it was later recommended to put the DFS in the lowest slot:
+
+OS execution
+
+     0ns: 0xd9cd - reset
+  2520ns: 0xda08 - interrogate keyboard links and control key (result into 0xfc)
+ 13965ns: 0xda26 - 
+ 14300ns: 0xda42 - zero &200+X to &2CD, set 0x2cf to 0x2ff to 0xff
+ 43400ns: 0xda52 - set port A of user via to all outputs (printer out)
+                   clear zero page, copy 0xd940++ to 0x0200++
+ 85340ns: 0xda6b - clear interrupt and enable registers of Both VIAs
+ 86050ns: 0xda77 - briefly allow interrupts to clear anything pending
+ 87790ns: 0xdaaa / 0xec60 - clear sound channels
+171070ns: 0xdabd - rom 0 check
+171190ns:   0xdc16 - set up rom latch
+171430ns: 0xdabf - 
+191070ns: 0xdabd - rom 1-15 check
+        : 0xdad1 - 
+209330ns: 0xdb11 - roms checked, check speech system (absent for now)
+209470ns: 0xdb27 - set up screen
+        :   0xc300, 0xcb1d - screen initialization
+297970ns-425530ns: 0xccf4 - CLS mode 7
+425635ns: 0xdb2d / 0xe4f1
+428930ns: 0xdb32 / 0xead9 - enter BREAK intercept with Carry Clear
+429ee5ns: 0xdb35 / 0xf140 - set up cassette options
+450390ns: 0xdb38 - test for tube - we have a tube at the moment (!)
+        : 0xdb67 - output startup message
+        : 0xdb87 - 
+        : 0xdbbe - 
+        : 0xdbe7 - 
+        : 0x8000 - 
+
+*/
+/*a Includes
+ */
+include "bbc_micro_types.h"
+include "bbc_submodules.h"
+
+/*a Global variables
+ */
+
+/*a Types
+ */
+/*t t_video_mem */
+typedef enum[2] {
+     video_mem_8k =2b01,
+     video_mem_10k=2b11,
+     video_mem_16k=2b00,
+     video_mem_20k=2b10,
+} t_video_mem;
+
+/*t t_address_map_decoded */
+typedef struct {
+    bit fred;
+    bit jim;
+    bit sheila;
+    bit crtc;
+    bit acia;
+    bit serproc;
+    bit intoff;
+    bit vidproc;
+    bit romsel;
+    bit inton;
+    bit via_a;
+    bit via_b;
+    bit fdc;
+    bit adlc;
+    bit adc;
+    bit tube;
+
+    bit access_1mhz;
+    bit[2] rams;
+    bit rom;
+    bit os;
+    bit[4] roms;
+} t_address_map_decoded;
+
+typedef enum[2] {
+    memory_grant_none,
+    memory_grant_cpu,
+    memory_grant_video,
+    memory_grant_host,
+} t_memory_grant;
+
+typedef struct {
+    bit read_enable;
+    bit write_enable;
+    bit[2]  ram_select;
+    bit[4]  rom_select;
+    bit     os_select;
+    bit[14] address;
+    bit[8]  write_data;
+} t_memory_access;
+
+/*a Module
+ */
+module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half of this",
+                  input t_bbc_clock_control clock_control,
+                  output t_bbc_clock_status clock_status,
+                  input bit reset_n,
+                  input t_bbc_keyboard keyboard,
+                  output t_bbc_display display,
+                  output bit keyboard_reset_n,
+                  output t_bbc_floppy_op floppy_op,
+                  input t_bbc_floppy_response floppy_response,
+                  input t_bbc_micro_sram_request host_sram_request,
+                  output t_bbc_micro_sram_response host_sram_response
+)
+{
+
+    /*b Nets
+     */
+    net bit ba "Goes high during phase 2 if ready was low in phase 1 if read_not_write is 1, to permit someone else to use the memory bus";
+    net bit[16] address    "Changes during phase 1 (phi[0] high) with address to read or write";
+    net bit read_not_write "Changes during phase 1 (phi[0] high) with whether to read or write";
+    net bit[8] os_data_out    "Changes during phase 2 (phi[1] high) with data to write";
+    net bit[8] basic_data_out   "Changes during phase 2 (phi[1] high) with data to write";
+    net bit[8] adfs_data_out    "Changes during phase 2 (phi[1] high) with data to write";
+    net bit[8] ram0_data_out    "Changes during phase 2 (phi[1] high) with data to write";
+    net bit[8] ram1_data_out    "Changes during phase 2 (phi[1] high) with data to write";
+    net bit[8] cpu_data_out      "Captured at the end of phase 2 (rising clock with phi[1] high)";
+    comb bit[8] main_databus;
+    comb t_address_map_decoded address_map_decode;
+    comb t_memory_grant memory_grant;
+    comb t_memory_access memory_access;
+    comb bit[8] ram_databus;
+    comb bit[8] memory_databus;
+
+    default reset active_low reset_n;
+    comb bit enable_clk_2MHz_video;
+    comb bit enable_clk_1MHz_rising;
+    comb bit enable_clk_1MHz_falling;
+    comb bit enable_cpu_clk;
+    comb bit phi1;
+    comb bit phi2;
+    clocked clock clk bit[8] cpu_memory_data_hold=0;
+    clocked clock clk bit cpu_reading_memory = 0;
+    clocked clock clk bit host_reading_memory = 0;
+    clocked clock clk t_memory_access last_memory_access={*=0};
+    clocked clock clk t_bbc_micro_sram_request pending_host_sram_request={*=0};
+    clocked clock clk t_bbc_micro_sram_response host_sram_response={*=0};
+
+    gated_clock clock clk active_high enable_clk_2MHz_video   clk_2MHz_video_clock "Clock that mirrors 2MHz falling -  video data from RAM is valid at this edge, so used by CRTC, SAA5050 latches, SAA5050, vidproc";
+    gated_clock clock clk active_high enable_clk_1MHz_rising  clk_1MHzE_rising   "Clock that mirrors 1MHzE rising - 1MHz system clock - used by keyboard and SAA5050";
+    gated_clock clock clk active_high enable_clk_1MHz_falling clk_1MHzE_falling  "Clock that mirrors 1MHzE falling, end of 1MHz CPU bus cycle, used by 6522, 6850, 6845, some latches";
+    gated_clock clock clk active_high enable_cpu_clk          cpu_clk  "6502 clock, >=2MHz but extended when accessing 1MHz peripherals";
+
+    comb bit[8] data_out_sheila;
+    net bit[8] data_out_via_a;
+    net bit irq_n_via_a;
+    net bit[8] data_out_via_b;
+    net bit irq_n_via_b;
+    net bit[8] data_out_fdc;
+    net bit[8] data_out_acia;
+    net bit irq_n_acia;
+    comb bit    lightpen_strobe;
+    comb bit[2] lightpen_buttons;
+    comb bit vsp_int_n;
+    comb bit vsp_rdy_n;
+    clocked clock clk_1MHzE_falling bit via_a_update_latch=0;
+    clocked clock clk_1MHzE_falling bit[8] via_a_latch=0;
+    net bit crtc_clock_enable;
+    net bit crtc_display_enable;
+    net bit[8] crtc_data_out;
+    net bit[14] crtc_memory_address;
+    net bit[5] crtc_row_address;
+    comb bit[15] video_mem_address;
+    comb bit ttx_vdu;
+    clocked clock clk_2MHz_video_clock bit[7] saa_data=0 "Real BBC clocks on 1MHz falling which is presumably coincident with 2MHz falling (not 1MHzE falling...)";
+    clocked clock clk_2MHz_video_clock bit    saa_lose=0 "Real BBC SAA5050 registers this data on rising 1MHz so gets every other 2MHz clock tick data";
+    //clocked clock clk_1MHz_rising bit[7] saa_data=0; There is no 1MHz clock here coincident with every other 2MHz falling - may as well use 2MHz falling
+    //clocked clock clk_1MHz_rising bit    saa_lose=0;
+    net bit hsync;
+    net bit vsync;
+    net bit[8] vidproc_red;
+    net bit[8] vidproc_green;
+    net bit[8] vidproc_blue;
+    net t_bbc_pixels_per_clock vidproc_pixels_valid_per_clock;
+    net bit[6] saa5050_red;
+    net bit[6] saa5050_green;
+    net bit[6] saa5050_blue;
+    clocked clock cpu_clk bit[4] rom_sel=0;
+    comb bit irq_n;
+    comb bit nmi_n;
+    net bit via_a_ca2_in;
+    net bit[8] via_a_pa_out;
+    net bit[8] via_a_pb_out;
+    net bit[8] via_b_pa_out;
+    net bit[8] via_b_pb_out;
+    net bit selected_key_pressed;
+    net bit keyboard_reset_n;
+    net t_bbc_floppy_op floppy_op;
+    net bit nmi_n_fdc;
+
+    /*b Clocking logic */
+    clocking_logic """
+    """: {
+        enable_clk_2MHz_video   = clock_control.enable_2MHz_video; // used for clock enable and to choose which source of SRAM read
+        enable_clk_1MHz_rising  = clock_control.enable_1MHz_rising;
+        enable_clk_1MHz_falling = clock_control.enable_1MHz_falling;
+        enable_cpu_clk          = clock_control.enable_cpu;
+        phi1 = clock_control.phi[0]; // used to enable ROM reading and RAM reading/writing for CPU - should actually be 'last clk before cpu_clk'
+        phi2 = clock_control.phi[1]; // used as one of the chip selects for 1MHz peripherals
+        clock_status.cpu_1MHz_access = address_map_decode.access_1mhz;
+    }
+
+    /*b Inputs and outputs */
+    inputs_and_outputs """
+    """: {
+        display = {*=0};
+        display.hsync = hsync;
+        display.vsync = vsync;
+        display.red   = vidproc_red;
+        display.green = vidproc_green;
+        display.blue  = vidproc_blue;
+        display.pixels_per_clock  = vidproc_pixels_valid_per_clock;
+        if (pending_host_sram_request.valid) {
+            if (!host_sram_request.valid) {
+                host_sram_response.ack <= 0;
+            }
+            if (memory_grant==memory_grant_host) {
+                host_sram_response.ack <= 1;
+                pending_host_sram_request.valid <= 0;
+            }
+            if ((pending_host_sram_request.select==bbc_sram_select_cpu_teletext) && enable_clk_2MHz_video) {
+                host_sram_response.ack <= 1;
+                pending_host_sram_request.valid <= 0;
+            }
+        } elsif (host_sram_request.valid && !host_sram_response.ack) {
+            if ((host_sram_request.select & bbc_sram_select_cpu)!=0) {
+                pending_host_sram_request <= host_sram_request;
+            }
+        } elsif (!host_sram_request.valid && host_sram_response.ack) {
+            host_sram_response.ack <= 0;
+        }
+        host_sram_response.read_data_valid <= 0;
+        host_sram_response.read_data <= 0;
+        if (host_reading_memory) {
+            host_sram_response.read_data_valid <= 1;
+            host_sram_response.read_data[8;0]  <= memory_databus;
+        }
+    }
+
+    /*b 8271 FDC */
+    fdc_8271 """
+    """: {
+        fdc8271 fdc( clk <- cpu_clk,
+                     reset_n <= reset_n,
+                     chip_select_n <= !address_map_decode.fdc,
+                     read_n  <= !read_not_write,
+                     write_n <= read_not_write,
+                     address <= address[2;0],
+                     // data_req =>
+                     data_ack_n <= !(address[2]&address_map_decode.fdc),
+                     data_in <= main_databus,
+                     data_out => data_out_fdc,
+                     irq_n => nmi_n_fdc,
+                     //select =>,
+                     track_0_n <= 1,
+                     write_protect_n <= 1,
+                     index_n <= 1,
+                     ready <= 0,
+                     bbc_floppy_op => floppy_op,
+                     bbc_floppy_response <= floppy_response );
+    }
+    
+    /*b 6850 ACIA */
+    acia_6850 """
+    6850 instance
+    """: {
+        acia6850 acia( clk <- clk_1MHzE_falling, // Bus interaction clock for 1MHz peripherals
+                        reset_n <= reset_n,
+                        read_not_write <= read_not_write,
+                        chip_select   <= 2b11,
+                        chip_select_n <= !address_map_decode.acia,
+                        address       <= address[0],
+                        data_in       <= main_databus,
+                        data_out      => data_out_acia,
+                        irq_n         => irq_n_acia,
+                        tx_clk <= 1,
+                        rx_clk <= 1,
+                        rxd <= 1,
+                       cts <= 1,
+                       dcd <= 1
+            );
+    }
+
+    /*b 6522 VIAs */
+    via_6522s """
+    The 6522's have 1MHzE wired to the clock pin (phi2, pin 25). This means that they run constantly at 1MHz.
+
+    It also means that they need to have their accesses stretched to be at 1MHz. The addresses and selects etc
+    must change while 1MHzE is low, and read data out of them must be captured on falling 1MHzE. Write data
+    is also captured on falling 1MHzE.
+
+    In order to achieve this neatly the chip selects (two of them) are address decode (1) and 2MHzE==!phi[1]==phi[2] (2).
+
+    Hence when accessing 1MHz space the clock in to the 6502 is stretched during its 'high' period (phi[2]) so that this
+    period ends simultaneously with falling 1MHzE. Also, the low period is stretched IF REQUIRED (phi[1]) so that phi[2]
+    assertion is delayed until 1MHzE is low.
+
+    For the modern world we make the clock in be a clock edge at '1MHzE falling'
+
+    """: {
+        lightpen_buttons = 2b11; // l0, l1
+        lightpen_strobe = 1;
+        vsp_int_n = 1; // speech processor
+        vsp_rdy_n = 1;
+        via6522 via_a( clk    <- clk_1MHzE_falling, // Bus interaction clock for 1MHz peripherals - and constant for 6522
+                       clk_io <- clk_1MHzE_rising, // Bus interaction clock for 1MHz peripherals - and constant for 6522
+                       reset_n <= reset_n,
+                       read_not_write <= read_not_write,
+                       chip_select   <= phi2,
+                       chip_select_n <= !address_map_decode.via_a,
+                       address       <= address[4;0],
+                       data_in       <= main_databus,
+                       data_out      => data_out_via_a,
+                       irq_n         => irq_n_via_a,
+                       ca1 <= vsync, // from 6845
+                       ca2_in <= via_a_ca2_in,
+                       pa_in <= bundle(selected_key_pressed, via_a_pa_out[7;0]),
+                       pa_out => via_a_pa_out,
+                       cb1 <= 0,
+                       cb2_in <= lightpen_strobe,
+                       pb_in <= bundle(vsp_int_n, vsp_rdy_n, lightpen_buttons, 4b0),
+                       pb_out => via_a_pb_out
+            );
+        data_out_sheila = data_out_via_a;
+        if (address_map_decode.via_b) { data_out_sheila = data_out_via_b; }
+        if (address_map_decode.acia)  { data_out_sheila = data_out_acia; }
+        if (address_map_decode.fdc)   { data_out_sheila = data_out_fdc; }
+        via_a_update_latch <= 0;
+        if (address_map_decode.via_a) {
+            via_a_update_latch <= 1;
+        }
+        if (via_a_update_latch) {
+            via_a_latch[via_a_pb_out[3;0]] <= via_a_pb_out[3];
+            // 3 -> keyboard_enable_n
+            // 6,7 -> LEDs on keyboard
+        }
+        via6522 via_b( clk    <- clk_1MHzE_falling, // Bus interaction clock for 1MHz peripherals - and constant for 6522
+                       clk_io <- clk_1MHzE_rising, // Bus interaction clock for 1MHz peripherals - and constant for 6522
+                       reset_n <= reset_n,
+                       read_not_write <= read_not_write,
+                       chip_select   <= phi2,
+                       chip_select_n <= !address_map_decode.via_b,
+                       address       <= address[4;0],
+                       data_in       <= main_databus,
+                       data_out      => data_out_via_b,
+                       irq_n         => irq_n_via_b,
+                       ca1 <= 1b0,//
+                       ca2_in <= 1b0,//
+                       pa_in <= 8b0,//
+                       pa_out => via_b_pa_out,
+                       cb1 <= 0,
+                       cb2_in <= 0, 
+                       pb_in <= 0,
+                       pb_out => via_b_pb_out
+            );
+    }
+
+    /*b Video (6845 CRTC and vidproc) */
+    video """
+    """: {
+        bbc_vidproc vidproc(clk_cpu        <- cpu_clk,
+                            clk_2MHz_video <- clk_2MHz_video_clock,
+                            reset_n <= reset_n,
+                            chip_select_n <= !address_map_decode.vidproc,
+                            address       <= address[0],
+                            data_in       <= address_map_decode.vidproc ? main_databus : ram_databus,
+                            disen         <= crtc_display_enable &~ crtc_row_address[3],
+                            invert_n      <= 1,
+                            cursor        <= 0,
+                            crtc_clock_enable => crtc_clock_enable,
+                            saa5050_red <= saa5050_red,
+                            saa5050_green <= saa5050_green,
+                            saa5050_blue <= saa5050_blue,
+                            red => vidproc_red,
+                            green => vidproc_green,
+                            blue => vidproc_blue,
+                            pixels_valid_per_clock => vidproc_pixels_valid_per_clock
+            );
+        crtc6845 crtc( clk_2MHz <- clk_2MHz_video_clock, // pixel shift out clock
+                       clk_1MHz <- clk_1MHzE_falling, // bus interaction clock for 1MHz peripherals
+                       reset_n <= reset_n,
+                       read_not_write  <= read_not_write,
+                       chip_select_n   <= !address_map_decode.crtc,
+                       rs <= address[0],
+                       data_in <= main_databus,
+                       data_out => crtc_data_out,
+                       lpstb_n <= lightpen_strobe,
+                       crtc_clock_enable <= crtc_clock_enable,
+                       ma => crtc_memory_address,
+                       ra => crtc_row_address,
+                       de => crtc_display_enable,
+                       //cursor => crtc_cursor,
+                       hsync => hsync,
+                       vsync => vsync
+            );
+        saa_data <= ram_databus[7;0]; // Real BBC Data in is crtc_display_enable ? saa_data : bundle(1b1, saa_data[6;0]), to force non-control characters during display not enabled
+        saa_lose <= crtc_display_enable;
+        saa5050 saa( clk_2MHz <- clk_2MHz_video_clock, // pixel shift out clock
+                     clk_1MHz <- clk_1MHzE_rising, // character data load clock - uses registered version of RAM data to delay until this clock occurs
+                     reset_n <= reset_n,
+                     superimpose_n <= 0,
+                     data_n <= 0,
+                     data_in <= saa_data,
+                     dlim <= 0,
+                     glr <= !hsync, // not really needed I believe
+                     dew <= vsync,
+                     crs <= crtc_row_address[0], // for smoothing, set on even fields (officially, but not initially)
+                     bcs_n <= 0,
+                     //tlc_n => ,
+                     lose <= saa_lose, // high during real data in a frame
+                     de <= 1,
+                     po <= 0,
+                     red => saa5050_red,
+                     green => saa5050_green,
+                     blue => saa5050_blue,
+                host_sram_request <= pending_host_sram_request);
+
+        ttx_vdu = crtc_memory_address[13];
+        video_mem_address = bundle(crtc_memory_address[4;8],crtc_memory_address[8;0],crtc_row_address[3;0]);
+        if (crtc_memory_address[12]) {
+            // adder values are:
+            // !ma12 => 1111 + carry in of 1 (i.e. unchanged)
+            // ma12 => (!(c0&c1), !(c1&!c0), !c0, c0), with carry in of 1, or
+            // c1.c0 == 01 => 1011 = 0x6000 (inc carry) ( 8kB)
+            // c1.c0 == 11 => 1010 = 0x5800 (inc carry) (10kB)
+            // c1.c0 == 00 => 0111 = 0x4000 (inc carry) (16kB)
+            // c1.c0 == 10 => 0101 = 0x3000 (inc carry) (20kB)
+            full_switch (via_a_latch[2;4]) {
+            case video_mem_8k:  { video_mem_address[4;8] = crtc_memory_address[4;8] + 4b1100; } // 4b1011 + carry
+            case video_mem_10k: { video_mem_address[4;8] = crtc_memory_address[4;8] + 4b1011; } // 4b1010 + carry
+            case video_mem_16k: { video_mem_address[4;8] = crtc_memory_address[4;8] + 4b1000; } // 4b0111 + carry
+            case video_mem_20k: { video_mem_address[4;8] = crtc_memory_address[4;8] + 4b0110; } // 4b0101 + carry
+            }
+        }
+        if (ttx_vdu) {
+            video_mem_address = bundle(5h1f,crtc_memory_address[10;0]);
+        }
+    }
+
+    /*b Glue logic */
+    glue_logic """
+    """ : {
+        nmi_n = 1;
+        if (!nmi_n_fdc)   { nmi_n=0; }
+        irq_n = 1;
+        if (!irq_n_via_a) { irq_n=0; }
+        if (!irq_n_via_b) { irq_n=0; }
+        if (!irq_n_acia)  { irq_n=0; }
+    }
+
+    /*b Keyboard */
+    keyboard """
+    """: {
+        bbc_micro_keyboard keyboard(clk <- clk_1MHzE_rising,
+                                    reset_n <= reset_n,
+                                    reset_out_n => keyboard_reset_n,
+                                    keyboard_enable_n <= via_a_latch[3], //"IC32.7"
+                                    column_select <= via_a_pa_out[4;0],
+                                    row_select <= via_a_pa_out[3;4],
+                                    key_in_column_pressed => via_a_ca2_in,
+                                    selected_key_pressed => selected_key_pressed,
+                                    bbc_keyboard <= keyboard );
+    }
+
+    /*b Address map decode */
+    address_map_decoding """
+    Decode the addresses from the CPU.
+    This is bascially in the north center of the BBC micro schematic
+    """ : {
+        address_map_decode.fred    = ((address &~ 0xff) == 0xfc00);
+        address_map_decode.jim     = ((address &~ 0xff) == 0xfd00);
+        address_map_decode.sheila  = ((address &~ 0xff) == 0xfe00);
+        address_map_decode.crtc    = ((address &~ 0x07) == 0xfe00);
+        address_map_decode.acia    = ((address &~ 0x07) == 0xfe08);
+        address_map_decode.serproc = ((address &~ 0x07) == 0xfe10);
+        address_map_decode.intoff  = ((address &~ 0x07) == 0xfe18); // also statid
+        address_map_decode.vidproc = ((address &~ 0x0f) == 0xfe20) && !read_not_write;
+        address_map_decode.romsel  = ((address &~ 0x0f) == 0xfe30) && !read_not_write;
+        address_map_decode.inton   = ((address &~ 0x0f) == 0xfe20) && read_not_write;
+        address_map_decode.via_a   = ((address &~ 0x1f) == 0xfe40);
+        address_map_decode.via_b   = ((address &~ 0x1f) == 0xfe60);
+        address_map_decode.fdc     = ((address &~ 0x1f) == 0xfe80);
+        address_map_decode.adlc    = ((address &~ 0x1f) == 0xfea0);
+        address_map_decode.adc     = ((address &~ 0x1f) == 0xfec0);
+        address_map_decode.tube    = ((address &~ 0x1f) == 0xfee0);
+
+        address_map_decode.access_1mhz = ( address_map_decode.crtc |
+                                           address_map_decode.acia |
+                                           address_map_decode.serproc |
+                                           address_map_decode.intoff |
+                                           address_map_decode.via_a |
+                                           address_map_decode.via_b |
+                                           address_map_decode.adc );
+        address_map_decode.rams[0] = (address[2;14]==2b00);
+        address_map_decode.rams[1] = (address[2;14]==2b01);
+        address_map_decode.rom     = (address[2;14]==2b10);
+        address_map_decode.os      = (address[2;14]==2b11);
+        address_map_decode.roms = 0;
+        if (address_map_decode.rom) {
+            address_map_decode.roms[rom_sel] = 1;
+        }
+        if (address_map_decode.romsel) {
+            rom_sel <= main_databus[4;0];
+        }
+    }
+
+    /*b Instantiate srams and ROMs
+     */
+    srams """
+    The RAM in the BBC micro is accessed during the second half of a
+    2MHz clock by the CPU, and during the first half of the 2MHz clock
+    by the video memory.
+
+    Notionally the second half of the clock is PHI2, except when PHI2
+    is extended for non-memory transactions (when it is clearly longer
+    and asserted in the first half of a 2MHz clock...), in which case
+    the CPU is not accessing the memory anyway, and so the video can
+    still have priority. Hence in the real system the video is always
+    on the second half of the 2MHz clock.
+
+    In this implementation the  memories are  synchronous and  so the
+    select, address  etc have to be  valid on a clock  edge before the
+    access - hence  the RAM is accessed for the  CPU during the second
+    half of the clock by presenting the controls during the first half
+    of the clock - or phi1.
+
+    Now this will only work if the CPU is running on every clock tick
+    - as the read data out of the SRAM will only stay valid for a
+    single tick. Hence the RAM data for the CPU must be registered,
+    such that it records the RAM data if the CPU was reading the RAM;
+    the CPU gets the RAM data directly during such cycles, but it gets
+    the recorded RAM data in other cycles.
+
+    The video memory is granted access ONLY during PHI2 (the clock
+    control for the video guarantees this) and only on cycles that the
+    video could require it. (Perhaps one could hold off during
+    hsync/vsync?)
+
+    To support the initial setting up of the system (loading of RAMs
+    etc), this implementation also supports host access to the
+    memories as the lowest priority.
+    """: {
+        memory_grant = memory_grant_none;
+        
+        if (clock_control.will_enable_2MHz_video) {
+            memory_grant = memory_grant_video;
+        } elsif (phi1 && !cpu_reading_memory) {
+            memory_grant = memory_grant_cpu;
+        } elsif (pending_host_sram_request.valid) {
+            if (pending_host_sram_request.select != bbc_sram_select_cpu_teletext) {
+                memory_grant = memory_grant_host;
+            }
+        }
+
+        memory_access.ram_select = 0;
+        memory_access.rom_select = 0;
+        memory_access.os_select  = 0;
+        memory_access.read_enable  = 0;
+        memory_access.write_enable = 0;
+        memory_access.address    = address[14;0];
+        memory_access.write_data = main_databus;
+
+        cpu_reading_memory <= 0;
+        host_reading_memory <= 0;
+        if (memory_grant == memory_grant_cpu) {
+            memory_access.ram_select = address_map_decode.rams;
+            memory_access.rom_select = address_map_decode.roms;
+            memory_access.os_select  = address_map_decode.os;
+            memory_access.read_enable  = read_not_write;
+            memory_access.write_enable = (!read_not_write) && (address_map_decode.rams!=0);
+            cpu_reading_memory <= read_not_write;
+        } elsif (memory_grant == memory_grant_video) {
+            memory_access.address = video_mem_address[14;0];
+            memory_access.ram_select = video_mem_address[14] ? 2b10 : 2b01;
+            memory_access.rom_select = 0;
+            memory_access.os_select  = 0;
+            memory_access.read_enable = 1;
+            memory_access.write_enable = 0;
+        } elsif (memory_grant == memory_grant_host) {
+            memory_access.address = pending_host_sram_request.address[14;0];
+            memory_access.ram_select[0] = (pending_host_sram_request.select==bbc_sram_select_cpu_ram_0);
+            memory_access.ram_select[1] = (pending_host_sram_request.select==bbc_sram_select_cpu_ram_1);
+            memory_access.os_select     = (pending_host_sram_request.select==bbc_sram_select_cpu_os);
+            memory_access.rom_select[0] = (pending_host_sram_request.select==bbc_sram_select_cpu_rom_0);
+            memory_access.rom_select[1] = (pending_host_sram_request.select==bbc_sram_select_cpu_rom_1);
+            memory_access.rom_select[2] = (pending_host_sram_request.select==bbc_sram_select_cpu_rom_2);
+            memory_access.rom_select[3] = (pending_host_sram_request.select==bbc_sram_select_cpu_rom_3);
+            memory_access.read_enable  = pending_host_sram_request.read_enable;
+            memory_access.write_enable = pending_host_sram_request.write_enable;
+            memory_access.write_data   = pending_host_sram_request.write_data[8;0];
+            host_reading_memory <= pending_host_sram_request.read_enable;
+        }
+        last_memory_access <= memory_access;
+        
+        se_sram_srw_16384x8 ram_0(sram_clock <- clk,
+                                  select         <= memory_access.ram_select[0],
+                                  read_not_write <= memory_access.read_enable,
+                                  write_enable   <= memory_access.write_enable,
+                                  address        <= memory_access.address,
+                                  write_data     <= memory_access.write_data,
+                                  data_out       => ram0_data_out );
+        se_sram_srw_16384x8 ram_1(sram_clock <- clk,
+                                  select         <= memory_access.ram_select[1],
+                                  read_not_write <= memory_access.read_enable,
+                                  write_enable   <= memory_access.write_enable,
+                                  address        <= memory_access.address,
+                                  write_data     <= memory_access.write_data,
+                                  data_out       => ram1_data_out );
+        se_sram_srw_16384x8 basic(sram_clock <- clk,
+                                  select         <= memory_access.rom_select[0],
+                                  read_not_write <= memory_access.read_enable,
+                                  write_enable   <= memory_access.write_enable,
+                                  address        <= memory_access.address,
+                                  write_data     <= memory_access.write_data,
+                                  data_out       => basic_data_out );
+        se_sram_srw_16384x8 adfs(sram_clock <- clk,
+                                 select         <= memory_access.rom_select[1],
+                                 read_not_write <= memory_access.read_enable,
+                                 write_enable   <= memory_access.write_enable,
+                                 address        <= memory_access.address,
+                                 write_data     <= memory_access.write_data,
+                                 data_out       => adfs_data_out );
+        se_sram_srw_16384x8 os(sram_clock <- clk,
+                               select         <= memory_access.os_select,
+                               read_not_write <= memory_access.read_enable,
+                               write_enable   <= memory_access.write_enable,
+                               address        <= memory_access.address,
+                               write_data     <= memory_access.write_data,
+                               data_out       => os_data_out );
+    }
+
+    /*b Databus multiplexing */
+    databus_multiplexing """
+    """:  {
+        ram_databus = 0;
+        memory_databus = 0;
+        if (last_memory_access.ram_select[0]) { ram_databus |= ram0_data_out; }
+        if (last_memory_access.ram_select[1]) { ram_databus |= ram1_data_out; }
+        memory_databus = ram_databus;
+        if (last_memory_access.os_select)     { memory_databus |= os_data_out; }
+        if (last_memory_access.rom_select[0]) { memory_databus |= basic_data_out; }
+        if (last_memory_access.rom_select[1]) { memory_databus |= adfs_data_out; }
+        
+        main_databus = cpu_data_out;
+        if (read_not_write) {
+            main_databus = memory_databus;
+            if (address_map_decode.rom) {
+                if (!address_map_decode.roms[0] &&
+                    !address_map_decode.roms[1]) {
+                        main_databus = 8hff;
+                }
+            }
+            if (!cpu_reading_memory) { main_databus = cpu_memory_data_hold; }
+            if (address_map_decode.sheila) {main_databus = data_out_sheila; }
+        }
+        if (cpu_reading_memory) {
+            cpu_memory_data_hold <= main_databus;
+        }
+    }
+
+    /*b Instantiate 6502
+     */
+    i6502: {
+        cpu6502 main_cpu( clk <- cpu_clk,
+                           reset_n <= reset_n,
+                           ready <= 1b1,
+                           irq_n <= irq_n,
+                           nmi_n <= nmi_n,
+                           ba => ba,
+                           address => address,
+                           read_not_write => read_not_write,
+                           data_out => cpu_data_out,
+                           data_in <= main_databus
+                         );
+    }
+}

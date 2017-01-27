@@ -1,0 +1,232 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_vidproc.cdl
+ * @brief  BBC microcomputer video ULA CDL implementation
+ *
+ * CDL implementation of the BBC microcomputer model B video ULA.
+ *
+ * The Video ULA is responsible for converting bitmap display byte
+ * data to pixel colors using a programmable palette (with two entries
+ * per color to allow for flashing colors); it also handles the cursor
+ * (flashing or solid), and combining the SAA5050 teletext output as
+ * required.
+ *
+ */
+/*a Includes */
+include "bbc_micro_types.h"
+
+/*a Types */
+/*t t_palette_entry */
+typedef struct {
+    bit flashing;
+    bit[3] base_color;
+} t_palette_entry;
+
+/*t t_palette */
+typedef t_palette_entry[16] t_palette;
+
+/*t t_num_columns */
+typedef enum[2] {
+    columns_10=0, // pixel clock rate of 2MHz, i.e. only rgb[0] out are valid
+    columns_20=1, // pixel clock rate of 4MHz, i.e. only rgb[0,1] out are valid
+    columns_40=2, // pixel clock rate of 8MHz, i.e. only rgb[0,1,2,3] out are valid
+    columns_80=3, // pixel clock rate of 16MHz, i.e. all rgb out are valid
+} t_num_columns;
+
+/*t t_control */
+typedef struct {
+    bit[3] cursor_segments;
+    bit    clock_rate;
+    t_num_columns columns;
+    bit    teletext;
+    bit    flash;
+} t_control;
+
+/*t t_pixel_color */
+typedef bit[3] t_pixel_color;
+
+/*a Module bbc_vidproc */
+module bbc_vidproc( clock clk_cpu         "2MHz bus clock",
+                    clock clk_2MHz_video  "2MHz video",
+                    input bit reset_n     "Not present on the chip, but required for the model - power up reset",
+                    input bit chip_select_n "Active low chip select",
+                    input bit address     "Valid with chip select",
+                    input bit[8] data_in   "Data in (from CPU)",
+                    input bit disen        "Asserted by CRTC if black output required (e.g. during sync)",
+                    input bit invert_n     "Asserted (low) if the output should be inverted (post-disen probably)",
+                    input bit cursor       "Asserted for first character of a cursor",
+                    input bit[6] saa5050_red      "3 pixels in at 2MHz, red component, from teletext",
+                    input bit[6] saa5050_green    "3 pixels in at 2MHz, green component, from teletext",
+                    input bit[6] saa5050_blue     "3 pixels out at 2MHz, blue component, from teletext",
+                    output bit crtc_clock_enable "High for 2MHz, toggles for 1MHz - the 'character clock' - used also to determine when the shift register is loaded",
+                    output bit[8] red      "8 pixels out at 2MHz, red component",
+                    output bit[8] green    "8 pixels out at 2MHz, green component",
+                    output bit[8] blue     "8 pixels out at 2MHz, blue component",
+                    output t_bbc_pixels_per_clock pixels_valid_per_clock
+       )
+{
+    /*b Defaults */
+    default reset active_low reset_n;
+    default clock clk_2MHz_video;
+    clocked bit[8] pixel_shift_register=0;
+    clocked t_palette_entry[8] pixel_values = {*=0};
+    comb t_pixel_color[8] pixel_color;
+    comb t_pixel_color[8] colors_out;
+    clocked bit[8] red=0;
+    clocked bit[8] green=0;
+    clocked bit[8] blue=0;
+    clocked t_bbc_pixels_per_clock pixels_valid_per_clock=0;
+    clocked bit crtc_clock_enable=0;
+    clocked bit[4] cursor_shift_register=0;
+    clocked bit cursor_r=0;
+    clocked bit flash_r=0;
+
+    /*b CPU-written state */
+    default clock clk_cpu;
+    clocked t_control control={*=0};
+    clocked t_palette palette={*=0};
+
+    /*b Pixel output */
+    pixel_output_interface : {
+        
+        flash_r <= control.flash;
+        cursor_r <= cursor_shift_register[3];
+        pixel_values[0] <= palette[ bundle(pixel_shift_register[7], pixel_shift_register[5], pixel_shift_register[3], pixel_shift_register[1]) ];
+        pixel_values[1] <= palette[ bundle(pixel_shift_register[6], pixel_shift_register[4], pixel_shift_register[2], pixel_shift_register[0]) ];
+        pixel_values[2] <= palette[ bundle(pixel_shift_register[5], pixel_shift_register[3], pixel_shift_register[1], 1b1) ];
+        pixel_values[3] <= palette[ bundle(pixel_shift_register[4], pixel_shift_register[2], pixel_shift_register[0], 1b1) ];
+        pixel_values[4] <= palette[ bundle(pixel_shift_register[3], pixel_shift_register[1], 2b11) ];
+        pixel_values[5] <= palette[ bundle(pixel_shift_register[2], pixel_shift_register[0], 2b11) ];
+        pixel_values[6] <= palette[ bundle(pixel_shift_register[1], 3b111) ];
+        pixel_values[7] <= palette[ bundle(pixel_shift_register[0], 3b111) ];
+        for (i; 8) {
+            pixel_color[i] = ~pixel_values[i].base_color;
+            if (cursor_r ^ (pixel_values[i].flashing & flash_r)) {
+                pixel_color[i] = pixel_values[i].base_color;
+            }
+        }
+        for (i; 8) {
+            colors_out[7-i] = pixel_color[i];
+        }
+        full_switch (control.columns) {
+        case columns_80: {
+            for (i; 8) {
+                colors_out[7-i] = pixel_color[i];
+            }
+            pixels_valid_per_clock <= bbc_ppc_8;
+        }
+        case columns_40: {
+            for (i; 4) {
+                colors_out[7-2*i] = pixel_color[i];
+                colors_out[6-2*i] = pixel_color[i];
+            }
+            pixels_valid_per_clock <= bbc_ppc_4;
+        }
+        case columns_20: {
+            for (i; 2) {
+                colors_out[7-4*i] = pixel_color[i];
+                colors_out[6-4*i] = pixel_color[i];
+                colors_out[5-4*i] = pixel_color[i];
+                colors_out[4-4*i] = pixel_color[i];
+            }
+            pixels_valid_per_clock <= bbc_ppc_2;
+        }
+        case columns_10: {
+            for (i; 8) {
+                colors_out[i] = pixel_color[0];
+            }
+            pixels_valid_per_clock <= bbc_ppc_1;
+        }
+        }
+        if (!disen) {
+            for (i; 8) {
+                colors_out[i] = 0;
+            }
+        }
+        // Note that disen in teletext modes is OFF for about half of the character lines as 6845 RA goes 0 to 0x12
+        // So teletext MUST come in after the disen logic
+        if (control.teletext) {
+            pixels_valid_per_clock <= bbc_ppc_6;
+            for (i;6) {
+                colors_out[i] = bundle(saa5050_blue[i],saa5050_green[i],saa5050_red[i]);
+            }
+        }
+        // Note that cursor_shift_register is 2 cycles too late...
+        for (i;8) {
+            red[i]   <= colors_out[i][0] ^ (~invert_n);
+            green[i] <= colors_out[i][1] ^ (~invert_n);
+            blue[i]  <= colors_out[i][2] ^ (~invert_n);
+        }
+    }
+
+    /*b Pixel input
+      BBC micro 16-color pixels are ABABABAB on the bus - AAAA BBBB are the two pixels (AA left pixel, BB right pixel)
+      BBC micro  4-color pixels are ABCDABCD on the bus - AA BB CC DD are the four pixels (AA left pixel, DD right pixel)
+      BBC micro  2-color pixels are ABCDEFGH on the bus
+     */
+    pixel_input_interface : {
+        /*b Shift if NOT getting a pixel loaded
+         Note that since we load every tick (since we run at 'character clock' we always load? - not for mode 4/5/6 */
+        full_switch (control.columns) {
+        case columns_80: { pixel_shift_register <= 8hff; } // consume 8 pixels per character clock
+        case columns_40: { pixel_shift_register <= bundle(pixel_shift_register[4;0],4hf); }
+        case columns_20: { pixel_shift_register <= bundle(pixel_shift_register[6;0],2h3); }
+        case columns_10: { pixel_shift_register <= bundle(pixel_shift_register[7;0],1h1); }
+        }
+        if (crtc_clock_enable) {
+            pixel_shift_register <= data_in;
+            cursor_shift_register <= bundle(cursor_shift_register[3;0],1b0);
+            if (cursor) {
+                cursor_shift_register[3] <= control.cursor_segments[2];
+                cursor_shift_register[2] <= control.cursor_segments[1];
+                cursor_shift_register[1] <= control.cursor_segments[0];
+                cursor_shift_register[0] <= control.cursor_segments[0];
+            }
+        }
+        // cursor load and depends on segment size?
+    }
+
+    /*b Clock control */
+    clock_control """
+    """: {
+        crtc_clock_enable <= 1;
+        if (!control.clock_rate) { // for 1MHz CRTC clock
+            crtc_clock_enable <= !crtc_clock_enable;
+        }
+    }
+
+    /*b CPU interface */
+    cpu_interface : {
+
+        /*b Control register */
+        if (!chip_select_n && (address==0)) {
+            control <= { cursor_segments=data_in[3;5],
+                    clock_rate = data_in[4], // set => 2MHz, clear => 1MHz
+                    columns = data_in[2;2], // 3 => 16MHz pixel rate, 0=> 2MHz pixel rate
+                    teletext = data_in[1],
+                    flash = data_in[0] };
+        }
+
+        /*b Palette writes */
+        if (!chip_select_n && (address==1)) {
+            palette[data_in[4;4]] <= {flashing = data_in[3],
+                    base_color = data_in[3;0]};
+        }
+
+        /*b All done */
+    }
+
+    /*b All done */
+}

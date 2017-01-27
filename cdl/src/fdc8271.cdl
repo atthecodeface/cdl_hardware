@@ -1,0 +1,1805 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  fdc8271.cdl
+ * @brief CDL implementation of 8271 FDC
+ *
+ * This is an implementaion of the Intel 8271 FDC - although that was
+ * a microcoded beast, and this is hard-coded state machines. Also,
+ * this maps 8271 commands to bbc_floppy op/responses, which can then
+ * be mapped to SRAM read/writes, rather than analog FM/MFM data.
+ */
+/*a Includes */
+include "bbc_micro_types.h"
+// bbc
+// 0x8cd9 - read adddress 0
+// 0x8cdf - read adddress 1
+// 0x8cd9 - read adddress 0
+// 0x8cdf - read adddress 1
+// 0x8cc9 - read adddress 0
+// 0x8cce - write 0x6c to address 0
+// 0x8cd9 - read adddress 0
+// 0x8cdf - read adddress 1
+// 0x8cd5 - read adddress 1
+// 0x8cc9 - read adddress 0
+// 0x8cce - write 0x3a to address 0 write special reg
+// 0x8cb4 - read adddress 0
+// 0x8cbc - write 0x23 to address 1 drive control output port
+// 0x8cb4 - read adddress 0
+// 0x8cbc - write 0x48 to address 1 select=01, load head
+// 0x8cc9 - read adddress 0
+
+// 0x8cce - write 0x6c to address 0
+// 0x8cd9 - read adddress 0
+// 0x8cdf - read adddress 0
+// 0x8cd5 - read adddress 1
+// 0x8cc9 - read adddress 0
+
+// 0x8cce - write 0x6c to address 0
+// 0x8cd9 - read adddress 0
+// 0x8cdf - read adddress 0
+// 0x8cd5 - read adddress 1
+// 0x8cc9 - read adddress 0
+
+//
+/*a Types */
+/*t t_drive_outputs */
+typedef struct {
+    bit direction;
+    bit step;
+    bit load_head;
+    bit write_enable;
+    bit[2] select;
+    bit fault_reset;
+    bit low_current;
+} t_drive_outputs;
+
+/*t t_drive_timing
+  Note that the time enables need not occur at the counter frequency they match,
+  indeed the expectation is that they will occur 4 times as often, and that the
+  counters are initialized to 4x the required value, so that the jitter in the counter
+  expiration is of the order of 1/4 of the counter frequency.
+ */
+typedef struct {
+    bit[8]   step_timer_1ms "Number of 1ms for a step completion";
+    bit[8]   head_timer_4ms "Number of 4ms for head settling";
+
+    bit time_10us_completed "Asserted if the 10us counter has finished";
+    bit time_1ms_tick       "Asserted if the 1ms counter reaches zero (it auto-restarts)";
+
+    bit time_10us_start     "Asserted if the 10us counter should restart - at start of direction change, or step going high, or step falling";
+    bit time_1ms_restart    "Asserted if the 1ms counter should restart - at start of step";
+
+    bit direction_can_be_set  "Asserted if the 'direction' pin can change (setup/hold time being met)";
+    bit step_can_start        "Asserted if the 'step' pin can force a step (setup/hold time being met)";
+
+    bit step_in_progress  "Asserted if a step has started and has not settled";
+    bit step_settled      "Asserted if a step has settled (inverse of step_in_progress)";
+    bit head_settled      "Asserted if the head has settled and hence a read/write can start";
+    bit data_byte_ready   "Asserted if a new data byte is 'ready' - to pace out data";
+} t_drive_timing;
+
+/*t t_drive_timing_state
+  Counters for timing drive operation
+ */
+constant integer timer_data_counter_value=128; // 32us in clock ticks for single density (?)
+constant integer timer_10us_counter_value=2; // 10us in clock ticks (should be 20 ticks)
+constant integer timer_1ms_counter_value=8;  // 1ms in clock ticks (should be 2000 ticks)
+typedef struct {
+    bit[8]   timer_data        "Data byte timer";
+    bit[5]   timer_10us        "Timer used for 10us pulse timing";
+    bit      direction_setting "Asserted for one tick when a drive_operation direction set request is being started";
+    bit      step_setting      "Asserted for one tick when a drive_operation step request is being started";
+    bit      loading_head      "Asserted for one tick when a drive_operation load head request is being started";
+    bit[12]  timer_1ms         "Auto-restarting 1ms timer, force-restarted on each step";
+    bit[8]   step_counter      "Number of 1ms ticks for a step completion";
+    bit[8+2] head_counter      "Number of 1ms ticks for head settling";
+} t_drive_timing_state;
+
+/*t t_drive_operation */
+typedef struct {
+    bit direction_set;
+    bit direction_value;
+    bit step_start;
+    bit load_head;
+    bit starting_op;
+    bit completing_op;
+    bit read_id;
+    bit read_data;
+    bit capture_id;
+    bit capture_data;
+    bit read_data_capture_id;
+    bit read_data_capture_data;
+} t_drive_operation;
+
+/*t t_dos_fsm */
+typedef fsm {
+    dos_fsm_idle;
+    dos_fsm_complete_okay;
+    dos_fsm_complete_track_0_not_found;
+    dos_fsm_seek_zero_start;
+    dos_fsm_seek_zero_step;
+    dos_fsm_seek_zero_wait_until_settled;
+    dos_fsm_seek_nonzero_check_bad_track_1;
+    dos_fsm_seek_nonzero_check_bad_track_2;
+    dos_fsm_seek_nonzero_calculate_steps;
+    dos_fsm_seek_nonzero_set_direction;
+    dos_fsm_seek_nonzero_step;
+    dos_fsm_seek_sector_id;
+    dos_fsm_seek_sector_id_check;
+    dos_fsm_load_head;
+    dos_fsm_read_id;
+    dos_fsm_read_id_copy_data;
+    dos_fsm_read_data;
+    dos_fsm_read_data_wait;
+    dos_fsm_read_data_present_data;
+    dos_fsm_present_data;
+    dos_fsm_find_index;
+    dos_fsm_find_index_wait;
+} t_dos_fsm;
+
+/*t t_drive_operation_state */
+typedef struct {
+    bit[8]    retry_count;
+    bit[8]    words_remaining;
+    t_dos_fsm fsm_state;
+    bit[8]    current_track;
+    bit[32]   read_data_buffer;
+    t_bbc_floppy_sector_id sector_id;
+} t_drive_operation_state;
+
+/*t t_drive_execution_operation */
+typedef enum[3] {
+    deo_none,
+    deo_find_index,
+    deo_seek_track,
+    deo_seek_sector_id,
+    deo_load_head,
+    deo_read_id,
+    deo_read_data,
+} t_drive_execution_operation;
+
+/*t t_drive_execution_result */
+typedef struct {
+    bit valid;
+} t_drive_execution_result;
+
+/*t t_drive_execution */
+typedef struct {
+    bit direction_set;
+    bit direction_value;
+    t_drive_execution_result result;
+    bit takes_command;
+} t_drive_execution;
+
+/*t t_des_fsm */
+typedef fsm {
+    des_fsm_idle;
+    des_fsm_find_index;
+    des_fsm_finding_index;
+    des_fsm_seek_load;
+    des_fsm_seek_load_wait_for_load;
+    des_fsm_seek;
+    des_fsm_seek_in_progress;
+    des_fsm_seek_sector_id;
+    des_fsm_seek_sector_id_in_progress;
+    des_fsm_read_id;
+    des_fsm_read_id_in_progress;
+    des_fsm_read_data;
+    des_fsm_read_data_in_progress;
+} t_des_fsm;
+
+/*t t_drive_execution_state */
+typedef struct {
+    t_des_fsm fsm_state;
+    t_drive_execution_operation operation;
+    bit[32] read_data_buffer;
+    bit[4] read_data_valid;
+} t_drive_execution_state;
+
+/*t t_drive_execution_command */
+typedef enum[3] {
+    dec_none,
+    dec_find_index,
+    dec_seek,
+    dec_seek_load,
+    dec_read_id,
+    dec_seek_sector,
+    dec_read_data,
+} t_drive_execution_command;
+
+/*t t_set_outputs */
+typedef struct {
+    bit valid;
+    bit write_enable;
+    bit seek_step;
+    bit direction;
+    bit load_head;
+    bit low_head_current;
+    bit write_fault_reset;
+    bit[2] select;
+} t_set_outputs;
+
+/*t t_command */
+typedef struct {
+    t_drive_execution_command drive_execution_command;
+    bit takes_command;
+    bit takes_parameter;
+    bit generate_interrupt;
+    t_set_outputs set_outputs;
+} t_command;
+
+/*t t_cs_fsm */
+typedef fsm {
+    cs_fsm_idle;
+    cs_fsm_specify_0;
+    cs_fsm_specify_init_step_rate;
+    cs_fsm_specify_init_head_settling_time;
+    cs_fsm_specify_init_load_time;
+    cs_fsm_specify_load_bad_track_1;
+    cs_fsm_specify_load_bad_track_2;
+    cs_fsm_specify_load_current_track;
+    cs_fsm_write_special_reg;
+    cs_fsm_write_special_data;
+    cs_fsm_read_special_reg;
+    cs_fsm_seek_get_track;
+    cs_fsm_seek_start;
+    cs_fsm_seek_wait_for_result;
+    cs_fsm_read_write_multi_sector;
+    cs_fsm_read_write_multi_sector_get_sector;
+    cs_fsm_read_write_multi_sector_get_length;
+    cs_fsm_read_write_multi_sector_find_sector;
+    cs_fsm_read_write_multi_sector_seek_load;
+    cs_fsm_read_write_multi_sector_wait_for_find;
+    cs_fsm_read_write_multi_sector_read_data;
+    cs_fsm_read_write_multi_sector_reading_data;
+    cs_fsm_read_multi_id;
+    cs_fsm_read_multi_id_zero_param;
+    cs_fsm_read_multi_id_num_ids;
+    cs_fsm_read_multi_id_seek_load;
+    cs_fsm_read_multi_id_find_index;
+    cs_fsm_read_multi_id_start;
+    cs_fsm_read_multi_id_wait_for_result;
+    cs_fsm_read_write_sector;
+    cs_fsm_read_write_sector_get_sector;
+    cs_fsm_read_write_sector_find_sector;
+    cs_fsm_read_write_sector_seek_load;
+    cs_fsm_read_write_sector_wait_for_find;
+    cs_fsm_read_write_sector_read_data;
+    cs_fsm_read_write_sector_reading_data;
+    cs_fsm_command_format_track;
+    cs_fsm_result_none;
+    cs_fsm_result_ready;
+    cs_fsm_result_capture;
+    cs_fsm_command_status_0;
+    cs_fsm_drive_status;
+} t_cs_fsm;
+
+/*t t_command_state */
+typedef struct {
+    t_cs_fsm fsm_state;
+    bit busy;
+    bit[2] select "Select to be driven out when command is taken";
+    bit surface   "Used only for setting bad tracks etc";
+    bit[8] special_reg;
+    bit[8] command_track;
+    bit[8] command_sector;
+    bit[5] command_num_sectors;
+    bit[3] command_sector_length;
+} t_command_state;
+
+/*t t_control_scan */
+typedef struct {
+    bit[8] sector;
+    bit[8] msb;
+    bit[7] lsb;
+} t_control_scan;
+
+/*t t_control_drive */
+typedef struct {
+    bit[8] current_track;
+    bit[8] bad_track_1;
+    bit[8] bad_track_2;
+} t_control_drive;
+
+/*t t_control */
+typedef struct {
+    t_control_scan scan;
+    t_control_drive drive_0;
+    t_control_drive drive_1;
+    bit non_dma_mode;
+    bit double_actuator;
+    bit[8] step_time;
+    bit[8] head_settling_time;
+    bit[4] head_load_time;
+    bit[4] head_unload_count;
+} t_control;
+
+/*t t_read_action */
+typedef enum[2] {
+    read_action_none,
+    read_action_status,
+    read_action_result,
+    read_action_data,
+} t_read_action;
+
+/*t t_write_action */
+typedef enum[3] {
+    write_action_none,
+    write_action_command,
+    write_action_parameter,
+    write_action_data,
+    write_action_reset,
+} t_write_action;
+
+/*t t_command_register */
+typedef struct {
+    bit full;
+    bit[8] data;
+} t_command_register;
+
+/*t t_parameter_register */
+typedef struct {
+    bit full;
+    bit[8] data;
+} t_parameter_register;
+
+/*t t_result_register */
+typedef struct {
+    bit full;
+    bit[8] data;
+} t_result_register;
+
+/*t t_status_register */
+typedef struct {
+    bit command_busy;
+    bit command_register_full;
+    bit parameter_register_full;
+    bit result_register_full;
+    bit non_dma_data_request;
+    bit interrupt_request;
+} t_status_register;
+
+/*a Module fdc8271 */
+module fdc8271( clock clk                "",
+                input bit reset_n        "8271 has an active high reset, but...",
+                input bit chip_select_n  "Active low chip select",
+                input bit read_n         "Indicates a read transaction if asserted and chip selected",
+                input bit write_n        "Indicates a write transaction if asserted and chip selected",
+                input bit[2] address     "Address of register being accessed",
+                input bit[8] data_in     "Data in (from CPU)",
+                output bit[8] data_out   "Read data out (to CPU)",
+                output bit irq_n         "Was INT on the 8271, but that means something else now; active low interrupt",
+                output bit data_req      "",
+                input  bit data_ack_n    "",
+                output bit[2] select     "drive select",
+                input bit[2] ready       "drive ready",
+                output bit fault_reset   "",
+                output bit write_enable  "High if the drive should write data",
+                output bit seek_step     "High if the drive should step",
+                output bit direction     "Direction of step",
+                output bit load_head     "Enable drive head",
+                output bit low_current   "Asserted for track>=43",
+                input bit track_0_n        "Asserted low if the selected drive is on track 0",
+                input bit write_protect_n  "Asserted low if the selected drive is write-protected",
+                input bit index_n          "Asserted low if the selected drive photodiode indicates start of track",
+                output t_bbc_floppy_op bbc_floppy_op              "Model drive operation, including write data",
+                input t_bbc_floppy_response bbc_floppy_response  "Parallel data read, specific to the model"
+                // fault_n, count_n, plo, write_data, unseparated_data_n, data_window, insync
+       )
+    /*b Documentation */
+"""
+Diskettes had a standard format, with up to 80 (or so) tracks, each with a fixed layout
+
+Each track would 'start' at the index marker, with a sync gap; the
+track then contained 'N' sectors each with an ID, a sync gap, data and
+another sync gap.
+
+At the end there would be a final gap - but not a sync gap. A sync gap
+is 8hff's followed by six 8h00's. The final gap is all 8hff.
+
+What this means is that effectively a track is 1's until the
+first sector Each sector is 48 0's, then a sector ID (which starts
+with a 1) followed by 1's with about 48 0's separating the ID from the
+sector data. The sector data starts with a single marker byte
+(starting with a 1) followed by the data and a CRC, followed by 1's.
+
+The 48 0's may not always be 48, and the 1's may vary too - these are
+effectively start/stop regions, which can be encroached on by
+variations in disk speed.
+
+Bytes on the disk are stored with a high clock pulse every 4us, and a
+low or high data pulse in the middle (i.e. after 2us).
+
+Each bit on the disk is normally 4us, and a track is notionally
+8*5,208 bits, so 166,656us (basically 1/6th of a second). This is
+because the disk spins at 360rpm, 6rps.
+At 4us/bit, a byte is read a 32us/byte - this is the NMI response time.
+
+Note that the index markers have gapped clocks, to identify them
+properly - but the data is guaranteed to have ones, so the disk will
+not have just zeros for the index markers.
+
+A simple implementation of a disk system might just support the sector
+data with a fixed number of sectors. However, for more flexibility
+(and perhaps ease of hardware implementation here) an alternative
+approach can be taken. This is to have a sector descriptor memory, as
+well as a disk data memory.
+
+The sector descriptor memory is indexed by track and sector
+number. Supporting up to 16 sectors per track means that a sector
+descriptor memory is addressed by {track[7;0], sector[4;0]} - an
+11-bit address. The sector descriptor memory is indexed by physical
+sector - i.e. the position on the track. The sector descriptor memory
+contains the sector's logical sector number.
+
+The sector descriptor (64 bits) must contain:
+
+* bit indicating it is valid (so that a max number of sectors <16 can be used)
+* start address in disk data memory of sector data (excluding the
+* bottom 7 bits must be zero, since sectors are always a multiple of
+* 128 bytes)
+
+* id address mark for sector (8 bits) (8hFE, clock pattern 8hc7)
+* track number (7 bits)
+* head number (1 bit)
+* sector number (4 bits)
+* sector length (2 bits, 0=>128, 1=>256, 2=>512, 3=>1024)
+* disk data address mark  (8 bits) (8hFB valid, 8hf8 deleted data) (in the sector data itself on the disk)
+* bit indicating ID has bad CRC
+* bit indicating data has bad CRC
+
+A disk descriptor then needs a base address of sector descriptor data,
+a base address of disk data memory, a number of tracks.  For emulation
+purposes, the disk descriptor also includes details on how realistic
+the timing should be.
+It should also have a 'valid' bit (0 if disk not loaded), and a 'write protect' bit
+
+The NMI code is:
+ 7 (NMI brk)
+ 3 0xd00 PHA
+ 4 0xd01 LDA &FE28        ;; FDC Status/Command
+ 2 0xd04 AND #&1F
+ 2 0xd06 CMP #&03
+*2 0xd08 BNE LBCBA ... error handling
+ 4 0xd0a LDA &FE2B        ;; FDC Data
+ 4 0xd0d STA &FFFF        ;; Replaced with destination address
+ 6 0xd10 INC 0xD0E
+*3 0xd13 BNE 0xd18
+ - 0xd15 INC 0xD0F
+ 4 0xd18 PLA
+ 6 0xd19 RTI
+
+Total of 47 cycles, or 23.5us per byte for data transfers
+
+    On a real drive, each track has 5208 bytes.
+    * index mark
+    * post-index gap, 32 bytes (26 0xff, 6 0x00 sync)
+    * Numsectors * { id field, 7 bytes; post-id field gap 17 bytes (11 0xff, 6 0x00 sync); data field (n bytes); post-data field gap 33 bytes (27 0xff, 6 0x00 sync) }
+    * trailing gap (40 0xff, 6 0x00 sync)
+
+    id field is:
+    * id address mark
+    * track address (00-74, officially in 8271)
+    * head address (0 or 1)
+    * sector address (01-26)
+    * sector length (0=>128, 1=>256, 2=>512)
+    * 2 bytes CRC
+
+    data field is:
+    * data address mark
+    * N bytes data
+    * 2 byte CRC
+
+"""
+{
+    /*b Defaults */
+    default reset active_low reset_n;
+    default clock clk;
+    clocked bit internal_reset=0;
+
+    /*b Decode of interface */
+    comb t_write_action  write_action;
+    comb t_read_action   read_action;
+    clocked t_command_register    command_register={*=0};
+    clocked t_parameter_register  parameter_register={*=0};
+    clocked t_result_register     result_register={*=0};
+    comb    t_status_register     status_register;
+    clocked t_control             control={*=0};
+    clocked t_drive_outputs       drive_outputs={*=0};
+
+    /*b Command and command execution state/combinatorials */
+    comb t_command            command;
+    clocked t_command_state   command_state={*=0};
+
+    /*b Drive execution, operation and control state/combinatorials */
+    comb t_drive_execution          drive_execution;
+    clocked t_drive_execution_state drive_execution_state={*=0};
+    comb t_drive_operation          drive_operation;
+    clocked t_drive_operation_state drive_operation_state={*=0};
+    comb t_drive_timing          drive_timing;
+    clocked t_drive_timing_state drive_timing_state={*=0};
+
+    /*b Interface to BBC floppy model, and internal signals to mux between 'real' and 'model' */
+    clocked t_bbc_floppy_op bbc_floppy_op={*=0};
+    clocked bit[2] internal_disk_ready = 0  "Drive ready; this is 'zero latching', but what that means is anybody's guess. It has to toggle to work.";
+    comb bit    internal_track_0          "Asserted if the selected drive is on track 0";
+    comb bit    internal_write_protect    "Asserted if the selected drive is write-protected";
+    comb bit    internal_index            "Asserted if the selected drive is at the last sector";
+    comb bit    internal_read_data_valid  "Asserted if the read data is currently valid";
+
+    /*b Read/write logic */
+    clocked bit interrupt_pending=0;
+    read_write_logic """
+    Read, write, DMA and control logic
+    """: {
+        /*b Handle status */
+        status_register = {*=0};
+        status_register.command_busy            = command_state.busy;
+        status_register.command_register_full   = command_register.full;
+        status_register.parameter_register_full = parameter_register.full;
+        status_register.interrupt_request = interrupt_pending;
+        status_register.non_dma_data_request    = 0;
+        if (control.non_dma_mode) {
+            status_register.non_dma_data_request = drive_execution_state.read_data_valid[0];
+            // do something for writes
+        }
+        status_register.result_register_full = result_register.full;
+        //Signal or state 'status_register__interrupt_request' is never assigned
+        data_req = 0;
+        irq_n = !(status_register.interrupt_request || status_register.non_dma_data_request);
+
+        /*b Determine write_action */
+        if (command.takes_parameter) {
+            parameter_register.full <= 0;
+        }
+        if (command.takes_command) {
+            command_register.full <= 0;
+        }
+        write_action = write_action_none;
+        if (!chip_select_n && !write_n) {
+            part_switch(address) {
+            case 2b00: { write_action = write_action_command; }
+            case 2b01: { write_action = write_action_parameter; }
+            case 2b10: { write_action = write_action_reset; }
+            }
+        }
+        if (!data_ack_n && !write_n) {
+            write_action = write_action_data;
+        }
+
+        /*b Determine read_action */
+        read_action = read_action_none;
+        if (!chip_select_n && !read_n) {
+            part_switch(address) {
+            case 2b00: { read_action = read_action_status; }
+            case 2b01: { read_action = read_action_result; }
+            }
+        }
+        if (!data_ack_n && !read_n) {
+            read_action = read_action_data;
+        }
+
+        /*b Handle write_action */
+        if (write_action==write_action_reset) {
+            internal_reset <= data_in[0];
+        }
+
+        if (write_action==write_action_command) {
+            command_register.full <= 1;
+            command_register.data <= data_in;
+        }
+
+        if (write_action==write_action_parameter) {
+            parameter_register.full <= 1;
+            parameter_register.data <= data_in;
+        }
+
+        if (write_action==write_action_data) {
+            //data_from_dma <= data_in;
+            //interrupt on completion of block; timeout if DMA data not received in 31usec;
+        }
+
+        /*b Handle read_action */
+        if (read_action==read_action_result) {
+            result_register.full <= 0;
+        }
+
+        data_out = 0;
+        full_switch (read_action) {
+        case read_action_result: {
+            data_out = result_register.data;
+            interrupt_pending <= 0;
+        }
+        case read_action_status: {
+            //status_register.command_busy <= drive_state.busy;
+            //status_register.command_register_full <= command_register.full;
+            //status_register.parameter_register_full <= parameter_register.full;
+            //status_register.interrupt_request;
+            data_out = bundle( status_register.command_busy,
+                               status_register.command_register_full,
+                               status_register.parameter_register_full,
+                               status_register.result_register_full,
+                               status_register.interrupt_request,
+                               status_register.non_dma_data_request,
+                               2b0);
+        }
+        case read_action_data: {
+            data_out = drive_execution_state.read_data_buffer[8;0];
+            //interrupt on completion of block; timeout if DMA data not received in 31usec;
+        }
+        default: {
+            data_out = 0;
+        }
+        }
+        if (command.generate_interrupt) {
+            interrupt_pending <= 1;
+        }
+        /*b All done */
+    }
+
+    /*b Serial interface controller */
+    serial_interface_controller """
+    Serial interface controller.
+    """: {
+    }
+
+    /*b Command controller */
+    command_interface_controller """
+    Command interface controller consisting of the input buffer and output buffer
+    """: {
+        /*b Command state machine decode */
+        command = {*=0};
+        full_switch (command_state.fsm_state) {
+        /*b Command state machine idle */
+        case cs_fsm_idle: {
+            command_state.busy <= 1;
+            command.takes_command = 1;
+            command_state.select <= command_register.data[2;6];
+            full_switch (command_register.data[6;0]) {
+                // scan data, scan and delete, write data, write del data, read data, read and delete, verify and delete data, read id, format track
+            case 6h35: { // specify
+                command_state.fsm_state <= cs_fsm_specify_0;
+            }
+            case 6h3d: { // read special register
+                command_state.fsm_state <= cs_fsm_read_special_reg;
+            }
+            case 6h3a: { // write special register
+                command_state.fsm_state <= cs_fsm_write_special_reg;
+            }
+            case 6h0a: { // write data
+                command_state.fsm_state <= cs_fsm_read_write_sector;
+            }
+            case 6h0e: { // write data and deleted data
+                command_state.fsm_state <= cs_fsm_read_write_sector;
+            }
+            case 6h1e: { // verify data and deleted data
+                command_state.fsm_state <= cs_fsm_read_write_sector;
+            }
+            case 6h12: { // read data
+                command_state.fsm_state <= cs_fsm_read_write_sector;
+            }
+            case 6h16: { // read data and deleted data
+                command_state.fsm_state <= cs_fsm_read_write_sector;
+            }
+            case 6h0b: { // write data multi
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector;
+            }
+            case 6h0f: { // write data and deleted data multi
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector;
+            }
+            case 6h1f: { // verify data and deleted data multi
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector;
+            }
+            case 6h13: { // read data multi
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector;
+            }
+            case 6h17: { // read data and deleted data multi
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector;
+            }
+            case 6h1b: { // read id multi
+                command_state.fsm_state <= cs_fsm_read_multi_id;
+            }
+            case 6h23: { // format track, gap 3 minus 6, record length / sectors per track, gap 5 size minus 6, gap 1 size minus 6
+                command_state.fsm_state <= cs_fsm_command_format_track;
+            }
+            case 6h29: { // seek (select 0, select 1)
+                command_state.fsm_state <= cs_fsm_seek_get_track;
+            }
+            case 6h2a: { // command status (select 0, select 1)
+                command_state.fsm_state <= cs_fsm_command_status_0;
+            }
+            case 6h2c: { // drive status (select 0, select 1)
+                command_state.fsm_state <= cs_fsm_drive_status;
+            }
+            default: {
+                command_state.fsm_state <= cs_fsm_idle;
+            }
+            }
+            if (!command_register.full) {
+                command_state.fsm_state <= command_state.fsm_state;
+                command.takes_command = 0;
+                command_state.busy <= 0;
+            }
+        }
+        /*b Command state machine fsm specify state */
+        case cs_fsm_specify_0: {
+            command.takes_parameter = 1;
+            command_state.surface <= parameter_register.data[3];
+            full_switch (parameter_register.data) {
+            case 8h0d: { // init
+                command_state.fsm_state <= cs_fsm_specify_init_step_rate;
+            }
+            case 8h10, 8h18: { // load bad tracks surface 0
+                command_state.fsm_state <= cs_fsm_specify_load_bad_track_1;
+            }
+            default: {
+                command_state.fsm_state <= cs_fsm_idle;
+            }
+            }
+            if (!parameter_register.full) {
+                command_state.fsm_state <= command_state.fsm_state;
+                command.takes_parameter = 0;
+            }
+        }
+        /*b Command state machine fsm specify init states */
+        case cs_fsm_specify_init_step_rate: {
+            if (parameter_register.full) {
+                control.step_time <= parameter_register.data;
+                command_state.fsm_state <= cs_fsm_specify_init_head_settling_time;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_specify_init_head_settling_time: {
+            if (parameter_register.full) {
+                control.head_settling_time <= parameter_register.data;
+                command_state.fsm_state <= cs_fsm_specify_init_load_time;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_specify_init_load_time: {
+            if (parameter_register.full) {
+                control.head_load_time    <= parameter_register.data[4;0];
+                control.head_unload_count <= parameter_register.data[4;4];
+                command_state.fsm_state <= cs_fsm_result_none;
+                command.takes_parameter = 1;
+            }
+        }
+        /*b Command state machine fsm specify load bad track states */
+        case cs_fsm_specify_load_bad_track_1: {
+            if (parameter_register.full) {
+                if (!command_state.select[1]) { control.drive_0.bad_track_1 <= parameter_register.data; }
+                if ( command_state.select[1]) { control.drive_1.bad_track_1 <= parameter_register.data; }
+                command_state.fsm_state <= cs_fsm_specify_load_bad_track_2;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_specify_load_bad_track_2: {
+            if (parameter_register.full) {
+                if (!command_state.select[1]) { control.drive_0.bad_track_2 <= parameter_register.data; }
+                if ( command_state.select[1]) { control.drive_1.bad_track_2 <= parameter_register.data; }
+                command_state.fsm_state <= cs_fsm_specify_load_current_track;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_specify_load_current_track: {
+            if (parameter_register.full) {
+                if (!command_state.select[1]) { control.drive_0.current_track <= parameter_register.data; }
+                if ( command_state.select[1]) { control.drive_1.current_track <= parameter_register.data; }
+                command_state.fsm_state <= cs_fsm_result_none; // result none has no interrupt on completion, no result register valid
+                command.takes_parameter = 1;
+            }
+        }
+        /*b Command state machine fsm specify write special register states */
+        case cs_fsm_write_special_reg: {
+            if (parameter_register.full) {
+                command_state.special_reg <= parameter_register.data;
+                command_state.fsm_state <= cs_fsm_write_special_data;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_write_special_data: {
+            if (parameter_register.full) {
+                part_switch (command_state.special_reg) {
+                case 8h06: {control.scan.sector <= parameter_register.data;}
+                case 8h14: {control.scan.msb <= parameter_register.data;}
+                case 8h13: {control.scan.lsb <= parameter_register.data[7;0];}
+                case 8h10: {control.drive_0.bad_track_1 <= parameter_register.data;}
+                case 8h11: {control.drive_0.bad_track_2 <= parameter_register.data;}
+                case 8h12: {control.drive_0.current_track <= parameter_register.data;}
+                case 8h18: {control.drive_1.bad_track_1 <= parameter_register.data;}
+                case 8h19: {control.drive_1.bad_track_2 <= parameter_register.data;}
+                case 8h1a: {control.drive_1.current_track <= parameter_register.data;}
+                case 8h17: {
+                    control.non_dma_mode    <= parameter_register.data[0];
+                    control.double_actuator <= parameter_register.data[1];
+                }
+                case 8h23: {
+                    command.set_outputs =  {valid=1,
+                                            write_enable=parameter_register.data[0],
+                                            seek_step=parameter_register.data[1],
+                                            direction=parameter_register.data[2],
+                                            load_head=parameter_register.data[3],
+                                            low_head_current=parameter_register.data[4],
+                                            write_fault_reset=parameter_register.data[5],
+                                            select=parameter_register.data[2;6]};
+                }
+                }
+                command_state.fsm_state <= cs_fsm_result_none;
+                command.takes_parameter = 1;
+            }
+        }
+        /*b Command state machine fsm specify read special register state */
+        case cs_fsm_read_special_reg: {
+            if (parameter_register.full) {
+                part_switch (parameter_register.data) {
+                case 8h06: {result_register.data <= control.scan.sector;}
+                case 8h14: {result_register.data <= control.scan.msb;}
+                case 8h13: {result_register.data <= bundle(1b0,control.scan.lsb);}
+                case 8h10: {result_register.data <= control.drive_0.bad_track_1;}
+                case 8h11: {result_register.data <= control.drive_0.bad_track_2;}
+                case 8h12: {result_register.data <= control.drive_0.current_track;}
+                case 8h18: {result_register.data <= control.drive_1.bad_track_1;}
+                case 8h19: {result_register.data <= control.drive_1.bad_track_2;}
+                case 8h1a: {result_register.data <= control.drive_1.current_track;}
+                case 8h17: {
+                    result_register.data <= bundle(6b110000, control.double_actuator, control.non_dma_mode);
+                }
+                case 8h22: {
+                    control.non_dma_mode     <= parameter_register.data[0];
+                    control.double_actuator <= parameter_register.data[1];
+                }
+                case 8h23: {
+                    control.non_dma_mode    <= parameter_register.data[0];
+                    control.double_actuator <= parameter_register.data[1];
+                }
+                }
+                command_state.fsm_state <= cs_fsm_result_ready; // but no interrupt
+                command.takes_parameter = 1;
+            }
+        }
+        /*b Command state machine fsm specify read special register state */
+        case cs_fsm_drive_status: {
+            internal_disk_ready  <= ~internal_disk_ready;//bundle(1b0,bbc_floppy_response.disk_ready);
+            result_register.data <= bundle(1b0,
+                                           ~internal_disk_ready[1], // supposed to be zero latching
+                                           1b0, // write fault,
+                                           internal_index,
+                                           internal_write_protect,
+                                           ~internal_disk_ready[0], // supposed to be zero latching
+                                           internal_track_0,
+                                           1b0 // count
+                );
+            command_state.fsm_state <= cs_fsm_result_ready; // but no interrupt
+        }
+        /*b Command state machine fsm seek states */
+        case cs_fsm_seek_get_track: {
+            if (parameter_register.full) {
+                command_state.command_track <= parameter_register.data;
+                command_state.fsm_state <= cs_fsm_seek_start;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_seek_start: {
+            command.drive_execution_command = dec_seek;
+            if (drive_execution.takes_command) {
+                command_state.fsm_state <= cs_fsm_seek_wait_for_result;
+            }
+        }
+        case cs_fsm_seek_wait_for_result: {
+            if (drive_execution.result.valid) {
+                command_state.fsm_state <= cs_fsm_result_capture;
+            }
+        }
+        /*b Command state machine fsm read id states */
+        case cs_fsm_read_multi_id: {
+            if (parameter_register.full) {
+                command_state.command_track <= parameter_register.data;
+                command_state.fsm_state <= cs_fsm_read_multi_id_zero_param;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_read_multi_id_zero_param: {
+            if (parameter_register.full) {
+                command_state.fsm_state <= cs_fsm_read_multi_id_num_ids;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_read_multi_id_num_ids: {
+            if (parameter_register.full) {
+                control.scan.sector <= parameter_register.data;
+                command_state.fsm_state <= cs_fsm_read_multi_id_seek_load;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_read_multi_id_seek_load: {
+            command.drive_execution_command = dec_seek_load;
+            if (drive_execution.takes_command) {
+                command_state.fsm_state <= cs_fsm_read_multi_id_find_index;
+            }
+        }
+        case cs_fsm_read_multi_id_find_index: {
+            command.drive_execution_command = dec_find_index;
+            if (drive_execution.takes_command) {
+                command_state.fsm_state <= cs_fsm_read_multi_id_start;
+            }
+        }
+        case cs_fsm_read_multi_id_start: {
+            if (control.scan.sector==0) {
+                command_state.fsm_state <= cs_fsm_result_capture;
+            } else {
+                command.drive_execution_command = dec_read_id;
+                if (drive_execution.takes_command) {
+                    command_state.fsm_state <= cs_fsm_read_multi_id_wait_for_result;
+                }
+            }
+        }
+        case cs_fsm_read_multi_id_wait_for_result: {
+            if (drive_execution.result.valid) { // could be an ID CRC or completion - should abort on ID CRC
+                control.scan.sector <= control.scan.sector-1;
+                command_state.fsm_state <= cs_fsm_read_multi_id_start;
+            }
+        }
+        /*b Command state machine fsm read write sector states */
+        case cs_fsm_read_write_sector: {
+            if (parameter_register.full) {
+                command_state.command_track <= parameter_register.data;
+                command_state.fsm_state <= cs_fsm_read_write_sector_get_sector;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_read_write_sector_get_sector: {
+            if (parameter_register.full) {
+                command_state.command_sector <= parameter_register.data;
+                command_state.fsm_state <= cs_fsm_read_write_sector_seek_load;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_read_write_sector_seek_load: {
+            command.drive_execution_command = dec_seek_load;
+            if (drive_execution.takes_command) {
+                command_state.fsm_state <= cs_fsm_read_write_sector_find_sector;
+            }
+        }
+        case cs_fsm_read_write_sector_find_sector: {
+            command.drive_execution_command = dec_seek_sector;
+            if (drive_execution.takes_command) {
+                command_state.fsm_state <= cs_fsm_read_write_sector_wait_for_find;
+            }
+        }
+        case cs_fsm_read_write_sector_wait_for_find: {
+            if (drive_execution.result.valid) { // could be an ID CRC or completion, timeout? - should abort on ID CRC
+                command_state.fsm_state <= cs_fsm_read_write_sector_read_data;
+            }
+        }
+        case cs_fsm_read_write_sector_read_data: {
+            command.drive_execution_command = dec_read_data;
+            if (drive_execution.takes_command) {
+                command_state.fsm_state <= cs_fsm_read_write_sector_reading_data;
+            }
+        }
+        case cs_fsm_read_write_sector_reading_data: {
+            if (drive_execution.result.valid) { // can probably only return valid data
+                command_state.command_sector <= command_state.command_sector + 1;
+                command_state.fsm_state <= cs_fsm_result_capture;
+            }
+        }
+        /*b Command state machine fsm read write multi sector states */
+        case cs_fsm_read_write_multi_sector: {
+            if (parameter_register.full) {
+                command_state.command_track <= parameter_register.data;
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector_get_sector;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_read_write_multi_sector_get_sector: {
+            if (parameter_register.full) {
+                command_state.command_sector <= parameter_register.data;
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector_get_length;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_read_write_multi_sector_get_length: {
+            if (parameter_register.full) {
+                command_state.command_num_sectors   <= parameter_register.data[5;0];
+                command_state.command_sector_length <= parameter_register.data[3;5];
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector_seek_load;
+                command.takes_parameter = 1;
+            }
+        }
+        case cs_fsm_read_write_multi_sector_seek_load: {
+            command.drive_execution_command = dec_seek_load;
+            if (drive_execution.takes_command) {
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector_find_sector;
+            }
+        }
+        case cs_fsm_read_write_multi_sector_find_sector: {
+            if (command_state.command_num_sectors==0) {
+                command_state.fsm_state <= cs_fsm_result_capture;
+            } else {
+                command.drive_execution_command = dec_seek_sector;
+                if (drive_execution.takes_command) {
+                    command_state.fsm_state <= cs_fsm_read_write_multi_sector_wait_for_find;
+                }
+            }
+        }
+        case cs_fsm_read_write_multi_sector_wait_for_find: {
+            if (drive_execution.result.valid) { // could be an ID CRC or completion, timeout? - should abort on ID CRC
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector_read_data;
+            }
+        }
+        case cs_fsm_read_write_multi_sector_read_data: {
+            command.drive_execution_command = dec_read_data;
+            if (drive_execution.takes_command) {
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector_reading_data;
+            }
+        }
+        case cs_fsm_read_write_multi_sector_reading_data: {
+            if (drive_execution.result.valid) { // can probably only return valid data
+                command_state.command_sector <= command_state.command_sector + 1;
+                command_state.command_num_sectors <= command_state.command_num_sectors - 1;
+                command_state.fsm_state <= cs_fsm_read_write_multi_sector_find_sector;
+            }
+        }
+        /*b Command state machine results */
+        case cs_fsm_result_none: {
+            command_state.fsm_state <= cs_fsm_idle;
+        }
+        case cs_fsm_result_ready: {
+            command_state.fsm_state <= cs_fsm_idle;
+        }
+        case cs_fsm_result_capture: {
+            result_register.data <= bundle(2b0, 
+                                           1b0, //result_register.deleted_data_found,
+                                           2b0, //result_register.completion_type, // 2 bits
+                                           2b0, ////result_register.completion_code, // 2 bits,
+                                           1b0);
+            command.generate_interrupt = 1;
+            command_state.fsm_state <= cs_fsm_idle;
+        }
+        /*b Command state machine all done */
+        default: {
+            command.takes_parameter=0;
+        }
+        }
+        /*b Cope with forced reset */
+        if (internal_reset) {
+            command_state <= {*=0,
+                    fsm_state=cs_fsm_idle};
+        }
+
+        /*b All done */
+    }
+
+    /*b Drive execution controller */
+    drive_execution_controller """
+    Drive step, read, write execution controller
+
+    This is two state machines. The first is the main command
+    execution controller state machine, and the second is an operation
+    state machine.
+
+    Idle until a command kicks it off.
+
+    The command indicates what needs to be done:
+
+    * seek track (either to 0, or from current track to target track, skipping bad tracks)
+    + seek track
+    + complete
+
+    * format track
+    + load head
+    + seek track
+    + format track
+    + complete
+
+    * read ids (up to a max number)
+    + load head
+    + seek track
+    + read sector ids
+    + complete
+
+    * read/read deleted/verify data (inc # sectors)
+    + load head
+    + seek track
+    + seek sector
+    + read sector as data
+    + repeat if no error
+    + complete
+
+    * write data (inc # sectors)
+    + load head
+    + seek track
+    + seek sector
+    + write sector
+    + repeat if no error
+    + complete
+
+    """: {
+        /*b Drive execution state machine decode */
+        drive_execution = {*=0};
+        drive_execution_state.operation <= deo_none;
+        full_switch (drive_execution_state.fsm_state) {
+        /*b Drive execution state machine idle */
+        case des_fsm_idle: {
+            drive_execution.takes_command = 1;
+            full_switch (command.drive_execution_command) {
+            case dec_seek: {
+                drive_execution_state.fsm_state <= des_fsm_seek;
+                drive_execution_state.operation <= deo_seek_track;
+            }
+            case dec_seek_load: {
+                drive_execution_state.fsm_state <= des_fsm_seek_load;
+                drive_execution_state.operation <= deo_load_head;
+            }
+            case dec_read_id: {
+                drive_execution_state.fsm_state <= des_fsm_read_id;
+            }
+            case dec_find_index: {
+                drive_execution_state.fsm_state <= des_fsm_find_index;
+                drive_execution_state.operation <= deo_find_index;
+            }
+            case dec_seek_sector: {
+                drive_execution_state.fsm_state <= des_fsm_seek_sector_id;
+            }
+            case dec_read_data: {
+                drive_execution_state.fsm_state <= des_fsm_read_data;
+            }
+            case dec_none: {
+                drive_execution_state.fsm_state <= des_fsm_idle;
+                //drive_execution.takes_command = 0;
+            }
+            }
+        }
+        /*b Drive execution state machine find index */
+        case des_fsm_find_index: {
+            drive_execution_state.operation <= deo_find_index;
+            if (drive_operation.starting_op) {
+                drive_execution_state.fsm_state <= des_fsm_finding_index;
+                drive_execution_state.operation <= deo_none;
+            }
+        }
+        case des_fsm_finding_index: {
+            if (drive_operation.completing_op) {
+                drive_execution.result = {valid=1
+                };
+                drive_execution_state.fsm_state <= des_fsm_idle;
+            }
+        }
+        /*b Drive execution state machine fsm seek load */
+        case des_fsm_seek_load: {
+            drive_execution_state.operation <= deo_load_head;
+            if (drive_operation.starting_op) {
+                drive_execution_state.fsm_state <= des_fsm_seek_load_wait_for_load;
+                drive_execution_state.operation <= deo_none;
+            }
+        }
+        case des_fsm_seek_load_wait_for_load: {
+            if (drive_operation.completing_op) {
+                drive_execution_state.fsm_state <= des_fsm_seek;
+            }
+        }
+        /*b Drive execution state machine fsm seek */
+        case des_fsm_seek: {
+            drive_execution_state.operation <= deo_seek_track;
+            if (drive_operation.starting_op) {
+                drive_execution_state.fsm_state <= des_fsm_seek_in_progress;
+                drive_execution_state.operation <= deo_none;
+            }
+        }
+        case des_fsm_seek_in_progress: {
+            if (drive_operation.completing_op) {
+                drive_execution.result = {valid=1
+                };
+                drive_execution_state.fsm_state <= des_fsm_idle;
+            }
+        }
+        /*b Drive execution state machine fsm read id */
+        case des_fsm_read_id: {
+            if (drive_timing.head_settled) {
+                drive_execution_state.operation <= deo_read_id;
+                if (drive_operation.starting_op) {
+                    drive_execution_state.fsm_state <= des_fsm_read_id_in_progress;
+                    drive_execution_state.operation <= deo_none;
+                }
+            }
+        }
+        case des_fsm_read_id_in_progress: {
+            if (drive_operation.completing_op) {
+                drive_execution.result = {valid=1
+                };
+                drive_execution_state.fsm_state <= des_fsm_idle;
+            }
+        }
+        /*b Drive execution state machine fsm seek sector id */
+        case des_fsm_seek_sector_id: {
+            if (drive_timing.head_settled) {
+                drive_execution_state.operation <= deo_seek_sector_id;
+                if (drive_operation.starting_op) {
+                    drive_execution_state.fsm_state <= des_fsm_seek_sector_id_in_progress;
+                    drive_execution_state.operation <= deo_none;
+                }
+            }
+        }
+        case des_fsm_seek_sector_id_in_progress: {
+            if (drive_operation.completing_op) {
+                drive_execution.result = {valid=1
+                };
+                drive_execution_state.fsm_state <= des_fsm_idle;
+            }
+        }
+        /*b Drive execution state machine fsm read_data */
+        case des_fsm_read_data: {
+            drive_execution_state.operation <= deo_read_data;
+            if (drive_operation.starting_op) {
+                drive_execution_state.fsm_state <= des_fsm_read_data_in_progress;
+                drive_execution_state.operation <= deo_none;
+            }
+        }
+        case des_fsm_read_data_in_progress: {
+            if (drive_operation.completing_op) {
+                drive_execution.result = {valid=1
+                };
+                drive_execution_state.fsm_state <= des_fsm_idle;
+            }
+        }
+        /*b Drive execution state machine all done */
+        }
+        /*b Handle read data buffer */
+        if (read_action==read_action_data) {
+            drive_execution_state.read_data_valid[0] <= 0;
+        }
+        if (!drive_execution_state.read_data_valid[0] &&
+            (drive_execution_state.read_data_valid[3;1]!=0) &&
+            drive_timing.data_byte_ready) {
+            drive_execution_state.read_data_buffer <= bundle(8b0, drive_execution_state.read_data_buffer[24;8]);
+            drive_execution_state.read_data_valid <= bundle(1b0, drive_execution_state.read_data_valid[3;1]);
+        }
+        if (drive_operation.read_data_capture_data) {
+            drive_execution_state.read_data_buffer <= drive_operation_state.read_data_buffer;
+            drive_execution_state.read_data_valid <= 4b1111;
+        }
+        if (drive_operation.read_data_capture_id) {
+            drive_execution_state.read_data_buffer <= bundle( 6b0, drive_operation_state.sector_id.sector_length,
+                                                              2b0, drive_operation_state.sector_id.sector_number,
+                                                              7b0, drive_operation_state.sector_id.head,
+                                                              1b0, drive_operation_state.sector_id.track);
+            drive_execution_state.read_data_valid <= 4b1111;
+            if (drive_operation_state.sector_id.bad_crc) {
+                drive_execution_state.read_data_valid <= 0;
+            }
+        }
+        
+        /*b Cope with forced reset */
+        if (internal_reset) {
+            drive_execution_state <= {*=0,
+                    fsm_state=des_fsm_idle};
+        }
+
+        /*b All done */
+    }
+
+    /*b Drive operation controller */
+    drive_operation_controller """
+    Drive operation controller
+
+    Idle until an operation is kicked off.
+
+    A seek track zero must:
+    a. retry_count <= 255
+    b. If track0, then complete
+    c. set direction=0 (out) (wait 10us if changed)
+    d. retry_count==0 => error "track 0 not found" (10.10)
+    e. step
+    f. retry_count--, repeat a 
+
+    A seek track nonzero must:
+    a. if track>bad_track_1, track++
+    b. if track>bad_track_2, track++
+    c. retry_count=(track-current_track)
+    d. set direction=retry_count[7]
+    e. retry_count==0 => complete
+    f. step
+    g. retry_count-- (or ++), repeat e
+
+    A load head operation must:
+    a. load the head (if not loaded)
+
+    A seek sector operation must
+    a. track_steps = 2
+    b. retry_count <= 32
+    c. retry count==0 => error "sector not found" (11.00)
+    d. read the next (valid) id
+    e. if id has crc error, then error "id field crc error" (01.10)
+    f. if id indicates different track and track_steps==0, then error "sector not found" (11.00)
+    g. if id indicates different track and track_steps==1, then track_steps--, step with direction, and repeat a
+    h. id indicates correct track and correct sector => complete
+    i. retry_count--, repeat c
+
+    A read id operation must
+    a. clear index pulse seen
+    b. wait for index pulse seen
+    c. clear index pulse seen
+    d. read the next (valid) id
+    e. if index pulse seen => complete
+    f. if id has crc error, then error "id field crc error" (01.10)
+    g. present track number to host; head number; sector number; sector length to host (possibly error if data full)
+    h. repeat d
+
+    A format track operation must
+    a. retry_count = sectors per track (parameter)
+    b. clear index pulse seen
+    c. wait for index pulse seen
+    d. retry_count==0 => complete
+    e. get sector id from host (possibly error if data empty)
+    f. write sector id
+    g. retry_count--
+    h. repeat d
+
+    A read sector operation (which must be straight after a seek sector operation) must
+    a. sector byte <= N.127 (i.e. set bottom bits from held id)
+    b. read data byte to read data buffer (unless id says deleted and normal data read - but set 'deleted' in result - or if verify)
+    c. read data buffer full => error "Late DMA ()"
+    d. sector byte==0.0 and data id crc bad => error "data field crc error" (01.11)
+    e. sector byte==0.0 => sector complete => op complete
+    f. sector byte--, repeat c
+
+    A write sector operation (which must be straight after a seek sector operation) must
+    a. Held sector data id crc bad => error "data field crc error" (01.11)
+    b. sector byte <= N.127
+    c. request write data
+    d. write data buffer empty => error "Late DMA" (01.01) (and the sector id should get a bad data)
+    e. write data byte from write data buffer
+    f. sector byte==0.0 => sector complete => complete (and the sector di should get a good crc, and possibly indicate deleted data)
+    g. sector byte--, repeat c
+
+    """: {
+        /*b Drive operation state machine decode */
+        drive_operation = {*=0};
+        full_switch (drive_operation_state.fsm_state) {
+        /*b Drive_Operation state machine idle */
+        case dos_fsm_idle: {
+            drive_operation.starting_op = 1;
+            full_switch (drive_execution_state.operation) {
+            case deo_seek_track: {
+                if (command_state.command_track==0) {
+                    drive_operation_state.retry_count <= 8hff;
+                    drive_operation_state.fsm_state <= dos_fsm_seek_zero_start;
+                } else {
+                    drive_operation_state.retry_count <= command_state.command_track;
+                    drive_operation_state.fsm_state <= dos_fsm_seek_nonzero_check_bad_track_1;
+                }
+            }
+            case deo_load_head: {
+                drive_operation_state.fsm_state <= dos_fsm_load_head;
+            }
+            case deo_read_id: {
+                drive_operation_state.fsm_state <= dos_fsm_read_id;
+            }
+            case deo_seek_sector_id: {
+                drive_operation_state.retry_count <= 3;
+                drive_operation_state.fsm_state <= dos_fsm_seek_sector_id;
+            }
+            case deo_read_data: {
+                drive_operation_state.words_remaining <= 64;
+                drive_operation_state.fsm_state <= dos_fsm_read_data;
+            }
+            case deo_find_index: {
+                drive_operation_state.fsm_state <= dos_fsm_find_index;
+            }
+            case deo_none: {
+                drive_operation.starting_op = 0;
+            }
+            }
+        }
+        /*b Drive operation state machine fsm seek track zero */ 
+        case dos_fsm_seek_zero_start: {
+            drive_operation_state.current_track <= 0; // ARGH NO - SHOULD BE THE DRIVE'S CURRENT TRACK
+            if (internal_track_0) {
+                drive_operation_state.fsm_state <= dos_fsm_complete_okay;
+            } else {
+                drive_operation.direction_set   = 1;
+                drive_operation.direction_value = 0; // step out
+                if (drive_timing_state.direction_setting) {
+                    drive_operation_state.fsm_state <= dos_fsm_seek_zero_step;
+                }
+            }
+        }
+        case dos_fsm_seek_zero_step: {
+            drive_operation.step_start = 1;
+            if (drive_timing_state.step_setting) {
+                // have to wait until settled for track0 to be ready
+                drive_operation_state.fsm_state <= dos_fsm_seek_zero_wait_until_settled;
+            }
+        }
+        case dos_fsm_seek_zero_wait_until_settled: {
+            if (drive_timing.step_settled) {
+                if (internal_track_0) {
+                    drive_operation_state.fsm_state <= dos_fsm_complete_okay;
+                } elsif (drive_operation_state.retry_count==0) {
+                    drive_operation_state.fsm_state <= dos_fsm_complete_track_0_not_found;
+                } else {
+                    drive_operation_state.retry_count <= drive_operation_state.retry_count-1;
+                    drive_operation_state.fsm_state <= dos_fsm_seek_zero_start;
+                }
+            }
+        }
+        /*b Drive operation state machine fsm seek track nonzero */ 
+        case dos_fsm_seek_nonzero_check_bad_track_1: {
+            if (drive_operation_state.retry_count >= control.drive_0.bad_track_1) {
+                drive_operation_state.retry_count <= drive_operation_state.retry_count + 1;
+            }
+            drive_operation_state.fsm_state <= dos_fsm_seek_nonzero_check_bad_track_2;
+        }
+        case dos_fsm_seek_nonzero_check_bad_track_2: {
+            if (drive_operation_state.retry_count >= control.drive_0.bad_track_2) {
+                drive_operation_state.retry_count <= drive_operation_state.retry_count + 1;
+            }
+            drive_operation_state.fsm_state <= dos_fsm_seek_nonzero_calculate_steps;
+        }
+        case dos_fsm_seek_nonzero_calculate_steps: {
+            drive_operation_state.retry_count <= drive_operation_state.retry_count - drive_operation_state.current_track;
+            drive_operation_state.current_track <= drive_operation_state.retry_count;
+            drive_operation_state.fsm_state <= dos_fsm_seek_nonzero_set_direction;
+        }
+        case dos_fsm_seek_nonzero_set_direction: {
+            drive_operation.direction_set   = 1;
+            drive_operation.direction_value = !drive_operation_state.retry_count[7];
+            if (drive_timing_state.direction_setting) {
+                drive_operation_state.fsm_state <= dos_fsm_seek_nonzero_step;
+                if (drive_operation_state.retry_count[7]) {
+                    drive_operation_state.retry_count <= -drive_operation_state.retry_count;
+                }
+            }
+        }
+        case dos_fsm_seek_nonzero_step: {
+            if (drive_operation_state.retry_count==0) {
+                drive_operation_state.fsm_state <= dos_fsm_complete_okay;
+            } else {
+                drive_operation.step_start = 1;
+                if (drive_timing_state.step_setting) {
+                    drive_operation_state.retry_count <= drive_operation_state.retry_count-1;
+                }
+            }
+        }
+        /*b Drive operation state machine fsm load head */ 
+        case dos_fsm_load_head: {
+            drive_operation.load_head   = 1;
+            if (drive_timing_state.loading_head) {
+                drive_operation_state.fsm_state <= dos_fsm_complete_okay;
+            }
+        }
+        /*b Drive operation state machine fsm read id */ 
+        case dos_fsm_read_id: {
+            drive_operation.read_id   = 1;
+            if (internal_id_ready) {
+                drive_operation.capture_id = 1;
+                drive_operation_state.fsm_state <= dos_fsm_read_id_copy_data;
+            }
+        }
+        case dos_fsm_read_id_copy_data: {
+            if (drive_operation_state.sector_id.bad_crc) {
+                drive_operation_state.fsm_state <= dos_fsm_complete_okay; // complete with id crc error
+            } elsif (drive_timing.data_byte_ready) {
+                drive_operation.read_data_capture_id = 1;
+                drive_operation_state.fsm_state <= dos_fsm_present_data;
+            }
+        }
+        case dos_fsm_present_data: {
+            if (drive_execution_state.read_data_valid==0) {
+                drive_operation_state.fsm_state <= dos_fsm_complete_okay;
+            }
+        }
+        /*b Drive operation state machine fsm seek sector id */ 
+        case dos_fsm_seek_sector_id: {
+            drive_operation.read_id   = 1;
+            if (internal_id_ready) {
+                drive_operation.capture_id = 1;
+                drive_operation_state.fsm_state <= dos_fsm_seek_sector_id_check;
+            }
+        }
+        case dos_fsm_seek_sector_id_check: {
+            if ((drive_operation_state.sector_id.track == command_state.command_track[7;0]) &&
+                (drive_operation_state.sector_id.sector_number == command_state.command_sector[6;0])) {
+                // should not match if it is deleted and not looking for deleted data
+                drive_operation_state.fsm_state <= dos_fsm_complete_okay;
+            } else {
+                drive_operation_state.fsm_state <= dos_fsm_seek_sector_id;
+                if (internal_index) {
+                    drive_operation_state.retry_count <= drive_operation_state.retry_count-1;
+                }
+                if (drive_operation_state.retry_count==0) {
+                    drive_operation_state.fsm_state <= dos_fsm_complete_okay; // sector not found
+                }
+            }
+            if (drive_operation_state.sector_id.bad_crc) {
+                drive_operation_state.fsm_state <= dos_fsm_complete_okay; // complete with id crc error
+            }
+        }
+        /*b Drive operation state machine fsm read data */ 
+        case dos_fsm_read_data: {
+            if (drive_operation_state.sector_id.bad_data_crc) {
+                drive_operation_state.fsm_state <= dos_fsm_complete_okay; // complete with id crc error
+            } else {
+                drive_operation.read_data = 1;
+                if (internal_read_data_valid) {
+                    drive_operation.capture_data = 1;
+                    drive_operation_state.fsm_state <= dos_fsm_read_data_wait;
+                }
+            }
+        }
+        case dos_fsm_read_data_wait: {
+            if (drive_timing.data_byte_ready) {
+                drive_operation.read_data_capture_data = 1;
+                drive_operation_state.fsm_state <= dos_fsm_read_data_present_data;
+                drive_operation_state.words_remaining <= drive_operation_state.words_remaining-1;
+            }
+        }
+        case dos_fsm_read_data_present_data: {
+            if (drive_execution_state.read_data_valid==0) {
+                drive_operation_state.fsm_state <= dos_fsm_read_data;
+                if (drive_operation_state.words_remaining==0) {
+                    drive_operation_state.fsm_state <= dos_fsm_complete_okay;
+                }
+            }
+        }
+        /*b Drive operation state machine fsm find index */ 
+        case dos_fsm_find_index: {
+            if (internal_index) {
+                drive_operation_state.fsm_state <= dos_fsm_complete_okay;
+            } else {
+                drive_operation.read_id   = 1;
+                if (internal_id_ready) {
+                    drive_operation_state.fsm_state <= dos_fsm_find_index_wait;
+                }
+            }
+        }
+        case dos_fsm_find_index_wait: {
+            drive_operation_state.fsm_state <= dos_fsm_find_index;
+        }
+        /*b Drive operation state machine fsm completion */ 
+        case dos_fsm_complete_okay: {
+            drive_operation.completing_op = 1;
+            drive_operation_state.fsm_state <= dos_fsm_idle;
+        }
+        /*b Drive operation state machine all done */
+        }
+        /*b Capture sector id for operation */
+        if (drive_operation.capture_id) {
+            drive_operation_state.sector_id <= bbc_floppy_response.sector_id;
+        }
+        if (drive_operation.capture_data) {
+            drive_operation_state.read_data_buffer <= bbc_floppy_response.read_data;
+        }
+
+        /*b All done */
+    }
+
+    /*b Drive control timings and outputs */
+    drive_control_timings """
+    The drive controls have specific timing constraints, and this logic manages that.
+
+    The direction pin has 10us setup to 'step' rising and 10us hold on 'step' falling
+
+    The step pin (in pulse mode) has a 10us high period, and the step
+    has a configurable settling time (in 1ms increments)
+
+    The head may not be used (for reading or writing) until a
+    configurable number of 4ms ticks after the step settling time.
+    """: {
+        /*b Timing counters - fake them out for now */
+        drive_timing.step_timer_1ms = control.step_time;
+        drive_timing.head_timer_4ms = control.head_settling_time;
+
+        drive_timing.time_10us_completed = (drive_timing_state.timer_10us==0);
+        drive_timing.time_1ms_tick       = (drive_timing_state.timer_1ms==0);
+        drive_timing.direction_can_be_set = 0;
+        drive_timing.step_can_start       = 0;
+        if (drive_timing.time_10us_completed) {
+            drive_timing.direction_can_be_set = !drive_outputs.step;
+            drive_timing.step_can_start       = (drive_timing_state.step_counter==0);
+        }
+
+        drive_timing.step_in_progress = (drive_timing_state.step_counter!=0);
+        drive_timing.step_settled = (drive_timing_state.step_counter==0);
+        drive_timing.head_settled = ( (drive_timing_state.head_counter==0) &&
+                                      (!drive_timing.step_in_progress) );
+        drive_timing.data_byte_ready = (drive_timing_state.timer_data==0);
+
+        drive_timing.time_10us_start = 0;
+        drive_timing.time_1ms_restart = 0;
+           
+        /*b Handle direction pin
+          The direction pin must be stable for '10us' after step falls, and while step is high
+         */
+        drive_timing_state.direction_setting <= 0;
+        if (drive_operation.direction_set) {
+            if (drive_operation.direction_value == drive_outputs.direction) {
+                drive_timing_state.direction_setting <= 1;
+            } else {
+                if (drive_timing.direction_can_be_set) {
+                    drive_timing_state.direction_setting <= 1;
+                    drive_outputs.direction <= drive_operation.direction_value;
+                    drive_timing.time_10us_start = 1;
+                }
+            }
+        }
+
+        /*b Handle step pin
+          The step pin must only go high 'control.step_time' after it last went high
+          It must not go low until 10us after it goes high or 10us after last count goes low
+
+          The count mode is not currently implemented
+        */
+        drive_timing_state.step_setting <= 0;
+        if (drive_timing.time_1ms_tick && (drive_timing_state.step_counter!=0)) {
+            drive_timing_state.step_counter <= drive_timing_state.step_counter-1;
+        }
+        if (drive_operation.step_start && drive_timing.step_can_start) {
+            drive_timing_state.step_setting <= 1;
+            drive_outputs.step <= 1;
+            drive_timing_state.step_counter <= drive_timing.step_timer_1ms;
+            drive_timing.time_10us_start = 1;
+            drive_timing.time_1ms_restart = 1;
+        }
+        // The following is NOT going to work for count mode
+        if (drive_outputs.step && drive_timing.time_10us_completed) {
+            drive_outputs.step <= 0;
+            drive_timing.time_10us_start = 1;
+        }
+
+        /*b Handle head settling
+          The head starts to settle when a seek finishes, and is settled after
+          control.head_settling_time * 4ms
+
+          The unload counter should be reset when a read, write or load happens
+         */
+        drive_timing_state.loading_head <= 0;
+        if (drive_timing.time_1ms_tick && (drive_timing_state.head_counter!=0)) {
+            drive_timing_state.head_counter <= drive_timing_state.head_counter-1;
+        }
+        if (drive_operation.load_head) {
+            if (!drive_outputs.load_head) {
+                drive_outputs.load_head <= 1;
+                drive_timing_state.head_counter <= bundle(drive_timing.head_timer_4ms,2b00);
+            }
+            drive_timing_state.loading_head <= 1;
+        }
+        if (drive_timing.step_in_progress) { // step in progress
+            drive_timing_state.head_counter <= bundle(drive_timing.head_timer_4ms,2b00);
+        }
+
+        /*b Data timer */
+        if (drive_timing_state.timer_data==0) {
+            drive_timing_state.timer_data <= timer_data_counter_value;
+        } else {
+            drive_timing_state.timer_data <= drive_timing_state.timer_data-1;
+        }
+
+        /*b 10us timer */
+        if (drive_timing.time_10us_start) {
+            drive_timing_state.timer_10us <= timer_10us_counter_value;
+        } elsif (drive_timing_state.timer_10us!=0) {
+            drive_timing_state.timer_10us <= drive_timing_state.timer_10us-1;
+        }
+
+        /*b 1ms timer */
+        if (drive_timing.time_1ms_restart) {
+            drive_timing_state.timer_1ms <= timer_1ms_counter_value;
+        } elsif (drive_timing_state.timer_1ms==0) {
+            drive_timing_state.timer_1ms <= timer_1ms_counter_value;
+        } else {
+            drive_timing_state.timer_1ms <= drive_timing_state.timer_1ms-1;
+        }
+
+        /*b Outputs */
+        if (command.set_outputs.valid) {
+            drive_outputs.low_current  <= command.set_outputs.low_head_current;
+            drive_outputs.load_head    <= command.set_outputs.load_head;
+            drive_outputs.step         <= command.set_outputs.seek_step;
+            drive_outputs.write_enable <= command.set_outputs.write_enable;
+            drive_outputs.fault_reset  <= command.set_outputs.write_fault_reset;
+            drive_outputs.select       <= command.set_outputs.select;
+        }
+        low_current = drive_outputs.low_current;
+        load_head = drive_outputs.load_head;
+        direction = drive_outputs.direction;
+        seek_step = drive_outputs.step;
+        write_enable = drive_outputs.write_enable;
+        fault_reset = drive_outputs.fault_reset;
+        select = drive_outputs.select;    
+
+        /*b Cope with forced reset */
+        if (internal_reset) {
+            drive_timing_state <= {*=0};
+        }
+
+        /*b All done */
+    }
+
+    /*b BBC drive modeling interface */
+comb bit internal_id_ready;
+    bbc_drive_interface """
+    """: {
+        bbc_floppy_op.step_out <= drive_outputs.step && !drive_outputs.direction;
+        bbc_floppy_op.step_in  <= drive_outputs.step && drive_outputs.direction;
+        if (drive_operation.read_id)             { bbc_floppy_op.next_id <= 1; }
+        if (bbc_floppy_response.sector_id_valid) { bbc_floppy_op.next_id <= 0; }
+        if (drive_operation.read_data)             { bbc_floppy_op.read_data_enable <= 1; }
+        if (bbc_floppy_response.read_data_valid)   { bbc_floppy_op.read_data_enable <= 0; }
+        bbc_floppy_op.write_data_enable <= 0;
+        bbc_floppy_op.write_data <= 0;
+        bbc_floppy_op.write_sector_id_enable <= 0;
+        bbc_floppy_op.sector_id <= {*=0};
+        internal_read_data_valid         = bbc_floppy_response.read_data_valid;
+        internal_index         = bbc_floppy_response.index;
+        internal_write_protect = bbc_floppy_response.write_protect;
+        internal_track_0       = bbc_floppy_response.track_zero;
+        internal_id_ready      = bbc_floppy_response.sector_id_valid;
+    }
+
+    /*b Logging */
+    logging """
+    """: {
+        if (command.takes_command) {
+            log("Command",
+                "command", command_register.data);
+        }
+        if (command.takes_parameter) {
+            log("Parameter",
+                "parameter", parameter_register.data);
+        }
+        if (write_action != write_action_none) {
+            log("Write action",
+                "action", write_action);
+        }
+        if ((read_action==read_action_status) && (data_out!=0x80) && (data_out!=0x84)){
+            log("Status read",
+                "status", data_out);
+        }
+        if (read_action==read_action_result) {
+            log("Result read",
+                "result", result_register.data);
+        }
+        if (drive_operation.starting_op) {
+            if (drive_execution_state.operation == deo_seek_track) {
+                log("Seek track",
+                    "track", command_state.command_track );
+            }
+            if (drive_execution_state.operation == deo_seek_sector_id) {
+                log("Seek sector id",
+                    "track", command_state.command_track,
+                    "sector", command_state.command_sector );
+            }
+            if (drive_execution_state.operation == deo_load_head) {
+                log("Load head",
+                    "track", command_state.command_track );
+            }
+            if (drive_execution_state.operation == deo_find_index) {
+                log("Find index",
+                    "track", command_state.command_track );
+            }
+            if (drive_execution_state.operation == deo_read_id) {
+                log("Read id",
+                    "track", command_state.command_track );
+            }
+            if (drive_execution_state.operation == deo_read_data) {
+                log("Read data",
+                    "track", command_state.command_track,
+                    "sector", command_state.command_sector );
+            }
+        }
+    }
+    /*b All done */
+}

@@ -1,0 +1,282 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_micro_clocking.cdl
+ * @brief  BBC microcomputer clock generation module
+ *
+ * CDL implementation of clock generation for the BBC microcomputer
+ * implementation.
+ *
+ * This module provides for a controllable clock source for the BBC
+ * microcomputer implementation. A standard BBC microcomputer would
+ * use a clock here of 4MHz, and the CPU would clock on every clock
+ * edge. However, FPGAs are capable of running much faster, and this
+ * module expects a clock of 'N' MHz, and it can be configured to
+ * provide the BBC micro cpu with a clock edge at 2MHz as originally
+ * designed, with the standard 2MHz video clock and 1MHz peripheral
+ * clocks; it can also be configured to run the CPU at 'N/2' MHz,
+ * while maintaining the 2MHz video and 1MHz peripheral clocks - hence
+ * supporting 'compatibility with extra speed'...
+ *
+ * This module is configured through the csr request/response
+ * interface, and hence uses bbc_csr_interface.
+ *
+ */
+/*a Documentation
+Clocking
+
+IC33 pin 1 is low for VIA A, VIA B, 0xfe00-0xfe1f, ADC, JIM and FRED accesses - 1MHz required
+IC33 pin 1 is high for 1MHz required address decode
+
+IC30.1 is high if !1MHzAddr OR !PHI1 OR !1MhzE
+IC30.5 is low if !IC30.1, else 2MHz_dly at last 8MHz
+IC31.8 is 1MHzAddr at last 1MHzE rising, but cleared if IC34.6 is low - this is 'extension of phi2 completed'
+IC34.2 is !1MHzAddr or IC31.8 - this is 'please dont extend phi2 at 2MHz clock dly'
+IC34.6 is !IC34.2 at last rising I30.5 - this is 'extend phi2'
+IC29.11 is high if IC30.5 or IC34.6
+
+8MHz  4MHz 2MHz 1MHzE 2Mhz_dly IC30.1 IC30.5  IC31.8 IC34.2 IC34.6 IC29.11 PHI1 PHI2 1MHzAddr 1MHzAccess ExtHapp  6502Enabled
+ 0     H    .      H     H        1     H        0     1      .      H      .    H      0        0          0          0  
+ 1     .    .      H     .        1     H        0     1      .      H      .    H      0        0          0          1  
+ 2     H    H      .     .        1     .        0     1      .      .      H    .      0        0          0          0             
+ 3     .    H      .     H        1     .        0     0      .      .      H    .      1        0          0          1              
+ 4     H    .      .     H        1     H        0     0      H      H      .    H      1        1          0          0
+ 5     .    .      .     .        1     H        0     0      H      H      .    H      1        1          0          0 
+ 6     H    H      H     .        1     .        1     1      H      H      .    H      1        1          0          0 
+ 7     .    H      H     H        1     .        1     1      H      H      .    H      1        1          0          0 
+ 8     H    .      H     H        1     H        1     1      .      H      .    H      1        1          1          0       
+ 9     .    .      H     .        1     H        0     0      .      H      .    H      1        1          1          1    
+ 10    H    H      .     .        1     .        0     0      .      .      H    .      1        1          1          0    
+ 11    .    H      .     H        1     .        0     1      .      .      H    .      0        1          1          1 
+ 12    H    .      .     H        1     H        0     1      .      H      .    H      0        0          0          0
+ 13    .    .      .     .        1     H        0     1      .      H      .    H      0        0          0          1
+ 14    H    H      H     .        1     .        0     1      .      .      H    .      0        0          0          0
+ 15    .    H      H     H        0     .        0     0      .      .      H    .      1        0          0          0
+ 16    H    .      H     H        0     .        0     0      .      .      H    .      1        1          0          0  
+ 17    .    .      H     .        0     .        0     0      .      .      H    .      1        1          0          0   
+ 18    H    H      .     .        1     .        0     0      .      .      H    .      1        1          0          0  
+ 19    .    H      .     H        1     .        0     0      .      .      H    .      1        1          0          1  
+ 20    H    .      .     H        1     H        0     0      H      H      .    H      1        1          0          0  
+ 21    .    .      .     .        1     H        0     0      H      H      .    H      1        1          0          0  
+ 22    H    H      H     .        1     .        1     1      H      H      .    H      1        1          0          0  
+ 23    .    H      H     H        1     .        1     1      H      H      .    H      1        1          0          0 
+ 24    H    .      H     H        1     H        1     1      .      H      .    H      1        1          1          0       
+ 25    .    .      H     .        1     H        0     0      .      H      .    H      1        1          1          1                                                              
+ 26    H    H      .     .        1     .        0     0      .      .      H    .      1        1          1          0
+
+The clocking scheme is something like:
+
+PHI1 is extended if 1MHz address and PHI1 and 1MHzE
+PHI2 is extended if 1MHz address and was PHI1 
+
+So using a 4MHz clock in, the 6502 should clock on every edge except:
+if extending PHI1 then skip first 2 edges when PHI1 is asserted
+if extending PHI2 then skip first 2 edges when PHI2 is asserted
+
+The 1MHzE signal can be a straight clock gate of 4MHz to be 'active' on the 'falling' edge of the 6502 clock
+Hence keep a 2MHz_high signal that is asserted on every other tick. This is the gate for the 1MHzE signal.
+
+
+    // want a CPU clock (2+MHz) in to the BBC
+    // and a 1 constant 1MHz clock in
+    // and a 'this edge is not CPU' - i.e. video edge, at 2MHz (pixel clock)
+    //
+    // So net is a high speed clock
+    // every 500ns the clock needs a 'this is pixel clock'
+    // every 1000ns the clock needs a 'this is 1MHz falling' coincident with a CPU rising clock edge
+    // every 1000ns the clock needs a 'this is 1MHz rising' coincident with a CPU rising clock edge (for video)
+    // probably a 'this is 1MHz rising' so CPU can sync for 1MHz peripherals
+    //
+    // In 'slow' mode the fast input clock is 4MHz
+    // CPU gets every other clock edge (2MHz 'rising')
+    // Pixel clock is the other clock edges (2MHz 'falling')
+    // 1MHz falling is every 4th edge coincident with 2MHz rising
+    
+*/
+/*a Includes */
+include "bbc_micro_types.h"
+include "bbc_submodules.h"
+
+/*a Types */
+/*t t_clock_comb */
+typedef struct {
+    bit phase_ending;
+    bit fall_enable;
+    bit rise_enable;
+} t_clock_comb;
+
+/*t t_control */
+typedef struct {
+    bit[8] clocks_per_2MHz_minus_one;
+    bit[8] cpu_clocks_per_2MHz_minus_one;
+    bit reset_cpu;
+    bit disable_cpu;
+} t_control;
+
+/*t t_divider */
+typedef struct {
+    bit    phase_ending_cpu;
+    bit    phase_ending_2MHz;
+    bit[8] counter;
+} t_divider;
+
+/*a Module
+ */
+module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
+                           input bit reset_n,
+                           input t_bbc_clock_status clock_status,
+                           output t_bbc_clock_control clock_control,
+                           input t_bbc_csr_request csr_request,
+                           output t_bbc_csr_response csr_response
+    )
+{
+    default clock clk;
+    default reset active_low reset_n;
+    clocked bit two_mhz_low=0;
+    clocked bit two_mhz_high=0;
+    clocked bit one_mhz_low=0;
+    clocked bit one_mhz_high=0;
+    comb t_clock_comb one_mhz;
+    comb t_clock_comb two_mhz;
+    comb t_clock_comb cpu_clk;
+    clocked bit cpu_clk_low=0;
+    clocked bit cpu_clk_high=0;
+    comb bit phi1;
+    comb bit phi2;
+    clocked bit phi2_extension_required=0;
+    comb bit cpu_clk_enable;
+    clocked t_control control={*=0};
+    clocked t_divider divider={*=0};
+
+    net t_bbc_csr_response      csr_response;
+    net t_bbc_csr_access      csr_access;
+    comb t_bbc_csr_access_data csr_read_data;
+    control_logic """
+    """: {
+        bbc_csr_interface csri( clk <- clk,
+                                reset_n <= reset_n,
+                                csr_request <= csr_request,
+                                csr_response => csr_response,
+                                csr_access => csr_access,
+                                csr_read_data <= csr_read_data,
+                                csr_select <= bbc_csr_select_clocks );
+        if (csr_access.valid && !csr_access.read_not_write) {
+            control.cpu_clocks_per_2MHz_minus_one <= csr_access.data[8;8];
+            control.clocks_per_2MHz_minus_one <= csr_access.data[8;0];
+            control.reset_cpu <= csr_access.data[16];
+            control.disable_cpu <= csr_access.data[17];
+        }
+        csr_read_data = bundle(14b0,
+                               control.disable_cpu,
+                               control.reset_cpu,
+                               control.cpu_clocks_per_2MHz_minus_one, 
+                               control.clocks_per_2MHz_minus_one );
+        control.cpu_clocks_per_2MHz_minus_one <= 2;
+        control.clocks_per_2MHz_minus_one     <= 4;
+    }
+    
+    output_logic """
+    If clock_status.cpu_1MHz_access is asserted in phi1 then the chip selects,
+    other than phi2, to some chips will be asserted.
+    In this case phi2 must not be allowed to start until 1MHz is low.
+    So if 1MHz is high and phi1 and doing a 1MHz access then CPU must ignore the clock edge
+    and it will be deemed to be staying in phi1.
+
+    If clock_status.cpu_1MHz_access is asserted in (and at the start of, from above) phi2 then
+    1MHz bus devices are properly selected, and the next CPU clock edge is coincident with 1MHz
+    falling. So ignore CPU clock enables until 1MHz_fall_enable.
+
+    Now the actual clock enable for the CPU is the phi2 ending.
+    """: {
+        clock_control.enable_cpu             = cpu_clk_enable;
+        clock_control.will_enable_2MHz_video = two_mhz.rise_enable; 
+        clock_control.enable_2MHz_video      = two_mhz_high;
+        clock_control.enable_1MHz_rising     = one_mhz.rise_enable;
+        clock_control.enable_1MHz_falling    = one_mhz.fall_enable;
+        clock_control.phi = phase_of_clock;
+        clock_control.reset_cpu = control.reset_cpu;
+    }
+    clocked bit[2] phase_of_clock=2b01;
+    comb bit phi1_completed;
+    comb bit phi2_completed;
+    clocking_logic """
+    """: {
+        divider.counter <= divider.counter+1;
+        divider.phase_ending_2MHz <= 0;
+        if (divider.counter==control.cpu_clocks_per_2MHz_minus_one) {
+            divider.phase_ending_cpu <= 0;
+        }
+        if (divider.counter==control.clocks_per_2MHz_minus_one) {
+            divider.counter <= 0;
+            divider.phase_ending_cpu <= 1;
+            divider.phase_ending_2MHz <= 1;
+        }
+
+        cpu_clk.phase_ending = divider.phase_ending_cpu && !control.disable_cpu;
+        cpu_clk.fall_enable = cpu_clk_high && cpu_clk.phase_ending;
+        cpu_clk.rise_enable = cpu_clk_low  && cpu_clk.phase_ending;
+        if (cpu_clk.phase_ending) { 
+            cpu_clk_low <= !cpu_clk_low;
+            cpu_clk_high <= cpu_clk_low;
+        }
+        
+        two_mhz.phase_ending = cpu_clk.phase_ending & divider.phase_ending_2MHz;
+        two_mhz.rise_enable  = cpu_clk_low  && two_mhz.phase_ending;
+        two_mhz.fall_enable  = two_mhz_high;
+        two_mhz_low <= 1;
+        two_mhz_high <= 0;
+        if (two_mhz.rise_enable) { 
+            two_mhz_low <= 0;
+            two_mhz_high <= 1;
+        }
+
+        one_mhz.phase_ending = two_mhz.rise_enable; // so that 1MHz 'changes' when 2MHz 'rises'
+        one_mhz.fall_enable = (!one_mhz_low)  && one_mhz.phase_ending;
+        one_mhz.rise_enable = ( one_mhz_low)  && one_mhz.phase_ending;
+        if (one_mhz.phase_ending) {
+            one_mhz_low <= !one_mhz_low;
+            one_mhz_high <= one_mhz_low;
+        }
+
+        // PHI2 must change ONLY when 1MHz is low if the 1MHz peripherals may be chip-selected
+        // 1MHz peripherals also require a full 1MHz high period for their (phi2) access
+        // Hence a 1MHz CPU bus cycle must start with a full period of 1MHz low followed by a full period of 1MHz high
+        // The CPU bus cycle is PHI1 high (during first half of full period of 1MHz low) and PHI2 high (during second half of 1MHz low and throughout full period of 1MHz high)
+        // hence extend PHI1 - or delay phi2 - if (phi1 and) 1MHz access and 1MHz is high
+        // and extend PHI2 for the 1MHz access until a 2MHz clock tick with 1MHz high
+        // CPU should ignore the 2MHz rising clock edges that extend PHI1 or PHI2 (as that is what extending them means...)
+        phi1 = phase_of_clock[0];
+        phi2 = phase_of_clock[1];
+
+        phi1_completed = phi1 && cpu_clk.fall_enable;
+        phi2_completed = phi2 && cpu_clk.rise_enable;
+        if (phi2_extension_required) {
+            phi2_completed = phi2 && one_mhz.fall_enable;
+        }
+        if (clock_status.cpu_1MHz_access && phi1) {
+            if (one_mhz_high) { phi1_completed = 0; }
+            phi2_extension_required <= 1;
+        }
+        if (phi2 && one_mhz_high && one_mhz.phase_ending) {
+            phi2_extension_required <= 0;
+        }
+        if (phi1_completed) {
+            phase_of_clock <= 2b10;
+        }
+        if (phi2_completed) {
+            phase_of_clock <= 2b01;
+        }
+        cpu_clk_enable = cpu_clk.rise_enable && (!phi2_extension_required || phi2_completed);
+    }
+}

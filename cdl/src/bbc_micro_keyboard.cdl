@@ -1,0 +1,127 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_micro_keyboard.cdl
+ * @brief  BBC microcomputer keyboard module
+ *
+ * CDL implementation of BBC microcomputer keyboard.
+ *
+ * This module provides the logic that is in the BBC microcomputer
+ * keyboard - without the switches for the keys themselves.
+ *
+ * The keyboard included a BCD counter and latch, so that the keyboard
+ * can auto-scan the keyboard columns and capture which column has a
+ * key pressed. Individual columns can also be explcitily scanned.
+ *
+ * The 'keys down' information is clearly not possible to have here
+ * from physical keys, hence that data is provided by the
+ * t_bbc_keyboard bus in.
+ *
+ */
+/*a Includes */
+include "bbc_micro_types.h"
+
+/*a Types */
+typedef bit[8] t_keys_pressed;
+
+/*a Module bbc_micro_keyboard */
+module bbc_micro_keyboard( clock clk,
+                           input bit reset_n,
+                           output bit reset_out_n "From the Break key",
+                           input bit keyboard_enable_n "Asserted to make keyboard detection operate",
+                           input bit[4] column_select "Wired to pa[4;0], and indicates which column of the keyboard matrix to access",
+                           input bit[3] row_select    "Wired to pa[3;4], and indicates which row of the keyboard matrix to access",
+                           output bit key_in_column_pressed "Wired to CA2, asserted if keyboard_enable_n and a key is pressed in the specified column (other than row 0)",
+                           output bit selected_key_pressed "Asserted if keyboard_enable_n is asserted and the selected key is pressed",
+
+                           input t_bbc_keyboard bbc_keyboard
+       )
+{
+    /*b Defaults */
+    default reset active_low reset_n;
+    default clock clk;
+    comb bit[4] column_to_use;
+    clocked bit[4] column=0 "Column being checked";
+    clocked t_keys_pressed[10] keys_pressed={*=0} "Keys pressed";
+    clocked bit reset_pressed = 0;
+    comb bit[8] matrix_output;
+
+    /*b Reset button */
+    reset_button_logic """
+    If the switch is pressed (the 'Break' key, really) then reset is pulled low
+    """: {
+        reset_pressed <= 0;
+        for (i; 8) {
+            keys_pressed[i] <= bbc_keyboard.keys_down_cols_0_to_7[8;8*i];
+        }
+        keys_pressed[8] <= bbc_keyboard.keys_down_cols_8_to_9[8;0];
+        keys_pressed[9] <= bbc_keyboard.keys_down_cols_8_to_9[8;8];
+
+        reset_out_n = 1;
+        if (reset_pressed) {
+            reset_out_n = 0;
+        }
+    }
+        
+    /*b Keyboard demux, matrix and select */
+    keyboard_logic """
+    The keyboard consists of a 4-bit counter (ls163), a 4-bit BCD converter (7445), a matrix of keys, and a multiplexer (ls251)
+
+    The 7445 is officially a binary-to-decimal converter - effectively a 4-10 demux.
+    The outputs are active low (i.e. only one line is low), and hence only one column of the keyboard is pulled low
+    at any one time.
+    If the inputs are presented with 10 to 15 (instead of 0 to 9) then all the outputs are inactive (high).
+
+    On the real matrix, the keys are just switches connecting the column of a matrix to a row, with row 0 being slightly special
+    Keys on row 0 have diodes to stop 'bleeding' from column N row 0 to other columns, should more than one key in row 0 be pressed.
+    Other rows do not have diodes, so pressing column 1 row 5, column 4 row 5, column 4 row 7, would mean that 'lighting' column 1 will
+    pull column 1 low, row 5 low, hence column 4 low, hence row 7 hence, and so it will seem that column 1 row 7 is pressed.
+
+    The keyboard matrix is:
+        0      1      2      3      4      5      6      7      8      9   
+    7  Esc    F1     F2     F3     F5     F6     F8     F9     \|     Rght   
+    6  Tab     Z     Spc     V      B      M     <,     >.     ?/     Copy                              
+    5  ShLk    S      C      G      H      N      L     +;     }]     Del                              
+    4  CpLk    A      X      F      Y      J      K      @     :      Ret                            
+    3   1      2      D      R      6      U      O      P     [{     Up                         
+    2  F0      W      E      T      7      I      9      0     _      Down                         
+    1   Q      3      4      5     F4      8     F7     =-     ~^     Left                         
+    0  Shft   Ctrl   DIP7   DIP7   DIP7   DIP7   DIP7   DIP7   DIP7   DIP7                                                                            
+
+    The keys that are pressed are kept in this module as active high 'keys_pressed' array of bit vectors.
+    Key column N bit M is pressed if keys_pressed[N][M] is a 1.
+    """: {
+        column_to_use = column;
+        if (!keyboard_enable_n) {
+            column <= column_select;
+            column_to_use = column_select;
+        } else {
+            column <= column + 1;
+        }
+        matrix_output = 8hff;
+        if (column_to_use<10) {
+            matrix_output = ~keys_pressed[column_to_use];
+        }
+        key_in_column_pressed = (matrix_output[7;1]!=7h7f); // row 0 is not used in the NAND of row lines to avoid bleeding
+
+        selected_key_pressed = 1;
+        if (!keyboard_enable_n) {
+            selected_key_pressed = !matrix_output[row_select];
+        }
+
+        /*b All done */
+    }
+
+    /*b All done */
+}
