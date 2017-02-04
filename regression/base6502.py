@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 #a Copyright
-#  
+#
 #  This file 'base6502' copyright Gavin J Stark 2016, 2017
-#  
+#
 #  This program is free software; you can redistribute it and/or modify it under
 #  the terms of the GNU General Public License as published by the Free Software
 #  Foundation, version 2.0.
-#  
+#
 #  This program is distributed in the hope that it will be useful,
 #  but WITHOUT ANY WARRANTY; without even implied warranty of MERCHANTABILITY
 #  or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
@@ -62,6 +62,12 @@ class c_Test6502Base_HW(test6502.Test6502Base, SimulationTestBase):
     def run_cpu_test(self, test):
         ct = self.compile_cpu_test(test)
         f = self.as_mif_file(ct)
+        print "Running %s.%s.%s"%(self.__module__,self.__class__.__name__,test.__name__)
+        if False:
+            d_mif = "%s__%s__%s.mif"%(self.__module__,self.__class__.__name__,test.__name__)
+            from shutil import copyfile
+            copyfile(f.name, d_mif)
+            pass
         hw = base6502_hw.cdl_test(sram_mif=f.name)
         self.run_test(hw, ct.num_cycles*20, pass_fail=lambda:hw.check_memory(ct.expected_memory_data))
         pass

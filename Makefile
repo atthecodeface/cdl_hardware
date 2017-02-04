@@ -41,7 +41,8 @@ LOCAL_CFLAGS := -I/usr/local/include
 LOCAL_CXXFLAGS := -I/usr/local/include
 LOCAL_LINKLIBS := -L/usr/local/lib  -L/lib -L/lib/x86_64-linux-gnu -L/usr/lib/x86_64-linux-gnu -lpng12 -ljpeg
 LOCAL_LINKLIBS := -lpng12 -ljpeg
-ifeq (${BUILD_ARCH},osx)
+OS := $(shell uname)
+ifeq ($(OS),Darwin)
 LOCAL_LINKLIBS := -L/usr/local/lib -lpng16 -ljpeg
 endif
 
