@@ -39,7 +39,11 @@ DEBUG_BUILD := no
 
 LOCAL_CFLAGS := -I/usr/local/include
 LOCAL_CXXFLAGS := -I/usr/local/include
-LOCAL_LINKFLAGS := -lpng16  -ljpeg  -L/usr/local/lib 
+LOCAL_LINKLIBS := -L/usr/local/lib  -L/lib -L/lib/x86_64-linux-gnu -L/usr/lib/x86_64-linux-gnu -lpng12 -ljpeg
+LOCAL_LINKLIBS := -lpng12 -ljpeg
+ifeq (${BUILD_ARCH},osx)
+LOCAL_LINKLIBS := -L/usr/local/lib -lpng16 -ljpeg
+endif
 
 #a Include standard build makefile
 include ${CYCLICITY}/scripts/simulation_build_make

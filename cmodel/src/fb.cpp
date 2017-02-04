@@ -46,7 +46,7 @@
 #define FONT_FIRST_CHAR (4+16+16+16+1)
 #define FONT_LAST_CHAR (4+16+16+16+2)
 #define FONT_GROUP_DATA (4+16+16+16+4)
-#define FONT_DATA_BIT(f,b,p) ((f[b+((p)>>3)]>>(p&7))&1)
+#define FONT_DATA_BIT(f,b,p) (((f)[(b)+((p)>>3)]>>((p)&7))&1)
 #define MIN(a,b) ( ((a)<(b))?(a):(b) )
 #define MAX(a,b) ( ((a)>(b))?(a):(b) )
 #define FB_SET_PIXEL(fb,o,p) {(fb)[o]=p;}

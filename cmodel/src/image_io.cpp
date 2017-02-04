@@ -98,7 +98,7 @@ c_image_io::read_init(FILE *f)
             png_set_sig_bytes(prvt->png_ptr, 8);
             png_read_info(prvt->png_ptr, prvt->info_ptr);
             png_get_IHDR(prvt->png_ptr, prvt->info_ptr,
-                         &width, &height,
+                         (png_uint_32*)&width, (png_uint_32*)&height,
                          &bit_depth, &color_type,
                          NULL, NULL, NULL);
             ret = 0;
@@ -181,7 +181,7 @@ c_image_io::read_image(void)
             row_pointers = (png_bytepp) malloc(height*sizeof(png_bytep));
         }
         if (row_pointers) {
-            for (int i=0; i<height; i++) {
+            for (unsigned int i=0; i<height; i++) {
                 row_pointers[i] = image_data + i*byte_width;
             }
             png_read_image(prvt->png_ptr, row_pointers);
@@ -270,7 +270,7 @@ c_image_io::write_image(void)
 {
     png_byte **row_pointers;
     row_pointers = (png_byte **)malloc(sizeof(png_byte *)*height);
-    for (int i=0; i<height; i++) {
+    for (unsigned int i=0; i<height; i++) {
         row_pointers[i] = image_data+i*byte_width;
     }
     png_write_image(prvt->png_ptr, row_pointers);
@@ -434,10 +434,10 @@ c_image_io::jpeg_read(FILE *f)
 
         while (1) {
             jpeg_read_scanlines(&prvt->cinfo, buffer, 1);
-            int y = prvt->cinfo.output_scanline;
+            unsigned int y = prvt->cinfo.output_scanline;
             if (y>=prvt->cinfo.output_height)
                 break;
-            for (int x=0; x<prvt->cinfo.output_width; x++) {
+            for (unsigned int x=0; x<prvt->cinfo.output_width; x++) {
                 image_data[y*byte_width+x*4+0] = 0;
                 image_data[y*byte_width+x*4+1] = 0;
                 image_data[y*byte_width+x*4+2] = 0;
