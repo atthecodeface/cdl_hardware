@@ -63,7 +63,8 @@ module bbc_vidproc( clock clk_cpu         "2MHz bus clock",
                     input bit reset_n     "Not present on the chip, but required for the model - power up reset",
                     input bit chip_select_n "Active low chip select",
                     input bit address     "Valid with chip select",
-                    input bit[8] data_in   "Data in (from CPU)",
+                    input bit[8] cpu_data_in   "Data in (from CPU)",
+                    input bit[8] pixel_data_in "Data in (from SRAM)",
                     input bit disen        "Asserted by CRTC if black output required (e.g. during sync)",
                     input bit invert_n     "Asserted (low) if the output should be inverted (post-disen probably)",
                     input bit cursor       "Asserted for first character of a cursor",
@@ -186,7 +187,7 @@ module bbc_vidproc( clock clk_cpu         "2MHz bus clock",
         case columns_10: { pixel_shift_register <= bundle(pixel_shift_register[7;0],1h1); }
         }
         if (crtc_clock_enable) {
-            pixel_shift_register <= data_in;
+            pixel_shift_register <= pixel_data_in;
             cursor_shift_register <= bundle(cursor_shift_register[3;0],1b0);
             if (cursor) {
                 cursor_shift_register[3] <= control.cursor_segments[2];
@@ -212,17 +213,17 @@ module bbc_vidproc( clock clk_cpu         "2MHz bus clock",
 
         /*b Control register */
         if (!chip_select_n && (address==0)) {
-            control <= { cursor_segments=data_in[3;5],
-                    clock_rate = data_in[4], // set => 2MHz, clear => 1MHz
-                    columns = data_in[2;2], // 3 => 16MHz pixel rate, 0=> 2MHz pixel rate
-                    teletext = data_in[1],
-                    flash = data_in[0] };
+            control <= { cursor_segments=cpu_data_in[3;5],
+                    clock_rate = cpu_data_in[4], // set => 2MHz, clear => 1MHz
+                    columns = cpu_data_in[2;2], // 3 => 16MHz pixel rate, 0=> 2MHz pixel rate
+                    teletext = cpu_data_in[1],
+                    flash = cpu_data_in[0] };
         }
 
         /*b Palette writes */
         if (!chip_select_n && (address==1)) {
-            palette[data_in[4;4]] <= {flashing = data_in[3],
-                    base_color = data_in[3;0]};
+            palette[cpu_data_in[4;4]] <= {flashing = cpu_data_in[3],
+                    base_color = cpu_data_in[3;0]};
         }
 
         /*b All done */

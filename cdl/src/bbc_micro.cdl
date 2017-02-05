@@ -493,7 +493,8 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
                             reset_n <= reset_n,
                             chip_select_n <= !address_map_decode.vidproc,
                             address       <= address[0],
-                            data_in       <= address_map_decode.vidproc ? cpu_data_out : ram_databus,
+                            cpu_data_in    <= cpu_data_out, // these two (pixel/cpu) were combined on real BBC micro, but that is a pain in modern world
+                            pixel_data_in  <= ram_databus,
                             disen         <= crtc_display_enable &~ crtc_row_address[3],
                             invert_n      <= 1,
                             cursor        <= 0,

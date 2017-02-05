@@ -46,7 +46,8 @@ extern module bbc_vidproc( clock clk_cpu    "Output on real chip in a sense (2MH
                     input bit reset_n       "Not present on the chip, but required for the model - power up reset",
                     input bit chip_select_n "Active low chip select",
                     input bit address     "Valid with chip select",
-                    input bit[8] data_in   "Data in (from CPU)",
+                    input bit[8] cpu_data_in    "Data in (from CPU) - was combined with pixel_data_in in BBC micro to save pins",
+                    input bit[8] pixel_data_in  "Data in (from RAM) - was combined with cpu_data_in in BBC micro to save pins",
                     input bit disen        "Asserted by CRTC if black output required (e.g. during sync)",
                     input bit invert_n     "Asserted (low) if the output should be inverted (post-disen probably)",
                     input bit cursor       "Asserted for first character of a cursor",
@@ -60,8 +61,8 @@ extern module bbc_vidproc( clock clk_cpu    "Output on real chip in a sense (2MH
                     output t_bbc_pixels_per_clock pixels_valid_per_clock
        )
 {
-    timing to   rising clock clk_cpu    chip_select_n, address, data_in;
-    timing to   rising clock clk_2MHz_video   saa5050_red, saa5050_green, saa5050_blue;
+    timing to   rising clock clk_cpu    chip_select_n, address, cpu_data_in;
+    timing to   rising clock clk_2MHz_video   saa5050_red, saa5050_green, saa5050_blue, pixel_data_in;
     timing to   rising clock clk_2MHz_video   disen, invert_n, cursor;
     timing from rising clock clk_2MHz_video   crtc_clock_enable;
     timing from rising clock clk_2MHz_video   red, green, blue, pixels_valid_per_clock;
