@@ -172,8 +172,9 @@ module crtc6845( clock clk_2MHz,
     clocked bit[5] address_register=0;
     clocked t_control control={*=0};
 
-    gated_clock clock clk_2MHz active_high crtc_clock_enable clk_pixel;
-    default clock clk_pixel;
+    //gated_clock clock clk_2MHz active_high crtc_clock_enable clk_pixel;
+    //default clock clk_pixel;
+    default clock clk_2MHz; //clk_pixel;
     comb t_horizontal     horizontal;
     comb t_vertical       vertical;
     comb t_cursor_decode  cursor_decode;

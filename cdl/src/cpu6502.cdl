@@ -397,7 +397,7 @@ module cpu6502( clock clk "Clock, rising edge is start of phi1, end of phi2 - th
                 state.interrupt_reason <= interrupt_reason_nmi;
                 ir_fetch_required = 0;
                 ir_fetch_brk = 1;
-            } elsif (interrupt_state.irq_pending && !irq_will_be_disabled) {
+            } elsif (interrupt_state.irq_pending && !state.psr.i) {//irq_will_be_disabled) {
                 state.interrupt_reason <= interrupt_reason_irq;
                 ir_fetch_required = 0;
                 ir_fetch_brk = 1;

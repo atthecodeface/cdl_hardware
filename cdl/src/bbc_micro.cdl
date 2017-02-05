@@ -379,7 +379,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
                      address <= address[2;0],
                      // data_req =>
                      data_ack_n <= !(address[2]&address_map_decode.fdc),
-                     data_in <= main_databus,
+                     data_in <= cpu_data_out,//main_databus,
                      data_out => data_out_fdc,
                      irq_n => nmi_n_fdc,
                      //select =>,
@@ -401,7 +401,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
                         chip_select   <= 2b11,
                         chip_select_n <= !address_map_decode.acia,
                         address       <= address[0],
-                        data_in       <= main_databus,
+                       data_in       <= cpu_data_out,//main_databus,
                         data_out      => data_out_acia,
                         irq_n         => irq_n_acia,
                         tx_clk <= 1,
@@ -440,7 +440,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
                        chip_select   <= phi2,
                        chip_select_n <= !address_map_decode.via_a,
                        address       <= address[4;0],
-                       data_in       <= main_databus,
+                       data_in       <= cpu_data_out,//main_databus,
                        data_out      => data_out_via_a,
                        irq_n         => irq_n_via_a,
                        ca1 <= vsync, // from 6845
@@ -472,7 +472,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
                        chip_select   <= phi2,
                        chip_select_n <= !address_map_decode.via_b,
                        address       <= address[4;0],
-                       data_in       <= main_databus,
+                       data_in       <= cpu_data_out,//main_databus,
                        data_out      => data_out_via_b,
                        irq_n         => irq_n_via_b,
                        ca1 <= 1b0,//
@@ -494,7 +494,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
                             reset_n <= reset_n,
                             chip_select_n <= !address_map_decode.vidproc,
                             address       <= address[0],
-                            data_in       <= address_map_decode.vidproc ? main_databus : ram_databus,
+                            data_in       <= address_map_decode.vidproc ? cpu_data_out : ram_databus,
                             disen         <= crtc_display_enable &~ crtc_row_address[3],
                             invert_n      <= 1,
                             cursor        <= 0,
@@ -513,7 +513,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
                        read_not_write  <= read_not_write,
                        chip_select_n   <= !address_map_decode.crtc,
                        rs <= address[0],
-                       data_in <= main_databus,
+                       data_in <= main_databus,//main_databus,
                        data_out => crtc_data_out,
                        lpstb_n <= lightpen_strobe,
                        crtc_clock_enable <= crtc_clock_enable,
@@ -631,7 +631,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
             address_map_decode.roms[rom_sel] = 1;
         }
         if (address_map_decode.romsel) {
-            rom_sel <= main_databus[4;0];
+            rom_sel <= cpu_data_out[4;0]; // main_databus
         }
     }
 
@@ -772,20 +772,20 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
         if (last_memory_access.rom_select[0]) { memory_databus |= basic_data_out; }
         if (last_memory_access.rom_select[1]) { memory_databus |= adfs_data_out; }
 
-        main_databus = cpu_data_out;
+        main_databus = 8hff;//cpu_data_out;
         if (read_not_write) {
             main_databus = memory_databus;
+            if (!cpu_reading_memory) { main_databus = cpu_memory_data_hold; }
             if (address_map_decode.rom) {
                 if (!address_map_decode.roms[0] &&
                     !address_map_decode.roms[1]) {
                         main_databus = 8hff;
                 }
             }
-            if (!cpu_reading_memory) { main_databus = cpu_memory_data_hold; }
             if (address_map_decode.sheila) {main_databus = data_out_sheila; }
         }
         if (cpu_reading_memory) {
-            cpu_memory_data_hold <= main_databus;
+            cpu_memory_data_hold <= memory_databus;// main_databus
         }
     }
 
