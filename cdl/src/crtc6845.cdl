@@ -351,6 +351,12 @@ module crtc6845( clock clk_2MHz,
                 vertical_state.vsync_counter <= vertical_state.vsync_counter+1; // used in cursor blinking
             }
         }
+
+        /*b Clock enable */
+        if (!crtc_clock_enable) {
+            horizontal_state <= horizontal_state;
+            vertical_state <= vertical_state;
+        }
     }
 
     /*b Address register and cursor */
@@ -370,6 +376,12 @@ module crtc6845( clock clk_2MHz,
             address_state.memory_address            <= bundle(control.start_addr_h, control.start_addr_l);
             address_state.memory_address_line_start <= bundle(control.start_addr_h, control.start_addr_l);
         }
+
+        /*b Clock enable */
+        if (!crtc_clock_enable) {
+            address_state <= address_state;
+        }
+
         cursor_decode.address_match = (control.cursor.address == address_state.memory_address);
         cursor_decode.disabled = 0;
         full_switch (control.cursor.mode)
@@ -392,7 +404,7 @@ module crtc6845( clock clk_2MHz,
             address_register <= data_in[5;0];
         }
         if (!chip_select_n && (rs==1) && !read_not_write) {
-            full_switch (address_register) {
+            part_switch (address_register) {
             case addr_h_total:        { control.h_total <= data_in; }
             case addr_h_displayed:    { control.h_displayed <= data_in; }
             case addr_h_sync_pos:     { control.h_sync_pos <= data_in; }
