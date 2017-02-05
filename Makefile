@@ -36,6 +36,7 @@ MODELS_MAKE := $(CURDIR)/models.make
 SRC_ROOT    := $(CURDIR)/
 PREFIX_OBJ_DIR := $(CURDIR)/build/
 DEBUG_BUILD := no
+EXTRA_CDLFLAGS := --extra_cdlflags="--v_clkgate_type='banana' --v_use_always_at_star --v_clks_must_have_enables "
 
 LOCAL_CFLAGS := -I/usr/local/include
 LOCAL_CXXFLAGS := -I/usr/local/include

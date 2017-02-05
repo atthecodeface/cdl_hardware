@@ -28,7 +28,6 @@
 # Standard CDL descriptor file, to enable building/linking of verilog and C sims
 # with python simulation library
 #
-
 cdl_options ass:on
 
 c_model cmodel/src   srams
