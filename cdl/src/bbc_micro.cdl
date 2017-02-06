@@ -46,38 +46,38 @@ IC34.6 is !IC34.2 at last rising I30.5 - this is 'extend phi2'
 IC29.11 is high if IC30.5 or IC34.6
 
 8MHz  4MHz 2MHz 1MHzE 2Mhz_dly IC30.1 IC30.5  IC31.8 IC34.2 IC34.6 IC29.11 PHI1 PHI2 1MHzAddr 1MHzAccess ExtHapp  6502Enabled
- 0     H    .      H     H        1     H        0     1      .      H      .    H      0        0          0          0  
- 1     .    .      H     .        1     H        0     1      .      H      .    H      0        0          0          1  
- 2     H    H      .     .        1     .        0     1      .      .      H    .      0        0          0          0             
- 3     .    H      .     H        1     .        0     0      .      .      H    .      1        0          0          1              
+ 0     H    .      H     H        1     H        0     1      .      H      .    H      0        0          0          0
+ 1     .    .      H     .        1     H        0     1      .      H      .    H      0        0          0          1
+ 2     H    H      .     .        1     .        0     1      .      .      H    .      0        0          0          0
+ 3     .    H      .     H        1     .        0     0      .      .      H    .      1        0          0          1
  4     H    .      .     H        1     H        0     0      H      H      .    H      1        1          0          0
- 5     .    .      .     .        1     H        0     0      H      H      .    H      1        1          0          0 
- 6     H    H      H     .        1     .        1     1      H      H      .    H      1        1          0          0 
- 7     .    H      H     H        1     .        1     1      H      H      .    H      1        1          0          0 
- 8     H    .      H     H        1     H        1     1      .      H      .    H      1        1          1          0       
- 9     .    .      H     .        1     H        0     0      .      H      .    H      1        1          1          1    
- 10    H    H      .     .        1     .        0     0      .      .      H    .      1        1          1          0    
- 11    .    H      .     H        1     .        0     1      .      .      H    .      0        1          1          1 
+ 5     .    .      .     .        1     H        0     0      H      H      .    H      1        1          0          0
+ 6     H    H      H     .        1     .        1     1      H      H      .    H      1        1          0          0
+ 7     .    H      H     H        1     .        1     1      H      H      .    H      1        1          0          0
+ 8     H    .      H     H        1     H        1     1      .      H      .    H      1        1          1          0
+ 9     .    .      H     .        1     H        0     0      .      H      .    H      1        1          1          1
+ 10    H    H      .     .        1     .        0     0      .      .      H    .      1        1          1          0
+ 11    .    H      .     H        1     .        0     1      .      .      H    .      0        1          1          1
  12    H    .      .     H        1     H        0     1      .      H      .    H      0        0          0          0
  13    .    .      .     .        1     H        0     1      .      H      .    H      0        0          0          1
  14    H    H      H     .        1     .        0     1      .      .      H    .      0        0          0          0
  15    .    H      H     H        0     .        0     0      .      .      H    .      1        0          0          0
- 16    H    .      H     H        0     .        0     0      .      .      H    .      1        1          0          0  
- 17    .    .      H     .        0     .        0     0      .      .      H    .      1        1          0          0   
- 18    H    H      .     .        1     .        0     0      .      .      H    .      1        1          0          0  
- 19    .    H      .     H        1     .        0     0      .      .      H    .      1        1          0          1  
- 20    H    .      .     H        1     H        0     0      H      H      .    H      1        1          0          0  
- 21    .    .      .     .        1     H        0     0      H      H      .    H      1        1          0          0  
- 22    H    H      H     .        1     .        1     1      H      H      .    H      1        1          0          0  
- 23    .    H      H     H        1     .        1     1      H      H      .    H      1        1          0          0 
- 24    H    .      H     H        1     H        1     1      .      H      .    H      1        1          1          0       
- 25    .    .      H     .        1     H        0     0      .      H      .    H      1        1          1          1                                                              
+ 16    H    .      H     H        0     .        0     0      .      .      H    .      1        1          0          0
+ 17    .    .      H     .        0     .        0     0      .      .      H    .      1        1          0          0
+ 18    H    H      .     .        1     .        0     0      .      .      H    .      1        1          0          0
+ 19    .    H      .     H        1     .        0     0      .      .      H    .      1        1          0          1
+ 20    H    .      .     H        1     H        0     0      H      H      .    H      1        1          0          0
+ 21    .    .      .     .        1     H        0     0      H      H      .    H      1        1          0          0
+ 22    H    H      H     .        1     .        1     1      H      H      .    H      1        1          0          0
+ 23    .    H      H     H        1     .        1     1      H      H      .    H      1        1          0          0
+ 24    H    .      H     H        1     H        1     1      .      H      .    H      1        1          1          0
+ 25    .    .      H     .        1     H        0     0      .      H      .    H      1        1          1          1
  26    H    H      .     .        1     .        0     0      .      .      H    .      1        1          1          0
 
 The clocking scheme is something like:
 
 PHI1 is extended if 1MHz address and PHI1 and 1MHzE
-PHI2 is extended if 1MHz address and was PHI1 
+PHI2 is extended if 1MHz address and was PHI1
 
 So using a 4MHz clock in, the 6502 should clock on every edge except:
 if extending PHI1 then skip first 2 edges when PHI1 is asserted
@@ -131,7 +131,7 @@ OS execution
 
      0ns: 0xd9cd - reset
   2520ns: 0xda08 - interrogate keyboard links and control key (result into 0xfc)
- 13965ns: 0xda26 - 
+ 13965ns: 0xda26 -
  14300ns: 0xda42 - zero &200+X to &2CD, set 0x2cf to 0x2ff to 0xff
  43400ns: 0xda52 - set port A of user via to all outputs (printer out)
                    clear zero page, copy 0xd940++ to 0x0200++
@@ -140,9 +140,9 @@ OS execution
  87790ns: 0xdaaa / 0xec60 - clear sound channels
 171070ns: 0xdabd - rom 0 check
 171190ns:   0xdc16 - set up rom latch
-171430ns: 0xdabf - 
+171430ns: 0xdabf -
 191070ns: 0xdabd - rom 1-15 check
-        : 0xdad1 - 
+        : 0xdad1 -
 209330ns: 0xdb11 - roms checked, check speech system (absent for now)
 209470ns: 0xdb27 - set up screen
         :   0xc300, 0xcb1d - screen initialization
@@ -152,10 +152,10 @@ OS execution
 429ee5ns: 0xdb35 / 0xf140 - set up cassette options
 450390ns: 0xdb38 - test for tube - we have a tube at the moment (!)
         : 0xdb67 - output startup message
-        : 0xdb87 - 
-        : 0xdbbe - 
-        : 0xdbe7 - 
-        : 0x8000 - 
+        : 0xdb87 -
+        : 0xdbbe -
+        : 0xdbe7 -
+        : 0x8000 -
 
 */
 /*a Includes
@@ -390,7 +390,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
                      bbc_floppy_op => floppy_op,
                      bbc_floppy_response <= floppy_response );
     }
-    
+
     /*b 6850 ACIA */
     acia_6850 """
     6850 instance
@@ -480,7 +480,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
                        pa_in <= 8b0,//
                        pa_out => via_b_pa_out,
                        cb1 <= 0,
-                       cb2_in <= 0, 
+                       cb2_in <= 0,
                        pb_in <= 0,
                        pb_out => via_b_pb_out
             );
@@ -672,7 +672,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
     memories as the lowest priority.
     """: {
         memory_grant = memory_grant_none;
-        
+
         if (clock_control.will_enable_2MHz_video) {
             memory_grant = memory_grant_video;
         } elsif (phi1 && !cpu_reading_memory) {
@@ -689,7 +689,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
         memory_access.read_enable  = 0;
         memory_access.write_enable = 0;
         memory_access.address    = address[14;0];
-        memory_access.write_data = main_databus;
+        memory_access.write_data = cpu_data_out;//main_databus;
 
         cpu_reading_memory <= 0;
         host_reading_memory <= 0;
@@ -722,7 +722,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
             host_reading_memory <= pending_host_sram_request.read_enable;
         }
         last_memory_access <= memory_access;
-        
+
         se_sram_srw_16384x8 ram_0(sram_clock <- clk,
                                   select         <= memory_access.ram_select[0],
                                   read_not_write <= memory_access.read_enable,
@@ -771,7 +771,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
         if (last_memory_access.os_select)     { memory_databus |= os_data_out; }
         if (last_memory_access.rom_select[0]) { memory_databus |= basic_data_out; }
         if (last_memory_access.rom_select[1]) { memory_databus |= adfs_data_out; }
-        
+
         main_databus = cpu_data_out;
         if (read_not_write) {
             main_databus = memory_databus;
