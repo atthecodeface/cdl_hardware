@@ -58,7 +58,7 @@ class c_TestBBC_HW(SimulationTestBase):
             hw.th.display_screen()
             pass
         if do_waves:
-            hw.step(240000000)
+            hw.step(32*1000*1000)
             print "Waves enabled"
             waves.enable()
             hw.step(3*1000*1000)

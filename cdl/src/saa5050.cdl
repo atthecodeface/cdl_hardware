@@ -93,7 +93,7 @@ typedef struct {
 
 /*a Module saa5050 */
 module saa5050( clock clk_2MHz     "Supposedly 6MHz pixel clock (TR6), except we use 2MHz and deliver 3 pixels per tick; rising edge should be coincident with clk_1MHz edges",
-                clock clk_1MHz     "Character clock, used to clock in the parallel data; real chip uses F1 and syncs to TR6; this clock RISES when F1 FALLS",
+                input bit clk_1MHz_enable "Clock enable high for clk_2MHz when the SAA's 1MHz would normally tick",
                 input bit reset_n,
                 input bit superimpose_n "Not implemented",
                 input bit data_n "Serial data in, not implemented",
@@ -206,12 +206,10 @@ The BBC micro seems to use 19 rows per character, but in practice (since it is i
 {
     /*b Defaults */
     default reset active_low reset_n;
-    default clock clk_1MHz;
-    clocked t_load_state load_state = {*=0};
-    net bit[64] pixel_rom_data;
-
     default clock clk_2MHz;
-    clocked t_pixel_state pixel_state = {*=0};
+    net bit[64] pixel_rom_data;
+    clocked t_load_state     load_state = {*=0}; // Enabled by clk_1MHz_enable
+    clocked t_pixel_state    pixel_state = {*=0};
     comb    t_pixel_decode pixel;
     clocked t_hexpixel_state hexpixel_state={*=0};
     comb t_color[6] hexpixel_colors;
@@ -253,6 +251,9 @@ The BBC micro seems to use 19 rows per character, but in practice (since it is i
                 load_state.flash_on <= 0;
             }
             load_state.end_of_field <= 0;
+        }
+        if (!clk_1MHz_enable) {
+            load_state <= load_state;
         }
     }
 
@@ -306,7 +307,7 @@ The BBC micro seems to use 19 rows per character, but in practice (since it is i
         case 13: { // double height is set-after
             pixel.next_character_state.dbl_height = 1;
             // does this reset the held graphics?
-        } 
+        }
         case 25: { // contiguous graphics is set-at
             pixel.current_character_state.contiguous_graphics = 1;
             pixel.next_character_state.contiguous_graphics = 1;

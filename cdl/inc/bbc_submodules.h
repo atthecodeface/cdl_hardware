@@ -84,7 +84,7 @@ extern module crtc6845( clock clk_2MHz,
                  output bit de,
                  output bit cursor,
                  output bit hsync,
-                 output bit vsync                 
+                 output bit vsync
        )
 {
     timing to   rising clock clk_1MHz read_not_write, chip_select_n, rs, data_in;
@@ -257,7 +257,7 @@ extern module se_sram_srw_65536x32( clock sram_clock,
 
 /*m saa5050 */
 extern module saa5050( clock clk_2MHz     "Supposedly 6MHz pixel clock (TR6), except we use 2MHz and deliver 3 pixels per tick; rising edge should be coincident with clk_1MHz edges",
-                       clock clk_1MHz     "Character clock, used to clock in the parallel data; real chip uses F1 and syncs to TR6; this clock RISES when F1 FALLS",
+                       input bit clk_1MHz_enable "Clock enable high for clk_2MHz when the SAA's 1MHz would normally tick",
                        input bit reset_n,
                        input bit superimpose_n "Not implemented",
                        input bit data_n "Serial data in, not implemented",
@@ -275,9 +275,9 @@ extern module saa5050( clock clk_2MHz     "Supposedly 6MHz pixel clock (TR6), ex
                        output bit[6] green,
                        output bit[6] blue,
                        output bit blan,
-                       input t_bbc_micro_sram_request host_sram_request "Write only, writes on clk_2MHz rising, acknowledge must be handled by supermodule"    ) 
+                       input t_bbc_micro_sram_request host_sram_request "Write only, writes on clk_2MHz rising, acknowledge must be handled by supermodule"    )
 {
-    timing to   rising clock clk_1MHz data_in, lose;
+    timing to   rising clock clk_2MHz clk_1MHz_enable, data_in, lose;
     timing to   rising clock clk_2MHz host_sram_request;
     timing from rising clock clk_2MHz red, green, blue;
 }

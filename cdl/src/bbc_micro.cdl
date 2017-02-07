@@ -295,8 +295,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
     comb bit ttx_vdu;
     clocked clock clk_2MHz_video_clock bit[7] saa_data=0 "Real BBC clocks on 1MHz falling which is presumably coincident with 2MHz falling (not 1MHzE falling...)";
     clocked clock clk_2MHz_video_clock bit    saa_lose=0 "Real BBC SAA5050 registers this data on rising 1MHz so gets every other 2MHz clock tick data";
-    //clocked clock clk_1MHz_rising bit[7] saa_data=0; There is no 1MHz clock here coincident with every other 2MHz falling - may as well use 2MHz falling
-    //clocked clock clk_1MHz_rising bit    saa_lose=0;
+    clocked clock clk_2MHz_video_clock bit    saa_enable=0 "1MHz clock enable for SAA5050 in video clock domain, reset at start of display period";
     net bit hsync;
     net bit vsync;
     net bit[8] vidproc_red;
@@ -526,8 +525,12 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
             );
         saa_data <= ram_databus[7;0]; // Real BBC Data in is crtc_display_enable ? saa_data : bundle(1b1, saa_data[6;0]), to force non-control characters during display not enabled
         saa_lose <= crtc_display_enable;
-        saa5050 saa( clk_2MHz <- clk_2MHz_video_clock, // pixel shift out clock
-                     clk_1MHz <- clk_1MHzE_rising, // character data load clock - uses registered version of RAM data to delay until this clock occurs
+        saa_enable <= !saa_enable;
+        if (!saa_lose && crtc_display_enable) {
+            saa_enable <= 1;
+        }
+        saa5050 saa( clk_2MHz <- clk_2MHz_video_clock, // pixel shift out clock, was 6MHz on SAA5050,
+                     clk_1MHz_enable <= saa_enable, // Clock enable high for clk_2MHz when the SAA's 1MHz would normally tick
                      reset_n <= reset_n,
                      superimpose_n <= 0,
                      data_n <= 0,
