@@ -513,7 +513,7 @@ module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half o
                        read_not_write  <= read_not_write,
                        chip_select_n   <= !address_map_decode.crtc,
                        rs <= address[0],
-                       data_in <= main_databus,//main_databus,
+                       data_in <= cpu_data_out,//main_databus,
                        data_out => crtc_data_out,
                        lpstb_n <= lightpen_strobe,
                        crtc_clock_enable <= crtc_clock_enable,
