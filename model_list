@@ -54,6 +54,7 @@ cdl cdl/src bbc_micro_clocking  inc:cdl/inc
 cdl cdl/src bbc_micro_rams      inc:cdl/inc
 cdl cdl/src bbc_micro_with_rams  inc:cdl/inc
 cdl cdl/src bbc_csr_interface   inc:cdl/inc
+cdl cdl/src framebuffer         inc:cdl/inc
 
 cdl cdl/src tb_6502 inc:cdl/inc
 

@@ -223,7 +223,7 @@ The BBC micro seems to use 19 rows per character, but in practice (since it is i
             load_state.character_data_toggle <= !load_state.character_data_toggle; // change on this indicates new character to other clock
         }
         load_state.end_of_scanline <= 0;
-        if (load_state.last_lose && !lose) {
+        if (load_state.last_lose && !lose) { // end of line
             load_state.character_data <= 0;
             load_state.character_data_toggle <= !load_state.character_data_toggle; // change on this indicates new character to other clock
             load_state.scanline <= load_state.scanline+1;

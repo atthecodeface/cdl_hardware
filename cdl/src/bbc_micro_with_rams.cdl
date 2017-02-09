@@ -19,103 +19,22 @@
  * and display; this is suitable for instantiation in an FPGA.
  *
  */
+/*a Includes */
 include "bbc_micro_types.h"
-extern module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
-                                  input bit reset_n,
-                                  input t_bbc_clock_status clock_status,
-                                  output t_bbc_clock_control clock_control,
-                                  input t_bbc_csr_request csr_request,
-                                  output t_bbc_csr_response csr_response )
-{
-    timing to   rising clock clk   clock_status;
-    timing from rising clock clk   clock_control;
-    timing to   rising clock clk   csr_request;
-    timing from rising clock clk   csr_response;
-}
+include "bbc_submodules.h"
 
-extern module bbc_micro_rams( clock clk "4MHz clock in as a minimum",
-                       input bit reset_n,
-                       input t_bbc_clock_control clock_control,
-                       input t_bbc_micro_sram_request host_sram_request,
-                       output t_bbc_micro_sram_response host_sram_response,
-                       input t_bbc_display_sram_write display_sram_write,
-                       input t_bbc_floppy_sram_request floppy_sram_request,
-                       output t_bbc_floppy_sram_response floppy_sram_response,
-                       output t_bbc_micro_sram_request bbc_micro_host_sram_request,
-                       input t_bbc_micro_sram_response bbc_micro_host_sram_response )
-{
-    timing to   rising clock clk clock_control;
-    timing to   rising clock clk host_sram_request, display_sram_write, floppy_sram_request, bbc_micro_host_sram_response;
-    timing from rising clock clk host_sram_response, floppy_sram_response, bbc_micro_host_sram_request;
-}
-
-extern module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half of this",
-                  input t_bbc_clock_control clock_control,
-                  output t_bbc_clock_status clock_status,
-                  input bit reset_n,
-                  input t_bbc_keyboard keyboard,
-                  output t_bbc_display display,
-                  output bit keyboard_reset_n,
-                  output t_bbc_floppy_op floppy_op,
-                         input t_bbc_floppy_response floppy_response,
-                       input t_bbc_micro_sram_request host_sram_request,
-                       output t_bbc_micro_sram_response host_sram_response )
-{
-    timing to   rising clock clk   clock_control, keyboard, floppy_response;
-    timing from rising clock clk   clock_status, display, floppy_op;
-
-    timing to   rising clock clk   host_sram_request;
-    timing from rising clock clk   host_sram_response;
-}
-
-extern module bbc_display_sram( clock clk "Clock running at 2MHz",
-                         input bit reset_n,
-                         output t_bbc_keyboard keyboard,
-                         input t_bbc_display display,
-                         input bit keyboard_reset_n,
-                         output t_bbc_display_sram_write sram_write,
-                         input t_bbc_csr_request csr_request,
-                         output t_bbc_csr_response csr_response
-    )
-{
-    timing to   rising clock clk   display, csr_request;
-    timing from rising clock clk   keyboard, sram_write, csr_response;
-}
-
-extern module bbc_floppy_sram( clock clk "Clock running at 2MHz",
-                        input bit reset_n,
-                        input t_bbc_floppy_op floppy_op,
-                        output t_bbc_floppy_response floppy_response,
-                        output t_bbc_floppy_sram_request sram_request,
-                        input t_bbc_floppy_sram_response sram_response,
-                        input t_bbc_csr_request csr_request,
-                        output t_bbc_csr_response csr_response
-)
-{
-    timing to   rising clock clk   floppy_op, sram_response, csr_request;
-    timing from rising clock clk   floppy_response, sram_request, csr_response;
-}
-
-extern module bbc_display( clock clk "Clock running at 2MHz",
-                           //input bit reset_n,
-                           input t_bbc_display_sram_write display_sram_write,
-                           input t_bbc_floppy_sram_request floppy_sram_request,
-                           output t_bbc_keyboard keyboard,
-                           output bit reset_n,
-                           output t_bbc_floppy_sram_response floppy_sram_response )
-{
-    timing to   rising clock clk   display_sram_write, floppy_sram_request;
-    timing from rising clock clk   keyboard, floppy_sram_response;
-}
-
+/*a Module */
 module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",
+                            clock video_clk,
                             input bit reset_n,
                             input t_bbc_csr_request csr_request,
                             output t_bbc_csr_response csr_response,
                             input t_bbc_micro_sram_request   host_sram_request,
                             output t_bbc_micro_sram_response host_sram_response,
-                            output t_bbc_display_sram_write display_sram_write )
+                            output t_bbc_display_sram_write display_sram_write,
+                            output t_video_bus video_bus )
 {
+    net t_video_bus video_bus;
     net t_bbc_display display;
     net  bit keyboard_reset_n;
     net t_bbc_floppy_op floppy_op;
@@ -126,6 +45,7 @@ module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",
     net t_bbc_csr_response clocking_csr_response;
     net t_bbc_csr_response display_sram_csr_response;
     net t_bbc_csr_response floppy_sram_csr_response;
+    net t_bbc_csr_response framebuffer_csr_response;
 
     net t_bbc_floppy_sram_request floppy_sram_request;
     net t_bbc_floppy_sram_response floppy_sram_response;
@@ -203,5 +123,15 @@ module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",
                              floppy_sram_response => floppy_sram_response,
                              bbc_micro_host_sram_request => bbc_micro_host_sram_request,
                              bbc_micro_host_sram_response <= bbc_micro_host_sram_response );
+        framebuffer fb( csr_clk <- clk_cpu,
+                        sram_clk <- clk_2MHz_video_clock,
+                        video_clk <- video_clk,
+                        reset_n <= reset_n,
+                        video_bus => video_bus,
+                        display_sram_write <= display_sram_write,
+                        csr_request <= csr_request,
+                        csr_response => framebuffer_csr_response
+            );
+                        
     }
 }

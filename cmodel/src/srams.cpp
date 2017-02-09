@@ -46,6 +46,16 @@ static t_sl_error_level se_sram_srw_ ## size ## x ## width ## _instance_fn(c_eng
     if (sram_mod) return se_external_module_instantiate(sram_mod, engine, engine_handle); \
     return error_level_fatal; \
 }
+#define SRAM_WRAPPER_DP(size,width) \
+static t_sl_error_level se_sram_mrw_2_ ## size ## x ## width ## _instance_fn(c_engine *engine, void *engine_handle) { \
+    engine->set_option_list( engine_handle, sl_option_list(engine->get_option_list( engine_handle ), "num_ports", 2) ); \
+    engine->set_option_list( engine_handle, sl_option_list(engine->get_option_list( engine_handle ), "size", size) ); \
+    engine->set_option_list( engine_handle, sl_option_list(engine->get_option_list( engine_handle ), "width", width) ); \
+    engine->set_option_list( engine_handle, sl_option_list(engine->get_option_list( engine_handle ), "bits_per_enable", 0) ); \
+    void *sram_mod = se_external_module_find("se_sram_mrw"); \
+    if (sram_mod) return se_external_module_instantiate(sram_mod, engine, engine_handle); \
+    return error_level_fatal; \
+}
 
 /**
  * A macro to be used in 'srams__init' to register an SRAM whose
@@ -53,6 +63,8 @@ static t_sl_error_level se_sram_srw_ ## size ## x ## width ## _instance_fn(c_eng
  */
 #define SRAM_REGISTER(size,width) \
     se_external_module_register( 1, "se_sram_srw_" #size "x" #width, se_sram_srw_ ## size ## x ## width ##_instance_fn );
+#define SRAM_REGISTER_DP(size,width) \
+    se_external_module_register( 1, "se_sram_mrw_2_" #size "x" #width, se_sram_mrw_2_ ## size ## x ## width ##_instance_fn );
 
 /*a Static SRAM wrappers */
 /**
@@ -66,6 +78,7 @@ SRAM_WRAPPER(65536, 8)
 SRAM_WRAPPER(65536, 32)
 SRAM_WRAPPER(32768, 64)
 SRAM_WRAPPER(128, 64)
+SRAM_WRAPPER_DP(16384, 48)
 
 /*a Initialization functions */
 /*f srams__init */
@@ -84,6 +97,7 @@ srams__init( void )
     SRAM_REGISTER(65536, 32);
     SRAM_REGISTER(32768, 64);
     SRAM_REGISTER(128, 64);
+    SRAM_REGISTER_DP(16384, 48);
 }
 
 /*a Scripting support code */

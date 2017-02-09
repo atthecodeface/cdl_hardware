@@ -321,6 +321,7 @@ class cdl_test(pycdl.hw):
     def __init__(self, os_rom_mif, basic_rom_mif, adfs_rom_mif, teletext_rom_mif, disk_mif="disks/elite.mif"):
 
         system_clock   = pycdl.clock(0, 5, 5)
+        video_clock    = pycdl.clock(0, 7, 7)
         self.system_clock_div_2 = pycdl.clock(0, 10, 10)
         reset_n        = pycdl.wire()
 
@@ -356,6 +357,7 @@ class cdl_test(pycdl.hw):
         csr_response       = pycdl.wirebundle(self.csr_response_dict)
         self.bbc_micro = pycdl.module("bbc_micro_with_rams",
                                     clocks = {"clk":system_clock,
+                                              "video_clk":video_clock,
                                               },
                                     inputs = {"reset_n":reset_n,
                                               "host_sram_request":host_sram_request,

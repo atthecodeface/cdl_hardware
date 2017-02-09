@@ -256,6 +256,27 @@ extern module se_sram_srw_65536x32( clock sram_clock,
     timing from rising clock sram_clock   data_out;
 }
 
+/*m se_sram_mrw_2_16384x48 */
+extern module se_sram_mrw_2_16384x48( clock sram_clock_0,
+                                      input bit select_0,
+                                      input bit[14] address_0,
+                                      input bit read_not_write_0,
+                                      input bit[48] write_data_0,
+                                      output bit[48] data_out_0,
+
+                                      clock sram_clock_1,
+                                      input bit select_1,
+                                      input bit[14] address_1,
+                                      input bit read_not_write_1,
+                                      input bit[48] write_data_1,
+                                      output bit[48] data_out_1)
+{
+    timing to   rising clock sram_clock_0   select_0, address_0, read_not_write_0, write_data_0;
+    timing from rising clock sram_clock_0   data_out_0;
+    timing to   rising clock sram_clock_1   select_1, address_1, read_not_write_1, write_data_1;
+    timing from rising clock sram_clock_1   data_out_1;
+}
+
 /*m saa5050 */
 extern module saa5050( clock clk_2MHz     "Supposedly 6MHz pixel clock (TR6), except we use 2MHz and deliver 3 pixels per tick; rising edge should be coincident with clk_1MHz edges",
                        input bit clk_1MHz_enable "Clock enable high for clk_2MHz when the SAA's 1MHz would normally tick",
@@ -323,3 +344,115 @@ extern module fdc8271( clock clk                "",
     timing comb input data_ack_n, address, read_n, chip_select_n;
     timing comb output data_out;
 }
+
+/*m bbc_micro_clocking */
+extern module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
+                                  input bit reset_n,
+                                  input t_bbc_clock_status clock_status,
+                                  output t_bbc_clock_control clock_control,
+                                  input t_bbc_csr_request csr_request,
+                                  output t_bbc_csr_response csr_response )
+{
+    timing to   rising clock clk   clock_status;
+    timing from rising clock clk   clock_control;
+    timing to   rising clock clk   csr_request;
+    timing from rising clock clk   csr_response;
+}
+
+/*m bbc_micro_rams */
+extern module bbc_micro_rams( clock clk "4MHz clock in as a minimum",
+                       input bit reset_n,
+                       input t_bbc_clock_control clock_control,
+                       input t_bbc_micro_sram_request host_sram_request,
+                       output t_bbc_micro_sram_response host_sram_response,
+                       input t_bbc_display_sram_write display_sram_write,
+                       input t_bbc_floppy_sram_request floppy_sram_request,
+                       output t_bbc_floppy_sram_response floppy_sram_response,
+                       output t_bbc_micro_sram_request bbc_micro_host_sram_request,
+                       input t_bbc_micro_sram_response bbc_micro_host_sram_response )
+{
+    timing to   rising clock clk clock_control;
+    timing to   rising clock clk host_sram_request, display_sram_write, floppy_sram_request, bbc_micro_host_sram_response;
+    timing from rising clock clk host_sram_response, floppy_sram_response, bbc_micro_host_sram_request;
+}
+
+/*m framebuffer */
+extern module framebuffer( clock csr_clk "Clock for CSR reads/writes",
+                    clock sram_clk  "SRAM write clock, with frame buffer data",
+                    clock video_clk "Video clock, used to generate vsync, hsync, data out, etc",
+                    input bit reset_n,
+                    input t_bbc_display_sram_write display_sram_write,
+                    output t_video_bus video_bus,
+                    input t_bbc_csr_request csr_request,
+                    output t_bbc_csr_response csr_response
+    )
+{
+    timing to   rising clock sram_clk   display_sram_write;
+    timing to   rising clock csr_clk    csr_request;
+    timing from rising clock csr_clk    csr_response;
+    timing from rising clock video_clk  video_bus;
+}
+
+/*m bbc_micro */
+extern module bbc_micro( clock clk "Clock at least at '4MHz' - CPU runs at least half of this",
+                  input t_bbc_clock_control clock_control,
+                  output t_bbc_clock_status clock_status,
+                  input bit reset_n,
+                  input t_bbc_keyboard keyboard,
+                  output t_bbc_display display,
+                  output bit keyboard_reset_n,
+                  output t_bbc_floppy_op floppy_op,
+                         input t_bbc_floppy_response floppy_response,
+                       input t_bbc_micro_sram_request host_sram_request,
+                       output t_bbc_micro_sram_response host_sram_response )
+{
+    timing to   rising clock clk   clock_control, keyboard, floppy_response;
+    timing from rising clock clk   clock_status, display, floppy_op;
+
+    timing to   rising clock clk   host_sram_request;
+    timing from rising clock clk   host_sram_response;
+}
+
+/*m bbc_display_sram */
+extern module bbc_display_sram( clock clk "Clock running at 2MHz",
+                         input bit reset_n,
+                         output t_bbc_keyboard keyboard,
+                         input t_bbc_display display,
+                         input bit keyboard_reset_n,
+                         output t_bbc_display_sram_write sram_write,
+                         input t_bbc_csr_request csr_request,
+                         output t_bbc_csr_response csr_response
+    )
+{
+    timing to   rising clock clk   display, csr_request;
+    timing from rising clock clk   keyboard, sram_write, csr_response;
+}
+
+/*m bbc_floppy_sram */
+extern module bbc_floppy_sram( clock clk "Clock running at 2MHz",
+                        input bit reset_n,
+                        input t_bbc_floppy_op floppy_op,
+                        output t_bbc_floppy_response floppy_response,
+                        output t_bbc_floppy_sram_request sram_request,
+                        input t_bbc_floppy_sram_response sram_response,
+                        input t_bbc_csr_request csr_request,
+                        output t_bbc_csr_response csr_response
+)
+{
+    timing to   rising clock clk   floppy_op, sram_response, csr_request;
+    timing from rising clock clk   floppy_response, sram_request, csr_response;
+}
+
+/*m bbc_display */
+extern module bbc_display( clock clk "Clock running at 2MHz",
+                           //input bit reset_n,
+                           input t_bbc_display_sram_write display_sram_write,
+                           input t_bbc_floppy_sram_request floppy_sram_request,
+                           output t_bbc_keyboard keyboard,
+                           output bit reset_n,
+                           output t_bbc_floppy_sram_response floppy_sram_response )
+{
+    timing to   rising clock clk   display_sram_write, floppy_sram_request;
+    timing from rising clock clk   keyboard, floppy_sram_response;
+}
+
