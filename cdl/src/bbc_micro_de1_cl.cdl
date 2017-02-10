@@ -92,6 +92,12 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     debug_logic """
     """: {
         debug_comb.selected_data = lcd.vsync_n;
+        full_switch(switches[2;7]) {
+        case 0: { debug_comb.selected_data = lcd.vsync_n; }
+        case 1: { debug_comb.selected_data = lcd.hsync_n; }
+        case 2: { debug_comb.selected_data = lcd.display_enable; }
+        case 3: { debug_comb.selected_data = floppy_response.read_data_valid; }
+        }
         debug_state.data      <= debug_comb.selected_data;
         debug_state.last_data <= debug_state.data;
         if (debug_state.data && !debug_state.last_data) {
@@ -123,8 +129,8 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                 hsync_n = !video_bus.hsync,
                 display_enable = video_bus.display_enable,
                 red   = video_bus.red[6;2],
-                green = video_bus.red[7;1],
-                blue  = video_bus.red[6;2],
+                green = ~video_bus.green[7;1],
+                blue  = video_bus.blue[6;2]^debug_state.counter[6;0],
                 backlight = switches[1]
         };
 
