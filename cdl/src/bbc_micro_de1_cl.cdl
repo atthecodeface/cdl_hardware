@@ -92,11 +92,15 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     debug_logic """
     """: {
         debug_comb.selected_data = lcd.vsync_n;
-        full_switch(switches[2;7]) {
+        full_switch(switches[3;6]) {
         case 0: { debug_comb.selected_data = lcd.vsync_n; }
-        case 1: { debug_comb.selected_data = lcd.hsync_n; }
-        case 2: { debug_comb.selected_data = lcd.display_enable; }
+        case 1: { debug_comb.selected_data = clock_control.enable_cpu; }
+        case 2: { debug_comb.selected_data = clock_control.enable_1MHz_falling; }
         case 3: { debug_comb.selected_data = floppy_response.read_data_valid; }
+        case 4: { debug_comb.selected_data = display_sram_write.enable; }
+        case 5: { debug_comb.selected_data = floppy_sram_request_r.enable; }
+        case 6: { debug_comb.selected_data = clock_control.phi[0]; }
+        case 7: { debug_comb.selected_data = clock_control.phi[0]; }
         }
         debug_state.data      <= debug_comb.selected_data;
         debug_state.last_data <= debug_state.data;
@@ -116,9 +120,9 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
         keyboard.keys_down_cols_0_to_7 = 0;
         keyboard.keys_down_cols_8_to_9 = 0;
 
-        keyboard.keys_down_cols_0_to_7[0*8+0] = keys[0]; // shift
-        keyboard.keys_down_cols_0_to_7[5*8+5] = keys[1]; // N
-        keyboard.keys_down_cols_0_to_7[0*8+2] = keys[2]; // F0
+        keyboard.keys_down_cols_0_to_7[0*8+0] = !keys[0]; // shift
+        keyboard.keys_down_cols_0_to_7[1*8+0] = !keys[1]; // ctrl
+        keyboard.keys_down_cols_0_to_7[0*8+1] = !keys[2]; // Q (N is 5*8+5)
 
         enable_clk_2MHz_video   = clock_control.enable_2MHz_video; // used for clock enable and to choose which source of SRAM read
         enable_cpu_clk          = clock_control.enable_cpu;

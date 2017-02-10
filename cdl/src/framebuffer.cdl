@@ -319,16 +319,16 @@ module framebuffer( clock csr_clk "Clock for CSR reads/writes",
         pixel_combs.red   = 0;
         pixel_combs.green = 0;
         pixel_combs.blue  = 0;
-        if (pixel_state.shift.red[0])   { pixel_combs.red   = -1; }
-        if (pixel_state.shift.green[0]) { pixel_combs.green = -1; }
-        if (pixel_state.shift.blue[0])  { pixel_combs.blue  = -1; }
+        if (pixel_state.shift.red[15])   { pixel_combs.red   = -1; }
+        if (pixel_state.shift.green[15]) { pixel_combs.green = -1; }
+        if (pixel_state.shift.blue[15])  { pixel_combs.blue  = -1; }
 
         /*b Pixel state */
         pixel_state.load_data_buffer <= pixel_combs.sram_request;
         if (video_combs.will_display_pixels) {
-            pixel_state.shift.red[15;0]   <= pixel_state.shift.red[15;1];
-            pixel_state.shift.green[15;0] <= pixel_state.shift.green[15;1];
-            pixel_state.shift.blue[15;0]  <= pixel_state.shift.blue[15;1];
+            pixel_state.shift.red[15;1]   <= pixel_state.shift.red[15;0];
+            pixel_state.shift.green[15;1] <= pixel_state.shift.green[15;0];
+            pixel_state.shift.blue[15;1]  <= pixel_state.shift.blue[15;0];
             pixel_state.num_valid <= pixel_combs.next_num_valid;
         }
         if (pixel_combs.load_shift_register) {
