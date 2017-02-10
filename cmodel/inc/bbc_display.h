@@ -161,6 +161,8 @@ typedef enum {
     bbc_csr_select_clocks = 0,
     bbc_csr_select_display = 1,
     bbc_csr_select_floppy = 2,
+    bbc_csr_select_keyboard = 3,
+    bbc_csr_select_framebuffer = 4,
 } t_bbc_csr_select;
 
 /*t t_bbc_sram_select */

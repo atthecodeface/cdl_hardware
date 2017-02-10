@@ -405,7 +405,7 @@ c_bbc_display::clock( void )
             if ((csr_keys_down.cols_0_to_7&0xffffffff) != (req_keys_down.cols_0_to_7&0xffffffff)) {
                 outputs.csr_request__valid = 1;
                 outputs.csr_request__read_not_write = 0;
-                outputs.csr_request__select = bbc_csr_select_display;
+                outputs.csr_request__select = bbc_csr_select_keyboard;
                 outputs.csr_request__address = 8; // 0 to 3
                 outputs.csr_request__data = req_keys_down.cols_0_to_7&0xffffffff;
                 csr_keys_down.cols_0_to_7 = ((csr_keys_down.cols_0_to_7&0xffffffff00000000ULL) |
@@ -413,7 +413,7 @@ c_bbc_display::clock( void )
             } else if ((csr_keys_down.cols_0_to_7&0xffffffff00000000ULL) != (req_keys_down.cols_0_to_7&0xffffffff00000000ULL)) {
                 outputs.csr_request__valid = 1;
                 outputs.csr_request__read_not_write = 0;
-                outputs.csr_request__select = bbc_csr_select_display;
+                outputs.csr_request__select = bbc_csr_select_keyboard;
                 outputs.csr_request__address = 9; // 0 to 3
                 outputs.csr_request__data = req_keys_down.cols_0_to_7>>32;
                 csr_keys_down.cols_0_to_7 = ((req_keys_down.cols_0_to_7&0xffffffff00000000ULL) |
@@ -421,7 +421,7 @@ c_bbc_display::clock( void )
             } else if ((csr_keys_down.cols_8_to_9&0xffff) != (req_keys_down.cols_8_to_9&0xffff)) {
                 outputs.csr_request__valid = 1;
                 outputs.csr_request__read_not_write = 0;
-                outputs.csr_request__select = bbc_csr_select_display;
+                outputs.csr_request__select = bbc_csr_select_keyboard;
                 outputs.csr_request__address = 10; // 8 to 9
                 outputs.csr_request__data = req_keys_down.cols_8_to_9&0xffff;
                 csr_keys_down.cols_8_to_9 = req_keys_down.cols_8_to_9;

@@ -1,0 +1,134 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_display_sram.cdl
+ * @brief  BBC micro display to SRAM write interface module
+ *
+ * CDL implementation of a module to map from the t_bbc_display
+ * interface to an SRAM write interface, hence supporting a simple
+ * framebuffer for the output displayed by a BBC micro. The module
+ * requires configuration at run-time, so has a CSR request/response
+ * bus, and hence uses the bbc_csr_interface.
+ *
+ * The basic operation is to gather together pixel data along a
+ * display line and generate SRAM writes when enough pixels are
+ * gathered.
+ *
+ * The sync signals are used to determine where a field and where a
+ * line starts; pixels are captured after the 'back porch' of a line
+ * up to a certain amount of SRAM writes (16 pixels each) per line.
+ *
+ * Interlace is supported - if the vsync occurs at non-consistent
+ * points in a line then it is deemed to be indicating odd or even
+ * field; the SRAM is then written in alternate lines.
+ *
+ * This module needs an update to support an 'amount to add per line',
+ * and a register of 'address at start of line' - this will help
+ * support teletext better.
+ *
+ */
+/*a Includes */
+include "bbc_submodules.h"
+include "bbc_micro_types.h"
+
+/*a Types */
+/*t t_csrs */
+typedef struct {
+    bit reset_pressed;
+    bit[8] reset_counter;
+    bit[64] keys_down_cols_0_to_7;
+    bit[16] keys_down_cols_8_to_9;
+} t_csrs;
+
+/*t t_keyboard_state */
+typedef struct {
+    bit[8] reset_counter;
+    bit    reset_out;
+} t_keyboard_state;
+
+/*a Module
+ */
+module bbc_keyboard_csr( clock clk "Clock running at 2MHz",
+                         input bit reset_n,
+                         output t_bbc_keyboard keyboard,
+                         input bit keyboard_reset_n,
+                         input t_bbc_csr_request csr_request,
+                         output t_bbc_csr_response csr_response
+    )
+"""
+This module provides a keyboard source from CSR writes
+"""
+{
+    /*b Defaults */
+    default reset active_low reset_n;
+    default clock clk;
+
+    clocked t_csrs          csrs = {*=0};
+    clocked t_keyboard_state keyboard_state = {*=0, reset_counter=-1};
+    clocked t_bbc_keyboard  keyboard={*=0};
+
+    net t_bbc_csr_response      csr_response;
+    net t_bbc_csr_access      csr_access;
+    comb t_bbc_csr_access_data csr_read_data;
+
+    /*b CSR logic */
+    control_logic """
+    """: {
+        bbc_csr_interface csri( clk <- clk,
+                                reset_n <= reset_n,
+                                csr_request <= csr_request,
+                                csr_response => csr_response,
+                                csr_access => csr_access,
+                                csr_read_data <= csr_read_data,
+                                csr_select <= bbc_csr_select_keyboard );
+        
+        if (csr_access.valid && !csr_access.read_not_write) {
+            part_switch (csr_access.address[4;0]) {
+            case 4: {
+                csrs.reset_pressed <= csr_access.data[0];
+                csrs.reset_counter <= csr_access.data[8;24];
+            }
+            case 8: {
+                csrs.keys_down_cols_0_to_7 <= bundle(csrs.keys_down_cols_0_to_7[32;32], csr_access.data );
+            }
+            case 9: {
+                csrs.keys_down_cols_0_to_7 <= bundle(csr_access.data, csrs.keys_down_cols_0_to_7[32;0] );
+            }
+            case 10: {
+                csrs.keys_down_cols_8_to_9 <= csr_access.data[16;0];
+            }
+            }
+        }
+        csr_read_data = 0;
+    }
+
+    /*b Handle reset and keys to BBC */
+    reset_and_keys """
+    """: {
+        keyboard_state.reset_out <= 0;
+        if (keyboard_state.reset_counter!=0) {
+            keyboard_state.reset_out <= 1;
+            keyboard_state.reset_counter <= keyboard_state.reset_counter - 1;
+        }
+        if (keyboard.reset_pressed) {
+            keyboard_state.reset_out <= 1;
+            keyboard_state.reset_counter <= csrs.reset_counter;
+        }
+        keyboard.reset_pressed          <= csrs.reset_pressed;
+        keyboard.keys_down_cols_0_to_7  <= csrs.keys_down_cols_0_to_7;
+        keyboard.keys_down_cols_8_to_9  <= csrs.keys_down_cols_8_to_9;
+    }
+
+    /*b All done */
+}

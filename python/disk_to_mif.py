@@ -15,8 +15,9 @@ while True:
         print r
         r = "%04x: "%address    
         pass
+    if address>=0x7000: break
     pass
-address = 0xf000
+address = 0x7000
 for track in range(num_tracks):
     for sector in range(sectors_per_track):
         r = "%04x: "%address    

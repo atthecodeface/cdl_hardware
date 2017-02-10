@@ -1,0 +1,193 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_micro_de1_cl.cdl
+ * @brief  BBC microcomputer with RAMs for the CL DE1 + daughterboard
+ *
+ * CDL module containing the BBC microcomputer with RAMs and a
+ * framebuffer for the Cambridge University Computer Laboratory DE1 +
+ * daughterboard system.
+ *
+ */
+/*a Includes */
+include "bbc_micro_types.h"
+include "bbc_submodules.h"
+
+/*a Module */
+typedef struct {
+    bit vsync_n;
+    bit hsync_n;
+    bit display_enable;
+    bit[6] red;
+    bit[7] green;
+    bit[6] blue;
+    bit backlight;
+} t_lcd;
+typedef struct {
+    bit selected_data;
+} t_debug_comb;
+typedef struct {
+    bit data;
+    bit last_data;
+    bit[32] counter;
+} t_debug_state;
+module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generator",
+                         clock video_clk    "9MHz clock from PLL, derived from 50MHz",
+                         input bit reset_n  "hard reset from a pin - a key on DE1",
+                         input bit video_locked "High if video PLL has locked",
+                         output t_lcd lcd   "LCD display out to computer lab daughterboard",
+                         input bit[4] keys       "DE1 keys",
+                         input bit[10] switches  "DE1 switches",
+                         output bit[10] leds     "DE1 leds"
+                         //input bit[5]  joystick  "Daughterboard joystick",
+                         //input bit[4]  diamond   "Daughterboard diamond switches (ABXY)",
+    )
+{
+    net t_video_bus video_bus;
+    net t_bbc_display display;
+    net  bit keyboard_reset_n;
+    net t_bbc_floppy_op floppy_op;
+    net  t_bbc_floppy_response floppy_response;
+
+    net t_bbc_clock_status clock_status;
+    net t_bbc_clock_control clock_control;
+
+    comb t_bbc_csr_request csr_request;
+    net t_bbc_csr_response clocking_csr_response;
+    net t_bbc_csr_response display_sram_csr_response;
+    net t_bbc_csr_response floppy_sram_csr_response;
+    net t_bbc_csr_response framebuffer_csr_response;
+
+    net t_bbc_floppy_sram_request floppy_sram_request;
+    net t_bbc_display_sram_write display_sram_write;
+
+    comb t_bbc_micro_sram_request  bbc_micro_host_sram_request;
+    net  t_bbc_micro_sram_response bbc_micro_host_sram_response;
+    
+    gated_clock clock clk active_high enable_clk_2MHz_video   clk_2MHz_video_clock "Clock that mirrors 2MHz falling -  video data from RAM is valid at this edge, so used by CRTC, SAA5050 latches, SAA5050, vidproc";
+    gated_clock clock clk active_high enable_cpu_clk          clk_cpu  "6502 clock, >=2MHz but extended when accessing 1MHz peripherals";
+    comb bit enable_clk_2MHz_video;
+    comb bit enable_cpu_clk;
+
+    comb bit bbc_reset_n;
+    comb bit framebuffer_reset_n;
+    comb t_bbc_keyboard keyboard;
+    net bit[32] floppy_sram_read_data;
+    clocked clock clk_cpu reset active_low reset_n bit floppy_sram_reading=0;
+    clocked clock clk_cpu reset active_low reset_n t_bbc_floppy_sram_request floppy_sram_request_r={*=0};
+    clocked clock clk_cpu reset active_low reset_n t_bbc_floppy_sram_response floppy_sram_response={*=0};
+    comb t_debug_comb debug_comb;
+    clocked clock clk reset active_low reset_n t_debug_state debug_state={*=0};
+    debug_logic """
+    """: {
+        debug_comb.selected_data = lcd.vsync_n;
+        debug_state.data      <= debug_comb.selected_data;
+        debug_state.last_data <= debug_state.data;
+        if (debug_state.data && !debug_state.last_data) {
+            debug_state.counter <= debug_state.counter+1;
+        }
+        leds = debug_state.counter[10;0];
+        if (switches[9]) {
+            leds = debug_state.counter[10;6];
+        }
+    }
+    stuff """
+    """: {
+        csr_request = {*=0};
+        bbc_micro_host_sram_request = {*=0};
+        keyboard.reset_pressed = 0;
+        keyboard.keys_down_cols_0_to_7 = 0;
+        keyboard.keys_down_cols_8_to_9 = 0;
+
+        keyboard.keys_down_cols_0_to_7[0*8+0] = keys[0]; // shift
+        keyboard.keys_down_cols_0_to_7[5*8+5] = keys[1]; // N
+        keyboard.keys_down_cols_0_to_7[0*8+2] = keys[2]; // F0
+
+        enable_clk_2MHz_video   = clock_control.enable_2MHz_video; // used for clock enable and to choose which source of SRAM read
+        enable_cpu_clk          = clock_control.enable_cpu;
+        bbc_reset_n             = reset_n & !clock_control.reset_cpu & switches[0];
+        framebuffer_reset_n     = reset_n & video_locked;
+        
+        lcd = { vsync_n = !video_bus.vsync,
+                hsync_n = !video_bus.hsync,
+                display_enable = video_bus.display_enable,
+                red   = video_bus.red[6;2],
+                green = video_bus.red[7;1],
+                blue  = video_bus.red[6;2],
+                backlight = switches[1]
+        };
+
+        bbc_micro_clocking clocking( clk <- clk,
+                                     reset_n <= reset_n,
+                                     clock_status <= clock_status,
+                                     clock_control => clock_control,
+                                     csr_request <= csr_request,
+                                     csr_response => clocking_csr_response );
+
+        bbc_micro bbc(clk <- clk,
+                      reset_n <= bbc_reset_n,
+                      clock_control <= clock_control,
+                      clock_status  => clock_status,
+                      keyboard <= keyboard,
+                      display => display,
+                      keyboard_reset_n => keyboard_reset_n,
+                      floppy_op => floppy_op,
+                      floppy_response <= floppy_response,
+                      host_sram_request <= bbc_micro_host_sram_request,
+                      host_sram_response => bbc_micro_host_sram_response
+            );
+    
+        bbc_display_sram display_sram( clk <- clk_2MHz_video_clock,
+                                       reset_n <= reset_n,
+                                       display <= display,
+                                       sram_write => display_sram_write,
+                                       csr_request <= csr_request,
+                                       csr_response => display_sram_csr_response
+            );
+
+        bbc_floppy_sram floppy_sram( clk <- clk_cpu, // FDC interacts with floppy at cpu clock
+                                     reset_n <= reset_n,
+                                     floppy_op <= floppy_op,
+                                     csr_request <= csr_request,
+                                     floppy_response => floppy_response,
+                                     sram_request => floppy_sram_request,
+                                     sram_response <= floppy_sram_response,
+                                     csr_response => floppy_sram_csr_response
+            );
+
+        se_sram_srw_32768x32 floppy(sram_clock <- clk_cpu,
+                                    select         <= floppy_sram_request_r.enable && !floppy_sram_reading,
+                                    read_not_write <= floppy_sram_request_r.read_not_write,
+                                    write_enable   <= !floppy_sram_request_r.read_not_write,
+                                    address        <= floppy_sram_request_r.address[15;0],
+                                    write_data     <= floppy_sram_request_r.write_data[32;0],
+                                    data_out       => floppy_sram_read_data );
+        floppy_sram_request_r    <= floppy_sram_request;
+        floppy_sram_reading      <= (floppy_sram_request_r.enable && !floppy_sram_reading) && floppy_sram_request_r.read_not_write;
+        floppy_sram_response.ack  <= floppy_sram_request.enable;
+        floppy_sram_response.read_data_valid <= floppy_sram_reading;
+        floppy_sram_response.read_data       <= floppy_sram_read_data;
+
+        framebuffer fb( csr_clk <- clk_cpu,
+                        sram_clk <- clk_2MHz_video_clock,
+                        video_clk <- video_clk,
+                        reset_n <= framebuffer_reset_n,
+                        video_bus => video_bus,
+                        display_sram_write <= display_sram_write,
+                        csr_request <= csr_request,
+                        csr_response => framebuffer_csr_response
+            );
+                        
+    }
+}

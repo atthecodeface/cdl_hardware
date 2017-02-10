@@ -48,13 +48,15 @@ cdl cdl/src acia6850 inc:cdl/inc
 cdl cdl/src fdc8271 inc:cdl/inc
 cdl cdl/src bbc_vidproc         inc:cdl/inc
 cdl cdl/src bbc_micro_keyboard  inc:cdl/inc
-cdl cdl/src bbc_display_sram  inc:cdl/inc
-cdl cdl/src bbc_floppy_sram  inc:cdl/inc
+cdl cdl/src bbc_keyboard_csr    inc:cdl/inc
+cdl cdl/src bbc_display_sram    inc:cdl/inc
+cdl cdl/src bbc_floppy_sram     inc:cdl/inc
 cdl cdl/src bbc_micro_clocking  inc:cdl/inc
 cdl cdl/src bbc_micro_rams      inc:cdl/inc
 cdl cdl/src bbc_micro_with_rams  inc:cdl/inc
 cdl cdl/src bbc_csr_interface   inc:cdl/inc
 cdl cdl/src framebuffer         inc:cdl/inc
+cdl cdl/src bbc_micro_de1_cl    inc:cdl/inc
 
 cdl cdl/src tb_6502 inc:cdl/inc
 

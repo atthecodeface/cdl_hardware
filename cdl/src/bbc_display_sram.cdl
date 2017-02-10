@@ -84,20 +84,10 @@ typedef struct {
 typedef struct {
     t_pixel_counter h_back_porch;
     t_pixel_counter v_back_porch;
-    bit reset_pressed;
-    bit[8] reset_counter;
-    bit[64] keys_down_cols_0_to_7;
-    bit[16] keys_down_cols_8_to_9;
     bit[16] sram_base_address;
     bit[10] sram_scanlines;
     bit[10] sram_writes_per_scanline;
 } t_csrs;
-
-/*t t_keyboard_state */
-typedef struct {
-    bit[8] reset_counter;
-    bit    reset_out;
-} t_keyboard_state;
 
 /*t t_sram_combs */
 typedef struct {
@@ -130,9 +120,7 @@ typedef struct {
  */
 module bbc_display_sram( clock clk "Clock running at 2MHz",
                          input bit reset_n,
-                         output t_bbc_keyboard keyboard,
                          input t_bbc_display display,
-                         input bit keyboard_reset_n,
                          output t_bbc_display_sram_write sram_write,
                          input t_bbc_csr_request csr_request,
                          output t_bbc_csr_response csr_response
@@ -189,8 +177,6 @@ even 'lines' in SRAM, and odd lines just to the odd 'lines'.
                                     sram_scanlines=500,
                                     h_back_porch=-280,
                                     v_back_porch=-70 };
-    clocked t_keyboard_state keyboard_state = {*=0, reset_counter=-1};
-    clocked t_bbc_keyboard  keyboard={*=0};
     clocked t_display_state display_state={*=0};
     comb    t_display_combs display_combs;
     clocked t_sram_state    sram_state={*=0};
@@ -492,36 +478,10 @@ even 'lines' in SRAM, and odd lines just to the odd 'lines'.
                 csrs.h_back_porch <= csr_access.data[pixel_counter_width;0];
                 csrs.v_back_porch <= csr_access.data[pixel_counter_width;16];
             }
-            case 4: {
-                csrs.reset_pressed <= csr_access.data[0];
-                csrs.reset_counter <= csr_access.data[8;24];
-            }
-            case 8: {
-                csrs.keys_down_cols_0_to_7 <= bundle(csrs.keys_down_cols_0_to_7[32;32], csr_access.data );
-            }
-            case 9: {
-                csrs.keys_down_cols_0_to_7 <= bundle(csr_access.data, csrs.keys_down_cols_0_to_7[32;0] );
-            }
-            case 10: {
-                csrs.keys_down_cols_8_to_9 <= csr_access.data[16;0];
-            }
             }
         }
         csr_read_data = 0;
     }
-    reset_and_keys """
-    """: {
-        keyboard_state.reset_out <= 0;
-        if (keyboard_state.reset_counter!=0) {
-            keyboard_state.reset_out <= 1;
-            keyboard_state.reset_counter <= keyboard_state.reset_counter - 1;
-        }
-        if (keyboard.reset_pressed) {
-            keyboard_state.reset_out <= 1;
-            keyboard_state.reset_counter <= csrs.reset_counter;
-        }
-        keyboard.reset_pressed          <= csrs.reset_pressed;
-        keyboard.keys_down_cols_0_to_7  <= csrs.keys_down_cols_0_to_7;
-        keyboard.keys_down_cols_8_to_9  <= csrs.keys_down_cols_8_to_9;
-    }
+
+    /*b All done */
 }

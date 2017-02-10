@@ -293,11 +293,11 @@ module bbc_micro_rams( clock clk "4MHz clock in as a minimum",
         }
             
         /*b SRAM instance and pipeline registers */
-        se_sram_srw_65536x32 floppy(sram_clock <- clk,
+        se_sram_srw_32768x32 floppy(sram_clock <- clk,
                                     select         <= floppy_sram.select,
                                     read_not_write <= floppy_sram.read_not_write,
                                     write_enable   <= floppy_sram.write_enable,
-                                    address        <= floppy_sram.address[16;0],
+                                    address        <= floppy_sram.address[15;0],
                                     write_data     <= floppy_sram.write_data[32;0],
                                     data_out       => floppy_sram_read_data );
         sram_reading_floppy <= sram_grant_floppy;

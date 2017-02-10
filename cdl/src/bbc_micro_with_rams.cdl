@@ -44,6 +44,7 @@ module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",
     net t_bbc_clock_control clock_control;
     net t_bbc_csr_response clocking_csr_response;
     net t_bbc_csr_response display_sram_csr_response;
+    net t_bbc_csr_response keyboard_sram_csr_response;
     net t_bbc_csr_response floppy_sram_csr_response;
     net t_bbc_csr_response framebuffer_csr_response;
 
@@ -95,12 +96,18 @@ module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",
     
         bbc_display_sram display_sram( clk <- clk_2MHz_video_clock,
                                        reset_n <= reset_n,
-                                       keyboard => keyboard,
                                        display <= display,
-                                       keyboard_reset_n <= 1b1, // not really used in this model - comes from CSRs
                                        sram_write => display_sram_write,
                                        csr_request <= csr_request,
                                        csr_response => display_sram_csr_response
+            );
+
+        bbc_keyboard_csr keyboard_csr( clk <- clk_cpu,
+                                       reset_n <= reset_n,
+                                       keyboard => keyboard,
+                                       keyboard_reset_n <= 1b1, // not really used in this model - comes from CSRs
+                                       csr_request <= csr_request,
+                                       csr_response => keyboard_sram_csr_response
             );
 
         bbc_floppy_sram floppy_sram( clk <- clk_cpu, // FDC interacts with floppy at cpu clock
@@ -123,6 +130,7 @@ module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",
                              floppy_sram_response => floppy_sram_response,
                              bbc_micro_host_sram_request => bbc_micro_host_sram_request,
                              bbc_micro_host_sram_response <= bbc_micro_host_sram_response );
+
         framebuffer fb( csr_clk <- clk_cpu,
                         sram_clk <- clk_2MHz_video_clock,
                         video_clk <- video_clk,

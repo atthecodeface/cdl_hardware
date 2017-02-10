@@ -296,7 +296,9 @@ micro floppy disc controller.
         }
 
         floppy_response.read_data_valid <= 0;
-        floppy_response.read_data <= sram_combs.read_data;
+        if (sram_combs.read_data_valid) {
+            floppy_response.read_data <= sram_combs.read_data;
+        }
         if (floppy_state.fsm_state==floppy_fsm_read_data_present_data) {
             floppy_response.read_data_valid <= 1;
         }
@@ -322,9 +324,9 @@ micro floppy disc controller.
         floppy_disk_state[0] <= {disk_ready=1,
                 num_tracks = 80,
                 sectors_per_track = 10,
-                sram_id_base_address   = 20hf000,
+                sram_id_base_address   = 20h7000,
                 sram_data_base_address = 0,
-                data_words_per_track=10*256,
+                data_words_per_track=10*256, // not used
                 write_protect = 1
                 };
     }
