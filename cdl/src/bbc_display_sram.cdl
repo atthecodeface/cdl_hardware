@@ -85,8 +85,10 @@ typedef struct {
     t_pixel_counter h_back_porch;
     t_pixel_counter v_back_porch;
     bit[16] sram_base_address;
+    bit[16] sram_base_address_odd_fields;
     bit[10] sram_scanlines;
     bit[10] sram_writes_per_scanline;
+    bit sram_interlace_in_same_buffer;
 } t_csrs;
 
 /*t t_sram_combs */
@@ -173,7 +175,11 @@ even 'lines' in SRAM, and odd lines just to the odd 'lines'.
     default reset active_low reset_n;
     default clock clk;
 
-    clocked t_csrs          csrs = {*=0, sram_writes_per_scanline=40,
+    clocked t_csrs          csrs = {*=0,
+                                    sram_base_address            = 0x0000,
+                                    sram_base_address_odd_fields = 0x8000, // can be same as sram_base_address for interlaced
+                                    sram_writes_per_scanline     = 40, // 
+                                    sram_interlace_in_same_buffer= 0,  // if set then success lines in same field are 2x writes per scanline apart
                                     sram_scanlines=500,
                                     h_back_porch=-280,
                                     v_back_porch=-70 };
@@ -432,7 +438,9 @@ even 'lines' in SRAM, and odd lines just to the odd 'lines'.
                 sram_state.scanlines_left <= sram_state.scanlines_left-1;
             }
             if (display_state.interlaced) {
-                sram_state.address <= sram_state.address + bundle(6b0,csrs.sram_writes_per_scanline);
+                if (csrs.sram_interlace_in_same_buffer) {
+                    sram_state.address <= sram_state.address + bundle(6b0,csrs.sram_writes_per_scanline);
+                }
                 if (sram_state.scanlines_left==1) {
                     sram_state.scanlines_left <= 0;
                 } elsif (sram_state.scanlines_left!=0) {
@@ -446,7 +454,7 @@ even 'lines' in SRAM, and odd lines just to the odd 'lines'.
             sram_state.scanlines_left <= csrs.sram_scanlines;
             sram_state.address <= csrs.sram_base_address;
             if (display_state.restart_frame_odd_field) {
-                sram_state.address <= csrs.sram_base_address + bundle(6b0,csrs.sram_writes_per_scanline);
+                sram_state.address <= csrs.sram_base_address_odd_fields;
             }
         }
 
@@ -469,10 +477,13 @@ even 'lines' in SRAM, and odd lines just to the odd 'lines'.
                                 csr_select <= bbc_csr_select_display );
         if (csr_access.valid && !csr_access.read_not_write) {
             part_switch (csr_access.address[4;0]) {
-            case 0: { csrs.sram_base_address <= csr_access.data[16;0]; }
+            case 0: { csrs.sram_base_address            <= csr_access.data[16;0];
+                      csrs.sram_base_address_odd_fields <= csr_access.data[16;16];
+            }
             case 1: {
-                csrs.sram_writes_per_scanline <= csr_access.data[10;0];
-                csrs.sram_scanlines           <= csr_access.data[10;16];
+                csrs.sram_writes_per_scanline      <= csr_access.data[10;0];
+                csrs.sram_interlace_in_same_buffer <= csr_access.data[15];
+                csrs.sram_scanlines                <= csr_access.data[10;16];
             }
             case 2: {
                 csrs.h_back_porch <= csr_access.data[pixel_counter_width;0];

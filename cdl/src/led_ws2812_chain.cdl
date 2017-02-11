@@ -1,0 +1,397 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   led_ws2812_chain.cdl
+ * @brief  'Neopixel' LED chain driver module
+ *
+ * CDL implementation of a module that drives a chain of Neopixel
+ * LEDs, based on data that it requests.
+ *
+ * A chain of any length can be driven by this module
+ *
+ * The interface is a request/data interface; this module presents a
+ * 'ready' request to the client, which then presents a valid 24-bit
+ * RGB data value. When the module takes the data it removes its
+ * 'ready' request. The client keeps supplying data in response to the
+ * 'ready' requests.
+ * 
+ * To terminate the chain the client supplies data with a 'last'
+ * indication asserted.
+ *
+ * To ease implementation of the client, the request includes a
+ * 'first' indicator and an 'led_number' indicator - effectively a
+ * client can read a register file based on 'led_number' and drive
+ * 'valid' when the data is valid, and 'last' if led_number matches
+ * the end of the register file.
+ *
+ * This module copes with all of the requirements of the Neopixel
+ * chain, and it takes a constant clock input. To provide the correct
+ * frequency of data pin toggling to the Neopixels a clock divider
+ * value must be supplied, with the approximate number of clock ticks
+ * that make up 400ns (ideally 408ns).
+ */
+/*a Includes */
+include "leds.h"
+
+/*a Types */
+/*t t_data_state_fsm */
+typedef fsm {
+    data_state_idle;
+    data_state_request_data;
+    data_state_data_in_hand;
+    data_state_last_data;
+} t_data_state_fsm;
+
+/*t t_data_state */
+typedef struct {
+    t_data_state_fsm  fsm_state;
+    bit[8]            led_number;
+    t_led_ws2812_data buffer;
+    bit load_leds;
+} t_data_state;
+
+/*t t_transmit_state_fsm */
+typedef fsm {
+    transmit_state_idle;
+    transmit_state_red;
+    transmit_state_green;
+    transmit_state_blue;
+    transmit_state_load_leds;
+} t_transmit_fsm;
+
+/*t t_drive_bits */
+typedef struct {
+    bit valid;
+    bit[3] value;
+} t_drive_bits;
+
+/*t t_data_transmitter_combs */
+typedef struct {
+    bit loading_leds;
+    bit taking_data;
+    bit needs_data;
+    bit idle_transmitter;
+    bit selected_data;
+    bit load_leds;
+    t_drive_bits drive_bits;
+    bit counter_expired;
+} t_data_transmitter_combs;
+
+/*t t_data_transmitter_state */
+typedef struct {
+    t_transmit_fsm fsm_state;
+    t_led_ws2812_data shift_register;
+    bit[6] counter "6 bits permits count to 40";
+} t_data_transmitter_state;
+
+/*t t_data_chain_combs */
+typedef struct {
+    bit clk_enable;
+    bit taking_transmitter_data;
+} t_data_chain_combs;
+
+/*t t_data_chain_state */
+typedef struct {
+    bit[8] divider       "Clock divider counter";
+    bit    active        "Asserted from the start of driving the first of three output values, until just after starting to drive the third output value";
+    t_drive_bits sr      "'shift register' of three output values to drive and associated valid";
+    bit[2] value_number  "Which value number to drive next";
+    bit    output_data   "Output data driver, driven with value from 'shift register', or 0 if idle";
+} t_data_chain_state;
+
+/*a Module */
+module led_ws2812_chain( clock clk                   "system clock - not the pin clock",
+                         input bit    reset_n  "async reset",
+                         input bit[8] divider_400ns  "clock divider value to provide for generating a pulse every 400ns based on clk",
+                         output t_led_ws2812_request led_request  "LED data request",
+                         input t_led_ws2812_data     led_data     "LED data, for the requested led",
+                         output bit led_data_pin                  "Data in pin for LED chain"
+    )
+    /*b Documentation */
+"""
+The WS2812 LED chains use a serial data stream with encoded clock to
+provide data to the LEDs.
+
+If the LED chain data is held low for >50us then the stream performs a
+'load to LEDs'.
+
+Before loading the LEDs the chain should be fed data.  The data is fed
+using a high/low data pulse per bit. The ratio high/low provides the
+data bit value.
+
+A high/low of 1:2 provids a zero bit; a high/low of 1:2 provides a one
+bit. The total bit time should be 1.25us.  Hence this logic requires a
+1.25/3us, or roughly 400ns clock generator. This is performed using a
+clock divider and a user-supplied divide value, which will depend on
+the input clock frequency. For example, if the input clock frequency
+is 50MHz, which is a period of 20ns, then the divider should be set to
+20.
+
+The data is provided to the LEDs green, red then blue, most
+significant bit first, with 8 bits for each component.
+
+The logic uses a simple state machine; when it is idle it will have no
+data in hand, and need data to feed in to the LED stream. At this
+point it requests a valid first LED data. When valid data is received
+into a buffer the state machine transitions to the data-in-hand state;
+it remains there until the data transmitter takes the data, when it
+either requests more data (as per idle0, or if the last LED data was
+provided by the client, it moves to requests an LED load, and it waits
+in loading state until that completes. At this point it transitions
+back to idle, and the process restarts.
+
+When there is valid LED data in the internal buffer the data
+transmitter can start; the data is transferred to the shift register,
+and it is driven out by the data transmitter to the LED chain one bit
+at a time.
+
+"""
+{
+
+    /*b Signals and state */
+    default clock clk;
+    default reset active_low reset_n;
+    clocked t_data_state data_state={*=0, fsm_state=data_state_idle};
+    clocked t_data_transmitter_state data_transmitter_state={*=0, fsm_state=transmit_state_idle};
+    comb    t_data_transmitter_combs  data_transmitter_combs;
+    clocked t_data_chain_state data_chain_state={*=0};
+    comb    t_data_chain_combs  data_chain_combs;
+
+    /*b Data state machine logic */
+    data_state_machine_logic """
+    The data state machine is effectively a simple interface to the
+    led request and led_data, feeding the data transmitter shift
+    register when it can.
+
+    It has a data_buffer that it stores incoming led data in, and it
+    feeds this to the data transmitter shift register when permitted,
+    invalidating the data buffer.
+
+    If the transmitter takes a 'last' data then the state machine will
+    then request that the transmitter 'load the leds'; this request
+    will, of course, have to wait for the completion of the current
+    shift register contents (the last LED), and then the correct 50us
+    of data will presumably be transmitted. During this time the data
+    state machine can be requesting the next set of data to transmit.
+    So that the next LED data does not get too stale, the request
+    should occur towards the end of the 50us of 'load led' - which it
+    will do, as the transmitter state machine indicates that the LEDS
+    are being loaded in the last microsecond of so of the 50us of
+    'load led' time.
+    """: {
+        led_request = {ready=0, first=0, led_number=data_state.led_number};
+        full_switch (data_state.fsm_state) {
+        case data_state_idle: {
+            led_request = {ready=1, first=1};
+            if (led_data.valid) {
+                data_state.fsm_state <= data_state_data_in_hand;
+            }
+        }
+        case data_state_request_data: {
+            led_request = {ready=1, first=0};
+            if (led_data.valid) {
+                data_state.fsm_state <= data_state_data_in_hand;
+            }
+        }
+        case data_state_data_in_hand: {
+            if (!data_state.buffer.valid) {
+                data_state.led_number <= data_state.led_number+1;
+                data_state.fsm_state <= data_state_request_data;
+                if (data_state.buffer.last) {
+                    data_state.fsm_state <= data_state_last_data;
+                }
+            }
+        }
+        case data_state_last_data: {
+            data_state.load_leds <= 1;
+            if (data_transmitter_combs.loading_leds) {
+                data_state.load_leds <= 0;
+                data_state.led_number <= 0;
+                data_state.fsm_state <= data_state_idle;
+            }
+        }
+        }
+        if (led_request.ready && led_data.valid) {
+            data_state.buffer <= led_data;
+        }
+        if (data_transmitter_combs.taking_data) {
+            data_state.buffer.valid <= 0;
+        }
+    }
+
+    /*b Data transmitter state machine logic */
+    data_transmitter_logic """
+    The data transmitter is responsible for reading data bits to the
+    Neopixel data chain driver.
+
+    It maintains a shift register (with separate red, green and blue
+    components), with a 'valid' bit.
+
+    Data is loaded into the shift register when it is not valid. The
+    transmitter then shifts straight in to asking the drive chain to
+    output green[7]. It shifts the green bits up every time the drive
+    chain takes a bit, and after 8 bits it moves to the red, and then
+    the blue. At the end of the blue it invalidates the shift register.
+
+    The shift register should be filled quickly enough for the data
+    chain to not miss a beat, if further LED data is to be driven.
+
+    Instead of driving out a shift register the state machine may be
+    requested to drive out a 'load leds' value. This is 50us of 'low'
+    on the output, which is achieved here by roughly 40 sets of drives
+    of '0' for 1.25us each.
+    """: {
+        data_transmitter_combs.needs_data   = !data_transmitter_state.shift_register.valid;
+        data_transmitter_combs.taking_data  = data_state.buffer.valid && data_transmitter_combs.needs_data;
+        data_transmitter_combs.counter_expired = (data_transmitter_state.counter==0);
+
+        data_transmitter_combs.idle_transmitter = 0;
+        data_transmitter_combs.selected_data    = 0;
+        data_transmitter_combs.load_leds        = 0;
+        full_switch (data_transmitter_state.fsm_state) {
+        case transmit_state_idle: {
+            data_transmitter_combs.idle_transmitter = 1;
+        }
+        case transmit_state_green: {
+            data_transmitter_combs.idle_transmitter = 0;
+            data_transmitter_combs.selected_data = data_transmitter_state.shift_register.green[7];
+        }
+        case transmit_state_red: {
+            data_transmitter_combs.idle_transmitter = 0;
+            data_transmitter_combs.selected_data = data_transmitter_state.shift_register.red[7];
+        }
+        case transmit_state_blue: {
+            data_transmitter_combs.idle_transmitter = 0;
+            data_transmitter_combs.selected_data = data_transmitter_state.shift_register.blue[7];
+        }
+        case transmit_state_load_leds: {
+            data_transmitter_combs.load_leds = 1;
+        }
+        }
+
+        data_transmitter_combs.drive_bits = {*=0};
+        if (data_transmitter_combs.load_leds) {
+            data_transmitter_combs.drive_bits.valid = 1;
+            data_transmitter_combs.drive_bits.value = 0;
+        } elsif (!data_transmitter_combs.idle_transmitter) {
+            data_transmitter_combs.drive_bits.valid = 1;
+            data_transmitter_combs.drive_bits.value = bundle(1b0, data_transmitter_combs.selected_data, 1b1);
+        }
+
+        data_transmitter_combs.loading_leds = 0;
+        if (data_transmitter_combs.taking_data) {
+            data_transmitter_state.shift_register <= data_state.buffer;
+        }
+        full_switch (data_transmitter_state.fsm_state) {
+        case transmit_state_idle: {
+            if (data_state.load_leds) {
+                data_transmitter_state.fsm_state <= transmit_state_load_leds;
+                data_transmitter_state.counter <= 40;
+            } elsif (data_transmitter_combs.taking_data) {
+                data_transmitter_state.fsm_state <= transmit_state_green;
+                data_transmitter_state.counter <= 7;
+            }
+        }
+        case transmit_state_green: {
+            if (data_chain_combs.taking_transmitter_data) {
+                data_transmitter_state.counter <= data_transmitter_state.counter-1;
+                data_transmitter_state.shift_register.green[7;1] <= data_transmitter_state.shift_register.green[7;0];
+                if (data_transmitter_combs.counter_expired) {
+                    data_transmitter_state.fsm_state <= transmit_state_red;
+                    data_transmitter_state.counter <= 7;
+                }
+            }
+        }
+        case transmit_state_red: {
+            if (data_chain_combs.taking_transmitter_data) {
+                data_transmitter_state.counter <= data_transmitter_state.counter-1;
+                data_transmitter_state.shift_register.red[7;1] <= data_transmitter_state.shift_register.red[7;0];
+                if (data_transmitter_combs.counter_expired) {
+                    data_transmitter_state.fsm_state <= transmit_state_blue;
+                    data_transmitter_state.counter <= 7;
+                }
+            }
+        }
+        case transmit_state_blue: {
+            if (data_chain_combs.taking_transmitter_data) {
+                data_transmitter_state.counter <= data_transmitter_state.counter-1;
+                data_transmitter_state.shift_register.blue[7;1] <= data_transmitter_state.shift_register.blue[7;0];
+                if (data_transmitter_combs.counter_expired) {
+                    data_transmitter_state.fsm_state <= transmit_state_idle;
+                    data_transmitter_state.shift_register.valid <= 0;
+                }
+            }
+        }
+        case transmit_state_load_leds: {             // 50us, or 1.2us*40, i.e. ~40 bit times
+            if (data_chain_combs.taking_transmitter_data) {
+                data_transmitter_state.counter <= data_transmitter_state.counter-1;
+                if (data_transmitter_combs.counter_expired) {
+                    data_transmitter_combs.loading_leds = 1;
+                    data_transmitter_state.fsm_state <= transmit_state_idle;
+                }
+            }
+        }
+        }
+    }
+
+    /*b Neopixel chain driver logic */
+    data_chain_driver_logic """
+    The data chain side starts 'inactive' (it is basically active or
+    inactive).  It can enter active ONLY on a 400ns clock boundary,
+    and then only when there is a valid 3-value in hand.  When it
+    enters 'active' it drives the output pin with value[0].
+
+    The data chain is then active for 2 whole 400ns periods; at the
+    end of the first period it drives out value[1], and at the end of
+    the second period it drives out value[2] and becomes inactive, and
+    invalidates the value-in-hand.
+
+    The value-in-hand can only be loaded if it is invalid - this can
+    happen during the last 400ns of the previous 'LED data bit'. The
+    data supplied can be a valid LED 0 or 1 (with the values of 3b100
+    or 3b110), or it can be part of an LED load train (value of
+    3b000).
+    """: {
+        data_chain_combs.clk_enable = (data_chain_state.divider==0);
+        data_chain_combs.taking_transmitter_data = !data_chain_state.sr.valid && data_transmitter_combs.drive_bits.valid;
+
+        data_chain_state.divider <= data_chain_state.divider-1;
+        if (data_chain_combs.clk_enable) {
+            data_chain_state.divider <= divider_400ns;
+        }
+
+        if (data_chain_state.active) {
+            if (data_chain_combs.clk_enable) {
+                data_chain_state.output_data <= data_chain_state.sr.value[data_chain_state.value_number];
+                data_chain_state.value_number <= data_chain_state.value_number+1;
+                if (data_chain_state.value_number==2) {
+                    data_chain_state.active <= 0;
+                    data_chain_state.sr.valid <= 0;
+                }
+            }
+        } else { // If not active, then enter if there is valid data in hand 
+            if (data_chain_state.sr.valid && data_chain_combs.clk_enable) {
+                data_chain_state.active <= 1;
+                data_chain_state.value_number <= 1;
+                data_chain_state.output_data <= data_chain_state.sr.value[0];
+            }
+        }
+        if (!data_chain_state.sr.valid && data_transmitter_combs.drive_bits.valid) {
+            data_chain_state.sr <= data_transmitter_combs.drive_bits;
+        } 
+        led_data_pin = data_chain_state.output_data;
+    }
+
+    /*b All done */
+}

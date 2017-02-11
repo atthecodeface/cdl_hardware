@@ -23,6 +23,12 @@
 /*a Includes */
 include "bbc_micro_types.h"
 include "bbc_submodules.h"
+include "leds.h"
+include "de1_cl.h"
+
+/*a Constants */
+constant bit[8] sr_divider    = 49; // 1MHz
+constant bit[8] divider_400ns = 19; // 2.5MHz
 
 /*a Module */
 typedef struct {
@@ -49,9 +55,10 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                          output t_lcd lcd   "LCD display out to computer lab daughterboard",
                          input bit[4] keys       "DE1 keys",
                          input bit[10] switches  "DE1 switches",
-                         output bit[10] leds     "DE1 leds"
-                         //input bit[5]  joystick  "Daughterboard joystick",
-                         //input bit[4]  diamond   "Daughterboard diamond switches (ABXY)",
+                         output bit[10] leds     "DE1 leds",
+                         output bit led_data_pin "DE1 CL daughterboard neopixel LED pin",
+                         input  t_de1_cl_inputs_status   inputs_status  "DE1 CL daughterboard shifter register etc status",
+                         output t_de1_cl_inputs_control  inputs_control "DE1 CL daughterboard shifter register control"
     )
 {
     net t_video_bus video_bus;
@@ -80,6 +87,12 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     comb bit enable_clk_2MHz_video;
     comb bit enable_cpu_clk;
 
+    net  t_led_ws2812_request led_request;
+    comb t_led_ws2812_data    led_data;
+    net  bit led_data_pin;
+    net  t_de1_cl_inputs_control  inputs_control;
+    net  t_de1_cl_user_inputs     user_inputs;
+
     comb bit bbc_reset_n;
     comb bit framebuffer_reset_n;
     comb t_bbc_keyboard keyboard;
@@ -87,6 +100,8 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     clocked clock clk_cpu reset active_low reset_n bit floppy_sram_reading=0;
     clocked clock clk_cpu reset active_low reset_n t_bbc_floppy_sram_request floppy_sram_request_r={*=0};
     clocked clock clk_cpu reset active_low reset_n t_bbc_floppy_sram_response floppy_sram_response={*=0};
+
+    /*b Debug stuff */
     comb t_debug_comb debug_comb;
     clocked clock clk reset active_low reset_n t_debug_state debug_state={*=0};
     debug_logic """
@@ -112,17 +127,85 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
             leds = debug_state.counter[10;6];
         }
     }
-    stuff """
+
+    /*b Miscellaneous logic */
+    clocked clock clk reset active_low reset_n bit[10] fn_keys_down=0;
+    clocked clock clk reset active_low reset_n bit fn_key_pressed=0;
+    clocked clock clk reset active_low reset_n bit[4] last_fn_key=1;
+    misc_logic """
     """: {
         csr_request = {*=0};
         bbc_micro_host_sram_request = {*=0};
+
         keyboard.reset_pressed = 0;
         keyboard.keys_down_cols_0_to_7 = 0;
         keyboard.keys_down_cols_8_to_9 = 0;
-
         keyboard.keys_down_cols_0_to_7[0*8+0] = !keys[0]; // shift
         keyboard.keys_down_cols_0_to_7[1*8+0] = !keys[1]; // ctrl
-        keyboard.keys_down_cols_0_to_7[0*8+1] = !keys[2]; // Q (N is 5*8+5)
+        keyboard.keys_down_cols_0_to_7[5*8+5] = !keys[2]; // N
+        keyboard.keys_down_cols_0_to_7[1*8+5] = user_inputs.joystick.u; // s
+        keyboard.keys_down_cols_0_to_7[2*8+4] = user_inputs.joystick.d; // x
+        keyboard.keys_down_cols_0_to_7[6*8+6] = user_inputs.joystick.l; // ,
+        keyboard.keys_down_cols_0_to_7[7*8+6] = user_inputs.joystick.r; // .
+        keyboard.keys_down_cols_0_to_7[0*8+2] = user_inputs.joystick.c; // f0
+        keyboard.keys_down_cols_0_to_7[2*8+6] = user_inputs.diamond.y; // space
+        keyboard.keys_down_cols_8_to_9[0*8+6] = user_inputs.diamond.a; // /
+        keyboard.keys_down_cols_0_to_7[1*8+4] = user_inputs.diamond.b; // a (fire, right of diamond)
+        keyboard.keys_down_cols_0_to_7[5*8+4] = user_inputs.diamond.x; // j left of diamond
+        keyboard.keys_down_cols_0_to_7[1*8+7] = fn_keys_down[1]; // f1
+        keyboard.keys_down_cols_0_to_7[2*8+7] = fn_keys_down[2]; // f2
+        keyboard.keys_down_cols_0_to_7[3*8+7] = fn_keys_down[3]; // f3
+        keyboard.keys_down_cols_0_to_7[4*8+1] = fn_keys_down[4]; // f4
+        keyboard.keys_down_cols_0_to_7[4*8+7] = fn_keys_down[5]; // f5
+        keyboard.keys_down_cols_0_to_7[5*8+7] = fn_keys_down[6]; // f6
+        keyboard.keys_down_cols_0_to_7[6*8+1] = fn_keys_down[7]; // f7
+        keyboard.keys_down_cols_0_to_7[6*8+7] = fn_keys_down[8]; // f8
+        keyboard.keys_down_cols_0_to_7[7*8+7] = fn_keys_down[9]; // f9
+
+        keyboard.keys_down_cols_8_to_9[1*8+3] = user_inputs.joystick.u; // up
+        keyboard.keys_down_cols_8_to_9[1*8+2] = user_inputs.joystick.d; // down
+        keyboard.keys_down_cols_8_to_9[1*8+1] = user_inputs.joystick.l; // left
+        keyboard.keys_down_cols_8_to_9[1*8+7] = user_inputs.joystick.r; // right
+
+        if (user_inputs.right_dial.direction_pulse) {
+            fn_keys_down <= 0;
+            fn_key_pressed <= 1;
+            if (user_inputs.right_dial.direction) {
+                last_fn_key <= last_fn_key+1;
+                if (last_fn_key==9) {
+                    last_fn_key <= 1;
+                }
+            } else {
+                last_fn_key <= last_fn_key-1;
+                if (last_fn_key==1) {
+                    last_fn_key <= 9;
+                }
+            }
+        }
+        if (user_inputs.right_dial.pressed) {
+            fn_keys_down <= 0;
+            fn_keys_down[last_fn_key] <= 1;
+        } else {
+            fn_keys_down <= 0;
+        }
+
+        led_data = {*=0};
+        if (led_request.ready) {
+            full_switch(led_request.led_number) {
+            case 0: {
+                led_data = {valid=1, last=0,
+                            red=debug_state.counter[8;0],
+                            green = ~debug_state.counter[8;0],
+                            blue = 0};
+            }
+            default: {
+                led_data = {valid=1, last=1,
+                            blue = bundle(last_fn_key,last_fn_key),
+                            green = 0,
+                            red = 0};
+            }
+            }
+        }
 
         enable_clk_2MHz_video   = clock_control.enable_2MHz_video; // used for clock enable and to choose which source of SRAM read
         enable_cpu_clk          = clock_control.enable_cpu;
@@ -137,7 +220,10 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                 blue  = video_bus.blue[6;2]^debug_state.counter[6;0],
                 backlight = switches[1]
         };
+    }
 
+    /*b BBC Micro instantiations */
+    bbc_micro_instantiations: {
         bbc_micro_clocking clocking( clk <- clk,
                                      reset_n <= reset_n,
                                      clock_status <= clock_status,
@@ -176,6 +262,10 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                                      csr_response => floppy_sram_csr_response
             );
 
+    }
+
+    /*b SRAMs for floppy and framebuffer */
+    floppy_and_framebuffer: {
         se_sram_srw_32768x32 floppy(sram_clock <- clk_cpu,
                                     select         <= floppy_sram_request_r.enable && !floppy_sram_reading,
                                     read_not_write <= floppy_sram_request_r.read_not_write,
@@ -200,4 +290,22 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
             );
                         
     }
+
+    /*b DE1 and CL control modules */
+    de1_and_cl_modules: {
+        de1_cl_controls controls( clk <- clk,
+                                  reset_n <= reset_n,
+                                  sr_divider <= sr_divider,
+                                  inputs_control => inputs_control,
+                                  inputs_status  <= inputs_status,
+                                  user_inputs    => user_inputs );
+        led_ws2812_chain led_chain( clk <- clk,
+                                    reset_n <= reset_n,
+                                    divider_400ns <= divider_400ns,
+                                    led_request   => led_request,
+                                    led_data      <= led_data,
+                                    led_data_pin  => led_data_pin );
+    }
+
+    /*b All done */
 }

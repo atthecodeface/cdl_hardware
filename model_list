@@ -58,6 +58,11 @@ cdl cdl/src bbc_csr_interface   inc:cdl/inc
 cdl cdl/src framebuffer         inc:cdl/inc
 cdl cdl/src bbc_micro_de1_cl    inc:cdl/inc
 
+cdl cdl/src tb_de1_cl_controls  inc:cdl/inc
+cdl cdl/src de1_cl_controls     inc:cdl/inc
+cdl cdl/src led_ws2812_chain    inc:cdl/inc
+
+cdl cdl/src tb_led_ws2812_chain inc:cdl/inc
 cdl cdl/src tb_6502 inc:cdl/inc
 
 cdl_options mul:on

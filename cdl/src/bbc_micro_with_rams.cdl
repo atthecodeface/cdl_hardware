@@ -44,7 +44,7 @@ module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",
     net t_bbc_clock_control clock_control;
     net t_bbc_csr_response clocking_csr_response;
     net t_bbc_csr_response display_sram_csr_response;
-    net t_bbc_csr_response keyboard_sram_csr_response;
+    net t_bbc_csr_response keyboard_csr_response;
     net t_bbc_csr_response floppy_sram_csr_response;
     net t_bbc_csr_response framebuffer_csr_response;
 
@@ -71,6 +71,7 @@ module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",
         csr_response = floppy_sram_csr_response;
         csr_response |= display_sram_csr_response;
         csr_response |= clocking_csr_response;
+        csr_response |= keyboard_csr_response;
         enable_clk_2MHz_video   = clock_control.enable_2MHz_video; // used for clock enable and to choose which source of SRAM read
         enable_cpu_clk          = clock_control.enable_cpu;
         bbc_micro_clocking clocking( clk <- clk,
@@ -107,7 +108,7 @@ module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",
                                        keyboard => keyboard,
                                        keyboard_reset_n <= 1b1, // not really used in this model - comes from CSRs
                                        csr_request <= csr_request,
-                                       csr_response => keyboard_sram_csr_response
+                                       csr_response => keyboard_csr_response
             );
 
         bbc_floppy_sram floppy_sram( clk <- clk_cpu, // FDC interacts with floppy at cpu clock

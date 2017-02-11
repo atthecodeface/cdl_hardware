@@ -1,0 +1,66 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_6502.cdl
+ * @brief Testbench for 6502 CDL source
+ *
+ * This is a simple testbench for the 6502 CDL model with SRAM, build
+ * so that the 6502 instruction regressions can be run on the CDL
+ * model.
+ */
+/*a Includes */
+include "leds.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk,
+                               output bit[8] divider_400ns  "clock divider value to provide for generating a pulse every 400ns based on clk",
+                               input t_led_ws2812_request led_request  "LED data request",
+                               output t_led_ws2812_data     led_data     "LED data, for the requested led",
+                               input bit led_data_pin                  "Data in pin for LED chain"
+    )
+{
+    timing to   rising clock clk  led_request, led_data_pin;
+    timing from  rising clock clk  divider_400ns, led_data;
+}
+
+/*a Module */
+module tb_led_ws2812_chain( clock clk,
+                input bit reset_n
+)
+{
+
+    /*b Nets */
+    net bit[8] divider_400ns;
+    net t_led_ws2812_request led_request;
+    net t_led_ws2812_data    led_data;
+    net bit led_data_pin;
+
+    /*b Instantiations */
+    instantiations: {
+        se_test_harness th( clk <- clk,
+                            divider_400ns => divider_400ns,
+                            led_request <= led_request,
+                            led_data => led_data,
+                            led_data_pin <= led_data_pin );
+        
+        led_ws2812_chain led_chain( clk <- clk,
+                                    reset_n <= reset_n,
+                                    divider_400ns <= divider_400ns,
+                                    led_request => led_request,
+                                    led_data <= led_data,
+                                    led_data_pin => led_data_pin );
+    }
+
+    /*b All done */
+}

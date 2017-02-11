@@ -89,6 +89,12 @@ typedef struct {
 /**
  * Class for the 'bbc_display' module instance
  */
+typedef struct {
+    int read_not_write;
+    int select;
+    int address;
+    unsigned int data;
+} t_csr_request;
 class c_bbc_display
 {
 public:
@@ -101,6 +107,8 @@ public:
     t_sl_error_level clock( void );
     t_sl_error_level message( t_se_message *message );
 private:
+    void drive_pending_csr_request(void);
+    void add_pending_csr_write_request(int select, int address, unsigned int data);
     c_engine *engine;
     int clocks_to_call;
     void *engine_handle;
@@ -116,6 +124,9 @@ private:
     t_framebuffer_and_keys fbk;
     int verbose;
     int reset_cycle;
+    int num_pending_csr_requests;
+    int max_pending_csr_requests;
+    t_csr_request pending_csr_requests[32];
 };
 
 /*a Static wrapper functions for bbc_display - standard off-the-shelf */
@@ -223,6 +234,8 @@ c_bbc_display::c_bbc_display( class c_engine *eng, void *eng_handle )
     fbk.fbk->reset_pressed = 0;
     csr_keys_down.cols_0_to_7 = 0;
     csr_keys_down.cols_8_to_9 = 0;
+    num_pending_csr_requests = 0;
+    max_pending_csr_requests = sizeof(pending_csr_requests)/sizeof(pending_csr_requests[0]);
 
     memset(&inputs, 0, sizeof(inputs));
     memset(&input_display, 0, sizeof(input_display));
@@ -374,6 +387,33 @@ c_bbc_display::preclock(void)
  * Clock call, invoked after all preclock calls. Handle any clock
  * edges indicated required by 'preclock' calls.
  */
+void
+c_bbc_display::add_pending_csr_write_request(int select, int address, unsigned int data) {
+    t_csr_request *csr_request;
+    if (num_pending_csr_requests == max_pending_csr_requests)
+        return;
+    csr_request = &(pending_csr_requests[num_pending_csr_requests]);
+    num_pending_csr_requests++;
+    csr_request->read_not_write = 0;
+    csr_request->select = select;
+    csr_request->address = address;
+    csr_request->data = data;
+}
+void
+c_bbc_display::drive_pending_csr_request(void) {
+    outputs.csr_request__valid = 0;
+    if (num_pending_csr_requests==0) return;
+    outputs.csr_request__valid = 1;
+    outputs.csr_request__read_not_write = 0;
+    outputs.csr_request__select  = pending_csr_requests[0].select;
+    outputs.csr_request__address = pending_csr_requests[0].address;
+    outputs.csr_request__data    = pending_csr_requests[0].data;
+    num_pending_csr_requests--;
+    for (int i=0; i<num_pending_csr_requests; i++) {
+        pending_csr_requests[i] = pending_csr_requests[i+1];
+    }
+    fprintf(stderr,"Popped to %d requests\n",num_pending_csr_requests);
+}
 t_sl_error_level
 c_bbc_display::clock( void )
 {
@@ -398,34 +438,26 @@ c_bbc_display::clock( void )
         outputs.reset_n = !(reset_cycle>0);
         if (reset_cycle>0) { reset_cycle--; }
         if (fbk.fbk->reset_pressed) { reset_cycle=10000; }
+        if (reset_cycle==1) {
+            add_pending_csr_write_request(bbc_csr_select_display, 0, (40<<16) | (0<<0) );// SRAM base address
+            add_pending_csr_write_request(bbc_csr_select_display, 1, (500<<16) | (1<<15) | (40<<0) );// SRAM scan lines and writes per scanline
+        }
         //keyboard__reset_pressed         = fbk.fbk->reset_pressed;
         req_keys_down.cols_0_to_7 = fbk.fbk->keys_down.cols_0_to_7 | 1;
         req_keys_down.cols_8_to_9 = fbk.fbk->keys_down.cols_8_to_9;
-        if (outputs.csr_request__valid==0) {
-            if ((csr_keys_down.cols_0_to_7&0xffffffff) != (req_keys_down.cols_0_to_7&0xffffffff)) {
-                outputs.csr_request__valid = 1;
-                outputs.csr_request__read_not_write = 0;
-                outputs.csr_request__select = bbc_csr_select_keyboard;
-                outputs.csr_request__address = 8; // 0 to 3
-                outputs.csr_request__data = req_keys_down.cols_0_to_7&0xffffffff;
-                csr_keys_down.cols_0_to_7 = ((csr_keys_down.cols_0_to_7&0xffffffff00000000ULL) |
-                                             (req_keys_down.cols_0_to_7&~0xffffffff00000000ULL));
-            } else if ((csr_keys_down.cols_0_to_7&0xffffffff00000000ULL) != (req_keys_down.cols_0_to_7&0xffffffff00000000ULL)) {
-                outputs.csr_request__valid = 1;
-                outputs.csr_request__read_not_write = 0;
-                outputs.csr_request__select = bbc_csr_select_keyboard;
-                outputs.csr_request__address = 9; // 0 to 3
-                outputs.csr_request__data = req_keys_down.cols_0_to_7>>32;
-                csr_keys_down.cols_0_to_7 = ((req_keys_down.cols_0_to_7&0xffffffff00000000ULL) |
-                    (csr_keys_down.cols_0_to_7&~0xffffffff00000000ULL));
-            } else if ((csr_keys_down.cols_8_to_9&0xffff) != (req_keys_down.cols_8_to_9&0xffff)) {
-                outputs.csr_request__valid = 1;
-                outputs.csr_request__read_not_write = 0;
-                outputs.csr_request__select = bbc_csr_select_keyboard;
-                outputs.csr_request__address = 10; // 8 to 9
-                outputs.csr_request__data = req_keys_down.cols_8_to_9&0xffff;
-                csr_keys_down.cols_8_to_9 = req_keys_down.cols_8_to_9;
-            }
+        if ((csr_keys_down.cols_0_to_7&0xffffffff) != (req_keys_down.cols_0_to_7&0xffffffff)) {
+            add_pending_csr_write_request(bbc_csr_select_keyboard, 8, req_keys_down.cols_0_to_7&0xffffffff);
+        }
+        if ((csr_keys_down.cols_0_to_7&0xffffffff00000000ULL) != (req_keys_down.cols_0_to_7&0xffffffff00000000ULL)) {
+            add_pending_csr_write_request(bbc_csr_select_keyboard, 9, req_keys_down.cols_0_to_7>>32);
+        }
+        if ((csr_keys_down.cols_8_to_9&0xffff) != (req_keys_down.cols_8_to_9&0xffff)) {
+            add_pending_csr_write_request(bbc_csr_select_keyboard, 10, req_keys_down.cols_8_to_9);
+        }
+        csr_keys_down.cols_0_to_7 = req_keys_down.cols_0_to_7;
+        csr_keys_down.cols_8_to_9 = req_keys_down.cols_8_to_9;
+        if ((outputs.csr_request__valid==0) && (outputs.reset_n) && !csr_response.ack) {
+            drive_pending_csr_request();
         }
         if (csr_response.ack) {
             outputs.csr_request__valid = 0;

@@ -1,0 +1,66 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_6502.cdl
+ * @brief Testbench for 6502 CDL source
+ *
+ * This is a simple testbench for the 6502 CDL model with SRAM, build
+ * so that the 6502 instruction regressions can be run on the CDL
+ * model.
+ */
+/*a Includes */
+include "de1_cl.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk          "system clock - not the shift register pin, something faster",
+                               input t_de1_cl_inputs_control inputs_control "Signals to the shift register etc on the DE1 CL daughterboard",
+                               output  t_de1_cl_inputs_status  inputs_status  "Signals from the shift register, rotary encoders, etc on the DE1 CL daughterboard",
+                               input t_de1_cl_user_inputs    user_inputs    "",
+                               output bit[8] sr_divider  "clock divider to control speed of shift register"
+    )
+{
+    timing from rising clock clk inputs_status, sr_divider;
+    timing to   rising clock clk inputs_control, user_inputs;
+}
+
+/*a Module */
+module tb_de1_cl_controls( clock clk,
+                           input bit reset_n
+)
+{
+
+    /*b Nets */
+    net t_de1_cl_inputs_control  inputs_control;
+    net  t_de1_cl_inputs_status  inputs_status;
+    net t_de1_cl_user_inputs     user_inputs;
+    net bit[8]                   sr_divider;
+
+    /*b Instantiations */
+    instantiations: {
+        se_test_harness th( clk <- clk,
+                            sr_divider => sr_divider,
+                            inputs_control <= inputs_control,
+                            inputs_status  => inputs_status,
+                            user_inputs    <= user_inputs );
+        
+        de1_cl_controls controls( clk <- clk,
+                                  reset_n <= reset_n,
+                                  sr_divider <= sr_divider,
+                                  inputs_control => inputs_control,
+                                  inputs_status  <= inputs_status,
+                                  user_inputs    => user_inputs );
+    }
+
+    /*b All done */
+}

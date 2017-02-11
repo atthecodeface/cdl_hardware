@@ -303,7 +303,8 @@ module framebuffer( clock csr_clk "Clock for CSR reads/writes",
     The pixel data buffer
     """: {
         /*b Pixel combinatorials */
-        pixel_combs.next_num_valid = pixel_state.num_valid - 1;
+        //pixel_combs.next_num_valid = pixel_state.num_valid - 1;
+        pixel_combs.next_num_valid = pixel_state.num_valid - 2;
         if (pixel_state.num_valid==0) {
             pixel_combs.next_num_valid = 0;
         }
@@ -326,9 +327,13 @@ module framebuffer( clock csr_clk "Clock for CSR reads/writes",
         /*b Pixel state */
         pixel_state.load_data_buffer <= pixel_combs.sram_request;
         if (video_combs.will_display_pixels) {
-            pixel_state.shift.red[15;1]   <= pixel_state.shift.red[15;0];
-            pixel_state.shift.green[15;1] <= pixel_state.shift.green[15;0];
-            pixel_state.shift.blue[15;1]  <= pixel_state.shift.blue[15;0];
+            //pixel_state.shift.red[15;1]   <= pixel_state.shift.red[15;0];
+            //pixel_state.shift.green[15;1] <= pixel_state.shift.green[15;0];
+            //pixel_state.shift.blue[15;1]  <= pixel_state.shift.blue[15;0];
+
+            pixel_state.shift.red  [14;2] <= pixel_state.shift.red  [14;0];
+            pixel_state.shift.green[14;2] <= pixel_state.shift.green[14;0];
+            pixel_state.shift.blue [14;2] <= pixel_state.shift.blue [14;0];
             pixel_state.num_valid <= pixel_combs.next_num_valid;
         }
         if (pixel_combs.load_shift_register) {
@@ -368,7 +373,7 @@ module framebuffer( clock csr_clk "Clock for CSR reads/writes",
         }
 
         se_sram_mrw_2_16384x48 display(sram_clock_0     <- sram_clk,
-                                       select_0         <= sram_state.write_request.enable,
+                                       select_0         <= sram_state.write_request.enable && (sram_state.write_request.address[2;14]==0),
                                        read_not_write_0 <= 0,
                                        address_0        <= sram_state.write_request.address[14;0],
                                        write_data_0     <= sram_state.write_request.data[48;0],

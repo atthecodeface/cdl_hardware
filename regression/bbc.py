@@ -63,7 +63,7 @@ class c_TestBBC_HW(SimulationTestBase):
             hw.step(waves_delay)
             print "Waves enabled - running for 3*1000*1000"
             waves.enable()
-            hw.step(3*1000*1000)
+            hw.step(3*3*1000*1000)
             print "Waves stopped"
             pass
         pass

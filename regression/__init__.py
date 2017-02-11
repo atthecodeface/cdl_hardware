@@ -1,5 +1,7 @@
 import unittest, importlib, sys, os
 tests = ["base6502",
+         "leds",
+         "de1_cl",
          #"bbc_submodules",
          ]
 if "BBC" in os.environ.keys():

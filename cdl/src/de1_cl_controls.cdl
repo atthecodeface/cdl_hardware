@@ -1,0 +1,232 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_micro_de1_cl.cdl
+ * @brief  BBC microcomputer with RAMs for the CL DE1 + daughterboard
+ *
+ * CDL module containing the BBC microcomputer with RAMs and a
+ * framebuffer for the Cambridge University Computer Laboratory DE1 +
+ * daughterboard system.
+ *
+ */
+/*a Includes */
+include "de1_cl.h"
+
+constant integer sr_length=16;
+constant integer debounce_count=5;
+typedef struct {
+    t_de1_cl_shift_register sr_decode;
+    bit sr_will_be_valid;
+    bit counter_expired;
+    bit falling_edge;
+    bit rising_edge;
+} t_sr_combs;
+
+typedef struct {
+    bit[8] counter;
+    bit[4] num_bits_valid;
+    bit[sr_length] shift_register;
+    bit sr_valid;
+    bit data;
+    bit sr_clock "Output signal for LS165 'clock'";
+    bit sr_shift "Output signal for LS165 'shift' - an async preload signal - so loads shift register when this is load asynchronously";
+} t_sr_state;
+
+typedef struct {
+    bit d_pin      "Captured value of direction pin";
+    bit d_value    "Believed value of direction pin";
+    bit[8] d_count "Number of cycles that d_value!=d_pin";
+    bit t_pin      "Captured value of transition pin";
+    bit t_value    "Believed value of transition pin";
+    bit[8] t_count "Number of cycles that t_value!=t_pin";
+    bit t_toggle   "Asserted if t_value was changed to t_pin";
+    bit direction;
+    bit direction_pulse;
+} t_rotary_state;
+
+/*a Module */
+module de1_cl_controls( clock clk          "system clock - not the shift register pin, something faster",
+                        input bit    reset_n  "async reset",
+                        output t_de1_cl_inputs_control inputs_control "Signals to the shift register etc on the DE1 CL daughterboard",
+                        input  t_de1_cl_inputs_status  inputs_status  "Signals from the shift register, rotary encoders, etc on the DE1 CL daughterboard",
+                        output t_de1_cl_user_inputs    user_inputs    "",
+                        input bit[8] sr_divider  "clock divider to control speed of shift register"
+    )
+"""
+This module manages the buttons and other controls on the Cambridge
+University Computer Laboratory DE1 daughterboard.
+
+A number of input switches are handled through a shift register, which is clocked using the input clock 'clk' divided down by the divider.
+This is handled by
+
+The rotary encoder switch '318-ENC130175F-12PS' available from Mouser has the following operation:
+
+Clockwise: B disconnects from C when A is disconnected from C
+
+Counter-clockwise: B connects to C when A is disconnected from C
+
+The CL daughterboard for the DE1 has a debounce RC network on the A
+and B pins, with a RC (probably) of 47us (high), so presumably the
+encoder is not optical :-).
+
+"""
+{
+
+    /*b Signals and state */
+    default clock clk;
+    default reset active_low reset_n;
+    comb t_sr_combs     sr_combs;
+    clocked t_sr_state  sr_state = {*=0};
+    clocked t_de1_cl_user_inputs user_inputs={*=0};
+    comb t_rotary_motion_inputs[2] rotary_inputs;
+    clocked t_rotary_state[2] rotary_state={*=0};
+
+    /*b Inputs control logic - manage the outputs from other state */
+    inputs_control_logic """
+    Logic to drive the 'inputs_control' signals
+    """: {
+        inputs_control.sr_clock = sr_state.sr_clock;
+        inputs_control.sr_shift = sr_state.sr_shift;
+    }
+
+    /*b Shift register logic */
+    shift_register_logic """
+    The shift register runs continuously, performing a load of the
+    LS165s when clock falls until the clock falls again (i.e. a whole
+    clock period). During this clock the shift registers capture their
+    data inputs and present the first data bit (Q7). So the first data
+    bit is valid when 'load' is taken away (and turned in to 'shift').
+
+    After a cycle with 'shift/nload' low, the following cycles will
+    have it high. Since the data changes on rising clock, on the
+    falling edge of clock following the first shift high the _second_
+    bit will be presented - this is the original Q6 from the first
+    LS165.
+
+    This logic maintains a count of shift register bits that are
+    valid, setting it to one when the first bit is captured at the end
+    of 'shift' low. Then it keeps counting new bits until the shift
+    register is valid - and during this cycle the 'shift/nload' is
+    again held low, repeating the cycle.
+
+    The rate of toggling the LS165 clock pin depends on a clock
+    divider which is managed through 'counter'.
+    """: {
+        sr_combs.counter_expired   = (sr_state.counter==0);
+        sr_combs.rising_edge       = sr_combs.counter_expired && !sr_state.sr_clock;
+        sr_combs.falling_edge      = sr_combs.counter_expired && sr_state.sr_clock;
+        sr_combs.sr_will_be_valid  = sr_state.sr_shift && (sr_state.num_bits_valid==sr_length-1);
+
+        sr_combs.sr_decode.diamond.b = sr_state.shift_register[0];
+        sr_combs.sr_decode.diamond.a = sr_state.shift_register[1];
+        sr_combs.sr_decode.diamond.y = sr_state.shift_register[2];
+        sr_combs.sr_decode.diamond.x = sr_state.shift_register[3];
+        // 4 spare
+        sr_combs.sr_decode.touchpanel_irq = sr_state.shift_register[5];
+        // 6,7 spare
+        sr_combs.sr_decode.joystick.u = sr_state.shift_register[ 8];
+        sr_combs.sr_decode.joystick.l = sr_state.shift_register[ 9];
+        sr_combs.sr_decode.joystick.r = sr_state.shift_register[10];
+        sr_combs.sr_decode.joystick.d = sr_state.shift_register[11];
+        sr_combs.sr_decode.joystick.c = sr_state.shift_register[12];
+        sr_combs.sr_decode.dialr_click = sr_state.shift_register[13];
+        sr_combs.sr_decode.diall_click = sr_state.shift_register[14];
+        sr_combs.sr_decode.temperature_alarm = sr_state.shift_register[15];
+
+        sr_state.sr_valid <= 0;
+        if (sr_combs.falling_edge) {
+            sr_state.sr_valid <= sr_combs.sr_will_be_valid;
+            sr_state.shift_register <= bundle(sr_state.shift_register[sr_length-1;0], sr_state.data);
+            if (sr_state.sr_shift) {
+                sr_state.num_bits_valid <= sr_state.num_bits_valid+1;
+            } else {
+                sr_state.num_bits_valid <= 1;
+            }
+            if (sr_combs.sr_will_be_valid) {
+                sr_state.sr_shift <= 0;
+            } else {
+                sr_state.sr_shift <= 1;
+            }
+        }
+
+        sr_state.counter <= sr_state.counter-1;
+        if (sr_combs.counter_expired) {
+            sr_state.counter <= sr_divider;
+            sr_state.sr_clock <= !sr_state.sr_clock;
+        }
+        sr_state.data <= inputs_status.sr_data;
+    }
+
+    /*b Rotary encoder decoding logic */
+    rotary_logic """
+    The two rotary encoders are handled identically. A positive transition on
+    the 'B' input is monitored, and when this occurs the rotary
+    encoder has a valid pulse and the direction is given by the 'B'
+    input.
+    """: {
+        rotary_inputs[0] = inputs_status.left_rotary;
+        rotary_inputs[1] = inputs_status.right_rotary;
+        for (i; 2) {
+            rotary_state[i].direction_pulse <= 0;
+            if (sr_combs.falling_edge && sr_combs.sr_will_be_valid) {
+                rotary_state[i].d_pin   <= rotary_inputs[i].direction_pin;
+                if (rotary_state[i].d_value == rotary_state[i].d_pin) {
+                    rotary_state[i].d_count <= 0;
+                } elsif (rotary_state[i].d_count==debounce_count) {
+                    rotary_state[i].d_count <= 0;
+                    rotary_state[i].d_value <= rotary_state[i].d_pin;
+                } else {
+                    rotary_state[i].d_count <= rotary_state[i].d_count + 1;
+                }
+
+                rotary_state[i].t_pin   <= rotary_inputs[i].transition_pin;
+                rotary_state[i].t_toggle <= 0;
+                if (rotary_state[i].t_value == rotary_state[i].t_pin) {
+                    rotary_state[i].t_count <= 0;
+                } elsif (rotary_state[i].t_count==debounce_count) {
+                    rotary_state[i].t_count <= 0;
+                    rotary_state[i].t_value <= rotary_state[i].t_pin;
+                    rotary_state[i].t_toggle <= 1;
+                } else {
+                    rotary_state[i].t_count <= rotary_state[i].t_count + 1;
+                }
+
+                if (rotary_state[i].t_toggle && !rotary_state[i].t_value) {
+                    rotary_state[i].direction <= rotary_state[i].d_value;
+                    rotary_state[i].direction_pulse <= 1;
+                }
+            }
+        }
+    }
+    /*b User control logic - drive other state out to client */
+    user_control_logic """
+    Pull the shift register and rotary controls etc together
+    """: {
+        user_inputs.updated_switches <= sr_state.sr_valid;
+        if (sr_state.sr_valid) {
+            user_inputs.diamond            <= sr_combs.sr_decode.diamond;
+            user_inputs.joystick           <= sr_combs.sr_decode.joystick;
+            user_inputs.touchpanel_irq     <= sr_combs.sr_decode.touchpanel_irq;
+            user_inputs.temperature_alarm  <= sr_combs.sr_decode.temperature_alarm;
+            user_inputs.left_dial.pressed  <= sr_combs.sr_decode.diall_click;
+            user_inputs.right_dial.pressed <= sr_combs.sr_decode.dialr_click;
+        }
+        user_inputs.left_dial.direction_pulse  <= rotary_state[0].direction_pulse;
+        user_inputs.left_dial.direction        <= rotary_state[0].direction;
+        user_inputs.right_dial.direction_pulse <= rotary_state[1].direction_pulse;
+        user_inputs.right_dial.direction       <= rotary_state[1].direction;
+    }
+
+    /*b All done */
+}

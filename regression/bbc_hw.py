@@ -266,11 +266,18 @@ class cdl_test(pycdl.hw):
                                 })
         switches       = pycdl.wire(10)
         leds           = pycdl.wire(10)
-        keys           =  pycdl.wire(4)
-        video_locked   =  pycdl.wire(1)
+        keys           = pycdl.wire(4)
+        video_locked   = pycdl.wire(1)
+        led_data_pin   = pycdl.wire(1)
+        inputs_status  = pycdl.wirebundle({"right_rotary": {"transition_pin":1,"direction_pin":1},
+                                           "left_rotary": {"transition_pin":1,"direction_pin":1},
+                                           })
+        inputs_control  = pycdl.wirebundle({"sr_shift":1,
+                                            "sr_clock":1,
+                                            })
 
         self.drivers = [ pycdl.timed_assign( signal=reset_n,      init_value=0, wait=33,  later_value=1 ),
-                         pycdl.timed_assign( signal=keys,         init_value=1, wait=33,  later_value=1 ),
+                         pycdl.timed_assign( signal=keys,         init_value=7, wait=33,  later_value=6 ),
                          pycdl.timed_assign( signal=video_locked, init_value=0, wait=133, later_value=1 ),
                          pycdl.timed_assign( signal=switches,     init_value=0, wait=233, later_value=1 ), # remove cpu reset
                          ]
@@ -283,9 +290,12 @@ class cdl_test(pycdl.hw):
                                               "video_locked":video_locked,
                                               "keys":keys,
                                               "switches":switches,
+                                              "inputs_status":inputs_status,
                                               },
                                     outputs = {"lcd":lcd,
                                                "leds":leds,
+                                               "inputs_control":inputs_control,
+                                               "led_data_pin":led_data_pin
                                               },
                                       forces = hw_forces,
                                     )
