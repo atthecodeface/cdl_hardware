@@ -40,34 +40,38 @@ c_src cmodel/src     vnc_rfb         inc:cmodel/inc
 #c_src cmodel/src    bbc_display_vnc inc:cmodel/inc
 c_src cmodel/src     bbc_shm         inc:cmodel/inc
 
-cdl cdl/src saa5050 inc:cdl/inc
-cdl cdl/src cpu6502 inc:cdl/inc
-cdl cdl/src via6522 inc:cdl/inc
-cdl cdl/src crtc6845 inc:cdl/inc
-cdl cdl/src acia6850 inc:cdl/inc
-cdl cdl/src fdc8271 inc:cdl/inc
-cdl cdl/src bbc_vidproc         inc:cdl/inc
-cdl cdl/src bbc_micro_keyboard  inc:cdl/inc
-cdl cdl/src bbc_keyboard_csr    inc:cdl/inc
-cdl cdl/src bbc_display_sram    inc:cdl/inc
-cdl cdl/src bbc_floppy_sram     inc:cdl/inc
-cdl cdl/src bbc_micro_clocking  inc:cdl/inc
-cdl cdl/src bbc_micro_rams      inc:cdl/inc
-cdl cdl/src bbc_micro_with_rams  inc:cdl/inc
-cdl cdl/src bbc_csr_interface   inc:cdl/inc
-cdl cdl/src framebuffer         inc:cdl/inc
-cdl cdl/src bbc_micro_de1_cl    inc:cdl/inc
+cdl cdl/video/src saa5050      inc:cdl/inc
+cdl cdl/video/src crtc6845     inc:cdl/inc
+cdl cdl/video/src framebuffer  inc:cdl/inc
 
-cdl cdl/src tb_de1_cl_controls  inc:cdl/inc
-cdl cdl/src de1_cl_controls     inc:cdl/inc
-cdl cdl/src led_ws2812_chain    inc:cdl/inc
+cdl cdl/cpu/src cpu6502        inc:cdl/inc
+cdl cdl/cpu/tb_src tb_6502     inc:cdl/inc
 
-cdl cdl/src tb_led_ws2812_chain inc:cdl/inc
-cdl cdl/src tb_6502 inc:cdl/inc
+cdl cdl/serial/src via6522     inc:cdl/inc
+cdl cdl/serial/src acia6850    inc:cdl/inc
 
+cdl cdl/storage/disc/src fdc8271 inc:cdl/inc
+
+cdl cdl/microcomputers/bbc/src bbc_vidproc          inc:cdl/inc
+cdl cdl/microcomputers/bbc/src bbc_micro_keyboard   inc:cdl/inc
+cdl cdl/microcomputers/bbc/src bbc_keyboard_csr     inc:cdl/inc
+cdl cdl/microcomputers/bbc/src bbc_display_sram     inc:cdl/inc
+cdl cdl/microcomputers/bbc/src bbc_floppy_sram      inc:cdl/inc
+cdl cdl/microcomputers/bbc/src bbc_micro_clocking   inc:cdl/inc
+cdl cdl/microcomputers/bbc/src bbc_micro_rams       inc:cdl/inc
+cdl cdl/microcomputers/bbc/src bbc_micro_with_rams  inc:cdl/inc
+cdl cdl/microcomputers/bbc/src bbc_csr_interface    inc:cdl/inc
 cdl_options mul:on
-cdl cdl/src bbc_micro inc:cdl/inc
+cdl cdl/microcomputers/bbc/src bbc_micro inc:cdl/inc
 cdl_options mul:off
+
+cdl cdl/boards/de1_cl/src          bbc_micro_de1_cl    inc:cdl/inc
+cdl cdl/boards/de1_cl/src          de1_cl_controls     inc:cdl/inc
+cdl cdl/boards/de1_cl/tb_src       tb_de1_cl_controls  inc:cdl/inc
+
+cdl cdl/led/src        led_ws2812_chain    inc:cdl/inc
+cdl cdl/led/tb_src     tb_led_ws2812_chain inc:cdl/inc
+
 
 #a Editor preferences and notes
 # Local Variables: ***
