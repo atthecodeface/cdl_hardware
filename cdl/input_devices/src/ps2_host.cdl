@@ -1,0 +1,323 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   ps2.cdl
+ * @brief  PS2 interface for keyboard or mouse
+ *
+ * CDL implementation of a PS2 interface driver
+ *
+ */
+
+/*a Includes */
+include "input_devices.h"
+
+/*a Constants */
+constant integer timeout_rx_data=1000; // 11 bits at 10kHz is 1.1ms, which is 330*3us
+
+/*a Types */
+typedef enum [4] {
+    action_rx_none,
+    action_rx_start,
+    action_rx_clock_finishing_data,
+    action_rx_clock_rising_in_bit,
+    action_rx_clock_data,
+    action_rx_acknowledge_timeout,
+    action_rx_acknowledge_error,
+    action_rx_error,
+    action_rx_timeout
+} t_rx_action;
+
+typedef fsm {
+    receive_fsm_idle;
+    receive_fsm_data_bit_clock_low;
+    receive_fsm_data_bit_clock_high;
+    receive_fsm_error;
+    receive_fsm_timeout;
+} t_receive_fsm;
+
+typedef struct {
+    bit[16] counter;
+} t_clock_state;
+
+typedef struct {
+    bit clk_enable;
+} t_clock_combs;
+
+typedef struct {
+    bit data;
+    bit last_data;
+    bit clk;
+    bit last_clk;
+} t_ps2_input_state;
+
+typedef struct {
+    bit rising_clk;
+    bit falling_clk;
+} t_ps2_input_combs;
+
+typedef struct {
+    bit valid;
+    bit protocol_error;
+    bit parity_error;
+    bit timeout;
+} t_rx_result;
+
+typedef struct {
+    t_receive_fsm fsm_state;
+    bit[12] timeout;
+    bit[4] bits_left;
+    bit[10] shift_register;
+    t_rx_result result;
+} t_ps2_receive_state;
+
+typedef struct {
+    bit parity_error;
+    t_rx_action action;
+} t_ps2_receive_combs;
+
+/*a Module
+ */
+module ps2_host( clock        clk     "Clock",
+                 input bit    reset_n,
+                 input t_ps2_pins ps2_in   "Pin values from the outside",
+                 output t_ps2_pins ps2_out "Pin values to drive - 1 means float high, 0 means pull low",
+
+                 output t_ps2_rx_data ps2_rx_data,
+                 input bit[16] divider
+    )
+"""
+oThe PS/2 interface is a bidirectional serial interface running on an
+open collector bus pin pair (clock and data).
+
+A slave, such as a keyboard or mouse, owns the @clock pin, except for
+the one time that a host can usurp it to request transfer from host to
+slave. (Known as clock-inhibit)
+
+A slave can present data to the host (this module) by:
+
+0. Ensure clock is high for 50us
+1. Pull data low; wait 5us to 25us.
+2. Pull clock low; wait 30us.
+3. Let clock rise; wait 15us.
+4. Pull data low or let it rise; wait 15us (data bit 0)
+5. Pull clock low; wait 30us.
+6. Let clock rise; wait 15us.
+7... Pull data low or let it rise; wait 15us (data bit 1..7)
+8... Pull clock low; wait 30us
+9... Let clock rise; wait 15us - repeat from 7
+10... Pull data low or let it rise; wait 15us (parity bit)
+11... Pull clock low; wait 30us
+12... Let clock rise; wait 15us.
+13... Let data rise; wait 15us (stop bit)
+14... Pull clock low; wait 30us
+15... Let clock rise; wait 15us.
+
+If the clock fails to rise on any of the pulses - because the host is
+driving it low (clock-inhibit) - the slave will have to retransmit the
+byte (and any other byte of a packet that it has already sent).
+
+A host can present data to the slave with:
+1. Pull clock low for 100us; start 15ms timeout
+2. Pull data low, wait for 15us.
+3. Let clock rise, wait for 15us.
+4. Check the clock is high.
+5. Wait for clock low
+6. On clock low, wait for 10us, and set data to data bit 0
+7. Wait for clock high
+8. Wait for clock low
+9... On clock low, wait for 10us, and set data to data bit 1..7
+10... Wait for clock high
+11... Wait for clock low
+12. On clock low, wait for 10us, and set data to parity bit
+13. Wait for clock high
+14. Wait for clock low
+15. On clock low, wait for 10us, let data rise (stop bit)
+16. Wait for clock high
+17. Wait for clock low
+18. Wait for 10us, check that data is low (ack)
+
+A strategy is to run at (for example) ~3us per 'tick', and use that to
+look for valid data streams on the pins.
+
+As a host, to receive data from the slave (the first target for the design), we have to:
+1. Look for clock falling
+2. If data is low, then assume this is a start bit. Set timeout timer.
+3. Wait for clock falling. Clock in data bit 0
+4. Wait for clock falling. Clock in data bit 1
+5. Wait for clock falling. Clock in data bit 2
+6. Wait for clock falling. Clock in data bit 3
+7. Wait for clock falling. Clock in data bit 4
+8. Wait for clock falling. Clock in data bit 5
+9. Wait for clock falling. Clock in data bit 6
+10. Wait for clock falling. Clock in data bit 7
+11. Wait for clock falling. Clock in parity bit.
+12. Wait for clock falling. Clock in stop bit.
+13. Wait for clock high.
+14. Validate data (stop bit 1, parity correct)
+
+"""
+{
+    /*b Default clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+    comb bit clk_enable;
+    gated_clock clock clk active_high clk_enable slow_clk;
+
+    /*b State and signals */
+    clocked t_clock_state clock_state={*=0};
+    comb t_clock_combs clock_combs;
+    default clock slow_clk;
+    clocked t_ps2_input_state ps2_input_state={*=0};
+    comb t_ps2_input_combs ps2_input_combs;
+    clocked t_ps2_receive_state receive_state={*=0};
+    comb t_ps2_receive_combs    receive_combs;
+
+    /*b Clock divider */
+    clock_divider_logic """
+    Simple clock divider resetting to the 'divider' input.
+    This should generate a clock enable every 3us or so; hence for 50MHz the divider should be roughly 150
+    """: {
+        clock_combs.clk_enable = 0;
+        clock_state.counter <= clock_state.counter-1;
+        if (clock_state.counter==0) {
+            clock_state.counter <= divider;
+            clock_combs.clk_enable = 1;
+        }
+        clk_enable = clock_combs.clk_enable;
+    }
+
+    /*b Pin input logic and clock divider */
+    pin_logic """
+    Pin inputs are captured
+    """: {
+        ps2_input_combs.falling_clk = !ps2_input_state.clk &  ps2_input_state.last_clk;
+        ps2_input_combs.rising_clk  =  ps2_input_state.clk & !ps2_input_state.last_clk;
+
+        ps2_input_state.data <= ps2_in.data;
+        ps2_input_state.clk  <= ps2_in.clk;
+
+        ps2_input_state.last_data <= ps2_input_state.data;
+        ps2_input_state.last_clk  <= ps2_input_state.clk;
+
+        ps2_out = {*=1};
+    }
+
+    /*b Receive logic */
+    receive_logic """
+    Wait for clock falling; check that data is low, and then start
+    """: {
+        receive_combs.parity_error = 0;
+        for (i; 9) {
+            if (receive_state.shift_register[i]) {
+                receive_combs.parity_error = !receive_combs.parity_error;
+            }
+        }
+        receive_combs.action = action_rx_none;
+        full_switch (receive_state.fsm_state) {
+        case receive_fsm_idle: {
+            if (ps2_input_combs.falling_clk) {
+                receive_combs.action = action_rx_start;
+                if (ps2_input_state.data) { // Data should be low for start bit
+                    receive_combs.action = action_rx_error;
+                }
+            }
+        }
+        case receive_fsm_data_bit_clock_low: {
+            if (ps2_input_combs.rising_clk) {
+                receive_combs.action = action_rx_clock_rising_in_bit;
+                if (receive_state.bits_left==0) {
+                    receive_combs.action = action_rx_clock_finishing_data;
+                    if (!ps2_input_state.data) { // Data should be high for stop bit
+                        receive_combs.action = action_rx_error;
+                    }
+                }
+            }
+        }
+        case receive_fsm_data_bit_clock_high: {
+            if (ps2_input_combs.falling_clk) {
+                receive_combs.action = action_rx_clock_data;
+            }
+        }
+        case receive_fsm_timeout: {
+            receive_combs.action = action_rx_acknowledge_timeout;
+        }
+        case receive_fsm_error: {
+            receive_combs.action = action_rx_acknowledge_error;
+        }
+        }
+        if (receive_state.timeout==1) {
+            receive_combs.action = action_rx_timeout;
+        }
+
+        if (receive_state.timeout>0) {
+            receive_state.timeout <= receive_state.timeout-1;
+        }
+        if (receive_state.fsm_state==receive_fsm_idle) {
+            receive_state.timeout <= 0;
+        }
+
+        full_switch(receive_combs.action) {
+        case action_rx_start: {
+            receive_state.timeout <= timeout_rx_data;
+            receive_state.bits_left <= 10;
+            receive_state.fsm_state <= receive_fsm_data_bit_clock_low;
+        }
+        case action_rx_clock_rising_in_bit: {
+            receive_state.fsm_state <= receive_fsm_data_bit_clock_high;
+        }
+        case action_rx_clock_data: {
+            receive_state.shift_register <= bundle(ps2_input_state.data, receive_state.shift_register[9;1]);
+            receive_state.bits_left <= receive_state.bits_left-1;
+            receive_state.fsm_state <= receive_fsm_data_bit_clock_low;
+        }
+        case action_rx_clock_finishing_data: {
+            receive_state.fsm_state <= receive_fsm_idle;
+        }
+        case action_rx_error: {
+            receive_state.fsm_state <= receive_fsm_error;
+        }
+        case action_rx_timeout: {
+            receive_state.fsm_state <= receive_fsm_timeout;
+        }
+        case action_rx_acknowledge_error,
+            action_rx_acknowledge_timeout: {
+            receive_state.fsm_state <= receive_fsm_idle;
+        }
+        case action_rx_none: {
+            receive_state.fsm_state <= receive_state.fsm_state;
+        }
+        }
+
+        receive_state.result.valid <= 0;
+        if (receive_combs.action==action_rx_acknowledge_error) {
+            receive_state.result <= {*=0};
+            receive_state.result <= {valid=1, protocol_error=1};
+        }
+        if (receive_combs.action==action_rx_acknowledge_timeout) {
+            receive_state.result <= {*=0};
+            receive_state.result <= {valid=1, timeout=1};
+        }
+        if (receive_combs.action==action_rx_clock_finishing_data) {
+            receive_state.result <= {*=0};
+            receive_state.result <= {valid=1,
+                    parity_error=receive_combs.parity_error};
+        }
+
+        ps2_rx_data = {valid = receive_state.result.valid & clock_combs.clk_enable,
+                       data  = receive_state.shift_register[8;0],
+                       parity_error = receive_state.result.parity_error,
+                       protocol_error = receive_state.result.protocol_error,
+                       timeout = receive_state.result.timeout };
+    }
+}

@@ -1,0 +1,94 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   ps2_host_keyboard.cdl
+ * @brief  PS2 interface converter for keyboard as host
+ *
+ * CDL implementation of a converter to take ps2 host data and convert
+ * it to key up/down data
+ *
+ */
+
+/*a Includes */
+include "input_devices.h"
+
+/*a Types */
+typedef enum [3] {
+    action_none,
+    action_reset,
+    action_extend,
+    action_key_up,
+    action_key
+} t_key_action;
+
+/*a Module
+ */
+module ps2_host_keyboard( clock                   clk     "Clock",
+                          input bit               reset_n,
+                          input t_ps2_rx_data     ps2_rx_data,
+                          output t_ps2_key_state  ps2_key
+    )
+"""
+"""
+{
+    /*b Default clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b State and signals */
+    clocked t_ps2_key_state  ps2_key={*=0};
+    comb    t_key_action     key_action;
+
+    /*b Interpretation logic */
+    interpretation_logic """
+    Interpret the PS2 keyboard codes
+    """: {
+        key_action = action_none;
+        if (ps2_rx_data.valid) {
+            if (ps2_rx_data.parity_error ||
+                ps2_rx_data.protocol_error ||
+                ps2_rx_data.timeout) {
+                key_action = action_reset;
+            } elsif (ps2_rx_data.data==0xf0) {
+                key_action = action_key_up;
+            } elsif (ps2_rx_data.data==0xe0) {
+                key_action = action_extend;
+            } else {
+                key_action = action_key;
+            }
+        }
+
+        if (ps2_key.valid) {
+            ps2_key <= {valid=0, extended=0, release=0};
+        }
+        full_switch (key_action) {
+        case action_reset: {
+            ps2_key <= {*=0};
+        }
+        case action_key_up: {
+            ps2_key.release <= 1;
+        }
+        case action_extend: {
+            ps2_key.extended <= 1;
+        }
+        case action_key: {
+            ps2_key.key_number <= ps2_rx_data.data;
+            ps2_key.valid <= 1;
+        }
+        case action_none: {
+            ps2_key.valid <= 0;
+        }
+        }
+    }
+}

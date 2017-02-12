@@ -23,6 +23,7 @@ class base_th(pycdl._thfile):
     #f exec_run
     def exec_run(self):
         self._th = self
+        self._failtests = 0
         self.run()
         pass
     def bfm_wait(self, cycles):
@@ -37,7 +38,13 @@ class base_th(pycdl._thfile):
     def passtest(self, code, message):
         return self.py.pypass(code, message)
 
+    def finishtest(self, code, message):
+        if (self._failtests==0):
+            return self.py.pypass(code, message)
+        return
+
     def failtest(self, code, message):
+        self._failtests = self._failtests+1
         return self.py.pyfail(code, message)
 
     def passed(self):
@@ -58,12 +65,13 @@ class cdl_test_hw(pycdl.hw):
     """
     Simple instantiation of a module with just clock and reset, and some specified th ports
     """
-    wave_file = __name__+".vcd"
     wave_hierarchies = []
     th_forces = {}
     module_name = ""
     #f __init__
     def __init__(self, test):
+        self.test = test
+        self.wave_file = self.__class__.__module__+".vcd"
 
         system_clock   = pycdl.clock(0, 1, 1)
         reset_n        = pycdl.wire()
@@ -86,6 +94,9 @@ class cdl_test_hw(pycdl.hw):
                           )
         self.wave_hierarchies = [self.dut]
         pass
+    #f passed
+    def passed(self):
+        return self.test.passed()
     #f set_run_time
     def set_run_time(self, num_cycles):
         pass
@@ -121,6 +132,7 @@ class base_test(unittest.TestCase):
             hw.step(num_cycles_with_waves)
             print "Waves stopped"
             pass
+        self.assertTrue(hw.passed())
         pass
     pass
 

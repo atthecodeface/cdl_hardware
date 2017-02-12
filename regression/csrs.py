@@ -72,7 +72,7 @@ class c_test_one(simple_tb.base_th):
         print comparators
 
         self.bfm_wait(10)
-        self.passtest(0,"")
+        self.finishtest(0,"")
         pass
 
 #a Hardware classes
