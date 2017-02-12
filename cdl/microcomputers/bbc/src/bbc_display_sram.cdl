@@ -19,7 +19,7 @@
  * interface to an SRAM write interface, hence supporting a simple
  * framebuffer for the output displayed by a BBC micro. The module
  * requires configuration at run-time, so has a CSR request/response
- * bus, and hence uses the bbc_csr_interface.
+ * bus, and hence uses the csr_interface.
  *
  * The basic operation is to gather together pixel data along a
  * display line and generate SRAM writes when enough pixels are
@@ -124,8 +124,8 @@ module bbc_display_sram( clock clk "Clock running at 2MHz",
                          input bit reset_n,
                          input t_bbc_display display,
                          output t_bbc_display_sram_write sram_write,
-                         input t_bbc_csr_request csr_request,
-                         output t_bbc_csr_response csr_response
+                         input t_csr_request csr_request,
+                         output t_csr_response csr_response
     )
 """
 This module mimics a monitor attached to the BBC video output, generating a
@@ -463,18 +463,18 @@ even 'lines' in SRAM, and odd lines just to the odd 'lines'.
         sram_write.address = sram_state.write_address;
     }
 
-    net t_bbc_csr_response      csr_response;
-    net t_bbc_csr_access      csr_access;
-    comb t_bbc_csr_access_data csr_read_data;
+    net t_csr_response      csr_response;
+    net t_csr_access      csr_access;
+    comb t_csr_access_data csr_read_data;
     control_logic """
     """: {
-        bbc_csr_interface csri( clk <- clk,
-                                reset_n <= reset_n,
-                                csr_request <= csr_request,
-                                csr_response => csr_response,
-                                csr_access => csr_access,
-                                csr_read_data <= csr_read_data,
-                                csr_select <= bbc_csr_select_display );
+        csr_target_csr csri( clk <- clk,
+                             reset_n <= reset_n,
+                             csr_request <= csr_request,
+                             csr_response => csr_response,
+                             csr_access => csr_access,
+                             csr_read_data <= csr_read_data,
+                             csr_select <= bbc_csr_select_display );
         if (csr_access.valid && !csr_access.read_not_write) {
             part_switch (csr_access.address[4;0]) {
             case 0: { csrs.sram_base_address            <= csr_access.data[16;0];

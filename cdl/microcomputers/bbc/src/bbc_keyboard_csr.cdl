@@ -63,8 +63,8 @@ module bbc_keyboard_csr( clock clk "Clock running at 2MHz",
                          input bit reset_n,
                          output t_bbc_keyboard keyboard,
                          input bit keyboard_reset_n,
-                         input t_bbc_csr_request csr_request,
-                         output t_bbc_csr_response csr_response
+                         input t_csr_request csr_request,
+                         output t_csr_response csr_response
     )
 """
 This module provides a keyboard source from CSR writes
@@ -78,20 +78,20 @@ This module provides a keyboard source from CSR writes
     clocked t_keyboard_state keyboard_state = {*=0, reset_counter=-1};
     clocked t_bbc_keyboard  keyboard={*=0};
 
-    net t_bbc_csr_response      csr_response;
-    net t_bbc_csr_access      csr_access;
-    comb t_bbc_csr_access_data csr_read_data;
+    net t_csr_response      csr_response;
+    net t_csr_access      csr_access;
+    comb t_csr_access_data csr_read_data;
 
     /*b CSR logic */
     control_logic """
     """: {
-        bbc_csr_interface csri( clk <- clk,
-                                reset_n <= reset_n,
-                                csr_request <= csr_request,
-                                csr_response => csr_response,
-                                csr_access => csr_access,
-                                csr_read_data <= csr_read_data,
-                                csr_select <= bbc_csr_select_keyboard );
+        csr_target_csr csri( clk <- clk,
+                             reset_n <= reset_n,
+                             csr_request <= csr_request,
+                             csr_response => csr_response,
+                             csr_access => csr_access,
+                             csr_read_data <= csr_read_data,
+                             csr_select <= bbc_csr_select_keyboard );
         
         if (csr_access.valid && !csr_access.read_not_write) {
             part_switch (csr_access.address[4;0]) {

@@ -26,6 +26,7 @@
  *
  */
 /*a Includes */
+include "csr_interface.h"
 include "bbc_micro_types.h"
 
 /*a Types */
@@ -116,8 +117,8 @@ module bbc_floppy_sram( clock clk "Clock running at 2MHz",
                         output t_bbc_floppy_response floppy_response,
                         output t_bbc_floppy_sram_request sram_request,
                         input t_bbc_floppy_sram_response sram_response,
-                        input t_bbc_csr_request csr_request,
-                        output t_bbc_csr_response csr_response
+                        input t_csr_request csr_request,
+                        output t_csr_response csr_response
     )
 """
 This module provides an SRAM-fakeout of a set of floppy disks, tied to the BBC
@@ -136,7 +137,7 @@ micro floppy disc controller.
     comb t_floppy_combs floppy_combs;
     clocked t_bbc_floppy_response floppy_response={*=0};
     comb    t_sram_combs    sram_combs;
-    clocked t_bbc_csr_response csr_response={*=0};
+    clocked t_csr_response csr_response={*=0};
 
     /*b Inputs and outputs */
     inputs_and_outputs """

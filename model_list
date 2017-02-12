@@ -60,7 +60,6 @@ cdl cdl/microcomputers/bbc/src bbc_floppy_sram      inc:cdl/inc
 cdl cdl/microcomputers/bbc/src bbc_micro_clocking   inc:cdl/inc
 cdl cdl/microcomputers/bbc/src bbc_micro_rams       inc:cdl/inc
 cdl cdl/microcomputers/bbc/src bbc_micro_with_rams  inc:cdl/inc
-cdl cdl/microcomputers/bbc/src bbc_csr_interface    inc:cdl/inc
 cdl_options mul:on
 cdl cdl/microcomputers/bbc/src bbc_micro inc:cdl/inc
 cdl_options mul:off
@@ -71,6 +70,8 @@ cdl cdl/boards/de1_cl/tb_src       tb_de1_cl_controls  inc:cdl/inc
 
 cdl cdl/led/src        led_ws2812_chain    inc:cdl/inc
 cdl cdl/led/tb_src     tb_led_ws2812_chain inc:cdl/inc
+
+cdl cdl/csrs/src csr_target_csr    inc:cdl/inc
 
 
 #a Editor preferences and notes

@@ -70,11 +70,11 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     net t_bbc_clock_status clock_status;
     net t_bbc_clock_control clock_control;
 
-    comb t_bbc_csr_request csr_request;
-    net t_bbc_csr_response clocking_csr_response;
-    net t_bbc_csr_response display_sram_csr_response;
-    net t_bbc_csr_response floppy_sram_csr_response;
-    net t_bbc_csr_response framebuffer_csr_response;
+    comb t_csr_request csr_request;
+    net t_csr_response clocking_csr_response;
+    net t_csr_response display_sram_csr_response;
+    net t_csr_response floppy_sram_csr_response;
+    net t_csr_response framebuffer_csr_response;
 
     net t_bbc_floppy_sram_request floppy_sram_request;
     net t_bbc_display_sram_write display_sram_write;

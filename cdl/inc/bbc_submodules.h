@@ -23,23 +23,10 @@
  */
 
 /*a Includes */
+include "csr_interface.h"
 include "bbc_micro_types.h"
 
 /*a Modules */
-/*m bbc_csr_interface */
-extern module bbc_csr_interface( clock clk "4MHz clock in as a minimum",
-                          input bit reset_n,
-                          input t_bbc_csr_request csr_request,
-                          output t_bbc_csr_response csr_response,
-                          output t_bbc_csr_access      csr_access,
-                          input  t_bbc_csr_access_data csr_read_data,
-                          input bit[16] csr_select
-    )
-{
-    timing to   rising clock clk    csr_request, csr_read_data, csr_select;
-    timing from rising clock clk    csr_response, csr_access;
-}
-
 /*m bbc_vidproc */
 extern module bbc_vidproc( clock clk_cpu    "Output on real chip in a sense (2MHz out somewhat)",
                     clock clk_2MHz_video    "Output on real chip, 2MHz video clock",
@@ -363,8 +350,8 @@ extern module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
                                   input bit reset_n,
                                   input t_bbc_clock_status clock_status,
                                   output t_bbc_clock_control clock_control,
-                                  input t_bbc_csr_request csr_request,
-                                  output t_bbc_csr_response csr_response )
+                                  input t_csr_request csr_request,
+                                  output t_csr_response csr_response )
 {
     timing to   rising clock clk   clock_status;
     timing from rising clock clk   clock_control;
@@ -396,8 +383,8 @@ extern module framebuffer( clock csr_clk "Clock for CSR reads/writes",
                     input bit reset_n,
                     input t_bbc_display_sram_write display_sram_write,
                     output t_video_bus video_bus,
-                    input t_bbc_csr_request csr_request,
-                    output t_bbc_csr_response csr_response
+                    input t_csr_request csr_request,
+                    output t_csr_response csr_response
     )
 {
     timing to   rising clock sram_clk   display_sram_write;
@@ -431,8 +418,8 @@ extern module bbc_display_sram( clock clk "Clock running at 2MHz",
                          input bit reset_n,
                          input t_bbc_display display,
                          output t_bbc_display_sram_write sram_write,
-                         input t_bbc_csr_request csr_request,
-                         output t_bbc_csr_response csr_response
+                         input t_csr_request csr_request,
+                         output t_csr_response csr_response
     )
 {
     timing to   rising clock clk   display, csr_request;
@@ -444,8 +431,8 @@ extern module bbc_keyboard_csr( clock clk "Clock running at 2MHz",
                          input bit reset_n,
                          output t_bbc_keyboard keyboard,
                          input bit keyboard_reset_n,
-                         input t_bbc_csr_request csr_request,
-                         output t_bbc_csr_response csr_response
+                         input t_csr_request csr_request,
+                         output t_csr_response csr_response
     )
 {
     timing to   rising clock clk   keyboard_reset_n, csr_request;
@@ -459,8 +446,8 @@ extern module bbc_floppy_sram( clock clk "Clock running at 2MHz",
                         output t_bbc_floppy_response floppy_response,
                         output t_bbc_floppy_sram_request sram_request,
                         input t_bbc_floppy_sram_response sram_response,
-                        input t_bbc_csr_request csr_request,
-                        output t_bbc_csr_response csr_response
+                        input t_csr_request csr_request,
+                        output t_csr_response csr_response
 )
 {
     timing to   rising clock clk   floppy_op, sram_response, csr_request;

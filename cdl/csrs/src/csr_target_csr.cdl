@@ -1,0 +1,117 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   csr_target_csr.cdl
+ * @brief  Pipelined CSR request/response interface to simple CSR read/write
+ *
+ * CDL implementation of a CSR request/response interface, providing
+ * the 't_csr_access' interface to a target. This module abstracts
+ * the client from needing to implement the intricacies of the
+ * t_csr_request/response interface.
+ *
+ */
+/*a Includes */
+include "csr_interface.h"
+
+/*a Module
+ */
+module csr_target_csr( clock                       clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
+                          input bit                reset_n,
+                          input t_csr_request      csr_request   "Pipelined csr request interface input",
+                          output t_csr_response    csr_response  "Pipelined csr request interface response",
+                          output t_csr_access      csr_access    "Registered CSR access request to client",
+                          input  t_csr_access_data csr_read_data "Read data valid combinatorially based on csr_access",
+                          input bit[16]            csr_select    "Hard-wired select value for the client"
+    )
+"""
+This CSR interface is designed to provide a simple CSR access (select,
+read/write, address, data) to a client from a pipelined request from a
+master.
+
+The initial design motiviation was to permit a pipelined CSR access
+from a master to a number of targets, to run off a single fast clock
+in an FPGA. This requires registering the read data in response to
+access requests, and registering the request to the targets; the
+simplest variant being a fixed latency master-to-target and a fixed
+latency target-to-master. The current design uses a
+valid/acknowledgement system to replace the fixed latency.
+
+A valid request is received, and if it matches the @csr_select field
+then the request is acknowledged. Since the master is a fair distance
+away, and the @valid signal will not be removed until an @ack is seen,
+the handshake is effectively: valid low, ack low; valid high, ack low;
+valid high, ack high; valid high, ack low; valid low, ack low.
+
+Hence a valid request starts with valid high in, and ack out low. If
+this matches the select, then this interface responds with a single
+cycle of ack high, and the CSR access is performed.
+
+The clock for the client must be based on the same clock as the
+master. However, it may be a derived clock - in which case the ack
+will appear to the master to be more than one clock cycle long. The
+master must manage this, by removing valid when it sees the ack, and
+waiting until it sees ack is low before starting another transaction.
+
+Read transactions have a further stage, though, compared to writes. A
+read transaction will follow an 'ack' with a 'read_data_valid' cycle;
+if a master performs a read then the handshake will be: valid low, ack
+low; valid high, ack low; valid high, ack high (one target cycle);
+valid high, ack low, read_data_valid high (one target cycle); valid
+low, ack low.
+
+In this case the master must again wait until it sees read_data_valid
+high and then low before starting a new transaction, to allow the
+target to use a derived clock.
+
+"""
+{
+    default clock clk;
+    default reset active_low reset_n;
+
+    clocked t_csr_response csr_response={*=0};
+    clocked t_csr_access   csr_access={*=0};
+    clocked bit csr_request_in_progress = 0;
+
+    access """
+    """: {
+
+        if (csr_response.read_data_valid) {
+            csr_response.read_data_valid <= 0;
+            csr_response.read_data <= 0;
+        }
+        if (csr_access.valid) {
+            csr_access.valid <= 0;
+            csr_response.ack <= 0;
+            if (csr_access.read_not_write) {
+                csr_response.read_data_valid <= 1;
+                csr_response.read_data <= csr_read_data;
+            }
+        }
+
+        if (csr_request_in_progress) {
+            if (!csr_request.valid) {
+                csr_request_in_progress <= 0;
+            }
+        } elsif (csr_request.valid) {
+            csr_request_in_progress <= 1;
+            if (csr_request.select==csr_select) {
+                csr_access <= {valid = 1,
+                        read_not_write = csr_request.read_not_write,
+                        address = csr_request.address,
+                        data    = csr_request.data };
+                csr_response.ack <= 1;
+            }
+        }
+    }
+}

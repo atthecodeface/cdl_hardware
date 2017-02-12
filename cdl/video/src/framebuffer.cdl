@@ -39,6 +39,7 @@
  * SRAM.
  */
 /*a Includes */
+include "csr_interface.h"
 include "bbc_submodules.h"
 include "bbc_micro_types.h"
 
@@ -144,8 +145,8 @@ module framebuffer( clock csr_clk "Clock for CSR reads/writes",
                     input bit reset_n,
                     input t_bbc_display_sram_write display_sram_write,
                     output t_video_bus video_bus,
-                    input t_bbc_csr_request csr_request,
-                    output t_bbc_csr_response csr_response
+                    input t_csr_request csr_request,
+                    output t_csr_response csr_response
     )
 """
 """
@@ -162,9 +163,9 @@ module framebuffer( clock csr_clk "Clock for CSR reads/writes",
                                   v_display     = 272-1, // for 480x272 display
                                   v_front_porch = 8-1 }
     };
-    net t_bbc_csr_response   csr_response;
-    net t_bbc_csr_access     csr_access;
-    comb t_bbc_csr_access_data csr_read_data;
+    net t_csr_response     csr_response;
+    net t_csr_access       csr_access;
+    comb t_csr_access_data csr_read_data;
 
     /*b State in SRAM domain */
     default reset active_low reset_n;
@@ -391,7 +392,7 @@ module framebuffer( clock csr_clk "Clock for CSR reads/writes",
     csr_interface_logic """
     Basic CSRS - it should all be writable...
     """: {
-        bbc_csr_interface csri( clk <- csr_clk,
+        csr_target_csr csri( clk <- csr_clk,
                                 reset_n <= reset_n,
                                 csr_request <= csr_request,
                                 csr_response => csr_response,

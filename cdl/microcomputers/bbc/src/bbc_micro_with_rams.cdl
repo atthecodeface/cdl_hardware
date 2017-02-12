@@ -27,8 +27,8 @@ include "bbc_submodules.h"
 module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",
                             clock video_clk,
                             input bit reset_n,
-                            input t_bbc_csr_request csr_request,
-                            output t_bbc_csr_response csr_response,
+                            input t_csr_request csr_request,
+                            output t_csr_response csr_response,
                             input t_bbc_micro_sram_request   host_sram_request,
                             output t_bbc_micro_sram_response host_sram_response,
                             output t_bbc_display_sram_write display_sram_write,
@@ -42,11 +42,11 @@ module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",
 
     net t_bbc_clock_status clock_status;
     net t_bbc_clock_control clock_control;
-    net t_bbc_csr_response clocking_csr_response;
-    net t_bbc_csr_response display_sram_csr_response;
-    net t_bbc_csr_response keyboard_csr_response;
-    net t_bbc_csr_response floppy_sram_csr_response;
-    net t_bbc_csr_response framebuffer_csr_response;
+    net t_csr_response clocking_csr_response;
+    net t_csr_response display_sram_csr_response;
+    net t_csr_response keyboard_csr_response;
+    net t_csr_response floppy_sram_csr_response;
+    net t_csr_response framebuffer_csr_response;
 
     net t_bbc_floppy_sram_request floppy_sram_request;
     net t_bbc_floppy_sram_response floppy_sram_response;

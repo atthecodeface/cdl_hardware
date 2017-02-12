@@ -105,6 +105,7 @@ Hence keep a 2MHz_high signal that is asserted on every other tick. This is the 
     
 */
 /*a Includes */
+include "csr_interface.h"
 include "bbc_micro_types.h"
 include "bbc_submodules.h"
 
@@ -137,8 +138,8 @@ module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
                            input bit reset_n,
                            input t_bbc_clock_status clock_status,
                            output t_bbc_clock_control clock_control,
-                           input t_bbc_csr_request csr_request,
-                           output t_bbc_csr_response csr_response
+                           input t_csr_request csr_request,
+                           output t_csr_response csr_response
     )
 {
     default clock clk;
@@ -159,18 +160,18 @@ module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
     clocked t_control control={*=0};
     clocked t_divider divider={*=0};
 
-    net t_bbc_csr_response      csr_response;
-    net t_bbc_csr_access      csr_access;
-    comb t_bbc_csr_access_data csr_read_data;
+    net t_csr_response      csr_response;
+    net t_csr_access      csr_access;
+    comb t_csr_access_data csr_read_data;
     control_logic """
     """: {
-        bbc_csr_interface csri( clk <- clk,
-                                reset_n <= reset_n,
-                                csr_request <= csr_request,
-                                csr_response => csr_response,
-                                csr_access => csr_access,
-                                csr_read_data <= csr_read_data,
-                                csr_select <= bbc_csr_select_clocks );
+        csr_target_csr csri( clk <- clk,
+                             reset_n <= reset_n,
+                             csr_request <= csr_request,
+                             csr_response => csr_response,
+                             csr_access => csr_access,
+                             csr_read_data <= csr_read_data,
+                             csr_select <= bbc_csr_select_clocks );
         if (csr_access.valid && !csr_access.read_not_write) {
             control.cpu_clocks_per_2MHz_minus_one <= csr_access.data[8;8];
             control.clocks_per_2MHz_minus_one <= csr_access.data[8;0];
