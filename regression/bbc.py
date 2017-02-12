@@ -33,7 +33,7 @@ class c_TestBBC_HW(SimulationTestBase):
             waves_delay = int(os.environ["WAVES"])
             pass
         do_waves = waves_delay is not None
-        hw = bbc_hw.cdl_test(os_rom_mif  ="roms/os12.rom.mif",
+        hw = bbc_hw.cdl_test_nonfpga(os_rom_mif  ="roms/os12.rom.mif",
                              basic_rom_mif ="roms/basic2.rom.mif",
                              adfs_rom_mif ="roms/dfs.rom.mif",
                              teletext_rom_mif ="roms/teletext.mif",
@@ -63,7 +63,8 @@ class c_TestBBC_HW(SimulationTestBase):
             hw.step(waves_delay)
             print "Waves enabled - running for 3*1000*1000"
             waves.enable()
-            hw.step(3*3*1000*1000)
+            #hw.step(3*3*1000*1000)
+            hw.step(1*1000*1000)
             print "Waves stopped"
             pass
         pass

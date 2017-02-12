@@ -50,7 +50,7 @@ cdl cdl/cpu/tb_src tb_6502     inc:cdl/inc
 cdl cdl/serial/src via6522     inc:cdl/inc
 cdl cdl/serial/src acia6850    inc:cdl/inc
 
-cdl cdl/storage/disc/src fdc8271 inc:cdl/inc
+cdl cdl/storage/disc/src       fdc8271 inc:cdl/inc
 
 cdl cdl/microcomputers/bbc/src bbc_vidproc          inc:cdl/inc
 cdl cdl/microcomputers/bbc/src bbc_micro_keyboard   inc:cdl/inc
