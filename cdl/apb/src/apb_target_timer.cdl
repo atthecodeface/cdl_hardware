@@ -1,0 +1,149 @@
+/** Copyright (C) 2004,2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   apb_target_timer.cdl
+ * @brief  Simple timer target for an APB bus
+ *
+ * CDL implementation of a simple timer target on an APB bus, derived
+ * from an original GIP version.
+ *
+ */
+/*a Includes
+ */
+include "apb.h"
+
+/*a Types */
+/*t t_apb_address */
+typedef enum [4] {
+    apb_address_timer = 0,
+    apb_address_comparator_0 = 4,
+    apb_address_comparator_1 = 5,
+    apb_address_comparator_2 = 6,
+} t_apb_address;
+
+/*t t_access */
+typedef enum [3] {
+    access_none,
+    access_write_comparator,
+    access_read_comparator,
+    access_read_timer,
+} t_access;
+
+/*t t_timer
+ */
+typedef struct
+{
+    bit [31]comparator;
+    bit equalled;
+} t_timer;
+
+/*a Module */
+module apb_target_timer( clock clk         "System clock",
+                         input bit reset_n "Active low reset",
+
+                         input  t_apb_request  apb_request  "APB request",
+                         output t_apb_response apb_response "APB response",
+
+                         output bit[3] timer_equalled
+    )
+"""
+Simple timer with an APB interface.
+
+This is a monotonically increasing 31-bit timer with three comparators
+
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Decode APB interface */
+    clocked t_access access=access_none;
+
+    /*b Timer state */
+    clocked bit[31] timer_value = 0;
+    clocked t_timer[3] timers = { {comparator=0, equalled=0} };
+    clocked bit[3] timer_equalled=0;
+
+    /*b APB interface */
+    apb_interface_logic """
+    """ : {
+        /*b Decode access */
+        access <= access_none;
+        part_switch (apb_request.paddr[4;0]) {
+        case apb_address_timer: {
+            access <= access_read_timer;
+        }
+        case apb_address_comparator_0: {
+            access <= apb_request.pwrite ? access_write_comparator : access_read_comparator;
+        }
+        case apb_address_comparator_1: {
+            access <= apb_request.pwrite ? access_write_comparator : access_read_comparator;
+        }
+        case apb_address_comparator_2: {
+            access <= apb_request.pwrite ? access_write_comparator : access_read_comparator;
+        }
+        }
+        if (!apb_request.psel || apb_request.penable) {
+            access <= access_none;
+        }
+
+        /*b Handle APB read data */
+        apb_response = {*=0, pready=1};
+        part_switch (access) {
+        case access_read_timer: {
+            apb_response.prdata = bundle(1b0,timer_value);
+        }
+        case access_read_comparator: {
+            for (i; 3) {
+                if (apb_request.paddr[2;0]==i) {
+                    apb_response.prdata = bundle(timers[i].equalled,timers[i].comparator);
+                }
+            }
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b Handle the timer and comparators */
+    timer_logic """
+    """: {
+        timer_value <= timer_value+1;
+        timer_equalled <= 0;
+        for (i; 3) {
+            if ((access==access_read_comparator) && (apb_request.paddr[2;0]==i)) {
+                timers[i].equalled <= 0;
+            }
+            if (timers[i].comparator == timer_value) {
+                timers[i].equalled <= 1;
+            }
+            if ((access==access_write_comparator) && (apb_request.paddr[2;0]==i)) {
+                timers[i].equalled <= 0;
+                timers[i].comparator <= apb_request.pwdata[31;0];
+            }
+            timer_equalled[i] <= timers[i].equalled;
+        }
+    }
+
+    /*b Done
+     */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/

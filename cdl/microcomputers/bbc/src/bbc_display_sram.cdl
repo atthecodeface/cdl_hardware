@@ -473,7 +473,7 @@ even 'lines' in SRAM, and odd lines just to the odd 'lines'.
                              csr_request <= csr_request,
                              csr_response => csr_response,
                              csr_access => csr_access,
-                             csr_read_data <= csr_read_data,
+                             csr_access_data <= csr_read_data,
                              csr_select <= bbc_csr_select_display );
         if (csr_access.valid && !csr_access.read_not_write) {
             part_switch (csr_access.address[4;0]) {

@@ -170,7 +170,7 @@ module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
                              csr_request <= csr_request,
                              csr_response => csr_response,
                              csr_access => csr_access,
-                             csr_read_data <= csr_read_data,
+                             csr_access_data <= csr_read_data,
                              csr_select <= bbc_csr_select_clocks );
         if (csr_access.valid && !csr_access.read_not_write) {
             control.cpu_clocks_per_2MHz_minus_one <= csr_access.data[8;8];

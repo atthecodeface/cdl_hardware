@@ -1,0 +1,123 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   csr_target_apb.cdl
+ * @brief  Pipelined CSR request/response interface to APB slave interface
+ *
+ * CDL implementation of a CSR request/response interface, providing
+ * an APB interface to a target. This module abstracts the client from
+ * needing to implement the intricacies of the t_csr_request/response
+ * interface.
+ *
+ */
+/*a Includes */
+include "apb.h"
+include "csr_interface.h"
+
+/*a Module
+ */
+module csr_target_apb( clock                       clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
+                       input bit                reset_n,
+                       input t_csr_request      csr_request   "Pipelined csr request interface input",
+                       output t_csr_response    csr_response  "Pipelined csr request interface response",
+                       output t_apb_request     apb_request   "APB request to target",
+                       input t_apb_response     apb_response  "APB response from target",
+                       input bit[16]            csr_select    "Hard-wired select value for the client"
+    )
+"""
+The documentation of the CSR interface itself is in other files (at
+this time, csr_target_csr.cdl).
+
+This module provides a CSR target interface to an APB master, hence
+providing the ability to connect an APB slave to the CSR bus.
+"""
+{
+    default clock clk;
+    default reset active_low reset_n;
+
+    clocked t_csr_response csr_response={*=0};
+    clocked t_apb_request  apb_request={*=0};
+    clocked bit csr_request_in_progress = 0;
+    comb bit apb_access_start           "Asserted if an APB access should start";
+    comb bit apb_access_completing      "Asserted if an APB access is completing (psel & penable & pready)";
+
+    /*b CSR interface logic */
+    csr_interface_logic """
+    This target detects access to this selected CSR target, and
+    asserts ack at this point. It only removes ack when the APB
+    request completes - since an APB target may insert wait states
+    into writes.
+
+    This will hold the master from performing another transaction;
+    this may slow down the bus, but it ensures that back-to-back
+    writes to this target can be handled correctly even if the APB
+    target inserts wait states.
+    """: {
+        if (csr_response.read_data_valid) {
+            csr_response.read_data_valid <= 0;
+            csr_response.read_data <= 0;
+        }
+
+        if (apb_access_completing) {
+            csr_response.ack <= 0;
+            if (!apb_request.pwrite) {
+                csr_response.read_data_valid <= 1;
+                csr_response.read_data <= apb_response.prdata;
+            }
+        }
+
+        apb_access_start = 0;
+        if (csr_request_in_progress) {
+            if (!csr_request.valid) {
+                csr_request_in_progress <= 0;
+            }
+        } elsif (csr_request.valid) {
+            if (csr_request.select==csr_select) {
+                apb_access_start = 1;
+                csr_response.ack <= 1;
+                csr_request_in_progress <= 1;
+            }
+        }
+    }
+
+    /*b APB access logic */
+    apb_access_logic """
+    An APB access starts with a valid request detected, which drives
+    out the APB controls with psel high, penable low.
+
+    If psel is high and penable is low then an access must have
+    started, and the next clock tick _must_ have penable high.
+
+    If psel is high and penable is high then the access will continue
+    if pready is low, but it will complete (with valid read data, if a
+    read) if pready is high.
+    """: {
+        apb_access_completing = 0;
+        if (apb_access_start) {
+            apb_request <= { psel=1,
+                    pwrite = !csr_request.read_not_write,
+                    paddr  = bundle(16b0,csr_request.address),
+                    pwdata    = csr_request.data };
+        }
+        if (apb_request.psel) {
+            if (!apb_request.penable) {
+                apb_request.penable <= 1;
+            } elsif (apb_response.pready) {
+                apb_access_completing = 1;
+                apb_request.penable <= 0;
+                apb_request.psel <= 0;
+            }
+        }
+    }
+}

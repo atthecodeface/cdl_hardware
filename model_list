@@ -71,8 +71,12 @@ cdl cdl/boards/de1_cl/tb_src       tb_de1_cl_controls  inc:cdl/inc
 cdl cdl/led/src        led_ws2812_chain    inc:cdl/inc
 cdl cdl/led/tb_src     tb_led_ws2812_chain inc:cdl/inc
 
+cdl cdl/csrs/src csr_master_apb    inc:cdl/inc
 cdl cdl/csrs/src csr_target_csr    inc:cdl/inc
-
+cdl cdl/csrs/src csr_target_apb    inc:cdl/inc
+cdl cdl/apb/src  apb_target_gpio   inc:cdl/inc
+cdl cdl/apb/src  apb_target_timer  inc:cdl/inc
+cdl cdl/csrs/tb_src tb_csrs    inc:cdl/inc
 
 #a Editor preferences and notes
 # Local Variables: ***

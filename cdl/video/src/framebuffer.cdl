@@ -397,7 +397,7 @@ module framebuffer( clock csr_clk "Clock for CSR reads/writes",
                                 csr_request <= csr_request,
                                 csr_response => csr_response,
                                 csr_access => csr_access,
-                                csr_read_data <= csr_read_data,
+                                csr_access_data <= csr_read_data,
                                 csr_select <= bbc_csr_select_framebuffer );
         csrs <= csrs;
         if (csr_access.valid && !csr_access.read_not_write) {

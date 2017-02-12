@@ -21,6 +21,9 @@
  *
  */
 
+/*a Includes */
+include "apb.h"
+
 /*a Types */
 /*t t_csr_request */
 /**
@@ -103,13 +106,30 @@ typedef bit[32] t_csr_access_data;
 
 
 /*a Modules */
+/*m csr_target_apb */
+extern module csr_target_apb( clock                       clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
+                       input bit                reset_n,
+                       input t_csr_request      csr_request   "Pipelined csr request interface input",
+                       output t_csr_response    csr_response  "Pipelined csr request interface response",
+                       output t_apb_request     apb_request   "APB request to target",
+                       input t_apb_response     apb_response  "APB response from target",
+                       input bit[16]            csr_select    "Hard-wired select value for the client"
+    )
+{
+    timing to   rising clock clk csr_request, csr_select;
+    timing from rising clock clk csr_response;
+
+    timing from rising clock clk apb_request;
+    timing to   rising clock clk apb_response;
+}
+
 /*m csr_target_csr */
 extern module csr_target_csr( clock                       clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
                           input bit                reset_n,
                           input t_csr_request      csr_request   "Pipelined csr request interface input",
                           output t_csr_response    csr_response  "Pipelined csr request interface response",
                           output t_csr_access      csr_access    "Registered CSR access request to client",
-                          input  t_csr_access_data csr_read_data "Read data valid combinatorially based on csr_access",
+                          input  t_csr_access_data csr_access_data "Read data valid combinatorially based on csr_access",
                           input bit[16]            csr_select    "Hard-wired select value for the client"
     )
 {
@@ -117,5 +137,21 @@ extern module csr_target_csr( clock                       clk           "Clock f
     timing from rising clock clk csr_response;
 
     timing from rising clock clk csr_access;
-    timing to   rising clock clk csr_read_data;
+    timing to   rising clock clk csr_access_data;
+}
+
+/*m csr_master_apb */
+extern module csr_master_apb( clock                    clk        "Clock for the CSR interface; a superset of all targets clock",
+                              input bit                reset_n,
+                              input t_apb_request      apb_request   "APB request from master",
+                              output t_apb_response    apb_response  "APB response to master",
+                              input t_csr_response     csr_response  "Pipelined csr request interface response",
+                              output t_csr_request     csr_request   "Pipelined csr request interface output"
+    )
+{
+    timing to   rising clock clk csr_response;
+    timing from rising clock clk csr_request;
+
+    timing to   rising clock clk apb_request;
+    timing from rising clock clk apb_response;
 }

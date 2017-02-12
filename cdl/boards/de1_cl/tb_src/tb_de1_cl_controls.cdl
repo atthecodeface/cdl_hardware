@@ -12,12 +12,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * @file  tb_6502.cdl
- * @brief Testbench for 6502 CDL source
+ * @file  tb_de1_cl_controls.cdl
+ * @brief Testbench for DE1 CL devices
  *
- * This is a simple testbench for the 6502 CDL model with SRAM, build
- * so that the 6502 instruction regressions can be run on the CDL
- * model.
+ * This is a simple testbench to instantiate the various DE1 CL
+ * daughterboard devices.
  */
 /*a Includes */
 include "de1_cl.h"

@@ -1,6 +1,7 @@
 import unittest, importlib, sys, os
 tests = ["base6502",
          "leds",
+         "csrs",
          "de1_cl",
          #"bbc_submodules",
          ]

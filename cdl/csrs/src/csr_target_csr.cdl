@@ -31,7 +31,7 @@ module csr_target_csr( clock                       clk           "Clock for the 
                           input t_csr_request      csr_request   "Pipelined csr request interface input",
                           output t_csr_response    csr_response  "Pipelined csr request interface response",
                           output t_csr_access      csr_access    "Registered CSR access request to client",
-                          input  t_csr_access_data csr_read_data "Read data valid combinatorially based on csr_access",
+                          input  t_csr_access_data csr_access_data "Read data valid combinatorially based on csr_access",
                           input bit[16]            csr_select    "Hard-wired select value for the client"
     )
 """
@@ -95,7 +95,7 @@ target to use a derived clock.
             csr_response.ack <= 0;
             if (csr_access.read_not_write) {
                 csr_response.read_data_valid <= 1;
-                csr_response.read_data <= csr_read_data;
+                csr_response.read_data <= csr_access_data;
             }
         }
 

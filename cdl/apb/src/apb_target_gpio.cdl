@@ -1,0 +1,223 @@
+/** Copyright (C) 2004,2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   apb_target_gpio.cdl
+ * @brief  Simple GPIO target for an APB bus
+ *
+ * CDL implementation of a simple GPIO target on an APB bus, derived
+ * from an original GIP version.
+ *
+ */
+/*a Includes
+ */
+include "apb.h"
+
+/*a Types */
+/*t t_apb_address */
+typedef enum [2] {
+    apb_address_gpio_output_reg   = 0,
+    apb_address_gpio_input_status = 1,
+    apb_address_gpio_input_reg_0  = 2,
+    apb_address_gpio_input_reg_1  = 3,
+} t_apb_address;
+
+/*t t_access */
+typedef enum [3] {
+    access_none,
+    access_write_gpio_output,
+    access_write_gpio_input,
+    access_read_gpio_output,
+    access_read_gpio_inputs_0_7,
+    access_read_gpio_inputs_8_15,
+    access_read_gpio_input_status
+} t_access;
+
+/*t t_gpio_output */
+typedef struct
+{
+    bit value;
+    bit enable;
+} t_gpio_output;
+
+/*t t_gpio_input_type */
+typedef enum [3]
+{
+    gpio_input_type_none = 0, // 0 for reset
+    gpio_input_type_low,
+    gpio_input_type_high,
+    gpio_input_type_rising,
+    gpio_input_type_falling,
+    gpio_input_type_any_edge
+} t_gpio_input_type;
+
+/*t t_gpio_input */
+typedef struct
+{
+    t_gpio_input_type input_type;
+    bit sync_value;
+    bit last_sync_value;
+    bit value; // not updated if a read is in progress and not finishing (pselect && !penable) so the read data is held constant for two cycles
+    bit event; // asserted if the type of event has occurred between value and last_sync_value: not updated during reads either
+} t_gpio_input;
+
+/*a Module
+ */
+module apb_target_gpio( clock clk         "System clock",
+                        input bit reset_n "Active low reset",
+
+                        input  t_apb_request  apb_request  "APB request",
+                        output t_apb_response apb_response "APB response",
+
+                        output bit[16] gpio_output,
+                        output bit[16] gpio_output_enable,
+                        input bit[16]  gpio_input,
+                        output bit     gpio_input_event
+    )
+"""
+Simple APB interface to a GPIO system.
+
+16 outputs, each with separate enables which reset to off
+
+16 inputs, each of which is synced and then edge detected (or other configured event).
+We do not support atomic read-and-clear of events; so race conditions exist, but this is meant for low speed I/O.
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Decode APB interface */
+    clocked t_access access=access_none;
+
+    /*b Input and output state */
+    clocked t_gpio_input[16]  inputs = {*=0};
+    clocked t_gpio_output[16] outputs = {*=0};
+
+    /*b APB interface */
+    apb_interface_logic """
+    """ : {
+        /*b Decode access */
+        access <= access_none;
+        part_switch (apb_request.paddr[2;0]) {
+        case apb_address_gpio_output_reg: {
+            access <= apb_request.pwrite ? access_write_gpio_output : access_read_gpio_output;
+        }
+        case apb_address_gpio_input_reg_0: {
+            access <= apb_request.pwrite ? access_write_gpio_input : access_read_gpio_inputs_0_7;
+        }
+        case apb_address_gpio_input_reg_1: {
+            access <= apb_request.pwrite ? access_write_gpio_input : access_read_gpio_inputs_8_15;
+        }
+        case apb_address_gpio_input_status: {
+            access <= access_read_gpio_input_status;
+        }
+        }
+        if (!apb_request.psel || apb_request.penable) {
+            access <= access_none;
+        }
+
+        /*b Handle APB read data */
+        apb_response = {*=0, pready=1};
+        part_switch (access) {
+        case access_read_gpio_input_status: {
+            for (i; 16) {
+                apb_response.prdata[i+16] = inputs[i].event;
+                apb_response.prdata[i]    = inputs[i].value;
+            }
+        }
+        case access_read_gpio_inputs_0_7: {
+            for (i; 8) {
+                apb_response.prdata[3;4*i] = inputs[i].input_type;
+            }
+        }
+        case access_read_gpio_inputs_8_15: {
+            for (i; 8) {
+                apb_response.prdata[3;4*i] = inputs[i+8].input_type;
+            }
+        }
+        case access_read_gpio_output: {
+            for (i; 16) {
+                apb_response.prdata[i*2+1] = outputs[i].enable;
+                apb_response.prdata[i*2]   = outputs[i].value;
+            }
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b Output */
+    output_logic """
+    GPIO outputs are simply driven outputs and output enables
+    """: {
+        for (i; 16) {
+            if (access==access_write_gpio_output) {
+                outputs[i] <= { enable=apb_request.pwdata[i*2+1],
+                        value = apb_request.pwdata[i*2]
+                        };
+            }
+            gpio_output[i]        = outputs[i].value;
+            gpio_output_enable[i] = outputs[i].enable;
+        }
+    }
+
+    /*b Inputs
+     */
+    input_logic """
+    GPIO inputs; allow writing one input at a time
+    """: {
+        /*b Configure inputs */
+        for (i; 16) {
+            if (apb_request.pwdata[4;0]==i) {
+                if (access==access_write_gpio_input) {
+                    if (apb_request.pwdata[8]) {// write type
+                        inputs[i].input_type <= apb_request.pwdata[3;16];
+                    }
+                    if (apb_request.pwdata[9]) {// clear event
+                        inputs[i].event <= 0;
+                    }
+                }
+            }
+        }
+
+        /*b Handle input pins */
+        gpio_input_event = 0;
+        for (i; 16) {
+
+            /*b Synchronize inputs */
+            inputs[i].sync_value      <= gpio_input[i];
+            inputs[i].last_sync_value <= inputs[i].sync_value;
+
+            /*b Manage event, if not being accessed */
+            if (access==access_none) { // don't change read data while accessing
+                inputs[i].value <= inputs[i].last_sync_value;
+                part_switch (inputs[i].input_type)
+                {
+                case gpio_input_type_low:      { inputs[i].event <= !inputs[i].value; }
+                case gpio_input_type_high:     { inputs[i].event <= inputs[i].value; }
+                case gpio_input_type_rising:   { inputs[i].event <= inputs[i].event | (inputs[i].value && !inputs[i].last_sync_value); }
+                case gpio_input_type_falling:  { inputs[i].event <= inputs[i].event | (!inputs[i].value && inputs[i].last_sync_value); }
+                case gpio_input_type_any_edge: { inputs[i].event <= inputs[i].event | (inputs[i].value ^ inputs[i].last_sync_value); }
+                }
+            }
+            if (inputs[i].event) {
+                gpio_input_event = 1;
+            }
+            /*b All done */
+        }
+    }
+
+    /*b Done
+     */
+}

@@ -90,7 +90,7 @@ This module provides a keyboard source from CSR writes
                              csr_request <= csr_request,
                              csr_response => csr_response,
                              csr_access => csr_access,
-                             csr_read_data <= csr_read_data,
+                             csr_access_data <= csr_read_data,
                              csr_select <= bbc_csr_select_keyboard );
         
         if (csr_access.valid && !csr_access.read_not_write) {

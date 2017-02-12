@@ -1,0 +1,125 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_csrs.cdl
+ * @brief Testbench for CSR interfaces and bus
+ *
+ */
+/*a Includes */
+include "csr_interface.h"
+include "apb_peripherals.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk,
+                               input  t_apb_response apb_response,
+                               output t_apb_request  apb_request
+    )
+{
+    timing from rising clock clk apb_request;
+    timing to   rising clock clk apb_response;
+}
+
+/*a Module */
+typedef struct {
+    bit[32] counter;
+    bit[32] divider;
+    bit enable;
+} t_timer_clk_state;
+module tb_csrs( clock clk,
+                input bit reset_n
+)
+{
+
+    /*b Nets */
+    net t_apb_request   th_apb_request;
+    net t_apb_response  th_apb_response;
+
+    net t_csr_request      master_csr_request;
+    clocked clock clk reset active_low reset_n t_csr_response   master_csr_response_r = {*=0};
+    comb t_csr_response     master_csr_response;
+    net t_csr_response      tgt0_csr_response;
+    net t_csr_response      tgt1_csr_response;
+    net t_csr_access        tgt0_csr_access;
+    comb t_csr_access_data  tgt0_csr_access_data;
+
+    net t_apb_request tgt1_apb_request;
+    net t_apb_response tgt1_apb_response;
+
+    net bit[3] timer_equalled;
+
+    clocked clock clk reset active_low reset_n t_timer_clk_state timer_clk_state={*=0};
+    comb bit timer_clk_enable;
+    gated_clock clock clk active_high timer_clk_enable timer_clk;
+
+    /*b Instantiations */
+    instantiations: {
+        se_test_harness th( clk <- clk,
+                            apb_response <= th_apb_response,
+                            apb_request  => th_apb_request );
+        
+        csr_master_apb master( clk <- clk,
+                               reset_n <= reset_n,
+                               apb_request <= th_apb_request,
+                               apb_response => th_apb_response,
+                               csr_request => master_csr_request,
+                               csr_response <= master_csr_response_r );
+
+        csr_target_csr tgt0( clk <- clk,
+                             reset_n <= reset_n,
+                             csr_request <= master_csr_request,
+                             csr_response => tgt0_csr_response,
+                             csr_access => tgt0_csr_access,
+                             csr_access_data <= tgt0_csr_access_data,
+                             csr_select <= 0xfc00 );
+
+        tgt0_csr_access_data = timer_clk_state.counter;
+        timer_clk_state.enable <= 0;
+        timer_clk_state.counter <= timer_clk_state.counter-1;
+        if (timer_clk_state.counter==0) {
+            timer_clk_state.enable <= 1;
+            timer_clk_state.counter <= timer_clk_state.divider;
+        }
+        if (!tgt0_csr_access.read_not_write & tgt0_csr_access.valid) {
+            timer_clk_state.divider <= tgt0_csr_access.data;
+        }
+        timer_clk_enable = timer_clk_state.enable;
+
+        csr_target_apb tgt1( clk <- timer_clk,
+                             reset_n <= reset_n,
+                             csr_request <= master_csr_request,
+                             csr_response => tgt1_csr_response,
+                             apb_request  => tgt1_apb_request,
+                             apb_response <= tgt1_apb_response,
+                             csr_select <= 0xab01 );
+
+        apb_target_timer timer( clk <- timer_clk,
+                                reset_n <= reset_n,
+                                apb_request  <= tgt1_apb_request,
+                                apb_response => tgt1_apb_response,
+                                timer_equalled => timer_equalled );
+
+        master_csr_response  = tgt0_csr_response;
+        master_csr_response |= tgt1_csr_response;
+        master_csr_response_r <= master_csr_response;
+    }
+
+    /*b All done */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/

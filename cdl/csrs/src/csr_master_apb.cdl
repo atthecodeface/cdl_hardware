@@ -1,0 +1,181 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   csr_master_apb.cdl
+ * @brief  Pipelined CSR request/response master, driven by an APB
+ *
+ * CDL implementation of an APB target that drives a CSR
+ * request/response master. This module abstracts the client from
+ * needing to implement the intricacies of the t_csr_request/response
+ * interface.
+ *
+ */
+/*a Includes */
+include "apb.h"
+include "csr_interface.h"
+/*a Type */
+/*t t_apb_action */
+typedef enum[3] {
+    apb_action_none,
+    apb_action_start_wait,
+    apb_action_start_csr_request_write,
+    apb_action_start_csr_request_read,
+    apb_action_complete_write,
+    apb_action_present_read,
+    apb_action_complete_read
+} t_apb_action;
+
+/*t t_apb_fsm_state */
+typedef fsm {
+    apb_fsm_idle;
+    apb_fsm_waiting_for_previous_csr_request;
+    apb_fsm_csr_requesting_write;
+    apb_fsm_csr_requesting_read;
+    apb_fsm_presenting_read_data;
+} t_apb_fsm_state;
+
+typedef struct {
+    t_apb_fsm_state fsm_state;
+} t_apb_state;
+
+/*a Module */
+module csr_master_apb( clock                    clk        "Clock for the CSR interface; a superset of all targets clock",
+                       input bit                reset_n,
+                       input t_apb_request      apb_request   "APB request from master",
+                       output t_apb_response    apb_response  "APB response to master",
+                       input t_csr_response     csr_response  "Pipelined csr request interface response",
+                       output t_csr_request     csr_request   "Pipelined csr request interface output"
+    )
+"""
+The documentation of the CSR interface itself is in other files (at
+this time, csr_target_csr.cdl).
+
+This module drives a CSR target interface in response to an incoming
+APB interface.
+
+It therefore permits an extension of an APB bus through a CSR target
+pipelined chain.
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    clocked t_csr_request  csr_request={*=0};
+    comb t_apb_action       apb_action;
+    clocked t_apb_state     apb_state={*=0, fsm_state=apb_fsm_idle};
+    clocked t_apb_response  apb_response={*=0};
+    clocked bit csr_request_in_progress = 0;
+
+    /*b APB target interface logic */
+    apb_target_logic """
+    The APB target interface accepts an incoming request, holding it
+    with 'pready' low until the CSR request can start (i.e. until
+    csr_request_in_progress is clear).
+
+    Then a write transaction is taken and pready asserts.
+
+    A read transaction has to wait for read_data_valid from the
+    target.
+    """: {
+        apb_response.perr <= 0;
+
+        apb_action = apb_action_none;
+        full_switch (apb_state.fsm_state) {
+        case apb_fsm_idle: {
+            if (apb_request.psel) {
+                apb_action = apb_request.pwrite ? apb_action_start_csr_request_write : apb_action_start_csr_request_read;
+                if (csr_request_in_progress || csr_response.read_data_valid) {
+                    apb_action = apb_action_start_wait;
+                }
+            }
+        }
+        case apb_fsm_waiting_for_previous_csr_request: {
+            if (!csr_request_in_progress && !csr_response.read_data_valid) {
+                apb_action = apb_request.pwrite ? apb_action_start_csr_request_write : apb_action_start_csr_request_read;
+            }
+        }
+        case apb_fsm_csr_requesting_write: {
+            apb_action = apb_action_complete_write;
+        }
+        case apb_fsm_csr_requesting_read: {
+            if (csr_response.read_data_valid) {
+                apb_action = apb_action_present_read;
+            }
+        }
+        case apb_fsm_presenting_read_data: {
+            apb_action = apb_action_complete_read;
+        }
+        }
+
+        if (csr_response.ack && csr_request.valid) {
+            csr_request.valid <= 0;
+        }
+        if (csr_request_in_progress) {
+            if (csr_request.read_not_write) {
+                if (csr_response.read_data_valid) {
+                    csr_request_in_progress <= 0;
+                }
+            } else {
+                if (!csr_request.valid && !csr_response.ack) {
+                    csr_request_in_progress <= 0;
+                }
+            }
+        }
+
+        full_switch (apb_action) {
+        case apb_action_start_csr_request_write: {
+            apb_response.pready <= 1;
+            apb_state.fsm_state <= apb_fsm_csr_requesting_write;
+            csr_request <= { valid=1,
+                    address = apb_request.paddr[16;0],
+                    select  = apb_request.paddr[16;16],
+                    read_not_write = 0,
+                    data    = apb_request.pwdata};
+            csr_request_in_progress <= 1;
+        }
+        case apb_action_start_csr_request_read: {
+            apb_response.pready <= 0;
+            apb_state.fsm_state <= apb_fsm_csr_requesting_read;
+            csr_request <= { valid=1,
+                    address = apb_request.paddr[16;0],
+                    select  = apb_request.paddr[16;16],
+                    read_not_write = 1 };
+            csr_request_in_progress <= 1;
+        }
+        case apb_action_start_wait: {
+            apb_response.pready <= 0;
+            apb_state.fsm_state <= apb_fsm_waiting_for_previous_csr_request;
+        }
+        case apb_action_complete_write: {
+            apb_response.pready <= 1;
+            apb_state.fsm_state <= apb_fsm_idle;
+        }
+        case apb_action_present_read: {
+            apb_response.pready <= 1;
+            apb_response.prdata <= csr_response.read_data;
+            apb_state.fsm_state <= apb_fsm_presenting_read_data;
+        }
+        case apb_action_complete_read: {
+            apb_response.pready <= 1;
+            apb_state.fsm_state <= apb_fsm_idle;
+        }
+        case apb_action_none: {
+            apb_state.fsm_state <= apb_state.fsm_state;
+        }
+        }
+    }
+
+    /*b All done */
+}
