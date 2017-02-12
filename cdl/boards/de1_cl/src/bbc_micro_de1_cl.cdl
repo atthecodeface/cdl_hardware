@@ -23,6 +23,7 @@
 /*a Includes */
 include "bbc_micro_types.h"
 include "bbc_submodules.h"
+include "input_devices.h"
 include "leds.h"
 include "de1_cl.h"
 
@@ -56,6 +57,8 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                          input bit[4] keys       "DE1 keys",
                          input bit[10] switches  "DE1 switches",
                          output bit[10] leds     "DE1 leds",
+                         input t_ps2_pins ps2_in   "PS2 input pins",
+                         output t_ps2_pins ps2_out "PS2 output pin driver open collector",
                          output bit led_data_pin "DE1 CL daughterboard neopixel LED pin",
                          input  t_de1_cl_inputs_status   inputs_status  "DE1 CL daughterboard shifter register etc status",
                          output t_de1_cl_inputs_control  inputs_control "DE1 CL daughterboard shifter register control"
@@ -69,6 +72,10 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
 
     net t_bbc_clock_status clock_status;
     net t_bbc_clock_control clock_control;
+
+    net t_ps2_pins ps2_out;
+    net t_ps2_rx_data ps2_rx_data;
+    net t_ps2_key_state  ps2_key;
 
     comb t_csr_request csr_request;
     net t_csr_response clocking_csr_response;
@@ -128,6 +135,21 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
         }
     }
 
+    /*b BBC PS2 keyboard */
+    clocked clock clk reset active_low reset_n t_bbc_keyboard bbc_ps2_keyboard={*=0};
+    ps2_keyboard_decode: {
+        bbc_ps2_keyboard.reset_pressed <= 0;
+        if (ps2_key.valid) {
+            part_switch (bundle(ps2_key.extended, ps2_key.key_number)) {
+            case 0x1b: { bbc_ps2_keyboard.keys_down_cols_0_to_7[1*8+5] <= !ps2_key.release; } // s
+            case 0x29: { bbc_ps2_keyboard.keys_down_cols_0_to_7[2*8+6] <= !ps2_key.release; } // space
+            case 0x31: { bbc_ps2_keyboard.keys_down_cols_0_to_7[5*8+5] <= !ps2_key.release; } // n
+            case 0x5a: { bbc_ps2_keyboard.keys_down_cols_8_to_9[1*8+4] <= !ps2_key.release; } // enter
+            case 0x33: { bbc_ps2_keyboard.keys_down_cols_0_to_7[4*8+5] <= !ps2_key.release; } // h
+            }
+        }
+    }
+
     /*b Miscellaneous logic */
     clocked clock clk reset active_low reset_n bit[10] fn_keys_down=0;
     clocked clock clk reset active_low reset_n bit fn_key_pressed=0;
@@ -138,34 +160,34 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
         bbc_micro_host_sram_request = {*=0};
 
         keyboard.reset_pressed = 0;
-        keyboard.keys_down_cols_0_to_7 = 0;
-        keyboard.keys_down_cols_8_to_9 = 0;
-        keyboard.keys_down_cols_0_to_7[0*8+0] = !keys[0]; // shift
-        keyboard.keys_down_cols_0_to_7[1*8+0] = !keys[1]; // ctrl
-        keyboard.keys_down_cols_0_to_7[5*8+5] = !keys[2]; // N
-        keyboard.keys_down_cols_0_to_7[1*8+5] = user_inputs.joystick.u; // s
-        keyboard.keys_down_cols_0_to_7[2*8+4] = user_inputs.joystick.d; // x
-        keyboard.keys_down_cols_0_to_7[6*8+6] = user_inputs.joystick.l; // ,
-        keyboard.keys_down_cols_0_to_7[7*8+6] = user_inputs.joystick.r; // .
-        keyboard.keys_down_cols_0_to_7[0*8+2] = user_inputs.joystick.c; // f0
-        keyboard.keys_down_cols_0_to_7[2*8+6] = user_inputs.diamond.y; // space
-        keyboard.keys_down_cols_8_to_9[0*8+6] = user_inputs.diamond.a; // /
-        keyboard.keys_down_cols_0_to_7[1*8+4] = user_inputs.diamond.b; // a (fire, right of diamond)
-        keyboard.keys_down_cols_0_to_7[5*8+4] = user_inputs.diamond.x; // j left of diamond
-        keyboard.keys_down_cols_0_to_7[1*8+7] = fn_keys_down[1]; // f1
-        keyboard.keys_down_cols_0_to_7[2*8+7] = fn_keys_down[2]; // f2
-        keyboard.keys_down_cols_0_to_7[3*8+7] = fn_keys_down[3]; // f3
-        keyboard.keys_down_cols_0_to_7[4*8+1] = fn_keys_down[4]; // f4
-        keyboard.keys_down_cols_0_to_7[4*8+7] = fn_keys_down[5]; // f5
-        keyboard.keys_down_cols_0_to_7[5*8+7] = fn_keys_down[6]; // f6
-        keyboard.keys_down_cols_0_to_7[6*8+1] = fn_keys_down[7]; // f7
-        keyboard.keys_down_cols_0_to_7[6*8+7] = fn_keys_down[8]; // f8
-        keyboard.keys_down_cols_0_to_7[7*8+7] = fn_keys_down[9]; // f9
+        keyboard.keys_down_cols_0_to_7 = bbc_ps2_keyboard.keys_down_cols_0_to_7;
+        keyboard.keys_down_cols_8_to_9 = bbc_ps2_keyboard.keys_down_cols_8_to_9;
+        keyboard.keys_down_cols_0_to_7[0*8+0] |= !keys[0]; // shift
+        keyboard.keys_down_cols_0_to_7[1*8+0] |= !keys[1]; // ctrl
+        keyboard.keys_down_cols_0_to_7[5*8+5] |= !keys[2]; // N
+        keyboard.keys_down_cols_0_to_7[1*8+5] |= user_inputs.joystick.u; // s
+        keyboard.keys_down_cols_0_to_7[2*8+4] |= user_inputs.joystick.d; // x
+        keyboard.keys_down_cols_0_to_7[6*8+6] |= user_inputs.joystick.l; // ,
+        keyboard.keys_down_cols_0_to_7[7*8+6] |= user_inputs.joystick.r; // .
+        keyboard.keys_down_cols_0_to_7[0*8+2] |= user_inputs.joystick.c; // f0
+        keyboard.keys_down_cols_0_to_7[2*8+6] |= user_inputs.diamond.y; // space
+        keyboard.keys_down_cols_8_to_9[0*8+6] |= user_inputs.diamond.a; // /
+        keyboard.keys_down_cols_0_to_7[1*8+4] |= user_inputs.diamond.b; // a (fire, right of diamond)
+        keyboard.keys_down_cols_0_to_7[5*8+4] |= user_inputs.diamond.x; // j left of diamond
+        keyboard.keys_down_cols_0_to_7[1*8+7] |= fn_keys_down[1]; // f1
+        keyboard.keys_down_cols_0_to_7[2*8+7] |= fn_keys_down[2]; // f2
+        keyboard.keys_down_cols_0_to_7[3*8+7] |= fn_keys_down[3]; // f3
+        keyboard.keys_down_cols_0_to_7[4*8+1] |= fn_keys_down[4]; // f4
+        keyboard.keys_down_cols_0_to_7[4*8+7] |= fn_keys_down[5]; // f5
+        keyboard.keys_down_cols_0_to_7[5*8+7] |= fn_keys_down[6]; // f6
+        keyboard.keys_down_cols_0_to_7[6*8+1] |= fn_keys_down[7]; // f7
+        keyboard.keys_down_cols_0_to_7[6*8+7] |= fn_keys_down[8]; // f8
+        keyboard.keys_down_cols_0_to_7[7*8+7] |= fn_keys_down[9]; // f9
 
-        keyboard.keys_down_cols_8_to_9[1*8+3] = user_inputs.joystick.u; // up
-        keyboard.keys_down_cols_8_to_9[1*8+2] = user_inputs.joystick.d; // down
-        keyboard.keys_down_cols_8_to_9[1*8+1] = user_inputs.joystick.l; // left
-        keyboard.keys_down_cols_8_to_9[1*8+7] = user_inputs.joystick.r; // right
+        keyboard.keys_down_cols_8_to_9[1*8+3] |= user_inputs.joystick.u; // up
+        keyboard.keys_down_cols_8_to_9[1*8+2] |= user_inputs.joystick.d; // down
+        keyboard.keys_down_cols_8_to_9[1*8+1] |= user_inputs.joystick.l; // left
+        keyboard.keys_down_cols_8_to_9[1*8+7] |= user_inputs.joystick.r; // right
 
         if (user_inputs.right_dial.direction_pulse) {
             fn_keys_down <= 0;
@@ -293,6 +315,18 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
 
     /*b DE1 and CL control modules */
     de1_and_cl_modules: {
+        ps2_host ps2( clk <- clk,
+                      reset_n <= reset_n,
+                      ps2_in <= ps2_in,
+                      ps2_out => ps2_out,
+                      ps2_rx_data => ps2_rx_data,
+                      divider <= 150 );
+        
+        ps2_host_keyboard key_decode(clk <- clk,
+                                     reset_n <= reset_n,
+                                     ps2_rx_data <= ps2_rx_data,
+                                     ps2_key     => ps2_key );
+
         de1_cl_controls controls( clk <- clk,
                                   reset_n <= reset_n,
                                   sr_divider <= sr_divider,
