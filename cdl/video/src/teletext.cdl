@@ -92,6 +92,7 @@ typedef struct {
     t_character_state character_state;
     bit[12] held_graphics_data;
     t_color[12] colors;
+    bit valid;
 } t_output_state;
 
 /*a Module teletext */
@@ -404,9 +405,11 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
 
         /*b Handle change of control state at end of character */
         teletext_state.character        <= load_state.character;
-        teletext_state.character_state  <= teletext_combs.next_character_state;
-        if (teletext_combs.current_character_state.dbl_height) {
-            teletext_state.row_contains_dbl_height <= 1;
+        if (teletext_state.character.valid) {
+            teletext_state.character_state  <= teletext_combs.next_character_state;
+            if (teletext_combs.current_character_state.dbl_height) {
+                teletext_state.row_contains_dbl_height <= 1;
+            }
         }
 
         /*b Handle reset of control state at end of scanline */
@@ -542,6 +545,7 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
     Get two scanlines - current and next (next of 0 if none)
     """: {
         output_state.character_state <= teletext_combs.current_character_state;
+        output_state.valid <= teletext_state.character.valid;
 
         pixels.red = 0;
         pixels.blue = 0;
@@ -554,6 +558,8 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
             pixels.green[i] = output_state.colors[i][1];
             pixels.blue[i]  = output_state.colors[i][2];
         }
+        pixels.valid = output_state.valid;
+        pixels.last_scanline = timing_state.last_scanline;
     }
 
     /*b All done */

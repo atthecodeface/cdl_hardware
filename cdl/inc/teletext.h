@@ -28,9 +28,11 @@ typedef struct {
 
 /*t t_teletext_pixels */
 typedef struct {
+    bit valid         "Asserted to indicate that the red, green and blue are valid; asserted three ticks after a valid character in";
     bit[12] red;
     bit[12] green;
     bit[12] blue;
+    bit last_scanline "Asserted with a pixel to indicate it is on the last scanline of the row";
 } t_teletext_pixels;
 
 /*a Modules */

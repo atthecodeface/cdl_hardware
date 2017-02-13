@@ -323,6 +323,8 @@ class c_test_one(simple_tb.base_th):
         self.ch_valid_pipeline.append(self.ch_valid)
         self.bfm_wait(1)
         if self.ch_valid_pipeline.pop(0):
+            if (self.ios.pixels__valid.value()==0):
+                die
             rgb = (self.ios.pixels__red.value(),
                    self.ios.pixels__green.value(),
                    self.ios.pixels__blue.value())
@@ -349,6 +351,7 @@ class c_test_one(simple_tb.base_th):
             if type(d)==str: d=ord(d)
             self.ios.character__character.drive(d)
             self.character_tick(1,1)
+            self.character_tick(0,1)
             pass
         self.character_tick(0,10)
         self.ios.timings__end_of_scanline.drive(1)
@@ -389,9 +392,11 @@ class cdl_test_hw(simple_tb.cdl_test_hw):
     """
     th_forces = { "character_rom.filename":"roms/teletext.mif",
                   "th.clock":"clk",
-                  "th.inputs":("pixels__blue[12] "+
+                  "th.inputs":("pixels__valid "+
+                               "pixels__blue[12] "+
                                "pixels__green[12] "+
                                "pixels__red[12] "+
+                               "pixels__last_scanline "+
                                ""),
                   "th.outputs":("timings__interpolate_vertical[2] "+
                                 "timings__smoothe "+
