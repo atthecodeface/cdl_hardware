@@ -37,11 +37,11 @@
 /**
  * A macro to define the wrapper for an SRAM of a defined size and width, with full width write enable
  */
-#define SRAM_WRAPPER(size,width) \
+#define SRAM_WRAPPER(size,width,bpe)                                       \
 static t_sl_error_level se_sram_srw_ ## size ## x ## width ## _instance_fn(c_engine *engine, void *engine_handle) { \
     engine->set_option_list( engine_handle, sl_option_list(engine->get_option_list( engine_handle ), "size", size) ); \
     engine->set_option_list( engine_handle, sl_option_list(engine->get_option_list( engine_handle ), "width", width) ); \
-    engine->set_option_list( engine_handle, sl_option_list(engine->get_option_list( engine_handle ), "bits_per_enable", width) ); \
+    engine->set_option_list( engine_handle, sl_option_list(engine->get_option_list( engine_handle ), "bits_per_enable", bpe) ); \
     void *sram_mod = se_external_module_find("se_sram_srw"); \
     if (sram_mod) return se_external_module_instantiate(sram_mod, engine, engine_handle); \
     return error_level_fatal; \
@@ -61,7 +61,7 @@ static t_sl_error_level se_sram_mrw_2_ ## size ## x ## width ## _instance_fn(c_e
  * A macro to be used in 'srams__init' to register an SRAM whose
  * 'SRAM_WRAPPER' has been declared
  */
-#define SRAM_REGISTER(size,width) \
+#define SRAM_REGISTER(size,width,bpe)                                      \
     se_external_module_register( 1, "se_sram_srw_" #size "x" #width, se_sram_srw_ ## size ## x ## width ##_instance_fn );
 #define SRAM_REGISTER_DP(size,width) \
     se_external_module_register( 1, "se_sram_mrw_2_" #size "x" #width, se_sram_mrw_2_ ## size ## x ## width ##_instance_fn );
@@ -71,14 +71,15 @@ static t_sl_error_level se_sram_mrw_2_ ## size ## x ## width ## _instance_fn(c_e
  * Use the SRAM_WRAPPER macro to create instantiation functions that
  * can be registered with CDL, for all the required SRAMs.
  */
-SRAM_WRAPPER(8192, 32)
-SRAM_WRAPPER(16384, 32)
-SRAM_WRAPPER(16384, 8)
-SRAM_WRAPPER(65536, 8)
-SRAM_WRAPPER(65536, 32)
-SRAM_WRAPPER(32768, 32)
-SRAM_WRAPPER(32768, 64)
-SRAM_WRAPPER(128, 64)
+SRAM_WRAPPER(8192, 32, 32)
+SRAM_WRAPPER(16384, 32, 32)
+SRAM_WRAPPER(16384, 8, 8)
+SRAM_WRAPPER(65536, 8, 8)
+SRAM_WRAPPER(65536, 32, 32)
+SRAM_WRAPPER(32768, 32, 32)
+SRAM_WRAPPER(32768, 64, 64)
+SRAM_WRAPPER(128, 64, 64)
+SRAM_WRAPPER(128, 45, 0)
 SRAM_WRAPPER_DP(16384, 48)
 
 /*a Initialization functions */
@@ -91,14 +92,15 @@ SRAM_WRAPPER_DP(16384, 48)
 extern void
 srams__init( void )
 {
-    SRAM_REGISTER(8192, 32);
-    SRAM_REGISTER(16384, 32);
-    SRAM_REGISTER(16384, 8);
-    SRAM_REGISTER(65536, 8);
-    SRAM_REGISTER(65536, 32);
-    SRAM_REGISTER(32768, 32);
-    SRAM_REGISTER(32768, 64);
-    SRAM_REGISTER(128, 64);
+    SRAM_REGISTER(8192, 32, 32);
+    SRAM_REGISTER(16384, 32, 32);
+    SRAM_REGISTER(16384, 8, 8);
+    SRAM_REGISTER(65536, 8, 8);
+    SRAM_REGISTER(65536, 32, 32);
+    SRAM_REGISTER(32768, 32, 32);
+    SRAM_REGISTER(32768, 64, 64);
+    SRAM_REGISTER(128, 64, 64);
+    SRAM_REGISTER(128, 45, 0);
     SRAM_REGISTER_DP(16384, 48);
 }
 

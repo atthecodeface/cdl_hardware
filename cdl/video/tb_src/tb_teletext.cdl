@@ -1,0 +1,77 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_teletext.cdl
+ * @brief Testbench for teletext decoder module
+ *
+ * This is a simple testbench for the teletext decoder.
+ */
+/*a Includes */
+include "srams.h"
+include "teletext.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk,
+                               output t_teletext_character    character  "Parallel character data in, with valid signal",
+                               output t_teletext_timings      timings    "Timings for the scanline, row, etc",
+                               input t_teletext_rom_access  rom_access "Teletext ROM access",
+                               output bit[45]                 rom_data   "Teletext ROM data, valid in cycle after rom_access",
+                               input t_teletext_pixels pixels       "Output pixels, two clock ticks delayed from clk in"
+    )
+{
+    timing from rising clock clk character, timings;
+    timing to   rising clock clk rom_access;
+    timing from rising clock clk rom_data;
+    timing to   rising clock clk pixels;
+}
+
+/*a Module */
+module tb_teletext( clock clk,
+                    input bit reset_n
+)
+{
+
+    /*b Nets */
+    net t_teletext_character    character;
+    net t_teletext_timings      timings;
+    net t_teletext_rom_access  rom_access;
+    net bit[45]                 rom_data;
+    net t_teletext_pixels pixels;
+
+    /*b Instantiations */
+    instantiations: {
+        se_test_harness th( clk <- clk,
+                     character  => character,
+                     timings    => timings,
+                     pixels     <= pixels
+                                  );
+        
+        teletext tt( clk <- clk,
+                     reset_n <= reset_n,
+                     character <= character,
+                     timings <= timings,
+                     rom_access => rom_access,
+                     rom_data <= rom_data,
+                     pixels => pixels
+            );
+        se_sram_srw_128x45 character_rom(sram_clock <- clk,
+                                         select         <= rom_access.select,
+                                         read_not_write <= 1,
+                                         address        <= rom_access.address,
+                                         write_data     <= 0,
+                                         data_out       => rom_data );
+    }
+
+    /*b All done */
+}

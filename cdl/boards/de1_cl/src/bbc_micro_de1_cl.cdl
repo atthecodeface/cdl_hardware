@@ -113,13 +113,13 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     clocked clock clk reset active_low reset_n t_debug_state debug_state={*=0};
     debug_logic """
     """: {
-        debug_comb.selected_data = lcd.vsync_n;
+        debug_comb.selected_data = clock_control.enable_cpu;
         full_switch(switches[3;6]) {
-        case 0: { debug_comb.selected_data = lcd.vsync_n; }
+        case 0: { debug_comb.selected_data = 0;/*lcd.vsync_n*/; }
         case 1: { debug_comb.selected_data = clock_control.enable_cpu; }
         case 2: { debug_comb.selected_data = clock_control.enable_1MHz_falling; }
         case 3: { debug_comb.selected_data = floppy_response.read_data_valid; }
-        case 4: { debug_comb.selected_data = display_sram_write.enable; }
+        case 4: { debug_comb.selected_data = 0;/*display_sram_write.enable;*/ }
         case 5: { debug_comb.selected_data = floppy_sram_request_r.enable; }
         case 6: { debug_comb.selected_data = clock_control.phi[0]; }
         case 7: { debug_comb.selected_data = clock_control.phi[0]; }
