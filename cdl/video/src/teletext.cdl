@@ -308,6 +308,8 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
         }
 
         if (timings.restart_frame) {
+            timing_state.scanline_displayed <= 0;
+            timing_state.scanline <= 0;
             timing_state.flashing_counter <= timing_state.flashing_counter+1;
             if (timing_state.flashing_counter==flashing_on_count) {
                 timing_state.flash_on <= 1;

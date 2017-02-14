@@ -46,6 +46,7 @@ include "teletext.h"
 
 /*a Constants */
 constant integer cfg_downsize_x=0;
+constant integer cfg_downsize_y=1;
 
 /*a Types */
 /*t t_display_fsm */
@@ -420,7 +421,7 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
     /*b Teletext instance and its character ROM */
     teletext_logic """
     """: {
-        tt_timings.interpolate_vertical  <= tvi_all_scanlines;
+        tt_timings.interpolate_vertical  <= cfg_downsize_y ? tvi_even_scanlines : tvi_all_scanlines;
         tt_timings.first_scanline_of_row <= 0;
         tt_timings.end_of_scanline       <= video_state.h_sync;
         tt_timings.restart_frame         <= video_state.v_sync;

@@ -393,6 +393,65 @@ class c_test_one(simple_tb.base_th):
         self.finishtest(0,"")
         pass
 
+
+#c c_scanline
+class c_scanline(object):
+    def __init__(self):
+        self.back_porch=0
+        self.front_porch=0
+        self.pixels = []
+        pass
+    def add_pixel(self, r, g, b):
+        self.pixels.append((r&255) | ((g&255)<<8) | ((b&255)<<16))
+        pass
+    def ppm_line(self):
+        row = ""
+        for p in self.pixels:
+            row +="%d %d %d "%( ((p>> 0)&255),
+                                ((p>> 8)&255),
+                                ((p>>16)&255),
+                                )
+            pass
+        return row
+    pass
+
+#c c_frame
+class c_frame(object):
+    def __init__(self):
+        self.num_hsyncs = 0
+        self.scanlines = []
+        self.back_porch = 0
+        self.front_porch = 0
+        pass
+    def new_scanline(self):
+        self.scanlines.append(c_scanline())
+        return self.scanlines[-1]
+    def validate(self):
+        p = []
+        in_back_porch = True
+        for i in range(len(self.scanlines)):
+            if len(self.scanlines[i].pixels)==0:
+                if in_back_porch:
+                    self.back_porch = self.back_porch + 1
+                else:
+                    self.front_porch = self.front_porch + 1
+                pass
+            else:
+                p.append(self.scanlines[i])
+                in_back_porch = False
+                pass
+            pass
+        self.scanlines=p
+        pass
+    def write_ppm(self, ppm_file):
+        self.validate()
+        print >> ppm_file, "P3\n%d %d\n255\n"%(len(self.scanlines[0].pixels),len(self.scanlines))
+        for l in self.scanlines:
+            print >>ppm_file, l.ppm_line()
+            pass
+        pass
+    pass
+
 #c c_test_fb_one
 class c_test_fb_one(simple_tb.base_th):
     blah = {"tvi_all_scanlines":0,
@@ -406,13 +465,60 @@ class c_test_fb_one(simple_tb.base_th):
               (17,30,"a",18,"b",19,20,21),
              )
     #teletext_test_page().get_mif_file()
+    #f wait_for_vsync
+    def wait_for_vsync(self):
+        while self.ios.video_bus__vsync.value()==0:
+            self.bfm_wait(100) # vsync is one line long
+            pass
+        pass
+    #f wait_for_hsync
+    def wait_for_hsync(self):
+        while self.ios.video_bus__hsync.value()==0:
+            self.bfm_wait(1)
+            pass
+        pass
+    #f capture_scanline
+    def capture_scanline(self, frame):
+        pixels = []
+        scanline = frame.new_scanline()
+        while self.ios.video_bus__display_enable.value()==0:
+            scanline.back_porch = scanline.back_porch+1
+            self.bfm_wait(1)
+            if self.ios.video_bus__hsync.value()==1:
+                return 
+            pass
+        while self.ios.video_bus__display_enable.value()==1:
+            scanline.add_pixel( self.ios.video_bus__red.value(),
+                                self.ios.video_bus__green.value(),
+                                self.ios.video_bus__blue.value() )
+            self.bfm_wait(1)
+            if self.ios.video_bus__hsync.value()==1:
+                return 
+            pass
+        while self.ios.video_bus__hsync.value()==0:
+            scanline.front_porch = scanline.front_porch+1
+            self.bfm_wait(1)
+        pass
+    #f capture_frame
+    def capture_frame(self):
+        frame = c_frame()
+        self.wait_for_vsync()
+        while True:
+            self.wait_for_hsync()
+            if self.ios.video_bus__vsync.value()==1:
+                return frame
+            frame.num_hsyncs = frame.num_hsyncs + 1
+            self.capture_scanline(frame)
+            pass
+        pass
     #f run
     def run(self):
-        self.ppm_file = open("a.ppm","w")
-        print >> self.ppm_file, "P3\n%d %d\n255\n"%(len(self.lines[0])*12,len(self.lines)*20)
         simple_tb.base_th.run_start(self)
         self.bfm_wait(10)
-        self.ppm_file.close()
+        f = self.capture_frame()
+        ppm_file = open("a.ppm","w")
+        f.write_ppm(ppm_file)
+        ppm_file.close()
         self.finishtest(0,"")
         pass
 
@@ -492,6 +598,6 @@ class c_Test_Framebuffer(simple_tb.base_test):
         test = c_test_fb_one()
         hw = framebuffer_teletext_hw(test=test)
         self.do_test_run(hw,
-                         num_cycles=100*1000)
+                         num_cycles=1000*1000)
         pass
     pass
