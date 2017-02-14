@@ -45,7 +45,7 @@ include "srams.h"
 include "teletext.h"
 
 /*a Constants */
-constant integer cfg_downsize_x=1;
+constant integer cfg_downsize_x=0;
 
 /*a Types */
 /*t t_display_fsm */
@@ -314,8 +314,10 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
     The pixel data buffer
     """: {
         /*b Pixel combinatorials */
-        //pixel_combs.next_num_valid = pixel_state.num_valid - 1;
-        pixel_combs.next_num_valid = pixel_state.num_valid - 2;
+        pixel_combs.next_num_valid = pixel_state.num_valid - 1;
+        if (cfg_downsize_x) {
+            pixel_combs.next_num_valid = pixel_state.num_valid - 2;
+        }
         if (pixel_state.num_valid==0) {
             pixel_combs.next_num_valid = 0;
         }
@@ -326,6 +328,7 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
         pixel_combs.sram_address_next_line  = pixel_state.sram_address_line_start + csrs.sram_words_per_line[14;0];
         pixel_combs.load_shift_register     = (pixel_state.data_buffer_full && (pixel_combs.next_num_valid==0));
         pixel_combs.sram_request            = (video_combs.v_displaying &&
+                                               !video_state.h_sync && // hold off start of line for 1 tick
                                                !pixel_state.data_buffer_full &&
                                                !pixel_state.request_outstanding);
 

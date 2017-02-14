@@ -28,6 +28,15 @@ class teletext_page(object):
             self.lines = [[characters[i+40*j] for i in range(40)] for j in range(25)]
             pass
         pass
+    def get_mif_file(self):
+        a = 0
+        for l in self.lines:
+            data = ["%02x"%c for c in l]
+            data=" ".join(data)
+            print "%02x: %s"%(a,data)
+            a = a + len(l)
+            pass
+        pass
 
 #c teletext_test_page_0
 class teletext_test_page_0(teletext_page):
@@ -384,11 +393,34 @@ class c_test_one(simple_tb.base_th):
         self.finishtest(0,"")
         pass
 
+#c c_test_fb_one
+class c_test_fb_one(simple_tb.base_th):
+    blah = {"tvi_all_scanlines":0,
+            "tvi_even_scanlines":1,
+            "tvi_odd_scanlines":2}
+    lines = teletext_test_page().lines
+    lines = ("abcdefghijklmnop",
+             (129,"a",130,"b",131,"c",132,"d",133,"e",134,"f",135,"g",32,32),
+             )
+    lines = ( (17,30,"a",18,"b",19,20,21),
+              (17,30,"a",18,"b",19,20,21),
+             )
+    #teletext_test_page().get_mif_file()
+    #f run
+    def run(self):
+        self.ppm_file = open("a.ppm","w")
+        print >> self.ppm_file, "P3\n%d %d\n255\n"%(len(self.lines[0])*12,len(self.lines)*20)
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(10)
+        self.ppm_file.close()
+        self.finishtest(0,"")
+        pass
+
 #a Hardware classes
 #c cdl_test_hw
 class cdl_test_hw(simple_tb.cdl_test_hw):
     """
-    Simple instantiation of LED chain
+    Simple instantiation of teletext module
     """
     th_forces = { "character_rom.filename":"roms/teletext.mif",
                   "th.clock":"clk",
@@ -407,8 +439,40 @@ class cdl_test_hw(simple_tb.cdl_test_hw):
                                 "character__valid "+
                                 ""),
                   }
-
     module_name = "tb_teletext"
+    pass
+
+#c framebuffer_teletext_hw
+class framebuffer_teletext_hw(simple_tb.cdl_test_hw):
+    """
+    Simple instantiation of teletext framebuffer module
+    """
+    th_forces = { "fb.character_rom.filename":"roms/teletext.mif",
+                  "fb.display.filename":"a.mif",
+                  "th.clock":"clk",
+                  "th.inputs":("csr_response__read_data[32] "+
+                               "csr_response__read_data_valid "+
+                               "csr_response__ack "+
+                               "video_bus__blue[8] "+
+                               "video_bus__green[8] "+
+                               "video_bus__red[8] "+
+                               "video_bus__display_enable "+
+                               "video_bus__hsync "+
+                               "video_bus__vsync "+
+                               "" ),
+                  "th.outputs":("csr_request__data[32] "+
+                               "csr_request__address[16] "+
+                               "csr_request__select[16] "+
+                               "csr_request__read_not_write "+
+                               "csr_request__valid "+
+                               "display_sram_write__address[16] "+
+                               "display_sram_write__data[48] "+
+                               "display_sram_write__enable "+
+                                ""),
+                  }
+
+
+    module_name = "tb_framebuffer_teletext"
     pass
 
 #a Simulation test classes
@@ -419,5 +483,15 @@ class c_Test_LedChain(simple_tb.base_test):
         hw = cdl_test_hw(test=test)
         self.do_test_run(hw,
                          num_cycles=1000*1000)
+        pass
+    pass
+
+#c c_Test_Framebuffer
+class c_Test_Framebuffer(simple_tb.base_test):
+    def test_one(self):
+        test = c_test_fb_one()
+        hw = framebuffer_teletext_hw(test=test)
+        self.do_test_run(hw,
+                         num_cycles=100*1000)
         pass
     pass

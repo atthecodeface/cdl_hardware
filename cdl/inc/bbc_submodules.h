@@ -26,6 +26,7 @@
 include "csr_interface.h"
 include "srams.h"
 include "bbc_micro_types.h"
+include "framebuffer.h"
 
 /*a Modules */
 /*m bbc_vidproc */
@@ -276,23 +277,6 @@ extern module bbc_micro_rams( clock clk "4MHz clock in as a minimum",
     timing to   rising clock clk clock_control;
     timing to   rising clock clk host_sram_request, display_sram_write, floppy_sram_request, bbc_micro_host_sram_response;
     timing from rising clock clk host_sram_response, floppy_sram_response, bbc_micro_host_sram_request;
-}
-
-/*m framebuffer */
-extern module framebuffer( clock csr_clk "Clock for CSR reads/writes",
-                    clock sram_clk  "SRAM write clock, with frame buffer data",
-                    clock video_clk "Video clock, used to generate vsync, hsync, data out, etc",
-                    input bit reset_n,
-                    input t_bbc_display_sram_write display_sram_write,
-                    output t_video_bus video_bus,
-                    input t_csr_request csr_request,
-                    output t_csr_response csr_response
-    )
-{
-    timing to   rising clock sram_clk   display_sram_write;
-    timing to   rising clock csr_clk    csr_request;
-    timing from rising clock csr_clk    csr_response;
-    timing from rising clock video_clk  video_bus;
 }
 
 /*m bbc_micro */

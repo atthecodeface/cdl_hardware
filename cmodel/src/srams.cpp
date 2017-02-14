@@ -81,6 +81,7 @@ SRAM_WRAPPER(32768, 64, 64)
 SRAM_WRAPPER(128, 64, 64)
 SRAM_WRAPPER(128, 45, 0)
 SRAM_WRAPPER_DP(16384, 48)
+SRAM_WRAPPER_DP(16384, 8)
 
 /*a Initialization functions */
 /*f srams__init */
@@ -102,6 +103,7 @@ srams__init( void )
     SRAM_REGISTER(128, 64, 64);
     SRAM_REGISTER(128, 45, 0);
     SRAM_REGISTER_DP(16384, 48);
+    SRAM_REGISTER_DP(16384, 8);
 }
 
 /*a Scripting support code */

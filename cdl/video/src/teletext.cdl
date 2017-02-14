@@ -404,8 +404,9 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
         }
 
         /*b Handle change of control state at end of character */
-        teletext_state.character        <= load_state.character;
-        if (teletext_state.character.valid) {
+        teletext_state.character.valid <= 0;
+        if (load_state.character.valid) {
+            teletext_state.character <= load_state.character;
             teletext_state.character_state  <= teletext_combs.next_character_state;
             if (teletext_combs.current_character_state.dbl_height) {
                 teletext_state.row_contains_dbl_height <= 1;
