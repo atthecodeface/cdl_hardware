@@ -325,6 +325,18 @@ extern module bbc_keyboard_csr( clock clk "Clock running at 2MHz",
     timing from rising clock clk   keyboard, csr_response;
 }
 
+/*m bbc_keyboard_ps2 */
+extern
+module bbc_keyboard_ps2( clock clk "Clock of PS2 keyboard",
+                         input bit reset_n,
+                         input t_ps2_key_state  ps2_key,
+                         output t_bbc_keyboard keyboard
+    )
+{
+    timing to   rising clock clk   ps2_key;
+    timing from rising clock clk   keyboard;
+}
+
 /*m bbc_floppy_sram */
 extern module bbc_floppy_sram( clock clk "Clock running at 2MHz",
                         input bit reset_n,

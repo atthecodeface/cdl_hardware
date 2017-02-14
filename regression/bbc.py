@@ -33,11 +33,12 @@ class c_TestBBC_HW(SimulationTestBase):
             waves_delay = int(os.environ["WAVES"])
             pass
         do_waves = waves_delay is not None
-        hw = bbc_hw.cdl_test_nonfpga(os_rom_mif  ="roms/os12.rom.mif",
+        hw = bbc_hw.cdl_test(os_rom_mif  ="roms/os12.rom.mif",
                              basic_rom_mif ="roms/basic2.rom.mif",
                              adfs_rom_mif ="roms/dfs.rom.mif",
                              teletext_rom_mif ="roms/teletext.mif",
-                             disk_mif="disks/elite.mif"
+                             disk_mif="disks/elite.mif",
+                             ps2_kbd_mif="roms/ps2_bbc_kbd.mif",
                              )
         if do_waves:
             waves = hw.waves()

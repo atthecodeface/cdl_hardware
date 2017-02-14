@@ -135,25 +135,12 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
         }
     }
 
-    /*b BBC PS2 keyboard */
-    clocked clock clk reset active_low reset_n t_bbc_keyboard bbc_ps2_keyboard={*=0};
-    ps2_keyboard_decode: {
-        bbc_ps2_keyboard.reset_pressed <= 0;
-        if (ps2_key.valid) {
-            part_switch (bundle(ps2_key.extended, ps2_key.key_number)) {
-            case 0x1b: { bbc_ps2_keyboard.keys_down_cols_0_to_7[1*8+5] <= !ps2_key.release; } // s
-            case 0x29: { bbc_ps2_keyboard.keys_down_cols_0_to_7[2*8+6] <= !ps2_key.release; } // space
-            case 0x31: { bbc_ps2_keyboard.keys_down_cols_0_to_7[5*8+5] <= !ps2_key.release; } // n
-            case 0x5a: { bbc_ps2_keyboard.keys_down_cols_8_to_9[1*8+4] <= !ps2_key.release; } // enter
-            case 0x33: { bbc_ps2_keyboard.keys_down_cols_0_to_7[4*8+5] <= !ps2_key.release; } // h
-            }
-        }
-    }
 
     /*b Miscellaneous logic */
     clocked clock clk reset active_low reset_n bit[10] fn_keys_down=0;
     clocked clock clk reset active_low reset_n bit fn_key_pressed=0;
     clocked clock clk reset active_low reset_n bit[4] last_fn_key=1;
+    net t_bbc_keyboard bbc_ps2_keyboard;
     misc_logic """
     """: {
         csr_request = {*=0};
@@ -252,6 +239,11 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                                      clock_control => clock_control,
                                      csr_request <= csr_request,
                                      csr_response => clocking_csr_response );
+
+        bbc_keyboard_ps2 bbc_ps2_kbd( clk<-clk,
+                                      reset_n <= bbc_reset_n,
+                                      ps2_key <= ps2_key,
+                                      keyboard => bbc_ps2_keyboard );
 
         bbc_micro bbc(clk <- clk,
                       reset_n <= bbc_reset_n,

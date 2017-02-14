@@ -1,0 +1,81 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   bbc_keyboard_ps2.cdl
+ * @brief  BBC micro keyboard from PS2 keys
+ *
+ * CDL implementation of a module to map from PS2 keys to the BBC
+ * micro keyboard input.
+ *
+ */
+/*a Includes */
+include "bbc_micro_types.h"
+include "input_devices.h"
+include "srams.h"
+/*a Types */
+/*t t_kbd_map_state */
+typedef struct {
+    bit valid;
+    bit release;
+} t_kbd_map_state;
+
+/*a Module
+ */
+module bbc_keyboard_ps2( clock clk "Clock of PS2 keyboard",
+                         input bit reset_n,
+                         input t_ps2_key_state  ps2_key,
+                         output t_bbc_keyboard keyboard
+    )
+"""
+This module provides a BBC keyboard source from a PS2 keyboard, using a mapping ROM
+"""
+{
+    /*b Defaults */
+    default reset active_low reset_n;
+    default clock clk;
+
+    clocked t_kbd_map_state kbd_map_state={*=0};
+    clocked t_bbc_keyboard  keyboard={*=0};
+    net bit[7] kbd_map_data;
+    comb bit[8] kbd_rom_address;
+    ps2_keyboard_decode: {
+        
+        kbd_rom_address = ps2_key.key_number;
+        if (ps2_key.key_number[7]) {  // only f7 AFAIK
+            kbd_rom_address = 0x7f;
+        }
+        kbd_rom_address[7] = ps2_key.extended;
+
+        se_sram_srw_256x7 kbd_map( sram_clock   <- clk,
+                                   select <= ps2_key.valid,
+                                   address <= kbd_rom_address,
+                                   read_not_write <= 1,
+                                   write_data <= 0,
+                                   data_out => kbd_map_data );
+
+        kbd_map_state.valid   <= ps2_key.valid;
+        kbd_map_state.release <= ps2_key.release;
+        if (kbd_map_data[6]) {
+            keyboard.keys_down_cols_8_to_9[kbd_map_data[4;0]] <= !kbd_map_state.release;
+        } else {
+            keyboard.keys_down_cols_0_to_7[kbd_map_data[6;0]] <= !kbd_map_state.release;
+        }
+
+        if (!kbd_map_state.valid) {
+            keyboard <= keyboard;
+        }
+    }
+
+    /*b All done */
+}

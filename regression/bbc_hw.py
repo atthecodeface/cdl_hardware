@@ -88,7 +88,7 @@ class cdl_test_nonfpga(pycdl.hw):
                      "reset_pressed":1,
     }
     #f __init__
-    def __init__(self, os_rom_mif, basic_rom_mif, adfs_rom_mif, teletext_rom_mif, disk_mif="disks/elite.mif"):
+    def __init__(self, os_rom_mif, basic_rom_mif, adfs_rom_mif, teletext_rom_mif, disk_mif="disks/elite.mif", ps2_kbd_mif=""):
 
         system_clock   = pycdl.clock(0, 5, 5)
         video_clock    = pycdl.clock(0, 7, 7)
@@ -111,6 +111,7 @@ class cdl_test_nonfpga(pycdl.hw):
                       "bbc.ram_0.reset_value":0,
                       "bbc.os.filename":os_rom_mif,
                       "bbc.os.verbose":0,
+                      "bbc.bbc_ps2_kbd.kbd_map":ps2_kbd_mif,
                       "rams.floppy.filename":disk_mif,
                       "rams.os.verbose":1,
                       }
@@ -235,7 +236,7 @@ class cdl_test(pycdl.hw):
                      "reset_pressed":1,
     }
     #f __init__
-    def __init__(self, os_rom_mif, basic_rom_mif, adfs_rom_mif, teletext_rom_mif, disk_mif="disks/elite.mif"):
+    def __init__(self, os_rom_mif, basic_rom_mif, adfs_rom_mif, teletext_rom_mif, disk_mif="disks/elite.mif", ps2_kbd_mif=""):
 
         system_clock   = pycdl.clock(0, 5, 5)
         video_clock    = pycdl.clock(0, 7, 7)
@@ -254,6 +255,7 @@ class cdl_test(pycdl.hw):
                       "bbc.ram_0.reset_value":0,
                       "bbc.os.filename":os_rom_mif,
                       "bbc.os.verbose":0,
+                      "bbc.bbc_ps2_kbd.kbd_map":ps2_kbd_mif,
                       "floppy.filename":disk_mif,
                       }
         lcd = pycdl.wirebundle({"vsync_n":1,
