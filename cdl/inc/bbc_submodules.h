@@ -27,6 +27,7 @@ include "csr_interface.h"
 include "srams.h"
 include "bbc_micro_types.h"
 include "framebuffer.h"
+include "input_devices.h"
 
 /*a Modules */
 /*m bbc_vidproc */
