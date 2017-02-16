@@ -123,9 +123,9 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
         case 1: { debug_comb.selected_data = clock_control.enable_cpu; }
         case 2: { debug_comb.selected_data = clock_control.enable_1MHz_falling; }
         case 3: { debug_comb.selected_data = floppy_response.read_data_valid; }
-        case 4: { debug_comb.selected_data = 0;/*display_sram_write.enable;*/ }
+        case 4: { debug_comb.selected_data = ps2_key.valid; }
         case 5: { debug_comb.selected_data = floppy_sram_request_r.enable; }
-        case 6: { debug_comb.selected_data = clock_control.phi[0]; }
+        case 6: { debug_comb.selected_data = tt_display_sram_write.enable; }
         case 7: { debug_comb.selected_data = clock_control.phi[0]; }
         }
         debug_state.data      <= debug_comb.selected_data;
@@ -145,11 +145,15 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
             tt_display_sram_write.address[8;0] <= ps2_key.key_number;
             tt_display_sram_write.data         <= ps2_key.release ? 0x30 : 0x31;
         }
+        if (user_inputs.right_dial.pressed) {
+            tt_display_sram_write.enable <= 1;
+            tt_display_sram_write.address      <= bundle(7h1,9h0);
+            tt_display_sram_write.data         <= 48h30 | bundle(44b0,last_fn_key);
+        }
     }
 
     /*b Miscellaneous logic */
     clocked clock clk reset active_low reset_n bit[10] fn_keys_down=0;
-    clocked clock clk reset active_low reset_n bit fn_key_pressed=0;
     clocked clock clk reset active_low reset_n bit[4] last_fn_key=1;
     net t_bbc_keyboard bbc_ps2_keyboard;
     misc_logic """
@@ -165,13 +169,14 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
         keyboard.keys_down_cols_0_to_7[5*8+5] |= !keys[2]; // N
         keyboard.keys_down_cols_0_to_7[1*8+5] |= user_inputs.joystick.u; // s
         keyboard.keys_down_cols_0_to_7[2*8+4] |= user_inputs.joystick.d; // x
-        keyboard.keys_down_cols_0_to_7[6*8+6] |= user_inputs.joystick.l; // ,
+        keyboard.keys_down_cols_0_to_7[6*8+6] |= user_inputs.joystick.l; // !! ,
         keyboard.keys_down_cols_0_to_7[7*8+6] |= user_inputs.joystick.r; // .
-        keyboard.keys_down_cols_0_to_7[0*8+2] |= user_inputs.joystick.c; // f0
+        keyboard.keys_down_cols_0_to_7[0*8+2] |= user_inputs.joystick.c; // !! f0
         keyboard.keys_down_cols_0_to_7[2*8+6] |= user_inputs.diamond.y; // space
         keyboard.keys_down_cols_8_to_9[0*8+6] |= user_inputs.diamond.a; // /
         keyboard.keys_down_cols_0_to_7[1*8+4] |= user_inputs.diamond.b; // a (fire, right of diamond)
         keyboard.keys_down_cols_0_to_7[5*8+4] |= user_inputs.diamond.x; // j left of diamond
+        keyboard.keys_down_cols_0_to_7[0*8+2] |= fn_keys_down[0]; // f0
         keyboard.keys_down_cols_0_to_7[1*8+7] |= fn_keys_down[1]; // f1
         keyboard.keys_down_cols_0_to_7[2*8+7] |= fn_keys_down[2]; // f2
         keyboard.keys_down_cols_0_to_7[3*8+7] |= fn_keys_down[3]; // f3
@@ -182,22 +187,21 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
         keyboard.keys_down_cols_0_to_7[6*8+7] |= fn_keys_down[8]; // f8
         keyboard.keys_down_cols_0_to_7[7*8+7] |= fn_keys_down[9]; // f9
 
-        keyboard.keys_down_cols_8_to_9[1*8+3] |= user_inputs.joystick.u; // up
-        keyboard.keys_down_cols_8_to_9[1*8+2] |= user_inputs.joystick.d; // down
-        keyboard.keys_down_cols_8_to_9[1*8+1] |= user_inputs.joystick.l; // left
-        keyboard.keys_down_cols_8_to_9[1*8+7] |= user_inputs.joystick.r; // right
+        //keyboard.keys_down_cols_8_to_9[1*8+3] |= user_inputs.joystick.u; // up
+        //keyboard.keys_down_cols_8_to_9[1*8+2] |= user_inputs.joystick.d; // down
+        //keyboard.keys_down_cols_8_to_9[1*8+1] |= user_inputs.joystick.l; // left
+        //keyboard.keys_down_cols_8_to_9[1*8+7] |= user_inputs.joystick.r; // right
 
         if (user_inputs.right_dial.direction_pulse) {
             fn_keys_down <= 0;
-            fn_key_pressed <= 1;
             if (user_inputs.right_dial.direction) {
                 last_fn_key <= last_fn_key+1;
                 if (last_fn_key==9) {
-                    last_fn_key <= 1;
+                    last_fn_key <= 0;
                 }
             } else {
                 last_fn_key <= last_fn_key-1;
-                if (last_fn_key==1) {
+                if (last_fn_key==0) {
                     last_fn_key <= 9;
                 }
             }
