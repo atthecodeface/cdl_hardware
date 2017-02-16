@@ -59,7 +59,7 @@ module tb_led_ws2812_chain( clock clk,
                                     divider_400ns <= divider_400ns,
                                     led_request => led_request,
                                     led_data <= led_data,
-                                    led_data_pin => led_data_pin );
+                                    led_chain => led_data_pin );
     }
 
     /*b All done */

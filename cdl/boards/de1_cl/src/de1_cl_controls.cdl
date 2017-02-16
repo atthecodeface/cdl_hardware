@@ -203,7 +203,7 @@ encoder is not optical :-).
                 }
 
                 if (rotary_state[i].t_toggle && !rotary_state[i].t_value) {
-                    rotary_state[i].direction <= rotary_state[i].d_value;
+                    rotary_state[i].direction <= !rotary_state[i].d_value;
                     rotary_state[i].direction_pulse <= 1;
                 }
             }

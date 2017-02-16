@@ -116,7 +116,7 @@ module led_ws2812_chain( clock clk                   "system clock - not the pin
                          input bit[8] divider_400ns  "clock divider value to provide for generating a pulse every 400ns based on clk",
                          output t_led_ws2812_request led_request  "LED data request",
                          input t_led_ws2812_data     led_data     "LED data, for the requested led",
-                         output bit led_data_pin                  "Data in pin for LED chain"
+                         output bit led_chain                     "Data in pin for LED chain"
     )
     /*b Documentation */
 """
@@ -390,7 +390,7 @@ at a time.
         if (!data_chain_state.sr.valid && data_transmitter_combs.drive_bits.valid) {
             data_chain_state.sr <= data_transmitter_combs.drive_bits;
         } 
-        led_data_pin = data_chain_state.output_data;
+        led_chain = data_chain_state.output_data;
     }
 
     /*b All done */

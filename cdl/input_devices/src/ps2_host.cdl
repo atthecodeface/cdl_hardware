@@ -97,7 +97,7 @@ module ps2_host( clock        clk     "Clock",
                  input bit[16] divider
     )
 """
-oThe PS/2 interface is a bidirectional serial interface running on an
+The PS/2 interface is a bidirectional serial interface running on an
 open collector bus pin pair (clock and data).
 
 A slave, such as a keyboard or mouse, owns the @clock pin, except for
@@ -216,8 +216,9 @@ As a host, to receive data from the slave (the first target for the design), we 
     /*b Receive logic */
     receive_logic """
     Wait for clock falling; check that data is low, and then start
+    The PS2 protocol is ODD parity, hence all 9 bits zero would be a parity error.
     """: {
-        receive_combs.parity_error = 0;
+        receive_combs.parity_error = 1;
         for (i; 9) {
             if (receive_state.shift_register[i]) {
                 receive_combs.parity_error = !receive_combs.parity_error;

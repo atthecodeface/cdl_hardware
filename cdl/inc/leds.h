@@ -62,9 +62,9 @@ extern module led_ws2812_chain( clock clk                   "system clock - not 
                                 input bit[8] divider_400ns  "clock divider value to provide for generating a pulse every 400ns based on clk",
                                 output t_led_ws2812_request led_request  "LED data request",
                                 input t_led_ws2812_data     led_data     "LED data, for the requested led",
-                                output bit led_data_pin                  "Data in pin for LED chain"
+                                output bit led_chain                     "Data in pin for LED chain"
     )
 {
     timing to   rising clock clk  divider_400ns, led_data;
-    timing from rising clock clk  led_request, led_data_pin;
+    timing from rising clock clk  led_request, led_chain;
 }

@@ -28,8 +28,9 @@ include "leds.h"
 include "de1_cl.h"
 
 /*a Constants */
-constant bit[8] sr_divider    = 49; // 1MHz
+constant bit[8] sr_divider    = 49; // 1MHz - or shift register at 500kHz since it toggles at this frequency
 constant bit[8] divider_400ns = 19; // 2.5MHz
+constant bit[16] ps2_divider  = 150; // 300kHz, or max of about 50kHz for PS2 since clk edges must be detected on this divider
 
 /*a Module */
 typedef struct {
@@ -74,7 +75,7 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     net t_bbc_clock_status clock_status;
     net t_bbc_clock_control clock_control;
 
-    net t_ps2_pins ps2_out;
+    net t_ps2_pins ps2_out_host;
     net t_ps2_rx_data ps2_rx_data;
     net t_ps2_key_state  ps2_key;
 
@@ -98,7 +99,7 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
 
     net  t_led_ws2812_request led_request;
     comb t_led_ws2812_data    led_data;
-    net  bit led_data_pin;
+    net  bit led_chain;
     net  t_de1_cl_inputs_control  inputs_control;
     net  t_de1_cl_user_inputs     user_inputs;
 
@@ -117,20 +118,24 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     clocked clock clk reset active_low reset_n t_debug_state debug_state={*=0};
     debug_logic """
     """: {
+        ps2_out = ps2_out_host;
+        ps2_out.clk = ps2_out_host.clk & switches[3];
         debug_comb.selected_data = clock_control.enable_cpu;
         full_switch(switches[3;6]) {
-        case 0: { debug_comb.selected_data = 0;/*lcd.vsync_n*/; }
-        case 1: { debug_comb.selected_data = clock_control.enable_cpu; }
-        case 2: { debug_comb.selected_data = clock_control.enable_1MHz_falling; }
-        case 3: { debug_comb.selected_data = floppy_response.read_data_valid; }
-        case 4: { debug_comb.selected_data = ps2_key.valid; }
-        case 5: { debug_comb.selected_data = floppy_sram_request_r.enable; }
-        case 6: { debug_comb.selected_data = tt_display_sram_write.enable; }
-        case 7: { debug_comb.selected_data = clock_control.phi[0]; }
+        case 0: { debug_comb.selected_data = tt_display_sram_write.enable; }
+        case 1: { debug_comb.selected_data = !ps2_in.clk; }
+        case 2: { debug_comb.selected_data = !ps2_in.data; }
+        case 3: { debug_comb.selected_data = ps2_key.valid; }
+        case 4: { debug_comb.selected_data = ps2_rx_data.valid && ps2_rx_data.parity_error; }
+        case 5: { debug_comb.selected_data = ps2_rx_data.valid && ps2_rx_data.timeout; }
+        case 6: { debug_comb.selected_data = ps2_rx_data.valid && ps2_rx_data.protocol_error; }
+        case 7: { debug_comb.selected_data = ps2_rx_data.valid; }
         }
         debug_state.data      <= debug_comb.selected_data;
         debug_state.last_data <= debug_state.data;
-        if (debug_state.data && !debug_state.last_data) {
+        if (switches[5] && debug_state.data && !debug_state.last_data) {
+            debug_state.counter <= debug_state.counter+1;
+        } elsif (!switches[5] && debug_state.data) {
             debug_state.counter <= debug_state.counter+1;
         }
         leds = debug_state.counter[10;0];
@@ -215,16 +220,22 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
 
         led_data = {*=0};
         if (led_request.ready) {
+            led_data.valid = 1;            
             full_switch(led_request.led_number) {
-            case 0: {
-                led_data = {valid=1, last=0,
-                            red=debug_state.counter[8;0],
-                            green = ~debug_state.counter[8;0],
-                            blue = 0};
-            }
+            case 0: {led_data = {red=debug_state.counter[8;0], green = ~debug_state.counter[8;0], blue = 0}; }
+            case 1: {led_data = {red=8h1f, green=8h00, blue=8h00}; }
+            case 2: {led_data = {red=8h00, green=8h1f, blue=8h00}; }
+            case 3: {led_data = {red=8h00, green=8h00, blue=8h1f}; }
+            case 4: {led_data = {red=8h1f, green=8h1f, blue=8h00}; }
+            case 5: {led_data = {red=8h00, green=8h1f, blue=8h1f}; }
+            case 6: {led_data = {red=8h1f, green=8h00, blue=8h1f}; }
+            case 7: {led_data = {red=8h00, green=8h1f, blue=8h00}; }
+            case 8: {led_data = {red=8h00, green=8h00, blue=8h1f}; }
+            case 9: {led_data = {red=8h1f, green=8h1f, blue=8h00}; }
+            case 10: {led_data = {red=8h00, green=8h1f, blue=8h1f}; }
             default: {
                 led_data = {valid=1, last=1,
-                            blue = bundle(last_fn_key,last_fn_key),
+                            blue = (bundle(1b0,last_fn_key,3b0)-bundle(4b0,last_fn_key))<<2,
                             green = 0,
                             red = 0};
             }
@@ -253,6 +264,7 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                     blue           = tt_video_bus.blue[6;2]
             };
         }
+        led_data_pin = !led_chain;
     }
 
     /*b BBC Micro instantiations */
@@ -328,7 +340,7 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
             );
                         
         framebuffer_teletext ftb( csr_clk <- clk_cpu,
-                                  sram_clk <- clk_2MHz_video_clock,
+                                  sram_clk <- clk,
                                   video_clk <- video_clk,
                                   reset_n <= framebuffer_reset_n,
                                   video_bus => tt_video_bus,
@@ -344,9 +356,9 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
         ps2_host ps2( clk <- clk,
                       reset_n <= reset_n,
                       ps2_in <= ps2_in,
-                      ps2_out => ps2_out,
+                      ps2_out => ps2_out_host,
                       ps2_rx_data => ps2_rx_data,
-                      divider <= 150 );
+                      divider <= ps2_divider );
         
         ps2_host_keyboard key_decode(clk <- clk,
                                      reset_n <= reset_n,
@@ -359,12 +371,12 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                                   inputs_control => inputs_control,
                                   inputs_status  <= inputs_status,
                                   user_inputs    => user_inputs );
-        led_ws2812_chain led_chain( clk <- clk,
+        led_ws2812_chain neopixel_leds( clk <- clk,
                                     reset_n <= reset_n,
                                     divider_400ns <= divider_400ns,
                                     led_request   => led_request,
                                     led_data      <= led_data,
-                                    led_data_pin  => led_data_pin );
+                                    led_chain     => led_chain );
     }
 
     /*b All done */
