@@ -1,8 +1,9 @@
 import unittest, importlib, sys, os
-tests = ["base6502",
+tests = [#"base6502",
          "leds",
          "teletext",
          "csrs",
+         "clarvi",
          "input_devices",
          "de1_cl",
          #"bbc_submodules",

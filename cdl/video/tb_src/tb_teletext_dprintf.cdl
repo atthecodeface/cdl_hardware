@@ -1,0 +1,63 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_teletext.cdl
+ * @brief Testbench for teletext decoder module
+ *
+ * This is a simple testbench for the teletext decoder.
+ */
+/*a Includes */
+include "dprintf.h"
+include "teletext.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk,
+                         output t_dprintf_req   dprintf_req  "Debug printf request",
+                         input bit            dprintf_ack  "Debug printf acknowledge",
+                         input t_bbc_display_sram_write display_sram_write
+    )
+{
+    timing from rising clock clk dprintf_req;
+    timing to   rising clock clk dprintf_ack, display_sram_write;
+}
+
+/*a Module */
+module tb_teletext_dprintf( clock clk,
+                    input bit reset_n
+)
+{
+
+    /*b Nets */
+    net t_dprintf_req   dprintf_req  "Debug printf request";
+    net bit            dprintf_ack  "Debug printf acknowledge";
+    net t_bbc_display_sram_write display_sram_write;
+
+    /*b Instantiations */
+    instantiations: {
+        se_test_harness th( clk <- clk,
+                          dprintf_req => dprintf_req,
+                          dprintf_ack <= dprintf_ack,
+                          display_sram_write <=  display_sram_write
+                                );
+        
+        teletext_dprintf dut( clk <- clk,
+                          reset_n <= reset_n,
+                          dprintf_req <= dprintf_req,
+                          dprintf_ack => dprintf_ack,
+                          display_sram_write =>  display_sram_write
+            );
+    }
+
+    /*b All done */
+}

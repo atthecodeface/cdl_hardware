@@ -68,12 +68,13 @@ class cdl_test_hw(pycdl.hw):
     wave_hierarchies = []
     th_forces = {}
     module_name = ""
+    system_clock_half_period = 1
     #f __init__
     def __init__(self, test):
         self.test = test
         self.wave_file = self.__class__.__module__+".vcd"
 
-        system_clock   = pycdl.clock(0, 1, 1)
+        system_clock   = pycdl.clock(0, self.system_clock_half_period, self.system_clock_half_period)
         reset_n        = pycdl.wire()
 
         self.drivers = [pycdl.timed_assign( signal=reset_n, init_value=0, wait=33, later_value=1),

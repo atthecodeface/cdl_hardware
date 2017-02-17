@@ -522,7 +522,238 @@ class c_test_fb_one(simple_tb.base_th):
         self.finishtest(0,"")
         pass
 
+#c c_test_dprintf_one
+class c_test_dprintf_one(simple_tb.base_th):
+    writes_to_do = [ (0x1234, ((0x4142434445464748,0xff00ff00ff00ff00)) ),
+                     (0xfedc, ((0x4100420043004400,0x0045460047000048)) ),
+                     (0xf00f, ((0x80feffffffffffff,0)) ),
+                     (0xf00f, ((0x80fe81dcffffffff,0)) ),
+                     (0xf00f, ((0x80fe81dc0082a9bc,0x87deadbeefff0000)) ),
+                     ]
+    expected_sram_ops = [(0x1234, 0x41),
+                         (0x1235, 0x42),
+                         (0x1236, 0x43),
+                         (0x1237, 0x44),
+                         (0x1238, 0x45),
+                         (0x1239, 0x46),
+                         (0x123a, 0x47),
+                         (0x123b, 0x48),
+                         (0xfedc, 0x41),
+                         (0xfedd, 0x42),
+                         (0xfede, 0x43),
+                         (0xfedf, 0x44),
+                         (0xfee0, 0x45),
+                         (0xfee1, 0x46),
+                         (0xfee2, 0x47),
+                         (0xfee3, 0x48),
+
+                         (0xf00f, 0x45),
+
+                         (0xf00f, 0x45),
+                         (0xf010, 0x44),
+                         (0xf011, 0x43),
+
+                         (0xf00f, 0x45),
+                         (0xf010, 0x44),
+                         (0xf011, 0x43),
+                         (0xf012, 0x39),
+                         (0xf013, 0x42),
+                         (0xf014, 0x43),
+                         (0xf015, 0x44),
+                         (0xf016, 0x45),
+                         (0xf017, 0x41),
+                         (0xf018, 0x44),
+                         (0xf019, 0x42),
+                         (0xf01a, 0x45),
+                         (0xf01b, 0x45),
+                         (0xf01c, 0x46),
+        ]
+    #f bfm_tick
+    def bfm_tick(self, cycles):
+        for i in range(cycles):
+            if (self.ios.display_sram_write__enable.value()):
+                self.sram_writes.append( (self.ios.display_sram_write__address.value(),
+                                          self.ios.display_sram_write__data.value(),) )
+                pass
+            self.bfm_wait(1)
+            pass
+        pass
+    #f dprintf
+    def dprintf(self, address, data):
+        self.ios.dprintf_req__valid.drive(1)
+        self.ios.dprintf_req__address.drive(address)
+        self.ios.dprintf_req__data_0.drive(data[0])
+        self.ios.dprintf_req__data_1.drive(data[1])
+        self.bfm_tick(1)
+        while self.ios.dprintf_ack.value()==0:
+            self.bfm_tick(1)
+            pass
+        self.ios.dprintf_req__valid.drive(0)
+        pass
+    #f run
+    def run(self):
+        self.sram_writes = []
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(10)
+        for (address, data) in self.writes_to_do:
+            self.dprintf(address, data)
+            pass
+        self.bfm_tick(100)
+        if len(self.sram_writes) != len(self.expected_sram_ops):
+            self.failtest(0,"Mismatch in number of SRAM writes %d/%d"%(len(self.sram_writes),len(self.expected_sram_ops)))
+            for s in self.sram_writes:
+                print "(0x%04x, 0x%02x),"%(s[0],s[1])
+                pass
+            pass
+        else:
+            for i in range(len(self.sram_writes)):
+                if self.expected_sram_ops[i][0] != self.sram_writes[i][0]:
+                    self.failtest(i,"Mismatch in SRAM %d write address %04x/%04x"%(i,self.expected_sram_ops[i][0], self.sram_writes[i][0]))
+                    pass
+                if self.expected_sram_ops[i][1] != self.sram_writes[i][1]:
+                    self.failtest(i,"Mismatch in SRAM %d write data %02x/%02x"%(i,self.expected_sram_ops[i][1], self.sram_writes[i][1]))
+                    pass
+                pass
+            pass
+        self.finishtest(0,"")
+        pass
+
+#c c_test_dprintf_mux_one
+class c_test_dprintf_mux_one(simple_tb.base_th):
+    sram_reqs = {0:[(0x1010, 0x41),
+                    (0x1011, 0x42),
+                    (0x1012, 0x43),
+                    (0x1013, 0x44),
+                    (0x1014, 0x45),
+                    (0x1015, 0x46),
+                    (0x1016, 0x47),
+                    (0x1017, 0x48),
+                    (0x1018, 0x44),
+                    (0x1019, 0x45),
+                    (0x101a, 0x41),
+                    (0x101b, 0x44),
+                    (0x101c, 0x42),
+                    (0x101d, 0x45),
+                    (0x101e, 0x45),
+                    (0x101f, 0x46),
+                    ],
+                 1:[(0x2010, 0x20),],
+                 2:[(0x3010, 0x22),],
+                 3:[(0x4010, 0x33),],
+                 }
+    requests = {50:(1,),
+                52:(0,),
+                80:(0,1,),
+                90:(0,1,2,3),
+                150:(0,1,2,3),
+                200:(3,),
+                250:(0,1),
+                251:(2,),
+                252:(3,),
+                }
+    responses = [1,0,1,0,3,2,1,0,
+                 3,2,1,0,
+                 3,
+                 2,3,1,0,]
+    expected_sram_ops = []
+    for i in responses:
+        expected_sram_ops.extend(sram_reqs[i])
+        pass
+    #f bfm_tick
+    def bfm_tick(self, cycles):
+        for i in range(cycles):
+            acks = self.ios.acks.value()
+            if acks!=0:
+                if (acks &~ self.current_reqs)!=0:
+                    self.failtest(0,"Ack of unrequested data %d/%d"%(acks, self.current_reqs))
+                    pass
+                self.current_reqs = self.current_reqs &~ acks
+                self.ios.reqs.drive(self.current_reqs)
+                pass
+            if self.tick in self.requests:
+                for j in self.requests[self.tick]:
+                    self.current_reqs = self.current_reqs | (1<<j)
+                    pass
+                self.ios.reqs.drive(self.current_reqs)
+                pass
+            self.tick = self.tick + 1
+            if (self.ios.display_sram_write__enable.value()):
+                self.sram_writes.append( (self.ios.display_sram_write__address.value(),
+                                          self.ios.display_sram_write__data.value(),) )
+                pass
+            self.bfm_wait(1)
+            pass
+        pass
+    #f run
+    def run(self):
+        self.sram_writes = []
+        self.tick = 0
+        self.current_reqs = 0
+        simple_tb.base_th.run_start(self)
+        self.ios.reqs.drive(0)
+        self.bfm_wait(10)
+        self.bfm_tick(10000)
+        if len(self.sram_writes) != len(self.expected_sram_ops):
+            self.failtest(0,"Mismatch in number of SRAM writes %d/%d"%(len(self.sram_writes),len(self.expected_sram_ops)))
+            for s in self.sram_writes:
+                print "(0x%04x, 0x%02x),"%(s[0],s[1])
+                pass
+            pass
+        else:
+            for i in range(len(self.sram_writes)):
+                if self.expected_sram_ops[i][0] != self.sram_writes[i][0]:
+                    self.failtest(i,"Mismatch in SRAM %d write address %04x/%04x"%(i,self.expected_sram_ops[i][0], self.sram_writes[i][0]))
+                    pass
+                if self.expected_sram_ops[i][1] != self.sram_writes[i][1]:
+                    self.failtest(i,"Mismatch in SRAM %d write data %02x/%02x"%(i,self.expected_sram_ops[i][1], self.sram_writes[i][1]))
+                    pass
+                pass
+            pass
+        self.finishtest(0,"")
+        pass
+
 #a Hardware classes
+#c teletext_dprintf_hw
+class teletext_dprintf_hw(simple_tb.cdl_test_hw):
+    """
+    Simple instantiation of the teletext dprintf module
+    """
+    th_forces = { "th.clock":"clk",
+                  "th.inputs":("" +
+                               "display_sram_write__address[16] " +
+                               "display_sram_write__data[48] " +
+                               "display_sram_write__enable " +
+                               "dprintf_ack " +
+                               ""),
+                  "th.outputs":("" +
+                                "dprintf_req__data_1[64] " +
+                                "dprintf_req__data_0[64] " +
+                                "dprintf_req__address[16] " +
+                                "dprintf_req__valid " +
+                                ""),
+                  }
+    module_name = "tb_teletext_dprintf"
+    pass
+
+#c teletext_dprintf_mux_hw
+class teletext_dprintf_mux_hw(simple_tb.cdl_test_hw):
+    """
+    Simple instantiation of the teletext dprintf mux module
+    """
+    th_forces = { "th.clock":"clk",
+                  "th.inputs":("" +
+                               "display_sram_write__address[16] " +
+                               "display_sram_write__data[48] " +
+                               "display_sram_write__enable " +
+                               "acks[4] " +
+                               ""),
+                  "th.outputs":("" +
+                                "reqs[4] "+
+                                ""),
+                  }
+    module_name = "tb_teletext_dprintf_mux"
+    pass
+
 #c cdl_test_hw
 class cdl_test_hw(simple_tb.cdl_test_hw):
     """
@@ -592,8 +823,26 @@ class c_Test_LedChain(simple_tb.base_test):
         pass
     pass
 
-#c c_Test_Framebuffer
-class c_Test_Framebuffer(simple_tb.base_test):
+#c dprintf
+class dprintf(simple_tb.base_test):
+    def test_one(self):
+        test = c_test_dprintf_one()
+        hw = teletext_dprintf_hw(test=test)
+        self.do_test_run(hw,
+                         num_cycles=100*1000)
+        pass
+    pass
+#c dprintf_mux
+class dprintf_mux(simple_tb.base_test):
+    def test_one(self):
+        test = c_test_dprintf_mux_one()
+        hw = teletext_dprintf_mux_hw(test=test)
+        self.do_test_run(hw,
+                         num_cycles=100*1000)
+        pass
+    pass
+#c framebuffer
+class framebuffer(simple_tb.base_test):
     def test_one(self):
         test = c_test_fb_one()
         hw = framebuffer_teletext_hw(test=test)

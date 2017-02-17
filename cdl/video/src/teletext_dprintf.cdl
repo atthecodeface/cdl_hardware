@@ -1,0 +1,311 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   framebuffer_teletext.cdl
+ * @brief  Teletext framebuffer module with separate write and video sides
+ *
+ * CDL implementation of a module that takes SRAM writes into a
+ * framebuffer, including a mapping to a dual-port SRAM (write on one
+ * side, read on the other), where the video side uses a teletext
+ * decoder and drives out vsync, hsync, data enable and pixel data.
+ *
+ * The video side is asynchronous to the SRAM write side.
+ *
+ * The video output side has a programmable horizontal period that
+ * starts with hsync high for one clock, and then has a programmable
+ * back porch, followed by a programmable number of pixels (with data
+ * out enabled only if on the correct vertical portion of the display),
+ * followed by a programmable front porch, repeating.
+ *
+ * The video output side has a programmable vertical period that is in
+ * units of horizontal period; it starts with vsync high for one
+ * horizontal period, and then has a programmable front porch,
+ * followed by a programmable number of displayed lined, followed by a
+ * programmable front porch, repeating.
+ *
+ * The video output start at a programmable base address in SRAM;
+ * moving down a line adds a programmable amount to the address in
+ * SRAM.
+ */
+/*a Includes */
+include "bbc_micro_types.h" // for t_bbc_display_sram_write
+include "dprintf.h"
+include "teletext.h"
+
+/*a Constants */
+constant integer cfg_downsize_x=0;
+constant integer cfg_downsize_y=1;
+
+/*a Types */
+/*t t_data_buffer_state */
+typedef struct {
+    bit full;
+    bit[16] address;
+    bit[64][2] data;
+} t_data_buffer_state;
+
+/*t t_format_fsm */
+typedef fsm {
+    state_idle;
+    state_start_byte;
+    state_hex_top_nybble;
+    state_hex_bottom_nybble;
+} t_format_fsm;
+
+/*t t_format_action */
+typedef enum[4] {
+    action_none,
+    action_start_formatting,
+    action_skip_byte,
+    action_complete_string,
+    action_write_byte,
+    action_start_hex_format,
+    action_write_hex_top_nybble,
+    action_write_hex_bottom_nybble,
+} t_format_action;
+
+/*t t_write_buffer_op */
+typedef enum[2] {
+    op_idle,
+    op_write_next_data,
+} t_write_buffer_op;
+
+/*t t_format_combs */
+typedef struct {
+    bit[8] byte               "Byte of data_buffer to handle in current state";
+    bit[8] hex_top_nybble     "Character for the hexadecimal of the top nybble of byte";
+    bit[8] hex_bottom_nybble  "Character for the hexadecimal of the bottom nybble of byte";
+    bit    byte_terminates_string "Asserted if 'byte' is the termination character";
+    bit    byte_nul               "Asserted if 'byte' is the nul character (0)";
+    bit    byte_is_control        "Asserted if 'byte' is a control character (possibly nul or terminates too - this is lower priority)";
+    t_format_action action "Action to take given current state and data";
+    t_write_buffer_op write_buffer_op "Write buffer operation to do based on action";
+    bit[8] write_data "Data to write to SRAM write buffer based on action";
+    bit pop_byte      "Asserted based on action if the data buffer should pop a byte";
+    bit increment_address "Asserted based on action if the data buffer address should increment";
+    bit completed_string  "Asserted based on action if the data buffer has been completed";
+} t_format_combs;
+
+/*t t_format_state */
+typedef struct {
+    t_format_fsm fsm_state;
+    bit[4] bytes_left;
+} t_format_state;
+
+/*t t_sram_write_buffer_combs */
+typedef struct {
+    bit will_be_empty;
+} t_sram_write_buffer_combs;
+
+/*t t_sram_write_buffer_state */
+typedef struct {
+    bit valid;
+    bit[16] address;
+    bit[8]  data;
+} t_sram_write_buffer_state;
+
+/*a Module
+ */
+module teletext_dprintf( clock clk "Clock for data in and display SRAM write out",
+                         input bit reset_n,
+                         input t_dprintf_req   dprintf_req  "Debug printf request",
+                         output bit            dprintf_ack  "Debug printf acknowledge",
+                         output t_bbc_display_sram_write display_sram_write
+    )
+"""
+"""
+{
+    /*b State etc in CSR domain */
+    default reset active_low reset_n;
+    default clock clk;
+
+    clocked t_bbc_display_sram_write display_sram_write={*=0};
+    clocked bit dprintf_ack=0;
+
+    clocked t_data_buffer_state data_buffer_state={*=0};
+    clocked t_format_state format_state={*=0};
+    comb    t_format_combs format_combs;
+    clocked t_sram_write_buffer_state sram_write_buffer_state={*=0};
+    comb    t_sram_write_buffer_combs sram_write_buffer_combs;
+
+    /*b Debug printf buffer */
+    debug_printf_logic """
+    A single request is stored and handled at any one time. When the dprintf logic is idle it can accept a new request, and start to process it.
+
+    A request is effectively a bytestream with an SRAM address.  The
+    byte stream consists of ASCII characters plus potentially 'video
+    control' characters - all in the range 1 to 127, plus control
+    codes of 0 or 128 to 255.
+
+    The code 0 is just skipped; it allows for simple alignment of data
+    in the dprintf request.
+
+    A code of 128 to 254 is a size-format field. The size is 00-0f,
+    indicating 1 to 16 following nybbles are data (msb first). The format
+    is currently only hex. The top bit indicates this form of control
+    code, so the acutal usage is 128 to 191 is format, with the top 2
+    bits being 2b10, and the next six bits being 0fssss (1 bit format,
+    3 bits size) - with format defined to be zero for now.
+
+    A code of 255 terminates the string.
+
+    This logic manages the request buffer
+    """: {
+        dprintf_ack <= 0;
+        if (dprintf_req.valid && !data_buffer_state.full) {
+            dprintf_ack <= 1;
+            data_buffer_state.full <= 1;
+            data_buffer_state.address <= dprintf_req.address;
+            data_buffer_state.data[0] <= dprintf_req.data_0;
+            data_buffer_state.data[1] <= dprintf_req.data_1;
+        }
+        if (format_combs.pop_byte) {
+            data_buffer_state.data[0] <= bundle(data_buffer_state.data[0][56;0], data_buffer_state.data[1][8;56]);
+            data_buffer_state.data[1] <= bundle(data_buffer_state.data[1][56;0], 8hff);
+        }
+        if (format_combs.increment_address) {
+            data_buffer_state.address <= data_buffer_state.address + 1;
+        }
+        if (format_combs.completed_string) {
+            data_buffer_state.full <= 0;
+        }
+    }
+    
+    /*b Formatter */
+    format_logic """
+    This logic implements a state machine and consumes bytes from the data_buffer
+    """: {
+        format_combs = {*=0};
+        format_combs.byte = data_buffer_state.data[0][8;56];
+        format_combs.byte_terminates_string = (format_combs.byte==8hff);
+        format_combs.byte_nul               = (format_combs.byte==8h00);
+        format_combs.byte_is_control        = (format_combs.byte[7]);
+        format_combs.hex_top_nybble         = 8h30 | bundle(4b0, format_combs.byte[4;4]);
+        if (format_combs.byte[4;4]>9) {format_combs.hex_top_nybble = 8d55 + bundle(4b0, format_combs.byte[4;4]);}
+        format_combs.hex_bottom_nybble         = 8h30 | bundle(4b0, format_combs.byte[4;0]);
+        if (format_combs.byte[4;0]>9) {format_combs.hex_bottom_nybble = 8d55 + bundle(4b0, format_combs.byte[4;0]);}
+
+        /*b Determine action given current FSM state and debug buffer byte */
+        format_combs.action = action_none;
+        full_switch (format_state.fsm_state) {
+        case state_idle: {
+            if (data_buffer_state.full) {
+                format_combs.action = action_start_formatting;
+            }
+        }
+        case state_start_byte: {
+            format_combs.action = action_write_byte;
+            if (format_combs.byte_terminates_string) {
+                format_combs.action = action_complete_string;
+            } elsif (format_combs.byte_nul) {
+                format_combs.action = action_skip_byte;
+            } elsif (format_combs.byte_is_control) {
+                format_combs.action = action_start_hex_format;
+            }
+        }
+        case state_hex_top_nybble: {
+            format_combs.action = action_write_hex_top_nybble;
+        }
+        case state_hex_bottom_nybble: {
+            format_combs.action = action_write_hex_bottom_nybble;
+        }
+        }
+        
+        /*b Handle the determined action */
+        format_combs.write_buffer_op = op_idle;
+        format_combs.increment_address = 0;
+        format_combs.pop_byte = 0;
+        format_combs.completed_string = 0;
+        format_combs.write_data = format_combs.byte;
+        full_switch (format_combs.action) {
+        case action_none: {
+            format_state.fsm_state <= format_state.fsm_state;
+        }
+        case action_start_formatting: {
+            format_state.fsm_state <= state_start_byte;
+        }
+        case action_write_byte: {
+            format_combs.write_buffer_op = op_write_next_data;
+            format_combs.increment_address = 1;
+            format_combs.pop_byte = 1;
+            format_state.fsm_state <= state_start_byte;
+        }
+        case action_skip_byte: {
+            format_combs.pop_byte = 1;
+            format_state.fsm_state <= state_start_byte;
+        }
+        case action_start_hex_format: {
+            format_combs.pop_byte = 1;
+            format_state.bytes_left <= format_combs.byte[4;1];
+            if (format_combs.byte[0]) {
+                format_state.fsm_state <= state_hex_top_nybble;
+            } else {
+                format_state.fsm_state <= state_hex_bottom_nybble;
+            }
+        }
+        case action_write_hex_top_nybble: {
+            format_combs.write_buffer_op = op_write_next_data;
+            format_combs.write_data = format_combs.hex_top_nybble;
+            format_combs.increment_address = 1;
+            format_state.fsm_state <= state_hex_bottom_nybble;
+        }
+        case action_write_hex_bottom_nybble: {
+            format_combs.write_buffer_op = op_write_next_data;
+            format_combs.write_data = format_combs.hex_bottom_nybble;
+            format_combs.increment_address = 1;
+            format_combs.pop_byte = 1;
+            format_state.bytes_left <= format_state.bytes_left-1;
+            format_state.fsm_state <= state_hex_top_nybble;
+            if (format_state.bytes_left==0) {
+                format_state.fsm_state <= state_start_byte;
+            }
+        }
+        case action_complete_string: {
+            format_combs.completed_string = 1;
+            format_state.fsm_state <= state_idle;
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b SRAM write buffer */
+    sram_write_buffer_logic """
+    """: {
+        sram_write_buffer_combs.will_be_empty = 1;
+
+        full_switch (format_combs.write_buffer_op) {
+        case op_write_next_data: {
+            sram_write_buffer_state <= {address=data_buffer_state.address,
+                    valid=1,
+                    data=format_combs.write_data};
+        }
+        default: {
+            sram_write_buffer_state <= sram_write_buffer_state;
+            sram_write_buffer_state.valid <= 0;
+        }
+        }
+
+        display_sram_write <= {*=0};
+        if (sram_write_buffer_state.valid) {
+            display_sram_write.enable    <= 1;
+            display_sram_write.address   <= sram_write_buffer_state.address;
+            display_sram_write.data[8;0] <= sram_write_buffer_state.data;
+        }
+
+        /*b All done */
+    }
+
+    /*b All done */
+}

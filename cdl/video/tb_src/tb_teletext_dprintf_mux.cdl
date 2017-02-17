@@ -1,0 +1,108 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_teletext.cdl
+ * @brief Testbench for teletext decoder module
+ *
+ * This is a simple testbench for the teletext decoder.
+ */
+/*a Includes */
+include "dprintf.h"
+include "teletext.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk,
+                               output bit[4] reqs,
+                               input bit[4] acks,
+                               input t_bbc_display_sram_write display_sram_write
+    )
+{
+    timing from rising clock clk reqs;
+    timing to   rising clock clk acks, display_sram_write;
+}
+
+/*a Module */
+module tb_teletext_dprintf_mux( clock clk,
+                    input bit reset_n
+)
+{
+
+    /*b Nets */
+    net bit[4] reqs;
+    //net bit[4] acks;
+    net t_dprintf_req   req_01;
+    net t_dprintf_req   req_012;
+    net t_dprintf_req   req_0123;
+    net bit             ack_0;
+    net bit             ack_1;
+    net bit             ack_2;
+    net bit             ack_3;
+    net bit             ack_01;
+    net bit             ack_012;
+    net bit             ack_0123;
+    net t_bbc_display_sram_write display_sram_write;
+    comb t_dprintf_req   req_0;
+    comb t_dprintf_req   req_1;
+    comb t_dprintf_req   req_2;
+    comb t_dprintf_req   req_3;
+
+    /*b Instantiations */
+    instantiations: {
+        req_0 = {valid=reqs[0], address=0x1010, data_0=64h41_42_43_44_45_46_47_48, data_1=64h_83_de_ad_83_be_ef_ff_00 };
+        req_1 = {valid=reqs[1], address=0x2010, data_0=64h20_ff_0000_00000000, data_1=0};
+        req_2 = {valid=reqs[2], address=0x3010, data_0=64h22_ff_0000_00000000, data_1=0};
+        req_3 = {valid=reqs[3], address=0x4010, data_0=64h33_ff_0000_00000000, data_1=0};
+        se_test_harness th( clk <- clk,
+                            reqs => reqs,
+                            acks <= bundle(ack_3, ack_2, ack_1, ack_0),
+                            display_sram_write <=  display_sram_write
+                                );
+        
+        teletext_dprintf_mux mux01( clk <- clk,
+                                   reset_n <= reset_n,
+                                   req_a <= req_0,
+                                   req_b <= req_1,
+                                   ack_a => ack_0,
+                                   ack_b => ack_1,
+                                   req => req_01,
+                                   ack <= ack_01 );
+
+        teletext_dprintf_mux mux012( clk <- clk,
+                                   reset_n <= reset_n,
+                                   req_a <= req_01,
+                                   req_b <= req_2,
+                                   ack_a => ack_01,
+                                   ack_b => ack_2,
+                                   req => req_012,
+                                   ack <= ack_012 );
+
+        teletext_dprintf_mux mux013( clk <- clk,
+                                   reset_n <= reset_n,
+                                   req_a <= req_012,
+                                   req_b <= req_3,
+                                   ack_a => ack_012,
+                                   ack_b => ack_3,
+                                   req => req_0123,
+                                   ack <= ack_0123 );
+
+        teletext_dprintf dut( clk <- clk,
+                              reset_n <= reset_n,
+                              dprintf_req <= req_0123,
+                              dprintf_ack => ack_0123,
+                              display_sram_write =>  display_sram_write
+            );
+    }
+
+    /*b All done */
+}

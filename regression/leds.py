@@ -20,7 +20,7 @@ import simple_tb
 #a Test classes
 #c c_test_one
 class c_test_one(simple_tb.base_th):
-    cfg_divider_400ns = 20
+    cfg_divider_400ns = 19
     #f drive_led
     def drive_led(self, rgb, last=False):
         self.ios.led_data__valid.drive(1)
@@ -72,6 +72,7 @@ class cdl_test_hw(simple_tb.cdl_test_hw):
                                 ""),
                   }
     module_name = "tb_led_ws2812_chain"
+    system_clock_half_period = 10
     pass
 
 #a Simulation test classes
@@ -81,6 +82,6 @@ class c_Test_LedChain(simple_tb.base_test):
         test = c_test_one()
         hw = cdl_test_hw(test=test)
         self.do_test_run(hw,
-                         num_cycles=100*1000)
+                         num_cycles=1000*1000)
         pass
     pass
