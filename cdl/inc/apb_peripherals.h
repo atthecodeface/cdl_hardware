@@ -58,8 +58,8 @@ extern module apb_target_gpio( clock clk         "System clock",
     timing from rising clock clk gpio_output, gpio_output_enable, gpio_input_event;
     timing to   rising clock clk gpio_input;
 
-    timing comb input  apb_request;
-    timing comb output apb_response; // since response depends on request address usually
+    //timing comb input  apb_request;
+    //timing comb output apb_response; // since response depends on request address usually
 }
 
 /*a Editor preferences and notes

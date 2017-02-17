@@ -36,3 +36,39 @@ typedef struct {
     bit     perr;
 } t_apb_response;
 
+/*t t_apb_processor_response */
+typedef struct {
+    bit acknowledge;
+    bit rom_busy;
+} t_apb_processor_response;
+
+/*t t_apb_processor_request */
+typedef struct {
+    bit valid;
+    bit[16] address;
+} t_apb_processor_request;
+
+/*t t_apb_rom_request */
+typedef struct {
+    bit enable;
+    bit[16] address;
+} t_apb_rom_request;
+
+/*a Modules */
+/*m apb_processor */
+extern
+module apb_processor( clock                    clk        "Clock for the CSR interface; a superset of all targets clock",
+                      input bit                reset_n,
+                      input t_apb_processor_request    apb_processor_request,
+                      output t_apb_processor_response  apb_processor_response,
+                      output t_apb_request     apb_request   "Pipelined csr request interface output",
+                      input t_apb_response     apb_response  "Pipelined csr request interface response",
+                      output t_apb_rom_request rom_request,
+                      input bit[40]            rom_data
+    )
+{
+    timing to   rising clock clk apb_processor_request;
+    timing from rising clock clk apb_processor_response;
+    timing from rising clock clk apb_request, rom_request;
+    timing to   rising clock clk apb_response, rom_data;
+}

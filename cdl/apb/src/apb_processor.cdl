@@ -1,0 +1,457 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   apb_processor.cdl
+ * @brief  Pipelined APB request/response master, driven by a ROM
+ *
+ * CDL implementation of an APB master that uses a ROM to generate a
+ * set of APB requests.
+ *
+ * The module is presented with a request to execute a program from
+ * the ROM starting at a certain address.
+ *
+ * The ROM contains 40 bits of data - 8 bits of opcode, 32 bits of
+ * data, per word.
+ *
+ * The opcodes fall in to 6 different classes: ALU, branch, set
+ * parameter, APB request, wait, finish.
+ *
+ * Four ALU ops are supported - OR, BIC, AND, XOR
+ *
+ * Four branch types are supported - always, if acc is zero, if acc is
+ * nonzero, and if repeat count is nonzero (with the side effect of
+ * decrementing the repeat count)
+ *
+ * Set parameter can set the APB address and repeat count
+ *
+ * Wait uses the accumulator, decrementing it once per cycle, to wait
+ * before moving on in the program.
+ *
+ * APB request can request read, write accumulator, or write using the
+ * ROM content as data; these can optionally also auto-increment the address
+ *
+ * Finish - complete the program
+ *
+ */
+/*a Includes */
+include "apb.h"
+include "csr_interface.h"
+
+/*a Type */
+/*t t_apb_rom_opcode_class */
+typedef enum[3] {
+    opcode_class_alu           = 0,
+    opcode_class_set_parameter = 1,
+    opcode_class_apb_request   = 2,
+    opcode_class_branch        = 3,
+    opcode_class_wait          = 4,
+    opcode_class_finish        = 5
+} t_apb_rom_opcode_class;
+
+/*t t_apb_rom_opcode_subclass */
+typedef enum[3] {
+    rom_op_alu_or  = 0,
+    rom_op_alu_and = 1,
+    rom_op_alu_bic = 2,
+    rom_op_alu_xor = 3,
+    rom_op_alu_add = 4,
+
+    rom_op_set_address     = 0,
+    rom_op_set_repeat      = 1,
+    rom_op_set_accumulator = 2,
+
+    rom_op_branch = 0,
+    rom_op_beq = 1,
+    rom_op_bne = 2,
+    rom_op_loop = 3,
+
+    rom_op_req_read=0,
+    rom_op_req_write_arg=1,
+    rom_op_req_write_acc=2,
+} t_apb_rom_opcode_subclass;
+
+/*t t_processor_action */
+typedef enum[4] {
+    processor_action_none,
+    processor_action_set_parameter,
+    processor_action_start_apb_request,
+    processor_action_alu,
+    processor_action_branch,
+    processor_action_wait_start,
+    processor_action_decrement_accumulator,
+    processor_action_pending_request,
+    processor_action_complete_wait,
+    processor_action_finish,
+} t_processor_action;
+
+/*t t_processor_fsm_state */
+typedef fsm {
+    processor_fsm_idle;
+    processor_fsm_apb_request;
+    processor_fsm_wait;
+} t_processor_fsm_state;
+
+/*t t_apb_fsm_state */
+typedef fsm {
+    apb_fsm_idle;
+    apb_fsm_select_phase;
+    apb_fsm_enable_phase;
+} t_apb_fsm_state;
+
+/*t t_rom_state */
+typedef struct {
+    bit busy;
+    bit opcode_valid;
+    bit[8] opcode;
+    bit[16] address;
+    bit[32] arg_data;
+    bit reading;
+    bit acknowledge;
+} t_rom_state;
+
+/*t t_rom_combs */
+typedef struct {
+    t_apb_rom_request request;
+} t_rom_combs;
+
+/*t t_processor_state */
+typedef struct {
+    t_processor_fsm_state fsm_state;
+    bit[32] address;
+    bit[32] accumulator;
+    bit[32] repeat_count;
+} t_processor_state;
+
+/*t t_processor_apb_request */
+typedef struct {
+    bit valid;
+    bit read_not_write;
+    bit[32] wdata;
+} t_processor_apb_request;
+
+/*t t_processor_combs */
+typedef struct {
+    t_processor_apb_request apb_req;
+    t_processor_action action;
+    bit[32] arg_data;
+    bit acc_is_zero;
+    bit rpt_is_zero;
+    bit take_branch;
+    bit completes_op;
+    bit finishing;
+    t_apb_rom_opcode_subclass  opcode_subclass;
+    t_apb_rom_opcode_class opcode_class;
+    bit opcode_valid;
+} t_processor_combs;
+
+/*t t_apb_action */
+typedef enum[3] {
+    apb_action_none,
+    apb_action_start_wait,
+    apb_action_start_apb_request_write,
+    apb_action_start_apb_request_read,
+    apb_action_move_to_enable_phase,
+    apb_action_complete,
+} t_apb_action;
+
+/*t t_apb_state */
+typedef struct {
+    t_apb_fsm_state fsm_state;
+} t_apb_state;
+
+/*t t_apb_combs */
+typedef struct {
+    t_apb_action action;
+    bit completing_request;
+} t_apb_combs;
+
+/*a Module */
+module apb_processor( clock                    clk        "Clock for the CSR interface; a superset of all targets clock",
+                      input bit                reset_n,
+                      input t_apb_processor_request    apb_processor_request,
+                      output t_apb_processor_response  apb_processor_response,
+                      output t_apb_request     apb_request   "Pipelined csr request interface output",
+                      input t_apb_response     apb_response  "Pipelined csr request interface response",
+                      output t_apb_rom_request rom_request,
+                      input bit[40]            rom_data
+    )
+"""
+The documentation of the CSR interface itself is in other files (at
+this time, csr_target_csr.cdl).
+
+This module drives a CSR target interface in response to an incoming
+APB interface.
+
+It therefore permits an extension of an APB bus through a CSR target
+pipelined chain.
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    clocked t_apb_request   apb_request={*=0};
+    comb t_rom_combs        rom_combs;
+    clocked t_rom_state     rom_state={*=0};
+    comb t_processor_combs        processor_combs;
+    clocked t_processor_state     processor_state={*=0, fsm_state=processor_fsm_idle};
+    comb t_apb_combs        apb_combs;
+    clocked t_apb_state     apb_state={*=0, fsm_state=apb_fsm_idle};
+
+    /*b Rom interface logic */
+    rom_interface_logic """
+    ROM interface logic - start program etc.
+    """: {
+        /*b Handle the state of the request/ack */
+        rom_state.acknowledge <= 0;
+        if (!rom_state.busy && apb_processor_request.valid && !rom_state.acknowledge) {
+            rom_state.acknowledge <= 1;
+            rom_state.address <= apb_processor_request.address;
+            rom_state.busy <= 1;
+        }
+        if (processor_combs.finishing) {
+            rom_state.busy <= 0;
+        }
+
+        /*b Request reading of the ROM data if we need to */
+        rom_combs.request = {enable=0, address=rom_state.address};
+        if (rom_state.busy && !rom_state.opcode_valid && !rom_state.reading) {
+            rom_combs.request.enable = 1;
+        }
+
+        /*b Record the ROM data */
+        rom_state.reading <= rom_combs.request.enable;
+        if (rom_state.reading) {
+            rom_state.opcode_valid <= 1;
+            rom_state.opcode   <= rom_data[8;32];
+            rom_state.arg_data <= rom_data[32;0];
+            rom_state.address <= rom_state.address+1;
+        }
+        if (processor_combs.completes_op) {
+            rom_state.opcode_valid <= 0;
+        }
+        if (processor_combs.finishing) {
+            rom_state.opcode_valid <= 0;
+        }
+        if (processor_combs.take_branch) {
+            rom_state.address <= processor_combs.arg_data[16;0];
+        }
+
+        /*b Drive outputs */
+        rom_request = rom_combs.request;
+        apb_processor_response.acknowledge = rom_state.acknowledge;
+        apb_processor_response.rom_busy = rom_state.busy;
+
+        /*b All done */
+    }
+
+    /*b Processor execute logic */
+    processor_execute_logic """
+    The processor executes valid opcodes
+    """: {
+        /*b Breakout the state for decode into action */
+        processor_combs.arg_data        = rom_state.arg_data;
+        processor_combs.opcode_valid    = rom_state.opcode_valid;
+        processor_combs.opcode_class    = rom_state.opcode[3;5];
+        processor_combs.opcode_subclass = rom_state.opcode[3;0];
+        processor_combs.acc_is_zero = (processor_state.accumulator==0);
+        processor_combs.rpt_is_zero = (processor_state.repeat_count==0);
+
+        /*b Determine processor action */
+        processor_combs.action = processor_action_none;
+        full_switch (processor_state.fsm_state) {
+        case processor_fsm_idle: {
+            full_switch (processor_combs.opcode_class) {
+            case opcode_class_set_parameter: { // address, repeat count
+                processor_combs.action = processor_action_set_parameter;
+            }
+            case opcode_class_apb_request: {
+                processor_combs.action = processor_action_start_apb_request;
+            }
+            case opcode_class_alu: {
+                processor_combs.action = processor_action_alu;
+            }
+            case opcode_class_branch: { // branch always, eq, ne, loop count dec
+                processor_combs.action = processor_action_branch;
+            }
+            case opcode_class_wait: { // load accumulator, decrement until 0, waiting
+                processor_combs.action = processor_action_wait_start;
+            }
+            case opcode_class_finish: {
+                processor_combs.action = processor_action_finish;
+            }
+            }
+            if (!processor_combs.opcode_valid) {
+                processor_combs.action = processor_action_none;
+            }
+        }
+        case processor_fsm_apb_request: {
+            processor_combs.action = processor_action_pending_request;
+        }
+        case processor_fsm_wait: {
+            processor_combs.action = processor_action_decrement_accumulator;
+            if (processor_combs.acc_is_zero) {
+                processor_combs.action = processor_action_complete_wait;
+            }
+        }
+        }
+
+        /*b Handle processor action */
+        processor_combs.take_branch = 0;
+        processor_combs.completes_op = 0;
+        processor_combs.finishing = 0;
+        processor_combs.apb_req = {valid=0, read_not_write=0, wdata=processor_state.accumulator};
+        full_switch (processor_combs.action) {
+        case processor_action_set_parameter: {
+            full_switch (processor_combs.opcode_subclass[3;0]) {
+            case rom_op_set_address:     {  processor_state.address      <= processor_combs.arg_data; }
+            case rom_op_set_repeat:      {  processor_state.repeat_count <= processor_combs.arg_data; }
+            case rom_op_set_accumulator: {  processor_state.accumulator  <= processor_combs.arg_data; }
+            }
+            processor_combs.completes_op = 1;
+            processor_state.fsm_state <= processor_fsm_idle;
+        }
+        case processor_action_start_apb_request: {
+            processor_combs.apb_req.valid = 1;
+            full_switch (processor_combs.opcode_subclass[2;0]) { // bit 2 is for 'auto increment'
+            case rom_op_req_read:      { processor_combs.apb_req.read_not_write = 1; }
+            case rom_op_req_write_acc: {
+                processor_combs.apb_req.read_not_write = 0;
+                processor_combs.apb_req.wdata = processor_state.accumulator;
+            }
+            case rom_op_req_write_arg: {
+                processor_combs.apb_req.read_not_write = 0;
+                processor_combs.apb_req.wdata = processor_combs.arg_data;
+            }
+            }
+            processor_state.fsm_state <= processor_fsm_apb_request;
+        }
+        case processor_action_pending_request: {
+            if (apb_combs.completing_request) {
+                if (processor_combs.opcode_subclass[2]) {
+                    processor_state.address <= processor_state.address + 1;
+                }
+                if (!apb_request.pwrite) {
+                    processor_state.accumulator <= apb_response.prdata;
+                }
+                processor_combs.completes_op = 1;
+                processor_state.fsm_state <= processor_fsm_idle;
+            }
+        }
+        case processor_action_alu: {
+            full_switch (processor_combs.opcode_subclass[3;0]) {
+            case rom_op_alu_or:  { processor_state.accumulator <= processor_state.accumulator |  processor_combs.arg_data; }
+            case rom_op_alu_and: { processor_state.accumulator <= processor_state.accumulator &  processor_combs.arg_data; }
+            case rom_op_alu_bic: { processor_state.accumulator <= processor_state.accumulator &~ processor_combs.arg_data; }
+            case rom_op_alu_xor: { processor_state.accumulator <= processor_state.accumulator ^  processor_combs.arg_data; }
+            case rom_op_alu_add: { processor_state.accumulator <= processor_state.accumulator +  processor_combs.arg_data; }
+            }
+            processor_combs.completes_op = 1;
+            processor_state.fsm_state <= processor_fsm_idle;
+        }
+        case processor_action_branch: {
+            full_switch (processor_combs.opcode_subclass[3;0]) {
+            case rom_op_branch:  { processor_combs.take_branch = 1; }
+            case rom_op_beq:     { processor_combs.take_branch = processor_combs.acc_is_zero; }
+            case rom_op_bne:     { processor_combs.take_branch = !processor_combs.acc_is_zero; }
+            case rom_op_loop:    {
+                processor_combs.take_branch = !processor_combs.rpt_is_zero;
+                processor_state.repeat_count <= processor_state.repeat_count - 1;
+            }
+            }
+            processor_combs.completes_op = 1;
+            processor_state.fsm_state <= processor_fsm_idle;
+        }
+        case processor_action_finish: {
+            processor_combs.completes_op = 1;
+            processor_combs.finishing = 1;
+            processor_state.fsm_state <= processor_fsm_idle;
+        }
+        case processor_action_wait_start: {
+            processor_state.accumulator <= processor_combs.arg_data;
+            processor_state.fsm_state <= processor_fsm_wait;
+        }
+        case processor_action_complete_wait: {
+            processor_combs.completes_op = 1;
+            processor_state.fsm_state <= processor_fsm_idle;
+        }
+        case processor_action_decrement_accumulator: {
+            processor_state.accumulator <= processor_state.accumulator - 1;
+            processor_state.fsm_state <= processor_state.fsm_state;
+        }
+        case processor_action_none: {
+            processor_state.fsm_state <= processor_state.fsm_state;
+        }
+        }
+    }
+
+    /*b APB master interface logic */
+    apb_master_logic """
+    The APB master interface accepts a request and drives the signals
+    as required by the APB spec, waiting for pready to complete. It
+    always has at least one dead cycle between presenting APB
+    requests.
+    """: {
+        apb_combs.action = apb_action_none;
+        full_switch (apb_state.fsm_state) {
+        case apb_fsm_idle: {
+            if (processor_combs.apb_req.valid) {
+                apb_combs.action = processor_combs.apb_req.read_not_write ? apb_action_start_apb_request_read : apb_action_start_apb_request_write;
+            }
+        }
+        case apb_fsm_select_phase: {
+            apb_combs.action = apb_action_move_to_enable_phase;
+        }
+        case apb_fsm_enable_phase: {
+            if (apb_response.pready) {
+                apb_combs.action = apb_action_complete;
+            }
+        }
+        }
+
+        apb_combs.completing_request = 0;
+        full_switch (apb_combs.action) {
+        case apb_action_start_apb_request_write: {
+            apb_state.fsm_state <= apb_fsm_select_phase;
+            apb_request <= { psel = 1,
+                    penable = 0,
+                    pwrite = 1,
+                    paddr = processor_state.address,
+                    pwdata = processor_combs.apb_req.wdata };
+        }
+        case apb_action_start_apb_request_read: {
+            apb_state.fsm_state <= apb_fsm_select_phase;
+            apb_request <= { psel = 1,
+                    penable = 0,
+                    pwrite = 0,
+                    paddr = processor_state.address };
+        }
+        case apb_action_move_to_enable_phase: {
+            apb_request.penable <= 1;
+            apb_state.fsm_state <= apb_fsm_enable_phase;
+        }
+        case apb_action_complete: {
+            apb_request.psel    <= 0;
+            apb_request.penable <= 0;
+            apb_combs.completing_request = 1;
+            apb_state.fsm_state <= apb_fsm_idle;
+        }
+        case apb_action_none: {
+            apb_state.fsm_state <= apb_state.fsm_state;
+        }
+        }
+    }
+
+    /*b All done */
+}

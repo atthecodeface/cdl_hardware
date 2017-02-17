@@ -190,7 +190,7 @@ module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
         control.clocks_per_2MHz_minus_one     <= 20; // at 50MHz, this should be 12 as this is clock ticks per 2MHz phase ending
         // However, when set to 20 then we get a second of BBC time to be about 3.3 real second
         // Hence the correct value is indeed about 8 (which should be a 2MHz phase ending every 9 ticks, or 180ns)
-        control.cpu_clocks_per_2MHz_minus_one <= 2;  // at 50MHz, this should be 24
+        control.cpu_clocks_per_2MHz_minus_one <= 8;  // at 50MHz, this should be 24
         control.clocks_per_2MHz_minus_one     <= 10; // at 50MHz, this should be 12 as this is clock ticks per 2MHz phase ending
         // 10/10 prints a display but has no 1MHz input; same as 8/10? Perhaps this just does not work with cpu != 2?
 }

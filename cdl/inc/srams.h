@@ -81,6 +81,30 @@ extern module se_sram_srw_65536x8( clock sram_clock,
     timing from rising clock sram_clock   data_out;
 }
 
+/*m se_sram_srw_16384x32 */
+extern module se_sram_srw_16384x32( clock sram_clock,
+                                    input bit select,
+                                    input bit[14] address,
+                                    input bit read_not_write,
+                                    input bit[32] write_data,
+                                    output bit[32] data_out )
+{
+    timing to   rising clock sram_clock   select, address, read_not_write, write_data;
+    timing from rising clock sram_clock   data_out;
+}
+
+/*m se_sram_srw_16384x40 */
+extern module se_sram_srw_16384x40( clock sram_clock,
+                                    input bit select,
+                                    input bit[14] address,
+                                    input bit read_not_write,
+                                    input bit[40] write_data,
+                                    output bit[40] data_out )
+{
+    timing to   rising clock sram_clock   select, address, read_not_write, write_data;
+    timing from rising clock sram_clock   data_out;
+}
+
 /*m se_sram_srw_32768x64 */
 extern module se_sram_srw_32768x64( clock sram_clock,
                                    input bit select,
@@ -104,18 +128,6 @@ extern module se_sram_srw_32768x32( clock sram_clock,
                                    output bit[32] data_out )
 {
     timing to   rising clock sram_clock   select, address, read_not_write, write_data, write_enable;
-    timing from rising clock sram_clock   data_out;
-}
-
-/*m se_sram_srw_16384x32 */
-extern module se_sram_srw_16384x32( clock sram_clock,
-                                    input bit select,
-                                    input bit[14] address,
-                                    input bit read_not_write,
-                                    input bit[32] write_data,
-                                    output bit[32] data_out )
-{
-    timing to   rising clock sram_clock   select, address, read_not_write, write_data;
     timing from rising clock sram_clock   data_out;
 }
 

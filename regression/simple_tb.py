@@ -26,6 +26,13 @@ class base_th(pycdl._thfile):
         self._failtests = 0
         self.run()
         pass
+    def sim_message(self):
+        self.cdlsim_reg.sim_message( "sim_message_obj" )
+        x = self.sim_message_obj
+        #x = self._thfile.sim_message
+        del self.sim_message_obj
+        return x
+
     def bfm_wait(self, cycles):
         self.cdlsim_sim.bfm_wait(cycles)
 
