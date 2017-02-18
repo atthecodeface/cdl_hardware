@@ -20,8 +20,8 @@ class cdl_test_th(pycdl.th):
     def run(self):
         self.sim_msg = self.sim_message()
         self.bfm_wait(1000) # to get past reset... :-)
-        self.sim_msg.send_value("bbc_micro.bbc.os",9,0,0xd9f9&0x3fff,0xa2) # ldx #&0x80 to stop it having to init all memory to zero
-        self.sim_msg.send_value("bbc_micro.bbc.os",9,0,0xd9fa&0x3fff,0x80) # ldx #&0x80 to stop it having to init all memory to zero
+        self.sim_msg.send_value(self.bbc_hier+".os",9,0,0xd9f9&0x3fff,0xa2) # ldx #&0x80 to stop it having to init all memory to zero
+        self.sim_msg.send_value(self.bbc_hier+".os",9,0,0xd9fa&0x3fff,0x80) # ldx #&0x80 to stop it having to init all memory to zero
         self.passtest(0,"")
         pass
     def save_screen(self, filename):
@@ -32,7 +32,7 @@ class cdl_test_th(pycdl.th):
         for y in range(25):
             r = ""
             for x in range(40):
-                self.sim_msg.send_value("bbc_micro.bbc.ram_1",8,0,0x3c00+y*40+x)
+                self.sim_msg.send_value(self.bbc_hier+".ram_1",8,0,0x3c00+y*40+x)
                 d = self.sim_msg.get_value(2)
                 if d>=32 and d<=127:
                     r+=chr(d)
@@ -46,11 +46,8 @@ class cdl_test_th(pycdl.th):
         pass
             
 
-#c cdl_test_nonfpga
-class cdl_test_nonfpga(pycdl.hw):
-    """
-    Simple instantiation of BBC micro for testing
-    """
+#c bbc_hw_base
+class bbc_hw_base(pycdl.hw):
     wave_file = __name__+".vcd"
     wave_hierarchies = []
     floppy_sram_request_dict = {"enable":1,
@@ -87,6 +84,26 @@ class cdl_test_nonfpga(pycdl.hw):
                      "keys_down_cols_8_to_9":16,
                      "reset_pressed":1,
     }
+    #f set_run_time
+    def set_run_time(self, num_cycles):
+        pass
+    #f check_memory
+    def check_memory(self, expected_memory_data):
+        self.sim_msg = self.th.sim_message()
+        for (a,ed) in expected_memory_data:
+            self.sim_msg.send_value("bbc_micro.ram_0",8,0,a)
+            d = self.sim_msg.get_value(2)
+            if (d!=ed):
+                self.th.failtest(a,"Mismatch in data for %04x (got %02x expected %02x)"%(a,d,ed))
+                pass
+            pass
+        pass
+
+#c cdl_test_nonfpga
+class cdl_test_nonfpga(bbc_hw_base):
+    """
+    Simple instantiation of BBC micro for testing
+    """
     #f __init__
     def __init__(self, os_rom_mif, basic_rom_mif, adfs_rom_mif, teletext_rom_mif, disk_mif="disks/elite.mif", ps2_kbd_mif=""):
 
@@ -154,6 +171,7 @@ class cdl_test_nonfpga(pycdl.hw):
                                         #forces = display_forces,
                                     )
         self.th = cdl_test_th(clocks = {"clk":system_clock},inputs={},outputs={})
+        self.th.bbc_hier = "bbc_micro.bbc"
 
         self.log = pycdl.module( "se_logger",
                                  options = {"verbose":1,
@@ -179,62 +197,12 @@ class cdl_test_nonfpga(pycdl.hw):
         #self.wave_hierarchies = [self.bbc_display, self.bbc_floppy_sram, self.bbc_floppy]
         self.wave_hierarchies = [self.bbc_micro]
         pass
-    #f set_run_time
-    def set_run_time(self, num_cycles):
-        pass
-    #f check_memory
-    def check_memory(self, expected_memory_data):
-        self.sim_msg = self.th.sim_message()
-        for (a,ed) in expected_memory_data:
-            self.sim_msg.send_value("bbc_micro.ram_0",8,0,a)
-            d = self.sim_msg.get_value(2)
-            if (d!=ed):
-                self.th.failtest(a,"Mismatch in data for %04x (got %02x expected %02x)"%(a,d,ed))
-                pass
-            pass
-        pass
 
-#c cdl_test
-class cdl_test(pycdl.hw):
+#c cdl_test_fpga
+class cdl_test_fpga(bbc_hw_base):
     """
     Simple instantiation of BBC micro for testing
     """
-    wave_file = __name__+".vcd"
-    wave_hierarchies = []
-    floppy_sram_request_dict = {"enable":1,
-                                "read_not_write":1,
-                                "address":20,
-                                "data":32,
-    }
-    floppy_sram_response_dict = {"ack":1,
-                                 "read_data_valid":1,
-                                 "read_data":32,
-    }
-    csr_request_dict = {"valid":1,
-                        "read_not_write":1,
-                        "select":16,
-                        "address":16,
-                        "data":32,
-    }
-    csr_response_dict = {"ack":1,
-                         "read_data_valid":1,
-                         "read_data":32,
-    }
-    sram_request_dict = {"valid":1,
-                        "read_enable":1,
-                        "write_enable":1,
-                         "select":8,
-                        "address":24,
-                        "write_data":64,
-    }
-    sram_response_dict = {"ack":1,
-                         "read_data_valid":1,
-                         "read_data":64,
-    }
-    keyboard_dict = {"keys_down_cols_0_to_7":64,
-                     "keys_down_cols_8_to_9":16,
-                     "reset_pressed":1,
-    }
     #f __init__
     def __init__(self, os_rom_mif, basic_rom_mif, adfs_rom_mif, teletext_rom_mif, disk_mif="disks/elite.mif", ps2_kbd_mif=""):
 
@@ -245,18 +213,18 @@ class cdl_test(pycdl.hw):
 
 
         hw_forces = dict( )
-        hw_forces = { "bbc.saa.character_rom.filename":teletext_rom_mif,
-                      "bbc.saa.character_rom.verbose":0,
-                      "bbc.basic.filename":basic_rom_mif,
-                      "bbc.basic.verbose":0,
-                      "bbc.adfs.filename":adfs_rom_mif,
-                      "bbc.adfs.verbose":0,
-                      "bbc.ram_0.reset_type":1,
-                      "bbc.ram_0.reset_value":0,
-                      "bbc.os.filename":os_rom_mif,
-                      "bbc.os.verbose":0,
-                      "bbc.bbc_ps2_kbd.kbd_map":ps2_kbd_mif,
-                      "floppy.filename":disk_mif,
+        hw_forces = { "bbc.bbc.saa.character_rom.filename":teletext_rom_mif,
+                      "bbc.bbc.saa.character_rom.verbose":0,
+                      "bbc.bbc.basic.filename":basic_rom_mif,
+                      "bbc.bbc.basic.verbose":0,
+                      "bbc.bbc.adfs.filename":adfs_rom_mif,
+                      "bbc.bbc.adfs.verbose":0,
+                      "bbc.bbc.ram_0.reset_type":1,
+                      "bbc.bbc.ram_0.reset_value":0,
+                      "bbc.bbc.os.filename":os_rom_mif,
+                      "bbc.bbc.os.verbose":0,
+                      "bbc.io.bbc_ps2_kbd.kbd_map":ps2_kbd_mif,
+                      "bbc.floppy.filename":disk_mif,
                       }
         lcd = pycdl.wirebundle({"vsync_n":1,
                                 "hsync_n":1,
@@ -302,11 +270,12 @@ class cdl_test(pycdl.hw):
                                       forces = hw_forces,
                                     )
         self.th = cdl_test_th(clocks = {"clk":system_clock},inputs={},outputs={})
+        self.th.bbc_hier = "bbc_micro.bbc.bbc"
 
         self.log = pycdl.module( "se_logger",
                                  options = {"verbose":1,
                                             "filename":"itrace.log",
-                                            "modules":("bbc_micro.bbc.fdc "
+                                            "modules":("bbc_micro.bbc.bbc.fdc "
                                                        #"bbc_micro.main_cpu "
                                                        ),
                                             })
@@ -325,18 +294,3 @@ class cdl_test(pycdl.hw):
         #self.wave_hierarchies = [self.bbc_display, self.bbc_floppy_sram, self.bbc_floppy]
         self.wave_hierarchies = [self.bbc_micro]
         pass
-    #f set_run_time
-    def set_run_time(self, num_cycles):
-        pass
-    #f check_memory
-    def check_memory(self, expected_memory_data):
-        self.sim_msg = self.th.sim_message()
-        for (a,ed) in expected_memory_data:
-            self.sim_msg.send_value("bbc_micro.ram_0",8,0,a)
-            d = self.sim_msg.get_value(2)
-            if (d!=ed):
-                self.th.failtest(a,"Mismatch in data for %04x (got %02x expected %02x)"%(a,d,ed))
-                pass
-            pass
-        pass
-

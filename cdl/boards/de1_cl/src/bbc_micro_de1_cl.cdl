@@ -23,40 +23,20 @@
 /*a Includes */
 include "bbc_micro_types.h"
 include "bbc_submodules.h"
+include "de1_cl.h"
 include "dprintf.h"
 include "input_devices.h"
 include "leds.h"
 include "de1_cl.h"
 
 /*a Constants */
-constant bit[8] sr_divider    = 49; // 1MHz - or shift register at 500kHz since it toggles at this frequency
-constant bit[8] divider_400ns = 19; // 2.5MHz
-constant bit[16] ps2_divider  = 150; // 300kHz, or max of about 50kHz for PS2 since clk edges must be detected on this divider
 
 /*a Module */
-typedef struct {
-    bit vsync_n;
-    bit hsync_n;
-    bit display_enable;
-    bit[6] red;
-    bit[7] green;
-    bit[6] blue;
-    bit backlight;
-} t_lcd;
-typedef struct {
-    bit selected_data;
-} t_debug_comb;
-typedef struct {
-    bit data;
-    bit last_data;
-    bit[32] counter;
-    bit[16] update;
-} t_debug_state;
 module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generator",
                          clock video_clk    "9MHz clock from PLL, derived from 50MHz",
                          input bit reset_n  "hard reset from a pin - a key on DE1",
                          input bit video_locked "High if video PLL has locked",
-                         output t_lcd lcd   "LCD display out to computer lab daughterboard",
+                         output t_de1_cl_lcd lcd   "LCD display out to computer lab daughterboard",
                          input bit[4] keys       "DE1 keys",
                          input bit[10] switches  "DE1 switches",
                          output bit[10] leds     "DE1 leds",
@@ -67,331 +47,87 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                          output t_de1_cl_inputs_control  inputs_control "DE1 CL daughterboard shifter register control"
     )
 {
-    net t_video_bus video_bus;
-    net t_video_bus tt_video_bus;
-    net t_bbc_display display;
-    net  bit keyboard_reset_n;
-    net t_bbc_floppy_op floppy_op;
-    net  t_bbc_floppy_response floppy_response;
+    net t_video_bus bbc_video_bus;
+    net t_video_bus io_video_bus;
 
-    net t_bbc_clock_status clock_status;
-    net t_bbc_clock_control clock_control;
+    net t_bbc_clock_control bbc_clock_control;
 
-    net t_ps2_pins ps2_out_host;
-    net t_ps2_rx_data ps2_rx_data;
-    net t_ps2_key_state  ps2_key;
+    net t_ps2_pins ps2_out;
 
-    comb t_csr_request csr_request;
-    net t_csr_response clocking_csr_response;
-    net t_csr_response display_sram_csr_response;
-    net t_csr_response floppy_sram_csr_response;
-    net t_csr_response framebuffer_csr_response;
-    net t_csr_response tt_framebuffer_csr_response;
+    net t_csr_request csr_request;
+    net t_csr_response bbc_csr_response;
 
-    net t_bbc_floppy_sram_request floppy_sram_request;
-    net t_bbc_display_sram_write display_sram_write;
-
-    comb t_bbc_micro_sram_request  bbc_micro_host_sram_request;
-    net  t_bbc_micro_sram_response bbc_micro_host_sram_response;
-    
-    gated_clock clock clk active_high enable_clk_2MHz_video   clk_2MHz_video_clock "Clock that mirrors 2MHz falling -  video data from RAM is valid at this edge, so used by CRTC, SAA5050 latches, SAA5050, vidproc";
-    gated_clock clock clk active_high enable_cpu_clk          clk_cpu  "6502 clock, >=2MHz but extended when accessing 1MHz peripherals";
-    comb bit enable_clk_2MHz_video;
-    comb bit enable_cpu_clk;
-
-    net  t_led_ws2812_request led_request;
-    comb t_led_ws2812_data    led_data;
     net  bit led_chain;
-    net  t_de1_cl_inputs_control  inputs_control;
-    net  t_de1_cl_user_inputs     user_inputs;
+    net  t_de1_cl_inputs_control inputs_control "DE1 CL IO inputs control - shift register clock, and so on";
 
     comb bit bbc_reset_n;
     comb bit framebuffer_reset_n;
-    comb t_bbc_keyboard keyboard;
-    net bit[32] floppy_sram_read_data;
-    clocked clock clk_cpu reset active_low reset_n bit floppy_sram_reading=0;
-    clocked clock clk_cpu reset active_low reset_n t_bbc_floppy_sram_request floppy_sram_request_r={*=0};
-    clocked clock clk_cpu reset active_low reset_n t_bbc_floppy_sram_response floppy_sram_response={*=0};
-
-    clocked clock clk reset active_low reset_n t_dprintf_req dprintf_req={*=0};
-    net bit dprintf_ack;
-    net t_bbc_display_sram_write tt_display_sram_write;
-
-    /*b Debug stuff */
-    comb t_debug_comb debug_comb;
-    clocked clock clk reset active_low reset_n t_debug_state debug_state={*=0};
-    debug_logic """
-    """: {
-        ps2_out = ps2_out_host;
-        ps2_out.clk = ps2_out_host.clk & switches[3];
-        debug_comb.selected_data = clock_control.enable_cpu;
-        full_switch(switches[3;6]) {
-        case 0: { debug_comb.selected_data = tt_display_sram_write.enable; }
-        case 1: { debug_comb.selected_data = !ps2_in.clk; }
-        case 2: { debug_comb.selected_data = !ps2_in.data; }
-        case 3: { debug_comb.selected_data = ps2_key.valid; }
-        case 4: { debug_comb.selected_data = ps2_rx_data.valid && ps2_rx_data.parity_error; }
-        case 5: { debug_comb.selected_data = ps2_rx_data.valid && ps2_rx_data.timeout; }
-        case 6: { debug_comb.selected_data = ps2_rx_data.valid && ps2_rx_data.protocol_error; }
-        case 7: { debug_comb.selected_data = ps2_rx_data.valid; }
-        }
-        debug_state.data      <= debug_comb.selected_data;
-        debug_state.last_data <= debug_state.data;
-        if (switches[5] && debug_state.data && !debug_state.last_data) {
-            debug_state.counter <= debug_state.counter+1;
-        } elsif (!switches[5] && debug_state.data) {
-            debug_state.counter <= debug_state.counter+1;
-        }
-        debug_state.update <= debug_state.update+1;
-        leds = debug_state.counter[10;0];
-        if (switches[9]) {
-            leds = debug_state.counter[10;6];
-        }
-
-        teletext_dprintf dprintf( clk <- clk,
-                                  reset_n <= reset_n,
-                                  dprintf_req <= dprintf_req,
-                                  dprintf_ack => dprintf_ack,
-                                  display_sram_write =>  tt_display_sram_write
-            );
-        dprintf_req <= {valid=0};
-        if (ps2_key.valid) {
-            dprintf_req <= {valid=1, address=0,
-                    data_0=64h50_53_32_20_6b_65_79_3a,
-                    data_1=bundle(ps2_key.release?8h02:8h01, ps2_key.extended?8h45:8h00, 8h81, ps2_key.key_number, 32h2020ffff) };
-        }
-        if (user_inputs.right_dial.pressed) {
-            dprintf_req <= {valid=1, address=80,
-                    data_0=64h52_69_67_68_74_20_44_69,
-                    data_1=bundle(40h61_6c_3a_06_80, 4b0,last_fn_key,16hff)};
-        }
-        if (debug_state.update==0) {
-            dprintf_req <= {valid=1, address=160,
-                    data_0=64h43_6f_75_6e_74_65_72_3a,
-                    data_1=bundle(16h03_87, debug_state.counter, 16hff)};
-        }
-    }
+    net t_bbc_keyboard bbc_keyboard;
 
     /*b Miscellaneous logic */
-    clocked clock clk reset active_low reset_n bit[10] fn_keys_down=0;
-    clocked clock clk reset active_low reset_n bit[4] last_fn_key=1;
-    net t_bbc_keyboard bbc_ps2_keyboard;
     misc_logic """
     """: {
-        csr_request = {*=0};
-        bbc_micro_host_sram_request = {*=0};
-
-        keyboard.reset_pressed = 0;
-        keyboard.keys_down_cols_0_to_7 = bbc_ps2_keyboard.keys_down_cols_0_to_7;
-        keyboard.keys_down_cols_8_to_9 = bbc_ps2_keyboard.keys_down_cols_8_to_9;
-        keyboard.keys_down_cols_0_to_7[0*8+0] |= !keys[0]; // shift
-        keyboard.keys_down_cols_0_to_7[1*8+0] |= !keys[1]; // ctrl
-        keyboard.keys_down_cols_0_to_7[5*8+5] |= !keys[2]; // N
-        keyboard.keys_down_cols_0_to_7[1*8+5] |= user_inputs.joystick.u; // s
-        keyboard.keys_down_cols_0_to_7[2*8+4] |= user_inputs.joystick.d; // x
-        keyboard.keys_down_cols_0_to_7[6*8+6] |= user_inputs.joystick.l; // !! ,
-        keyboard.keys_down_cols_0_to_7[7*8+6] |= user_inputs.joystick.r; // .
-        keyboard.keys_down_cols_0_to_7[0*8+2] |= user_inputs.joystick.c; // !! f0
-        keyboard.keys_down_cols_0_to_7[2*8+6] |= user_inputs.diamond.y; // space
-        keyboard.keys_down_cols_8_to_9[0*8+6] |= user_inputs.diamond.a; // /
-        keyboard.keys_down_cols_0_to_7[1*8+4] |= user_inputs.diamond.b; // a (fire, right of diamond)
-        keyboard.keys_down_cols_0_to_7[5*8+4] |= user_inputs.diamond.x; // j left of diamond
-        keyboard.keys_down_cols_0_to_7[0*8+2] |= fn_keys_down[0]; // f0
-        keyboard.keys_down_cols_0_to_7[1*8+7] |= fn_keys_down[1]; // f1
-        keyboard.keys_down_cols_0_to_7[2*8+7] |= fn_keys_down[2]; // f2
-        keyboard.keys_down_cols_0_to_7[3*8+7] |= fn_keys_down[3]; // f3
-        keyboard.keys_down_cols_0_to_7[4*8+1] |= fn_keys_down[4]; // f4
-        keyboard.keys_down_cols_0_to_7[4*8+7] |= fn_keys_down[5]; // f5
-        keyboard.keys_down_cols_0_to_7[5*8+7] |= fn_keys_down[6]; // f6
-        keyboard.keys_down_cols_0_to_7[6*8+1] |= fn_keys_down[7]; // f7
-        keyboard.keys_down_cols_0_to_7[6*8+7] |= fn_keys_down[8]; // f8
-        keyboard.keys_down_cols_0_to_7[7*8+7] |= fn_keys_down[9]; // f9
-
-        //keyboard.keys_down_cols_8_to_9[1*8+3] |= user_inputs.joystick.u; // up
-        //keyboard.keys_down_cols_8_to_9[1*8+2] |= user_inputs.joystick.d; // down
-        //keyboard.keys_down_cols_8_to_9[1*8+1] |= user_inputs.joystick.l; // left
-        //keyboard.keys_down_cols_8_to_9[1*8+7] |= user_inputs.joystick.r; // right
-
-        if (user_inputs.right_dial.direction_pulse) {
-            fn_keys_down <= 0;
-            if (user_inputs.right_dial.direction) {
-                last_fn_key <= last_fn_key+1;
-                if (last_fn_key==9) {
-                    last_fn_key <= 0;
-                }
-            } else {
-                last_fn_key <= last_fn_key-1;
-                if (last_fn_key==0) {
-                    last_fn_key <= 9;
-                }
-            }
-        }
-        if (user_inputs.right_dial.pressed) {
-            fn_keys_down <= 0;
-            fn_keys_down[last_fn_key] <= 1;
-        } else {
-            fn_keys_down <= 0;
-        }
-
-        led_data = {*=0};
-        if (led_request.ready) {
-            led_data.valid = 1;            
-            full_switch(led_request.led_number) {
-            case 0: {led_data = {red=debug_state.counter[8;0], green = ~debug_state.counter[8;0], blue = 0}; }
-            case 1: {led_data = {red=8h1f, green=8h00, blue=8h00}; }
-            case 2: {led_data = {red=8h00, green=8h1f, blue=8h00}; }
-            case 3: {led_data = {red=8h00, green=8h00, blue=8h1f}; }
-            case 4: {led_data = {red=8h1f, green=8h1f, blue=8h00}; }
-            case 5: {led_data = {red=8h00, green=8h1f, blue=8h1f}; }
-            case 6: {led_data = {red=8h1f, green=8h00, blue=8h1f}; }
-            case 7: {led_data = {red=8h00, green=8h1f, blue=8h00}; }
-            case 8: {led_data = {red=8h00, green=8h00, blue=8h1f}; }
-            case 9: {led_data = {red=8h1f, green=8h1f, blue=8h00}; }
-            case 10: {led_data = {red=8h00, green=8h1f, blue=8h1f}; }
-            default: {
-                led_data = {valid=1, last=1,
-                            blue = (bundle(1b0,last_fn_key,3b0)-bundle(4b0,last_fn_key))<<2,
-                            green = 0,
-                            red = 0};
-            }
-            }
-        }
-
-        enable_clk_2MHz_video   = clock_control.enable_2MHz_video; // used for clock enable and to choose which source of SRAM read
-        enable_cpu_clk          = clock_control.enable_cpu;
-        bbc_reset_n             = reset_n & !clock_control.reset_cpu & switches[0];
+        bbc_reset_n             = reset_n & !bbc_clock_control.reset_cpu & switches[0];
         framebuffer_reset_n     = reset_n & video_locked;
-        
-        lcd = { vsync_n        = !video_bus.vsync,
-                hsync_n        = !video_bus.hsync,
-                display_enable = video_bus.display_enable,
-                red            = video_bus.red[6;2],
-                green          = video_bus.green[7;1],
-                blue           = video_bus.blue[6;2],
+    }
+
+    /*b DE1/CL IO for BBC subsystem */
+    bbc_de1_cl_instantiations: {
+        bbc_micro_de1_cl_io io( clk <- clk,
+                                video_clk <- video_clk,
+                                reset_n <= reset_n,
+                                bbc_reset_n <= bbc_reset_n,
+                                framebuffer_reset_n <= framebuffer_reset_n,
+                                keys <= keys,
+                                clock_control <= bbc_clock_control,
+                                bbc_keyboard => bbc_keyboard,
+                                video_bus => io_video_bus,
+                                csr_request => csr_request,
+                                csr_response <= bbc_csr_response,
+                                inputs_control => inputs_control,
+                                inputs_status <= inputs_status,
+                                ps2_in <= ps2_in,
+                                ps2_out => ps2_out,
+                                led_chain => led_chain
+            );
+    }
+
+    /*b BBC Micro subsystem */
+    bbc_micro_instantiations: {
+        bbc_micro_de1_cl_bbc bbc( clk <- clk,
+                                  video_clk <- video_clk,
+                                  reset_n <= reset_n,
+                                  bbc_reset_n <= bbc_reset_n,
+                                  framebuffer_reset_n <= framebuffer_reset_n,
+                                  clock_control => bbc_clock_control,
+                                  bbc_keyboard <= bbc_keyboard,
+                                  video_bus => bbc_video_bus,
+                                  csr_request <= csr_request,
+                                  csr_response => bbc_csr_response );
+    }
+
+    /*b Output muxes */
+    output_muxes """
+    """: {
+        leds = 0;
+        lcd = { vsync_n        = !bbc_video_bus.vsync,
+                hsync_n        = !bbc_video_bus.hsync,
+                display_enable = bbc_video_bus.display_enable,
+                red            = bbc_video_bus.red[6;2],
+                green          = bbc_video_bus.green[7;1],
+                blue           = bbc_video_bus.blue[6;2],
                 backlight = switches[1]
         };
-        if (switches[2]) {
-            lcd = { vsync_n        = !tt_video_bus.vsync,
-                    hsync_n        = !tt_video_bus.hsync,
-                    display_enable = tt_video_bus.display_enable,
-                    red            = tt_video_bus.red[6;2],
-                    green          = tt_video_bus.green[7;1],
-                    blue           = tt_video_bus.blue[6;2]
+        if (0 /*lcd_source*/) {
+            lcd = { vsync_n        = !io_video_bus.vsync,
+                    hsync_n        = !io_video_bus.hsync,
+                    display_enable = io_video_bus.display_enable,
+                    red            = io_video_bus.red[6;2],
+                    green          = io_video_bus.green[7;1],
+                    blue           = io_video_bus.blue[6;2]
             };
         }
         led_data_pin = !led_chain;
-    }
-
-    /*b BBC Micro instantiations */
-    bbc_micro_instantiations: {
-        bbc_micro_clocking clocking( clk <- clk,
-                                     reset_n <= reset_n,
-                                     clock_status <= clock_status,
-                                     clock_control => clock_control,
-                                     csr_request <= csr_request,
-                                     csr_response => clocking_csr_response );
-
-        bbc_keyboard_ps2 bbc_ps2_kbd( clk<-clk,
-                                      reset_n <= bbc_reset_n,
-                                      ps2_key <= ps2_key,
-                                      keyboard => bbc_ps2_keyboard );
-
-        bbc_micro bbc(clk <- clk,
-                      reset_n <= bbc_reset_n,
-                      clock_control <= clock_control,
-                      clock_status  => clock_status,
-                      keyboard <= keyboard,
-                      display => display,
-                      keyboard_reset_n => keyboard_reset_n,
-                      floppy_op => floppy_op,
-                      floppy_response <= floppy_response,
-                      host_sram_request <= bbc_micro_host_sram_request,
-                      host_sram_response => bbc_micro_host_sram_response
-            );
-    
-        bbc_display_sram display_sram( clk <- clk_2MHz_video_clock,
-                                       reset_n <= reset_n,
-                                       display <= display,
-                                       sram_write => display_sram_write,
-                                       csr_request <= csr_request,
-                                       csr_response => display_sram_csr_response
-            );
-
-        bbc_floppy_sram floppy_sram( clk <- clk_cpu, // FDC interacts with floppy at cpu clock
-                                     reset_n <= reset_n,
-                                     floppy_op <= floppy_op,
-                                     csr_request <= csr_request,
-                                     floppy_response => floppy_response,
-                                     sram_request => floppy_sram_request,
-                                     sram_response <= floppy_sram_response,
-                                     csr_response => floppy_sram_csr_response
-            );
-
-    }
-
-    /*b SRAMs for floppy and framebuffers */
-    floppy_and_framebuffer: {
-        se_sram_srw_32768x32 floppy(sram_clock <- clk_cpu,
-                                    select         <= floppy_sram_request_r.enable && !floppy_sram_reading,
-                                    read_not_write <= floppy_sram_request_r.read_not_write,
-                                    write_enable   <= !floppy_sram_request_r.read_not_write,
-                                    address        <= floppy_sram_request_r.address[15;0],
-                                    write_data     <= floppy_sram_request_r.write_data[32;0],
-                                    data_out       => floppy_sram_read_data );
-        floppy_sram_request_r    <= floppy_sram_request;
-        floppy_sram_reading      <= (floppy_sram_request_r.enable && !floppy_sram_reading) && floppy_sram_request_r.read_not_write;
-        floppy_sram_response.ack  <= floppy_sram_request.enable;
-        floppy_sram_response.read_data_valid <= floppy_sram_reading;
-        floppy_sram_response.read_data       <= floppy_sram_read_data;
-
-        framebuffer fb( csr_clk <- clk_cpu,
-                        sram_clk <- clk_2MHz_video_clock,
-                        video_clk <- video_clk,
-                        reset_n <= framebuffer_reset_n,
-                        video_bus => video_bus,
-                        display_sram_write <= display_sram_write,
-                        csr_request <= csr_request,
-                        csr_response => framebuffer_csr_response
-            );
-                        
-        framebuffer_teletext ftb( csr_clk <- clk_cpu,
-                                  sram_clk <- clk,
-                                  video_clk <- video_clk,
-                                  reset_n <= framebuffer_reset_n,
-                                  video_bus => tt_video_bus,
-                                  display_sram_write <= tt_display_sram_write,
-                                  csr_request <= csr_request,
-                                  csr_response => tt_framebuffer_csr_response
-            );
-                        
-    }
-
-    /*b DE1 and CL control modules */
-    de1_and_cl_modules: {
-        ps2_host ps2( clk <- clk,
-                      reset_n <= reset_n,
-                      ps2_in <= ps2_in,
-                      ps2_out => ps2_out_host,
-                      ps2_rx_data => ps2_rx_data,
-                      divider <= ps2_divider );
-        
-        ps2_host_keyboard key_decode(clk <- clk,
-                                     reset_n <= reset_n,
-                                     ps2_rx_data <= ps2_rx_data,
-                                     ps2_key     => ps2_key );
-
-        de1_cl_controls controls( clk <- clk,
-                                  reset_n <= reset_n,
-                                  sr_divider <= sr_divider,
-                                  inputs_control => inputs_control,
-                                  inputs_status  <= inputs_status,
-                                  user_inputs    => user_inputs );
-        led_ws2812_chain neopixel_leds( clk <- clk,
-                                    reset_n <= reset_n,
-                                    divider_400ns <= divider_400ns,
-                                    led_request   => led_request,
-                                    led_data      <= led_data,
-                                    led_chain     => led_chain );
     }
 
     /*b All done */
