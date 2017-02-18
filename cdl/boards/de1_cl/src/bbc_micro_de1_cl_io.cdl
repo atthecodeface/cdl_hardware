@@ -340,12 +340,12 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                             rom_request   => apb_rom_request,
                             rom_data      <= apb_rom_data );
 
-        se_sram_srw_16384x40 apb_rom(sram_clock <- clk,
-                                     select <= apb_rom_request.enable,
-                                     address <= apb_rom_request.address[14;0],
-                                     read_not_write <= 1,
-                                     write_data <= 0,
-                                     data_out => apb_rom_data );
+        se_sram_srw_256x40 apb_rom(sram_clock <- clk,
+                                   select <= apb_rom_request.enable,
+                                   address <= apb_rom_request.address[8;0],
+                                   read_not_write <= 1,
+                                   write_data <= 0,
+                                   data_out => apb_rom_data );
 
         csr_master_apb master( clk <- clk,
                                reset_n <= reset_n,

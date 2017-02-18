@@ -55,6 +55,18 @@ extern module se_sram_srw_256x7( clock sram_clock,
     timing from rising clock sram_clock   data_out;
 }
 
+/*m se_sram_srw_256x40 */
+extern module se_sram_srw_256x40( clock sram_clock,
+                                   input bit select,
+                                   input bit[8] address,
+                                   input bit read_not_write,
+                                   input bit[40] write_data,
+                                   output bit[40] data_out )
+{
+    timing to   rising clock sram_clock   select, address, read_not_write, write_data;
+    timing from rising clock sram_clock   data_out;
+}
+
 /*m se_sram_srw_16384x8 */
 extern module se_sram_srw_16384x8( clock sram_clock,
                                    input bit select,
