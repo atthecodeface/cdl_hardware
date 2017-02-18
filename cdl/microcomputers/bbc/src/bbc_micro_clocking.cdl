@@ -157,7 +157,9 @@ module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
     comb bit phi2;
     clocked bit phi2_extension_required=0;
     comb bit cpu_clk_enable;
-    clocked t_control control={*=0};
+    clocked t_control control={*=0,
+                               cpu_clocks_per_2MHz_minus_one=2,
+                               clocks_per_2MHz_minus_one=11 };
     clocked t_divider divider={*=0};
 
     net t_csr_response      csr_response;
@@ -183,18 +185,7 @@ module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
                                control.reset_cpu,
                                control.cpu_clocks_per_2MHz_minus_one, 
                                control.clocks_per_2MHz_minus_one );
-        control.cpu_clocks_per_2MHz_minus_one <= 2;
-        control.clocks_per_2MHz_minus_one     <= 4;
-        // failed with 49,49; 9,19; works with 2/8; works with 2/20
-        control.cpu_clocks_per_2MHz_minus_one <= 2;  // at 50MHz, this should be 24
-        control.clocks_per_2MHz_minus_one     <= 20; // at 50MHz, this should be 12 as this is clock ticks per 2MHz phase ending
-        // However, when set to 20 then we get a second of BBC time to be about 3.3 real second
-        // Hence the correct value is indeed about 8 (which should be a 2MHz phase ending every 9 ticks, or 180ns)
-        // Fails with a value of 1 here - need to figure out why
-        control.cpu_clocks_per_2MHz_minus_one <= 2;  // this should be set to 1 for real 6502 speed assuming 2MHz is correct
-        control.clocks_per_2MHz_minus_one     <= 11; // at 50MHz, this should be 12 as this is clock ticks per 2MHz phase ending
-        // 10/10 prints a display but has no 1MHz input; same as 8/10? Perhaps this just does not work with cpu != 2?
-}
+    }
     
     output_logic """
     If clock_status.cpu_1MHz_access is asserted in phi1 then the chip selects,

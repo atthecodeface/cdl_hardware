@@ -74,6 +74,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                             input  t_de1_cl_inputs_status   inputs_status  "DE1 CL daughterboard shifter register etc status",
                             output t_de1_cl_inputs_control  inputs_control "DE1 CL daughterboard shifter register control",
                             output bit lcd_source,
+                            output bit[10] leds,
                             output bit led_chain
     )
 {
@@ -144,13 +145,13 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
         if (user_inputs.left_dial.direction_pulse) {
             if (user_inputs.left_dial.direction) {
                 key_state.speed_selection <= key_state.speed_selection+1;
-                if (key_state.speed_selection==4) {
+                if (key_state.speed_selection==11) {
                     key_state.speed_selection <= 0;
                 }
             } else {
                 key_state.speed_selection <= key_state.speed_selection-1;
                 if (key_state.speed_selection==0) {
-                    key_state.speed_selection <= 4;
+                    key_state.speed_selection <= 11;
                 }
             }
         }
@@ -181,6 +182,20 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
             case 7: {led_data = {red=(key_state.last_fn_key== 7) ? 8h3f : 8h00};}
             case 8: {led_data = {red=(key_state.last_fn_key== 8) ? 8h3f : 8h00};}
             case 9: {led_data = {red=(key_state.last_fn_key== 9) ? 8h3f : 8h00};}
+            }
+            part_switch(led_request.led_number) {
+            case 0: {led_data = {blue=(key_state.speed_selection== 0) ? 8h3f : 8h00};}
+            case 1: {led_data = {blue=(key_state.speed_selection== 1) ? 8h3f : 8h00};}
+            case 2: {led_data = {blue=(key_state.speed_selection== 2) ? 8h3f : 8h00};}
+            case 3: {led_data = {blue=(key_state.speed_selection== 3) ? 8h3f : 8h00};}
+            case 4: {led_data = {blue=(key_state.speed_selection== 4) ? 8h3f : 8h00};}
+            case 5: {led_data = {blue=(key_state.speed_selection== 5) ? 8h3f : 8h00};}
+            case 6: {led_data = {blue=(key_state.speed_selection== 6) ? 8h3f : 8h00};}
+            case 7: {led_data = {blue=(key_state.speed_selection== 7) ? 8h3f : 8h00};}
+            case 8: {led_data = {blue=(key_state.speed_selection== 8) ? 8h3f : 8h00};}
+            case 9: {led_data = {blue=(key_state.speed_selection== 9) ? 8h3f : 8h00};}
+            case 10: {led_data = {blue=(key_state.speed_selection== 10) ? 8h3f : 8h00};}
+            case 11: {led_data = {blue=(key_state.speed_selection== 11) ? 8h3f : 8h00};}
             }
             if (led_request.led_number==11) {
                 led_data.last=1;
@@ -342,6 +357,11 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
             apb_processor_request.valid = 1;
         }
 
+        leds[0] = apb_processor_request.valid;
+        leds[1] = apb_processor_response.acknowledge;
+        leds[2] = apb_processor_response.rom_busy;
+        leds[3] = csr_request.valid;
+        leds[4] = csr_response_r.ack;
         combined_csr_response = csr_response;
         combined_csr_response |= tt_framebuffer_csr_response;
         csr_response_r <= csr_response;

@@ -211,9 +211,9 @@ even 'lines' in SRAM, and odd lines just to the odd 'lines'.
             display_state.clocks_since_hsync    <= 0;
             display_state.x_back_porch          <= csrs.h_back_porch;
         }
-        display_state.pixel_x <= display_state.pixel_x+1;
+        display_state.pixel_x <= display_state.pixel_x+1;//8
         if (display_state.x_back_porch[pixel_counter_width-3;3]==-1) { // back porch finishing
-            display_state.pixel_x <= 0;
+            display_state.pixel_x <= 0;//display_state.x_back_porch;
         }
         if (display_state.pixel_x+8 == display_state.clocks_wide) {
             if (display_state.interlaced) {

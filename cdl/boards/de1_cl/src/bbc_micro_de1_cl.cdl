@@ -58,6 +58,7 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     net t_csr_response bbc_csr_response;
 
     net  bit led_chain;
+    net bit[10] leds;
     net  t_de1_cl_inputs_control inputs_control "DE1 CL IO inputs control - shift register clock, and so on";
 
     comb bit bbc_reset_n;
@@ -91,6 +92,7 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                                 ps2_in <= ps2_in,
                                 ps2_out => ps2_out,
                                 lcd_source => lcd_source,
+                                leds => leds,
                                 led_chain => led_chain
             );
     }
@@ -112,7 +114,6 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     /*b Output muxes */
     output_muxes """
     """: {
-        leds = 0;
         lcd = { vsync_n        = !bbc_video_bus.vsync,
                 hsync_n        = !bbc_video_bus.hsync,
                 display_enable = bbc_video_bus.display_enable,
