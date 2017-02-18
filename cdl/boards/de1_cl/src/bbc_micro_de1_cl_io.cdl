@@ -62,6 +62,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                             input bit bbc_reset_n,
                             input bit framebuffer_reset_n,
                             input bit[4] keys,
+                            input bit[10] switches,
                             input t_bbc_clock_control clock_control,
                             output t_bbc_keyboard bbc_keyboard,
                             output t_video_bus video_bus,
@@ -71,6 +72,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                             output t_ps2_pins ps2_out "PS2 output pin driver open collector",
                             input  t_de1_cl_inputs_status   inputs_status  "DE1 CL daughterboard shifter register etc status",
                             output t_de1_cl_inputs_control  inputs_control "DE1 CL daughterboard shifter register control",
+                            output bit lcd_source,
                             output bit led_chain
     )
 {
@@ -157,6 +159,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
             key_state.fn_keys_down <= 0;
         }
         key_state.left_dial_was_pressed <= user_inputs.left_dial.pressed;
+        lcd_source = switches[3];
     }
 
     /*b LED chain logic */

@@ -26,8 +26,8 @@ include "utils.h"
 
 /*a Constants */
 constant integer sr_length=16;
-constant integer filter_period=32; // Number of SR cycles of filtering (16us each) - should be 1ms or so
-constant integer filter_level=16;  // Hysteresis level for debounce filtering (16us each)
+constant integer filter_period=64; // Number of SR cycles of filtering (16us each) - should be 1ms or so
+constant integer filter_level=32;  // Hysteresis level for debounce filtering (16us each)
 
 /*a Types */
 /*t t_sr_combs */
@@ -202,7 +202,7 @@ encoder is not optical :-).
             rotary_state[i].direction_pulse <= 0;
             rotary_state[i].t_state  <= rotary_debounced[i].transition_pin;
             if (rotary_state[i].t_state && !rotary_debounced[i].transition_pin) { // falling edge of t_pin
-                rotary_state[i].direction <= rotary_debounced[i].direction_pin;
+                rotary_state[i].direction <= !rotary_debounced[i].direction_pin;
                 rotary_state[i].direction_pulse <= 1;
             }
         }

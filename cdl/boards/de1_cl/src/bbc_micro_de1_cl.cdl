@@ -63,6 +63,7 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     comb bit bbc_reset_n;
     comb bit framebuffer_reset_n;
     net t_bbc_keyboard bbc_keyboard;
+    net bit lcd_source;
 
     /*b Miscellaneous logic */
     misc_logic """
@@ -79,6 +80,7 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                                 bbc_reset_n <= bbc_reset_n,
                                 framebuffer_reset_n <= framebuffer_reset_n,
                                 keys <= keys,
+                                switches <= switches,
                                 clock_control <= bbc_clock_control,
                                 bbc_keyboard => bbc_keyboard,
                                 video_bus => io_video_bus,
@@ -88,6 +90,7 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                                 inputs_status <= inputs_status,
                                 ps2_in <= ps2_in,
                                 ps2_out => ps2_out,
+                                lcd_source => lcd_source,
                                 led_chain => led_chain
             );
     }
@@ -118,7 +121,7 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                 blue           = bbc_video_bus.blue[6;2],
                 backlight = switches[1]
         };
-        if (0 /*lcd_source*/) {
+        if (lcd_source) {
             lcd = { vsync_n        = !io_video_bus.vsync,
                     hsync_n        = !io_video_bus.hsync,
                     display_enable = io_video_bus.display_enable,

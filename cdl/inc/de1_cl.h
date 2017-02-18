@@ -147,7 +147,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                             input bit bbc_reset_n,
                             input bit framebuffer_reset_n,
                             input bit[4] keys,
-
+                            input bit[10] switches,
                             input t_bbc_clock_control clock_control,
                             output t_bbc_keyboard bbc_keyboard,
                             output t_video_bus video_bus,
@@ -157,11 +157,13 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                             output t_ps2_pins ps2_out "PS2 output pin driver open collector",
                             input  t_de1_cl_inputs_status   inputs_status  "DE1 CL daughterboard shifter register etc status",
                             output t_de1_cl_inputs_control  inputs_control "DE1 CL daughterboard shifter register control",
+                            output bit lcd_source,
                             output bit led_chain
     )
 {
     timing to   rising clock clk clock_control;
-    timing to   rising clock clk keys;
+    timing to   rising clock clk keys, switches;
+    timing from rising clock clk lcd_source;
     timing from rising clock clk bbc_keyboard, csr_request;
     timing to   rising clock clk csr_response;
     timing from rising clock video_clk video_bus;
