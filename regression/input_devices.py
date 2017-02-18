@@ -129,8 +129,8 @@ for c,k in ps2_key_map.iteritems():
     pass
 
 #a Test classes
-#c c_test_one
-class c_test_one(simple_tb.base_th):
+#c c_ps2_test_one
+class c_ps2_test_one(simple_tb.base_th):
     keys_to_test = ( ("Q", True),
                      ("Alt (right)", False),
                      ("Q", False),
@@ -139,7 +139,7 @@ class c_test_one(simple_tb.base_th):
                      ("KP1", False),
                      (None, (0,0,0),),
                      (None, (0,1,1,1,1,0,0,0,0,1,1,1),),
-                     (None, (0, 0,0,0,0, 0,1,1,1, 1,1),),
+                     (None, (0, 0,0,0,0, 0,0,1,1, 1,1),),
                      ("Page Up", True),
                      ("F9", True),
                      ("F9", False),
@@ -171,7 +171,7 @@ class c_test_one(simple_tb.base_th):
         pass
     #f parity
     def parity(self,data):
-        if data==0: return 0
+        if data==0: return 1 # odd parity
         return self.parity(data>>1) ^ (data&1)
     #f ps2_data_bits
     def ps2_data_bits(self, data, delay_fn):
@@ -217,13 +217,14 @@ class c_test_one(simple_tb.base_th):
                     code = (self.ios.ps2_key__extended.value(),
                             self.ios.ps2_key__key_number.value(),
                             self.ios.ps2_key__release.value())
-                    print "Key %d %02x %d"%code
+                    #print >>sys.stderr, "Key valid %d %02x %d"%code
                     s = code[1]
                     if code[0]: s=s+0x100
                     if s not in ps2_key_map:
-                        print "Not found",s
+                        self.failtest(0,"Key not found in ps2_key_map"+str(s))
                         pass
                     else:
+                        print >>sys.stderr, "Added key %s"%(str((not code[2],s,ps2_key_map[s]),))
                         keys_pressed.append((not code[2],s,ps2_key_map[s]))
                         pass
                     pass
@@ -232,6 +233,7 @@ class c_test_one(simple_tb.base_th):
             pass
         keys_tested = []
         for (k,down) in self.keys_to_test:
+            #print >>sys.stderr, "Test input",k,down
             if k is None:
                 if type(down)==int:
                     delay(down*self.cfg_divider)
@@ -247,7 +249,7 @@ class c_test_one(simple_tb.base_th):
             pass
         delay()
         if (len(keys_tested) != len(keys_pressed)):
-            self.failtest(0,"Mismatch in keys to test and keys pressed"+str((len(keys_tested),len(keys_pressed))))
+            self.failtest(0,"Mismatch in length of keys to test and keys pressed"+str((len(keys_tested),len(keys_pressed))))
         else:
             for i in range(len(keys_tested)):
                 (ek,edown)  = keys_tested[i]
@@ -261,8 +263,8 @@ class c_test_one(simple_tb.base_th):
         pass
 
 #a Hardware classes
-#c cdl_test_hw
-class cdl_test_hw(simple_tb.cdl_test_hw):
+#c ps2_test_hw
+class ps2_test_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of LED chain
     """
@@ -288,12 +290,11 @@ class cdl_test_hw(simple_tb.cdl_test_hw):
     pass
 
 #a Simulation test classes
-#c c_Test_LedChain
-class c_Test_LedChain(simple_tb.base_test):
+#c ps2
+class ps2(simple_tb.base_test):
     def test_one(self):
-        test = c_test_one()
-        hw = cdl_test_hw(test=test)
-        self.do_test_run(hw,
-                         num_cycles=1000*1000)
+        test = c_ps2_test_one()
+        hw = ps2_test_hw(test=test)
+        self.do_test_run(hw, num_cycles=1000*1000)
         pass
     pass

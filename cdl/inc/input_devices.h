@@ -19,30 +19,6 @@
  *
  */
 
-/*a Types */
-/*t t_ps2_pins */
-typedef struct {
-    bit data;
-    bit clk;
-} t_ps2_pins;
-
-/*t t_ps2_rx_data */
-typedef struct {
-    bit    valid;
-    bit[8] data;
-    bit    parity_error;
-    bit    protocol_error;
-    bit    timeout;
-} t_ps2_rx_data;
-
-/*t t_ps2_key_state */
-typedef struct {
-    bit valid;
-    bit extended;
-    bit release;
-    bit[8] key_number;
-} t_ps2_key_state;
-
 /*a Key codes
 The PS2 codes are:
 
@@ -155,6 +131,31 @@ Windows     E01F
 83 F7
 
  */
+
+/*a Types */
+/*t t_ps2_pins */
+typedef struct {
+    bit data;
+    bit clk;
+} t_ps2_pins;
+
+/*t t_ps2_rx_data */
+typedef struct {
+    bit    valid;
+    bit[8] data;
+    bit    parity_error;
+    bit    protocol_error;
+    bit    timeout;
+} t_ps2_rx_data;
+
+/*t t_ps2_key_state */
+typedef struct {
+    bit valid;
+    bit extended;
+    bit release;
+    bit[8] key_number;
+} t_ps2_key_state;
+
 /*a Modules */
 /*m ps2_host */
 extern module ps2_host( clock        clk     "Clock",

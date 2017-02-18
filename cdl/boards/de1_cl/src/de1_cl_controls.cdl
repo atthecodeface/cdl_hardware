@@ -22,17 +22,25 @@
  */
 /*a Includes */
 include "de1_cl.h"
+include "utils.h"
 
+/*a Constants */
 constant integer sr_length=16;
-constant integer debounce_count=5;
+constant integer filter_period=32; // Number of SR cycles of filtering (16us each) - should be 1ms or so
+constant integer filter_level=16;  // Hysteresis level for debounce filtering (16us each)
+
+/*a Types */
+/*t t_sr_combs */
 typedef struct {
     t_de1_cl_shift_register sr_decode;
     bit sr_will_be_valid;
     bit counter_expired;
+    bit cycle_completed;
     bit falling_edge;
     bit rising_edge;
 } t_sr_combs;
 
+/*t t_sr_state */
 typedef struct {
     bit[8] counter;
     bit[4] num_bits_valid;
@@ -43,16 +51,11 @@ typedef struct {
     bit sr_shift "Output signal for LS165 'shift' - an async preload signal - so loads shift register when this is load asynchronously";
 } t_sr_state;
 
+/*t t_rotary_state */
 typedef struct {
-    bit d_pin      "Captured value of direction pin";
-    bit d_value    "Believed value of direction pin";
-    bit[8] d_count "Number of cycles that d_value!=d_pin";
-    bit t_pin      "Captured value of transition pin";
-    bit t_value    "Believed value of transition pin";
-    bit[8] t_count "Number of cycles that t_value!=t_pin";
-    bit t_toggle   "Asserted if t_value was changed to t_pin";
-    bit direction;
-    bit direction_pulse;
+    bit t_state          "State of transition pin at alst clock";
+    bit direction_pulse  "Asserted if a falling edge on transition pin occurs";
+    bit direction        "Direction of rotation, if direction_pulse is asserted";
 } t_rotary_state;
 
 /*a Module */
@@ -91,6 +94,7 @@ encoder is not optical :-).
     clocked t_de1_cl_user_inputs user_inputs={*=0};
     comb t_rotary_motion_inputs[2] rotary_inputs;
     clocked t_rotary_state[2] rotary_state={*=0};
+    net t_rotary_motion_inputs[2] rotary_debounced;
 
     /*b Inputs control logic - manage the outputs from other state */
     inputs_control_logic """
@@ -127,6 +131,7 @@ encoder is not optical :-).
         sr_combs.rising_edge       = sr_combs.counter_expired && !sr_state.sr_clock;
         sr_combs.falling_edge      = sr_combs.counter_expired && sr_state.sr_clock;
         sr_combs.sr_will_be_valid  = sr_state.sr_shift && (sr_state.num_bits_valid==sr_length-1);
+        sr_combs.cycle_completed   = sr_combs.sr_will_be_valid && sr_combs.falling_edge;
 
         sr_combs.sr_decode.diamond.b = sr_state.shift_register[0];
         sr_combs.sr_decode.diamond.a = sr_state.shift_register[1];
@@ -178,37 +183,31 @@ encoder is not optical :-).
         rotary_inputs[0] = inputs_status.left_rotary;
         rotary_inputs[1] = inputs_status.right_rotary;
         for (i; 2) {
+            hysteresis_switch debounce_direction[i]( clk <- clk,
+                                                     reset_n <= reset_n,
+                                                     clk_enable <= sr_combs.cycle_completed,
+                                                     input_value <= rotary_inputs[i].direction_pin,
+                                                     output_value => rotary_debounced[i].direction_pin,
+                                                     filter_period <= filter_period,
+                                                     filter_level <= filter_level );
+            hysteresis_switch debounce_transition[i]( clk <- clk,
+                                                     reset_n <= reset_n,
+                                                     clk_enable <= sr_combs.cycle_completed,
+                                                     input_value <= rotary_inputs[i].transition_pin,
+                                                     output_value => rotary_debounced[i].transition_pin,
+                                                     filter_period <= filter_period,
+                                                     filter_level <= filter_level );
+        }
+        for (i; 2) {
             rotary_state[i].direction_pulse <= 0;
-            if (sr_combs.falling_edge && sr_combs.sr_will_be_valid) {
-                rotary_state[i].d_pin   <= rotary_inputs[i].direction_pin;
-                if (rotary_state[i].d_value == rotary_state[i].d_pin) {
-                    rotary_state[i].d_count <= 0;
-                } elsif (rotary_state[i].d_count==debounce_count) {
-                    rotary_state[i].d_count <= 0;
-                    rotary_state[i].d_value <= rotary_state[i].d_pin;
-                } else {
-                    rotary_state[i].d_count <= rotary_state[i].d_count + 1;
-                }
-
-                rotary_state[i].t_pin   <= rotary_inputs[i].transition_pin;
-                rotary_state[i].t_toggle <= 0;
-                if (rotary_state[i].t_value == rotary_state[i].t_pin) {
-                    rotary_state[i].t_count <= 0;
-                } elsif (rotary_state[i].t_count==debounce_count) {
-                    rotary_state[i].t_count <= 0;
-                    rotary_state[i].t_value <= rotary_state[i].t_pin;
-                    rotary_state[i].t_toggle <= 1;
-                } else {
-                    rotary_state[i].t_count <= rotary_state[i].t_count + 1;
-                }
-
-                if (rotary_state[i].t_toggle && !rotary_state[i].t_value) {
-                    rotary_state[i].direction <= !rotary_state[i].d_value;
-                    rotary_state[i].direction_pulse <= 1;
-                }
+            rotary_state[i].t_state  <= rotary_debounced[i].transition_pin;
+            if (rotary_state[i].t_state && !rotary_debounced[i].transition_pin) { // falling edge of t_pin
+                rotary_state[i].direction <= rotary_debounced[i].direction_pin;
+                rotary_state[i].direction_pulse <= 1;
             }
         }
     }
+
     /*b User control logic - drive other state out to client */
     user_control_logic """
     Pull the shift register and rotary controls etc together
