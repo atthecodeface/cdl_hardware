@@ -21,6 +21,8 @@
 
 /*a Includes */
 include "bbc_micro_types.h"
+include "csr_interface.h"
+include "input_devices.h"
 
 /*a Types */
 /*t t_de1_cl_inputs_control */
