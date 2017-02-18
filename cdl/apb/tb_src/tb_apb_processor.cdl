@@ -25,11 +25,12 @@ include "apb_peripherals.h"
 /*a External modules */
 extern module se_test_harness( clock clk,
                                output t_apb_processor_request  apb_processor_request,
-                               input t_apb_processor_response  apb_processor_response
+                               input t_apb_processor_response  apb_processor_response,
+                               input bit[3] timer_equalled
     )
 {
     timing from rising clock clk apb_processor_request;
-    timing to   rising clock clk apb_processor_response;
+    timing to   rising clock clk apb_processor_response, timer_equalled;
 }
 
 /*a Module */
@@ -61,7 +62,8 @@ module tb_apb_processor( clock clk,
     instantiations: {
         se_test_harness th( clk <- clk,
                             apb_processor_request => apb_processor_request,
-                            apb_processor_response <= apb_processor_response );
+                            apb_processor_response <= apb_processor_response,
+                            timer_equalled <= timer_equalled );
 
         apb_processor apbp( clk <- clk,
                        reset_n <= reset_n,

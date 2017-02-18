@@ -45,9 +45,12 @@ class c_rom_th(simple_tb.base_th):
         "rom_op_bne": 2,
         "rom_op_loop": 3,
 
-        "rom_op_req_read": 0, # auto-increment
+        "rom_op_req_read": 0,
         "rom_op_req_write_arg": 1,
         "rom_op_req_write_acc": 2,
+        "rom_op_req_read_inc": 4, # auto-increment
+        "rom_op_req_write_arg_inc": 5,
+        "rom_op_req_write_acc_inc": 6,
         }
     #f op_alu
     @classmethod
@@ -83,38 +86,52 @@ class c_rom_th(simple_tb.base_th):
 #c c_test_one
 class c_test_one(c_rom_th):
     #f Stuff
-    program = [(c_rom_th.op_set("accumulator",0),),
-               (c_rom_th.op_alu("xor",0xffffffff),),
-               (c_rom_th.op_alu("bic",0xdeadbeef),),
-               (c_rom_th.op_set("repeat",5),),
-               (c_rom_th.op_set("address",0x00000004),["loop_start:"]),
-               (c_rom_th.op_req("write_acc",0x00000204),),
-               (c_rom_th.op_req("write_arg",0x00000054),),
-               (c_rom_th.op_wait(0x00000050),),
-               (c_rom_th.op_req("write_arg",0x000000a0),),
-               (c_rom_th.op_branch("loop",0),["loop_start"]),
-               (c_rom_th.op_req("write_arg",0x00000300),),
-               (c_rom_th.op_wait(0x000000a0),),
-               (c_rom_th.op_set("address",0,),),
-               (c_rom_th.op_req("read",0),),
-               (c_rom_th.op_alu("add",256),),
-               (c_rom_th.op_set("address",4,),),
-               (c_rom_th.op_req("write_acc",0),),
-               (c_rom_th.op_req("read",0),),
-               (c_rom_th.op_req("read",0),),
-               (c_rom_th.op_req("read",0),),
-               (c_rom_th.op_req("read",0),["read_loop:"]),
-               (c_rom_th.op_alu("and",0x80000000),),
-               (c_rom_th.op_branch("beq",0),["read_loop"]),
-               (c_rom_th.op_finish(),),
-               ]
-    # branch,  bne, auto-increment
+    program = {}
+    program["code"] = [(c_rom_th.op_set("accumulator",0),["timer_start:"]),
+                       (c_rom_th.op_branch("bne",0),["fail"]),
+                       (c_rom_th.op_alu("xor",0xffffffff),),
+                       (c_rom_th.op_branch("beq",0),["fail"]),
+                       (c_rom_th.op_branch("branch",0),["skip0"]),
+                       (c_rom_th.op_branch("bne",0),["fail"]),
+                       (c_rom_th.op_alu("bic",0xdeadbeef),["skip0:"]),
+                       (c_rom_th.op_branch("beq",0),["fail"]),
+                       (c_rom_th.op_alu("bic",0xdeadffff),),
+                       (c_rom_th.op_branch("beq",0),["fail"]),
+                       (c_rom_th.op_alu("bic",0x21520000),),
+                       (c_rom_th.op_branch("bne",0),["fail"]),
+                       (c_rom_th.op_set("repeat",5),),
+                       (c_rom_th.op_set("address",0x00000004),["loop_start:"]),
+                       (c_rom_th.op_req("write_acc",0x00000204),),
+                       (c_rom_th.op_req("write_arg",0x00000054),),
+                       (c_rom_th.op_wait(0x00000050),),
+                       (c_rom_th.op_req("write_arg",0x000000a0),),
+                       (c_rom_th.op_branch("loop",0),["loop_start"]),
+                       (c_rom_th.op_req("write_arg",0x00000300),),
+                       (c_rom_th.op_wait(0x000000a0),),
+                       (c_rom_th.op_set("address",0,),["timer_poll:"]),
+                       (c_rom_th.op_req("read",0),),
+                       (c_rom_th.op_alu("add",256),),
+                       (c_rom_th.op_set("address",4,),),
+                       (c_rom_th.op_req("write_acc_inc",0),),
+                       (c_rom_th.op_req("write_acc_inc",0),),
+                       (c_rom_th.op_req("write_acc",0),),
+                       (c_rom_th.op_set("address",4,),),
+                       (c_rom_th.op_req("read",0),["read_loop:"]),
+                       (c_rom_th.op_alu("and",0x80000000),),
+                       (c_rom_th.op_branch("beq",0),["read_loop"]),
+                       (c_rom_th.op_req("read_inc",0),),
+                       (c_rom_th.op_req("read_inc",0),),
+                       (c_rom_th.op_req("read_inc",0),),
+                       (c_rom_th.op_finish(),["fail:"]),
+                       ]
+    program["entry_points"] = ["timer_start", "timer_poll", "timer_start"]
+    expectation = [7, 6, 7, 6, 7, 6, 7, 6, 4, 0, 7, 6, 4, 0] + [7, 6, 4, 0] + [7, 6, 4, 0]
     #f fill_rom
     def fill_rom(self, program, address=0):
         label_addresses = {}
         for p in range(2):
             prog_address = address
-            for op_labels in program:
+            for op_labels in program["code"]:
                 if len(op_labels)==1:
                     op=op_labels[0]
                     labels=[]
@@ -136,6 +153,30 @@ class c_test_one(c_rom_th):
                 prog_address = prog_address + 1
                 pass
             pass
+        entry_addresses = []
+        for ep in program["entry_points"]:
+            entry_addresses.append(label_addresses[ep+":"])
+            pass
+        return entry_addresses
+    #f bfm_tick
+    def bfm_tick(self, cycles):
+        for i in range(cycles):
+            t = self.ios.timer_equalled.value()
+            if t != self.timers[-1]:
+                self.timers.append(t)
+                pass
+            self.bfm_wait(1)
+            pass
+        pass
+    #f execute
+    def execute(self, address):
+        self.ios.apb_processor_request__valid.drive(1)
+        self.ios.apb_processor_request__address.drive(address)
+        self.bfm_tick(1)
+        while self.ios.apb_processor_response__acknowledge.value()==0:
+            self.bfm_tick(1)
+            pass
+        self.ios.apb_processor_request__valid.drive(0)
         pass
     #f run
     def run(self):
@@ -143,11 +184,26 @@ class c_test_one(c_rom_th):
         self.bfm_wait(10)
         self.sim_msg = self.sim_message()
         self.bfm_wait(25)
-        self.fill_rom(self.program)
-        self.ios.apb_processor_request__valid.drive(1)
-        self.ios.apb_processor_request__address.drive(0)
-        self.bfm_wait(1)
-        self.ios.apb_processor_request__valid.drive(0)
+        executions = self.fill_rom(self.program)
+        self.timers = [self.ios.timer_equalled.value()]
+        for address in executions:
+            self.execute(address)
+            pass
+        self.bfm_tick(2000)
+        for t in self.timers:
+            if len(self.expectation)>0:
+                et = self.expectation.pop(0)
+                if t!=et:
+                    self.failtest(0,"Mismatch in timer (%d/%d)"%(t,et))
+                    pass
+                pass
+            else:
+                self.failtest(0,"Unexpected timer change (%d)"%(t,))
+                pass
+            pass
+        if len(self.expectation)>0:
+            self.failtest(0,"Expected more timer changes: %s"%(str(self.expectation),))
+            pass
         self.bfm_wait(25)
         self.finishtest(0,"")
         pass
@@ -161,6 +217,7 @@ class apb_processor_hw(simple_tb.cdl_test_hw):
     th_forces = { "th.clock":"clk",
                   "th.inputs":("apb_processor_response__acknowledge "+
                                "apb_processor_response__rom_busy "+
+                               "timer_equalled[3] "+
                                ""),
                   "th.outputs":("apb_processor_request__valid "+
                                 "apb_processor_request__address[16] "+
