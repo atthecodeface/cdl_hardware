@@ -93,10 +93,10 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
     net  t_de1_cl_user_inputs     user_inputs;
 
     net t_bbc_display_sram_write tt_display_sram_write;
-    net bit[3] dprintf_ack;
-    clocked clock clk reset active_low reset_n t_dprintf_req[3] dprintf_req={*=0};
-    net bit[2]           dprintf_mux_ack;
-    net t_dprintf_req[2] dprintf_mux_req;
+    net bit[6] dprintf_ack;
+    clocked clock clk reset active_low reset_n t_dprintf_req[6] dprintf_req={*=0};
+    net bit[6]           dprintf_mux_ack;
+    net t_dprintf_req[6] dprintf_mux_req;
     comb t_debug_combs debug_combs;
     clocked clock clk reset active_low reset_n t_debug_state debug_state={*=0};
     clocked clock clk reset active_low reset_n t_key_state key_state={*=0};
@@ -107,8 +107,9 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
     """: {
         debug_combs = {*=0};
         debug_combs.timer_10ms = 0;
-        if (debug_state.update==500*1000-1) {
-            debug_combs.timer_10ms = 0;
+        if (debug_state.update==500-1) {
+            //if (debug_state.update==500*1000-1) {
+            debug_combs.timer_10ms = 1;
         }
 
         debug_state.update <= debug_state.update+1;
@@ -169,16 +170,16 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
         if (led_request.ready) {
             led_data.valid = 1;            
             part_switch(led_request.led_number) {
-            case 0: {led_data = {red=(key_state.last_fn_key== 0) ? 8h00 : 8h3f};}
-            case 1: {led_data = {red=(key_state.last_fn_key== 1) ? 8h00 : 8h3f};}
-            case 2: {led_data = {red=(key_state.last_fn_key== 2) ? 8h00 : 8h3f};}
-            case 3: {led_data = {red=(key_state.last_fn_key== 3) ? 8h00 : 8h3f};}
-            case 4: {led_data = {red=(key_state.last_fn_key== 4) ? 8h00 : 8h3f};}
-            case 5: {led_data = {red=(key_state.last_fn_key== 5) ? 8h00 : 8h3f};}
-            case 6: {led_data = {red=(key_state.last_fn_key== 6) ? 8h00 : 8h3f};}
-            case 7: {led_data = {red=(key_state.last_fn_key== 7) ? 8h00 : 8h3f};}
-            case 8: {led_data = {red=(key_state.last_fn_key== 8) ? 8h00 : 8h3f};}
-            case 9: {led_data = {red=(key_state.last_fn_key== 9) ? 8h00 : 8h3f};}
+            case 0: {led_data = {red=(key_state.last_fn_key== 0) ? 8h3f : 8h00};}
+            case 1: {led_data = {red=(key_state.last_fn_key== 1) ? 8h3f : 8h00};}
+            case 2: {led_data = {red=(key_state.last_fn_key== 2) ? 8h3f : 8h00};}
+            case 3: {led_data = {red=(key_state.last_fn_key== 3) ? 8h3f : 8h00};}
+            case 4: {led_data = {red=(key_state.last_fn_key== 4) ? 8h3f : 8h00};}
+            case 5: {led_data = {red=(key_state.last_fn_key== 5) ? 8h3f : 8h00};}
+            case 6: {led_data = {red=(key_state.last_fn_key== 6) ? 8h3f : 8h00};}
+            case 7: {led_data = {red=(key_state.last_fn_key== 7) ? 8h3f : 8h00};}
+            case 8: {led_data = {red=(key_state.last_fn_key== 8) ? 8h3f : 8h00};}
+            case 9: {led_data = {red=(key_state.last_fn_key== 9) ? 8h3f : 8h00};}
             }
             if (led_request.led_number==11) {
                 led_data.last=1;
@@ -265,14 +266,25 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                     data_1=bundle(ps2_key.release?8h02:8h01, ps2_key.extended?8h45:8h00, 8h81, ps2_key.key_number, 32h2020ffff) };
         }
         if (debug_combs.timer_10ms) {
-            dprintf_req[1] <= {valid=1, address=80,
+            dprintf_req[1] <= {valid=1, address=40,
                     data_0=64h52_69_67_68_74_20_44_69,
                     data_1=bundle(24h61_6c_3a, user_inputs.right_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.last_fn_key,16hff)};
         }
         if (debug_combs.timer_10ms) {
-            dprintf_req[2] <= {valid=1, address=160,
+            dprintf_req[2] <= {valid=1, address=80,
+                    data_0=64h4c_65_66_74_20_44_69_61,
+                    data_1=bundle(24h6c_20_3a, user_inputs.left_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.speed_selection,16hff)};
+        }
+        if (debug_combs.timer_10ms) {
+            dprintf_req[3] <= {valid=1, address=160,
                     data_0=64h43_6f_75_6e_74_65_72_3a,
                     data_1=bundle(16h03_87, debug_state.counter, 16hff)};
+        }
+        if (debug_combs.timer_10ms) {
+            dprintf_req[4] <= {valid=1, address=200,
+                    data_0=bundle(8h84, apb_processor_request.address, apb_processor_request.valid, apb_processor_response.acknowledge, apb_processor_response.rom_busy,5b0,
+                                  32hff),
+                    data_1=-1 };
         }
 
         teletext_dprintf_mux tdm01( clk <- clk,
@@ -284,7 +296,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                                     req => dprintf_mux_req[0],
                                     ack <= dprintf_mux_ack[0] );
 
-        for (i; 1) {
+        for (i; 4) {
             teletext_dprintf_mux tdm[i]( clk <- clk, reset_n <= reset_n,
                                          req_a <= dprintf_req[2+i],
                                          ack_a => dprintf_ack[2+i],
@@ -296,8 +308,8 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
 
         teletext_dprintf dprintf( clk <- clk,
                                   reset_n <= reset_n,
-                                  dprintf_req <= dprintf_mux_req[1],
-                                  dprintf_ack => dprintf_mux_ack[1],
+                                  dprintf_req <= dprintf_mux_req[5],
+                                  dprintf_ack => dprintf_mux_ack[5],
                                   display_sram_write =>  tt_display_sram_write
             );
 
