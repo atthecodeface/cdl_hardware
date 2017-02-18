@@ -33,6 +33,7 @@ include "apb.h"
 /*a Constants */
 constant bit[8] sr_divider    = 49; // 1MHz
 constant bit[8] divider_400ns = 19; // 2.5MHz
+constant integer num_dprintf_requesters=6;
 
 /*a Types */
 /*t t_debug_combs */
@@ -93,10 +94,10 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
     net  t_de1_cl_user_inputs     user_inputs;
 
     net t_bbc_display_sram_write tt_display_sram_write;
-    net bit[6] dprintf_ack;
-    clocked clock clk reset active_low reset_n t_dprintf_req[6] dprintf_req={*=0};
-    net bit[6 ]           dprintf_mux_ack;
-    net t_dprintf_req[6] dprintf_mux_req;
+    net bit[num_dprintf_requesters] dprintf_ack;
+    clocked clock clk reset active_low reset_n t_dprintf_req[num_dprintf_requesters] dprintf_req={*=0};
+    net bit[num_dprintf_requesters-1]           dprintf_mux_ack;
+    net t_dprintf_req[num_dprintf_requesters-1] dprintf_mux_req;
     comb t_debug_combs debug_combs;
     clocked clock clk reset active_low reset_n t_debug_state debug_state={*=0};
     clocked clock clk reset active_low reset_n t_key_state key_state={*=0};
@@ -296,7 +297,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                                     req => dprintf_mux_req[0],
                                     ack <= dprintf_mux_ack[0] );
 
-        for (i; 4) {
+        for (i; num_dprintf_requesters-2) {
             teletext_dprintf_mux tdm[i]( clk <- clk, reset_n <= reset_n,
                                          req_a <= dprintf_req[2+i],
                                          ack_a => dprintf_ack[2+i],
@@ -308,8 +309,8 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
 
         teletext_dprintf dprintf( clk <- clk,
                                   reset_n <= reset_n,
-                                  dprintf_req <= dprintf_mux_req[5],
-                                  dprintf_ack => dprintf_mux_ack[5],
+                                  dprintf_req <= dprintf_mux_req[num_dprintf_requesters-2],
+                                  dprintf_ack => dprintf_mux_ack[num_dprintf_requesters-2],
                                   display_sram_write =>  tt_display_sram_write
             );
 
