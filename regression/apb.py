@@ -190,20 +190,7 @@ class c_test_one(c_rom_th):
             self.execute(address)
             pass
         self.bfm_tick(2000)
-        for t in self.timers:
-            if len(self.expectation)>0:
-                et = self.expectation.pop(0)
-                if t!=et:
-                    self.failtest(0,"Mismatch in timer (%d/%d)"%(t,et))
-                    pass
-                pass
-            else:
-                self.failtest(0,"Unexpected timer change (%d)"%(t,))
-                pass
-            pass
-        if len(self.expectation)>0:
-            self.failtest(0,"Expected more timer changes: %s"%(str(self.expectation),))
-            pass
+        self.compare_expected_list("timer change", self.expectation, self.timers)
         self.bfm_wait(25)
         self.finishtest(0,"")
         pass

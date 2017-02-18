@@ -20,12 +20,31 @@ import sys, os, unittest
 #c base_th
 class base_th(pycdl._thfile):
     _auto_wire_same_name = False
+    #f compare_expected_list
+    def compare_expected_list(self, reason, expectation, actual):
+        expectation = expectation[:]
+        for t in actual:
+            if len(expectation)>0:
+                et = expectation.pop(0)
+                if t!=et:
+                    self.failtest(0,"Mismatch in %s (%d/%d)"%(reason,t,et))
+                    pass
+                pass
+            else:
+                self.failtest(0,"Unexpected %s (%d)"%(reason,t,))
+                pass
+            pass
+        if len(expectation)>0:
+            self.failtest(0,"Expected more %ss: %s"%(reason,str(expectation),))
+            pass
+        pass
     #f exec_run
     def exec_run(self):
         self._th = self
         self._failtests = 0
         self.run()
         pass
+    #f sim_message
     def sim_message(self):
         self.cdlsim_reg.sim_message( "sim_message_obj" )
         x = self.sim_message_obj
