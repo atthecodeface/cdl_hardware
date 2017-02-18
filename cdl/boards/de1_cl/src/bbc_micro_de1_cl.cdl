@@ -23,6 +23,7 @@
 /*a Includes */
 include "bbc_micro_types.h"
 include "bbc_submodules.h"
+include "dprintf.h"
 include "input_devices.h"
 include "leds.h"
 include "de1_cl.h"
@@ -49,6 +50,7 @@ typedef struct {
     bit data;
     bit last_data;
     bit[32] counter;
+    bit[16] update;
 } t_debug_state;
 module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generator",
                          clock video_clk    "9MHz clock from PLL, derived from 50MHz",
@@ -111,7 +113,9 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     clocked clock clk_cpu reset active_low reset_n t_bbc_floppy_sram_request floppy_sram_request_r={*=0};
     clocked clock clk_cpu reset active_low reset_n t_bbc_floppy_sram_response floppy_sram_response={*=0};
 
-    clocked clock clk reset active_low reset_n t_bbc_display_sram_write tt_display_sram_write={*=0};
+    clocked clock clk reset active_low reset_n t_dprintf_req dprintf_req={*=0};
+    net bit dprintf_ack;
+    net t_bbc_display_sram_write tt_display_sram_write;
 
     /*b Debug stuff */
     comb t_debug_comb debug_comb;
@@ -138,22 +142,33 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
         } elsif (!switches[5] && debug_state.data) {
             debug_state.counter <= debug_state.counter+1;
         }
+        debug_state.update <= debug_state.update+1;
         leds = debug_state.counter[10;0];
         if (switches[9]) {
             leds = debug_state.counter[10;6];
         }
 
-        tt_display_sram_write <= {*=0};
+        teletext_dprintf dprintf( clk <- clk,
+                                  reset_n <= reset_n,
+                                  dprintf_req <= dprintf_req,
+                                  dprintf_ack => dprintf_ack,
+                                  display_sram_write =>  tt_display_sram_write
+            );
+        dprintf_req <= {valid=0};
         if (ps2_key.valid) {
-            tt_display_sram_write.enable <= 1;
-            tt_display_sram_write.address[8]   <= ps2_key.extended;
-            tt_display_sram_write.address[8;0] <= ps2_key.key_number;
-            tt_display_sram_write.data         <= ps2_key.release ? 0x30 : 0x31;
+            dprintf_req <= {valid=1, address=0,
+                    data_0=64h50_53_32_20_6b_65_79_3a,
+                    data_1=bundle(ps2_key.release?8h02:8h01, ps2_key.extended?8h45:8h00, 8h81, ps2_key.key_number, 32h2020ffff) };
         }
         if (user_inputs.right_dial.pressed) {
-            tt_display_sram_write.enable <= 1;
-            tt_display_sram_write.address      <= bundle(7h1,9h0);
-            tt_display_sram_write.data         <= 48h30 | bundle(44b0,last_fn_key);
+            dprintf_req <= {valid=1, address=80,
+                    data_0=64h52_69_67_68_74_20_44_69,
+                    data_1=bundle(40h61_6c_3a_06_80, 4b0,last_fn_key,16hff)};
+        }
+        if (debug_state.update==0) {
+            dprintf_req <= {valid=1, address=160,
+                    data_0=64h43_6f_75_6e_74_65_72_3a,
+                    data_1=bundle(16h03_87, debug_state.counter, 16hff)};
         }
     }
 
