@@ -95,7 +95,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
     net t_bbc_display_sram_write tt_display_sram_write;
     net bit[6] dprintf_ack;
     clocked clock clk reset active_low reset_n t_dprintf_req[6] dprintf_req={*=0};
-    net bit[6]           dprintf_mux_ack;
+    net bit[6 ]           dprintf_mux_ack;
     net t_dprintf_req[6] dprintf_mux_req;
     comb t_debug_combs debug_combs;
     clocked clock clk reset active_low reset_n t_debug_state debug_state={*=0};
