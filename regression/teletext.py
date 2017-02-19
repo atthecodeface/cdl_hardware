@@ -522,8 +522,64 @@ class c_test_fb_one(simple_tb.base_th):
         self.finishtest(0,"")
         pass
 
+#c c_test_dprintf_base
+class c_test_dprintf_base(simple_tb.base_th):
+    writes_to_do = [
+        ]
+    expected_sram_ops = [
+        ]
+    #f bfm_tick
+    def bfm_tick(self, cycles):
+        for i in range(cycles):
+            if (self.ios.display_sram_write__enable.value()):
+                self.sram_writes.append( (self.ios.display_sram_write__address.value(),
+                                          self.ios.display_sram_write__data.value(),) )
+                pass
+            self.bfm_wait(1)
+            pass
+        pass
+    #f dprintf
+    def dprintf(self, address, data):
+        self.ios.dprintf_req__valid.drive(1)
+        self.ios.dprintf_req__address.drive(address)
+        self.ios.dprintf_req__data_0.drive(data[0])
+        self.ios.dprintf_req__data_1.drive(data[1])
+        self.bfm_tick(1)
+        while self.ios.dprintf_ack.value()==0:
+            self.bfm_tick(1)
+            pass
+        self.ios.dprintf_req__valid.drive(0)
+        pass
+    #f run
+    def run(self):
+        self.sram_writes = []
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(10)
+        for (address, data) in self.writes_to_do:
+            self.dprintf(address, data)
+            pass
+        self.bfm_tick(1000)
+        if len(self.sram_writes) != len(self.expected_sram_ops):
+            self.failtest(0,"Mismatch in number of SRAM writes %d/%d"%(len(self.sram_writes),len(self.expected_sram_ops)))
+            for s in self.sram_writes:
+                print "(0x%04x, 0x%02x),"%(s[0],s[1])
+                pass
+            pass
+        else:
+            for i in range(len(self.sram_writes)):
+                if self.expected_sram_ops[i][0] != self.sram_writes[i][0]:
+                    self.failtest(i,"Mismatch in SRAM %d write address %04x/%04x"%(i,self.expected_sram_ops[i][0], self.sram_writes[i][0]))
+                    pass
+                if self.expected_sram_ops[i][1] != self.sram_writes[i][1]:
+                    self.failtest(i,"Mismatch in SRAM %d write data %02x/%02x"%(i,self.expected_sram_ops[i][1], self.sram_writes[i][1]))
+                    pass
+                pass
+            pass
+        self.finishtest(0,"")
+        pass
+
 #c c_test_dprintf_one
-class c_test_dprintf_one(simple_tb.base_th):
+class c_test_dprintf_one(c_test_dprintf_base):
     writes_to_do = [ (0x1234, ((0x4142434445464748,0xff00ff00ff00ff00)) ),
                      (0xfedc, ((0x4100420043004400,0x0045460047000048)) ),
                      (0xf00f, ((0x80feffffffffffff,0)) ),
@@ -568,56 +624,28 @@ class c_test_dprintf_one(simple_tb.base_th):
                          (0xf01b, 0x45),
                          (0xf01c, 0x46),
         ]
-    #f bfm_tick
-    def bfm_tick(self, cycles):
-        for i in range(cycles):
-            if (self.ios.display_sram_write__enable.value()):
-                self.sram_writes.append( (self.ios.display_sram_write__address.value(),
-                                          self.ios.display_sram_write__data.value(),) )
-                pass
-            self.bfm_wait(1)
-            pass
-        pass
-    #f dprintf
-    def dprintf(self, address, data):
-        self.ios.dprintf_req__valid.drive(1)
-        self.ios.dprintf_req__address.drive(address)
-        self.ios.dprintf_req__data_0.drive(data[0])
-        self.ios.dprintf_req__data_1.drive(data[1])
-        self.bfm_tick(1)
-        while self.ios.dprintf_ack.value()==0:
-            self.bfm_tick(1)
-            pass
-        self.ios.dprintf_req__valid.drive(0)
-        pass
-    #f run
-    def run(self):
-        self.sram_writes = []
-        simple_tb.base_th.run_start(self)
-        self.bfm_wait(10)
-        for (address, data) in self.writes_to_do:
-            self.dprintf(address, data)
-            pass
-        self.bfm_tick(100)
-        if len(self.sram_writes) != len(self.expected_sram_ops):
-            self.failtest(0,"Mismatch in number of SRAM writes %d/%d"%(len(self.sram_writes),len(self.expected_sram_ops)))
-            for s in self.sram_writes:
-                print "(0x%04x, 0x%02x),"%(s[0],s[1])
-                pass
-            pass
-        else:
-            for i in range(len(self.sram_writes)):
-                if self.expected_sram_ops[i][0] != self.sram_writes[i][0]:
-                    self.failtest(i,"Mismatch in SRAM %d write address %04x/%04x"%(i,self.expected_sram_ops[i][0], self.sram_writes[i][0]))
-                    pass
-                if self.expected_sram_ops[i][1] != self.sram_writes[i][1]:
-                    self.failtest(i,"Mismatch in SRAM %d write data %02x/%02x"%(i,self.expected_sram_ops[i][1], self.sram_writes[i][1]))
-                    pass
-                pass
-            pass
-        self.finishtest(0,"")
-        pass
-
+#c c_test_dprintf_two
+class c_test_dprintf_two(c_test_dprintf_base):
+    writes_to_do = [ (0x1234, ((0xc041c00041424344,0xc3ffffffff00ffff)) ),
+                     ]
+    expected_sram_ops = [(0x1234, 0x36),
+                         (0x1235, 0x35),
+                         (0x1236, 0x30),
+                         (0x1237, 0x41),
+                         (0x1238, 0x42),
+                         (0x1239, 0x43),
+                         (0x123a, 0x44),
+                         (0x123b, 0x34),
+                         (0x123c, 0x32),
+                         (0x123d, 0x39),
+                         (0x123e, 0x34),
+                         (0x123f, 0x39),
+                         (0x1240, 0x36),
+                         (0x1241, 0x37),
+                         (0x1242, 0x32),
+                         (0x1243, 0x39),
+                         (0x1244, 0x35),
+        ]
 #c c_test_dprintf_mux_one
 class c_test_dprintf_mux_one(simple_tb.base_th):
     sram_reqs = {0:[(0x1010, 0x41),
@@ -825,12 +853,8 @@ class c_Test_LedChain(simple_tb.base_test):
 
 #c dprintf
 class dprintf(simple_tb.base_test):
-    def test_one(self):
-        test = c_test_dprintf_one()
-        hw = teletext_dprintf_hw(test=test)
-        self.do_test_run(hw,
-                         num_cycles=100*1000)
-        pass
+    def test_one(self): self.do_test_run(teletext_dprintf_hw(test=c_test_dprintf_one()), num_cycles=100*1000)
+    def test_two(self): self.do_test_run(teletext_dprintf_hw(test=c_test_dprintf_two()), num_cycles=1000*1000)
     pass
 #c dprintf_mux
 class dprintf_mux(simple_tb.base_test):

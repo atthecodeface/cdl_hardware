@@ -133,6 +133,7 @@ class cdl_test_hw(pycdl.hw):
 class base_test(unittest.TestCase):
     #f do_test_run
     def do_test_run(self, hw, num_cycles, num_cycles_with_waves=None):
+        print >>sys.stderr, "Running %s"%(self.id(),)
         if num_cycles_with_waves is None:
             num_cycles_with_waves = num_cycles
             pass

@@ -55,12 +55,37 @@ typedef struct {
     bit[64][2] data;
 } t_data_buffer_state;
 
+/*t t_decimal_action */
+typedef enum[4] {
+    decimal_action_none,
+    decimal_action_zero,
+    decimal_action_shift_data,
+    decimal_action_multiply_by_ten,
+    decimal_action_subtract_10e9,
+} t_decimal_action;
+
+/*t t_decimal_combs */
+typedef struct {
+    bit[35] acc_minus_10e9     "Accumulator minus 10e9";
+    bit     acc_less_than_10e9 "Asserted if accumulator is less than 10E9";
+    bit     acc_is_zero        "Asserted if accumulator is zero";
+} t_decimal_combs;
+
+/*t t_decimal_state */
+typedef struct {
+    bit[34] accumulator "Accumulator, repeated subtraction of 1E9 to get dividend/remainder";
+    bit[4] dividend     "Result of accumulator / 1E9";
+} t_decimal_state;
+
 /*t t_format_fsm */
 typedef fsm {
     state_idle;
     state_start_byte;
     state_hex_top_nybble;
     state_hex_bottom_nybble;
+    state_decimal_capture;
+    state_decimal_predigits;
+    state_decimal_nonzero;
 } t_format_fsm;
 
 /*t t_format_action */
@@ -73,6 +98,12 @@ typedef enum[4] {
     action_start_hex_format,
     action_write_hex_top_nybble,
     action_write_hex_bottom_nybble,
+    action_start_decimal_format,
+    action_capture_decimal,
+    action_decimal_subtract,
+    action_decimal_skip,
+    action_decimal_output_zero,
+    action_decimal_output,
 } t_format_action;
 
 /*t t_write_buffer_op */
@@ -88,8 +119,10 @@ typedef struct {
     bit[8] hex_bottom_nybble  "Character for the hexadecimal of the bottom nybble of byte";
     bit    byte_terminates_string "Asserted if 'byte' is the termination character";
     bit    byte_nul               "Asserted if 'byte' is the nul character (0)";
-    bit    byte_is_control        "Asserted if 'byte' is a control character (possibly nul or terminates too - this is lower priority)";
+    bit    byte_is_control_hex        "Asserted if 'byte' is a control character to format hex (possibly nul or terminates too - this is lower priority)";
+    bit    byte_is_control_decimal    "Asserted if 'byte' is a control character to format decimal (possibly nul or terminates too - this is lower priority)";
     t_format_action action "Action to take given current state and data";
+    t_decimal_action decimal_action "Decimal action to take given format action";
     t_write_buffer_op write_buffer_op "Write buffer operation to do based on action";
     bit[8] write_data "Data to write to SRAM write buffer based on action";
     bit pop_byte      "Asserted based on action if the data buffer should pop a byte";
@@ -134,6 +167,8 @@ module teletext_dprintf( clock clk "Clock for data in and display SRAM write out
     clocked bit dprintf_ack=0;
 
     clocked t_data_buffer_state data_buffer_state={*=0};
+    clocked t_decimal_state decimal_state={*=0};
+    comb    t_decimal_combs decimal_combs;
     clocked t_format_state format_state={*=0};
     comb    t_format_combs format_combs;
     clocked t_sram_write_buffer_state sram_write_buffer_state={*=0};
@@ -182,16 +217,54 @@ module teletext_dprintf( clock clk "Clock for data in and display SRAM write out
         }
     }
     
+    /*b Decimal divider */
+    decimal_logic """
+    This logic maintains a 32-bit decimal accumulator which permits
+    The accumulator is 34 bits long, to store 10^10-1 (34h2_540b_e3ff)
+    
+    """: {
+        decimal_combs.acc_minus_10e9 = bundle(1b0,decimal_state.accumulator) - 35h03b9aca00;
+        decimal_combs.acc_less_than_10e9 = decimal_combs.acc_minus_10e9[34];
+        decimal_combs.acc_is_zero = (decimal_state.accumulator==0);
+
+        full_switch (format_combs.decimal_action) {
+        case decimal_action_none: {
+            decimal_state.accumulator <= decimal_state.accumulator;
+        }
+        case decimal_action_zero: {
+            decimal_state.accumulator <= 0;
+            decimal_state.dividend <= 0;
+        }
+        case decimal_action_shift_data: {
+            decimal_state.accumulator <= bundle(decimal_state.accumulator[26;0], format_combs.byte);
+        }
+        case decimal_action_multiply_by_ten: {
+            decimal_state.accumulator <= ( bundle(decimal_state.accumulator[33;0],1b0) +
+                                           bundle(decimal_state.accumulator[31;0],3b0) );
+                                           
+            decimal_state.dividend <= 0;
+        }
+        case decimal_action_subtract_10e9: {
+            decimal_state.accumulator <= decimal_combs.acc_minus_10e9[34;0];
+            decimal_state.dividend <= decimal_state.dividend+1;
+        }
+        }
+    }
+
     /*b Formatter */
     format_logic """
     This logic implements a state machine and consumes bytes from the data_buffer
+
+    It consumes bytes from the data_buffer_state.data, and the state
+    machine handles the operation of formatting different characters
     """: {
         format_combs = {*=0};
         format_combs.byte = data_buffer_state.data[0][8;56];
-        format_combs.byte_terminates_string = (format_combs.byte==8hff);
-        format_combs.byte_nul               = (format_combs.byte==8h00);
-        format_combs.byte_is_control        = (format_combs.byte[7]);
-        format_combs.hex_top_nybble         = 8h30 | bundle(4b0, format_combs.byte[4;4]);
+        format_combs.byte_terminates_string  = (format_combs.byte==8hff);
+        format_combs.byte_nul                = (format_combs.byte==8h00);
+        format_combs.byte_is_control_hex     = (format_combs.byte[2;6]==2b10);
+        format_combs.byte_is_control_decimal = (format_combs.byte[2;6]==2b11);
+        format_combs.hex_top_nybble          = 8h30 | bundle(4b0, format_combs.byte[4;4]);
         if (format_combs.byte[4;4]>9) {format_combs.hex_top_nybble = 8d55 + bundle(4b0, format_combs.byte[4;4]);}
         format_combs.hex_bottom_nybble         = 8h30 | bundle(4b0, format_combs.byte[4;0]);
         if (format_combs.byte[4;0]>9) {format_combs.hex_bottom_nybble = 8d55 + bundle(4b0, format_combs.byte[4;0]);}
@@ -210,8 +283,10 @@ module teletext_dprintf( clock clk "Clock for data in and display SRAM write out
                 format_combs.action = action_complete_string;
             } elsif (format_combs.byte_nul) {
                 format_combs.action = action_skip_byte;
-            } elsif (format_combs.byte_is_control) {
+            } elsif (format_combs.byte_is_control_hex) {
                 format_combs.action = action_start_hex_format;
+            } elsif (format_combs.byte_is_control_decimal) {
+                format_combs.action = action_start_decimal_format;
             }
         }
         case state_hex_top_nybble: {
@@ -219,6 +294,24 @@ module teletext_dprintf( clock clk "Clock for data in and display SRAM write out
         }
         case state_hex_bottom_nybble: {
             format_combs.action = action_write_hex_bottom_nybble;
+        }
+        case state_decimal_capture: { // capture byte in to decimal accumulator shift register
+            format_combs.action = action_capture_decimal;
+        }
+        case state_decimal_predigits: { // capture byte in to decimal accumulator shift register
+            format_combs.action = action_decimal_subtract;
+            if (decimal_combs.acc_less_than_10e9) {
+                format_combs.action = action_decimal_skip;
+            }
+            if (decimal_combs.acc_is_zero) {
+                format_combs.action = action_decimal_output_zero;
+            }
+        }
+        case state_decimal_nonzero: { // capture byte in to decimal accumulator shift register
+            format_combs.action = action_decimal_subtract;
+            if (decimal_combs.acc_less_than_10e9) {
+                format_combs.action = action_decimal_output;
+            }
         }
         }
         
@@ -228,23 +321,29 @@ module teletext_dprintf( clock clk "Clock for data in and display SRAM write out
         format_combs.pop_byte = 0;
         format_combs.completed_string = 0;
         format_combs.write_data = format_combs.byte;
+        format_combs.decimal_action = decimal_action_none;
         full_switch (format_combs.action) {
+            /*b action_none */
         case action_none: {
             format_state.fsm_state <= format_state.fsm_state;
         }
+            /*b action_start_formatting */
         case action_start_formatting: {
             format_state.fsm_state <= state_start_byte;
         }
+            /*b action_write_byte */
         case action_write_byte: {
             format_combs.write_buffer_op = op_write_next_data;
             format_combs.increment_address = 1;
             format_combs.pop_byte = 1;
             format_state.fsm_state <= state_start_byte;
         }
+            /*b action_skip_byte */
         case action_skip_byte: {
             format_combs.pop_byte = 1;
             format_state.fsm_state <= state_start_byte;
         }
+            /*b action_start_hex_format */
         case action_start_hex_format: {
             format_combs.pop_byte = 1;
             format_state.bytes_left <= format_combs.byte[4;1];
@@ -254,12 +353,14 @@ module teletext_dprintf( clock clk "Clock for data in and display SRAM write out
                 format_state.fsm_state <= state_hex_bottom_nybble;
             }
         }
+            /*b action_write_hex_top_nybble */
         case action_write_hex_top_nybble: {
             format_combs.write_buffer_op = op_write_next_data;
             format_combs.write_data = format_combs.hex_top_nybble;
             format_combs.increment_address = 1;
             format_state.fsm_state <= state_hex_bottom_nybble;
         }
+            /*b action_write_hex_bottom_nybble */
         case action_write_hex_bottom_nybble: {
             format_combs.write_buffer_op = op_write_next_data;
             format_combs.write_data = format_combs.hex_bottom_nybble;
@@ -271,6 +372,55 @@ module teletext_dprintf( clock clk "Clock for data in and display SRAM write out
                 format_state.fsm_state <= state_start_byte;
             }
         }
+            /*b action_start_decimal_format */
+        case action_start_decimal_format: {
+            format_combs.pop_byte = 1;
+            format_combs.decimal_action = decimal_action_zero;
+            format_state.bytes_left <= bundle(2b0,format_combs.byte[2;0]);
+            format_state.fsm_state <= state_decimal_capture;
+        }
+            /*b action_capture_decimal */
+        case action_capture_decimal: {
+            format_combs.decimal_action = decimal_action_shift_data;
+            format_combs.pop_byte = 1;
+            format_state.bytes_left <= format_state.bytes_left-1;
+            format_state.fsm_state <= format_state.fsm_state;
+            if (format_state.bytes_left==0) {
+                format_state.fsm_state <= state_decimal_predigits;
+                format_state.bytes_left <= 9;
+            }
+        }
+            /*b action_decimal_output_zero */
+        case action_decimal_output_zero: {
+            format_combs.write_buffer_op = op_write_next_data;
+            format_combs.write_data = 8h30;
+            format_combs.increment_address = 1;
+            format_state.fsm_state <= state_start_byte;
+        }
+            /*b action_decimal_skip */
+        case action_decimal_skip: {
+            format_combs.decimal_action = decimal_action_multiply_by_ten;
+            format_state.bytes_left <= format_state.bytes_left-1;
+            format_state.fsm_state <= state_decimal_predigits;
+        }
+            /*b action_decimal_output */
+        case action_decimal_output: {
+            format_combs.write_buffer_op = op_write_next_data;
+            format_combs.write_data = 8h30 | bundle(4b0,decimal_state.dividend);
+            format_combs.increment_address = 1;
+            format_state.fsm_state <= state_decimal_nonzero;
+            format_combs.decimal_action = decimal_action_multiply_by_ten;
+            format_state.bytes_left <= format_state.bytes_left-1;
+            if (format_state.bytes_left==0) {
+                format_state.fsm_state <= state_start_byte;
+            }
+        }
+            /*b action_decimal_subtract */
+        case action_decimal_subtract: {
+            format_combs.decimal_action = decimal_action_subtract_10e9;
+            format_state.fsm_state <= state_decimal_nonzero;
+        }
+            /*b action_complete_string */
         case action_complete_string: {
             format_combs.completed_string = 1;
             format_state.fsm_state <= state_idle;

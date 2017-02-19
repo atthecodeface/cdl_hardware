@@ -33,7 +33,7 @@ include "apb.h"
 /*a Constants */
 constant bit[8] sr_divider    = 49; // 1MHz
 constant bit[8] divider_400ns = 19; // 2.5MHz
-constant integer num_dprintf_requesters=6;
+constant integer num_dprintf_requesters=7;
 
 /*a Types */
 /*t t_debug_combs */
@@ -44,6 +44,10 @@ typedef struct {
 
 /*t t_debug_state */
 typedef struct {
+    bit[32] cpu_ticks;
+    bit[32] video_2MHz_ticks;
+    bit[32] falling_1MHz_ticks;
+    bit[32] rising_1MHz_ticks;
     bit[32] counter;
     bit[32] update;
 } t_debug_state;
@@ -109,8 +113,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
     """: {
         debug_combs = {*=0};
         debug_combs.timer_10ms = 0;
-        if (debug_state.update==500-1) {
-            //if (debug_state.update==500*1000-1) {
+        if (debug_state.update==500*1000-1) {
             debug_combs.timer_10ms = 1;
         }
 
@@ -118,6 +121,10 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
         if (debug_combs.timer_10ms) {
             debug_state.update <= 0;
         }
+        if (clock_control.enable_cpu)          {debug_state.cpu_ticks <= debug_state.cpu_ticks+1; }
+        if (clock_control.enable_2MHz_video)   {debug_state.video_2MHz_ticks <= debug_state.video_2MHz_ticks+1;}
+        if (clock_control.enable_1MHz_rising)  {debug_state.rising_1MHz_ticks <= debug_state.rising_1MHz_ticks+1;}
+        if (clock_control.enable_1MHz_falling) {debug_state.falling_1MHz_ticks <= debug_state.falling_1MHz_ticks+1;}
 
         if (0) {
             debug_state.counter <= debug_state.counter+1;
@@ -271,7 +278,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
 
     /*b Teletext framebuffers */
     tt_framebuffer: {
-        for (i; 3) {
+        for (i; num_dprintf_requesters) {
             if (dprintf_ack[i]) {
                 dprintf_req[i].valid <= 0;
             }
@@ -282,25 +289,14 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                     data_1=bundle(ps2_key.release?8h02:8h01, ps2_key.extended?8h45:8h00, 8h81, ps2_key.key_number, 32h2020ffff) };
         }
         if (debug_combs.timer_10ms) {
-            dprintf_req[1] <= {valid=1, address=40,
-                    data_0=64h52_69_67_68_74_20_44_69,
-                    data_1=bundle(24h61_6c_3a, user_inputs.right_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.last_fn_key,16hff)};
-        }
-        if (debug_combs.timer_10ms) {
-            dprintf_req[2] <= {valid=1, address=80,
-                    data_0=64h4c_65_66_74_20_44_69_61,
-                    data_1=bundle(24h6c_20_3a, user_inputs.left_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.speed_selection,16hff)};
-        }
-        if (debug_combs.timer_10ms) {
-            dprintf_req[3] <= {valid=1, address=160,
-                    data_0=64h43_6f_75_6e_74_65_72_3a,
-                    data_1=bundle(16h03_87, debug_state.counter, 16hff)};
-        }
-        if (debug_combs.timer_10ms) {
-            dprintf_req[4] <= {valid=1, address=200,
-                    data_0=bundle(8h84, apb_processor_request.address, apb_processor_request.valid, apb_processor_response.acknowledge, apb_processor_response.rom_busy,5b0,
-                                  32hff),
-                    data_1=-1 };
+            dprintf_req[1] <= {valid=1, address=40,  data_0=64h52_69_67_68_74_20_44_69, data_1=bundle(24h61_6c_3a, user_inputs.right_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.last_fn_key,16hff)};
+            dprintf_req[2] <= {valid=1, address=80,  data_0=64h4c_65_66_74_20_44_69_61, data_1=bundle(24h6c_20_3a, user_inputs.left_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.speed_selection,16hff)};
+            dprintf_req[3] <= {valid=1, address=120, data_0=64h43_50_55_20_74_69_63_6b, data_1=bundle(24h73_20_3a, 8hc3, debug_state.cpu_ticks)};
+            dprintf_req[4] <= {valid=1, address=160, data_0=64h32_4d_68_74_20_56_69_64, data_1=bundle(24h65_6f_3a, 8hc3, debug_state.video_2MHz_ticks)};
+            dprintf_req[5] <= {valid=1, address=200, data_0=64h31_4d_68_74_20_66_61_6c, data_1=bundle(24h6c_20_3a, 8hc3, debug_state.falling_1MHz_ticks)};
+            dprintf_req[6] <= {valid=1, address=240, data_0=64h31_4d_68_74_20_72_69_73, data_1=bundle(24h65_20_3a, 8hc3, debug_state.rising_1MHz_ticks)};
+            //dprintf_req[3] <= {valid=1, address=160, data_0=64h43_6f_75_6e_74_65_72_3a, data_1=bundle(16h03_87, debug_state.counter, 16hff)};
+            //dprintf_req[4] <= {valid=1, address=200, data_0=bundle(8h84, apb_processor_request.address, apb_processor_request.valid, apb_processor_response.acknowledge, apb_processor_response.rom_busy,5b0, 32hff), data_1=-1 };
         }
 
         teletext_dprintf_mux tdm01( clk <- clk,
