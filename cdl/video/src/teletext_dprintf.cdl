@@ -134,6 +134,7 @@ typedef struct {
 typedef struct {
     t_format_fsm fsm_state;
     bit[4] bytes_left;
+    bit[4] skip_left;
 } t_format_state;
 
 /*t t_sram_write_buffer_combs */
@@ -298,16 +299,13 @@ module teletext_dprintf( clock clk "Clock for data in and display SRAM write out
         case state_decimal_capture: { // capture byte in to decimal accumulator shift register
             format_combs.action = action_capture_decimal;
         }
-        case state_decimal_predigits: { // capture byte in to decimal accumulator shift register
+        case state_decimal_predigits: { // no digits output yet - output nothing or space for zero
             format_combs.action = action_decimal_subtract;
             if (decimal_combs.acc_less_than_10e9) {
-                format_combs.action = action_decimal_skip;
-            }
-            if (decimal_combs.acc_is_zero) {
-                format_combs.action = action_decimal_output_zero;
+                format_combs.action = action_decimal_skip; // if last byte output zero; if not then space of nothing
             }
         }
-        case state_decimal_nonzero: { // capture byte in to decimal accumulator shift register
+        case state_decimal_nonzero: { // will output non-zero, or has output a digit already - subtract or output until done
             format_combs.action = action_decimal_subtract;
             if (decimal_combs.acc_less_than_10e9) {
                 format_combs.action = action_decimal_output;
@@ -377,6 +375,7 @@ module teletext_dprintf( clock clk "Clock for data in and display SRAM write out
             format_combs.pop_byte = 1;
             format_combs.decimal_action = decimal_action_zero;
             format_state.bytes_left <= bundle(2b0,format_combs.byte[2;0]);
+            format_state.skip_left  <= format_combs.byte[4;2];
             format_state.fsm_state <= state_decimal_capture;
         }
             /*b action_capture_decimal */
@@ -390,18 +389,23 @@ module teletext_dprintf( clock clk "Clock for data in and display SRAM write out
                 format_state.bytes_left <= 9;
             }
         }
-            /*b action_decimal_output_zero */
-        case action_decimal_output_zero: {
-            format_combs.write_buffer_op = op_write_next_data;
-            format_combs.write_data = 8h30;
-            format_combs.increment_address = 1;
-            format_state.fsm_state <= state_start_byte;
-        }
             /*b action_decimal_skip */
         case action_decimal_skip: {
+            if (format_state.bytes_left <= format_state.skip_left) {
+                format_combs.write_buffer_op = op_write_next_data;
+                format_combs.write_data = 8h20;
+                format_combs.increment_address = 1;
+            }
+            if (format_state.bytes_left == 0) {
+                format_combs.write_buffer_op = op_write_next_data;
+                format_combs.write_data = 8h30;
+                format_combs.increment_address = 1;
+            }
             format_combs.decimal_action = decimal_action_multiply_by_ten;
             format_state.bytes_left <= format_state.bytes_left-1;
-            format_state.fsm_state <= state_decimal_predigits;
+            if (format_state.bytes_left==0) {
+                format_state.fsm_state <= state_start_byte;
+            }
         }
             /*b action_decimal_output */
         case action_decimal_output: {
