@@ -439,8 +439,10 @@ c_bbc_display::clock( void )
         if (reset_cycle>0) { reset_cycle--; }
         if (fbk.fbk->reset_pressed) { reset_cycle=10000; }
         if (reset_cycle==1) {
+            add_pending_csr_write_request(bbc_csr_select_clocks, 0, (2<<8) | (3<<0) );// clock speedup
             add_pending_csr_write_request(bbc_csr_select_display, 0, (40<<16) | (0<<0) );// SRAM base address
-            add_pending_csr_write_request(bbc_csr_select_display, 1, (500<<16) | (1<<15) | (40<<0) );// SRAM scan lines and writes per scanline
+            add_pending_csr_write_request(bbc_csr_select_display, 1, (1<<30) | (500<<20) | (40<<10) | (40<<0) );// SRAM scan lines and writes per scanline
+            add_pending_csr_write_request(bbc_csr_select_display, 2, ((65536-70)<<16) | ((65536-140)<<0) );// video porches
         }
         //keyboard__reset_pressed         = fbk.fbk->reset_pressed;
         req_keys_down.cols_0_to_7 = fbk.fbk->keys_down.cols_0_to_7 | 1;

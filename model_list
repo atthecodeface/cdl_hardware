@@ -80,6 +80,8 @@ cdl_options mul:on
 cdl cdl/microcomputers/bbc/src bbc_micro inc:cdl/inc
 cdl_options mul:off
 
+cdl cdl/microcomputers/bbc/tb_src tb_bbc_display_sram     inc:cdl/inc
+
 cdl cdl/boards/de1_cl/src          bbc_micro_de1_cl_bbc  inc:cdl/inc
 cdl cdl/boards/de1_cl/src          bbc_micro_de1_cl_io   inc:cdl/inc
 cdl cdl/boards/de1_cl/src          bbc_micro_de1_cl      inc:cdl/inc
