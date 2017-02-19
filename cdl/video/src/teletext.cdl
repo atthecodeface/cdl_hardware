@@ -282,9 +282,6 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
         }
         if (timing_state.last_scanline || timings.first_scanline_of_row) {
             timing_state.scanline <= 0;
-            if (timing_state.timings.interpolate_vertical == tvi_odd_scanlines) {
-                timing_state.scanline <= 1;
-            }
         }
         timing_state.last_scanline <= 0;
         if (timing_state.scanline==19) {
@@ -300,6 +297,13 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
         if (!timing_state.scanline_displayed) {
             timing_state.scanline <= timing_state.scanline;
         }
+        if (timing_state.timings.interpolate_vertical == tvi_odd_scanlines) {
+            timing_state.scanline[0] <= 1;
+        }
+        if (timing_state.timings.interpolate_vertical == tvi_even_scanlines) {
+            timing_state.scanline[0] <= 0;
+        }
+
         if (timings.end_of_scanline) {
             timing_state.scanline_displayed <= 0;
         }

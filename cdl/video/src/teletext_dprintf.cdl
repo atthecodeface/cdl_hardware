@@ -12,31 +12,35 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * @file   framebuffer_teletext.cdl
- * @brief  Teletext framebuffer module with separate write and video sides
+ * @file   teletext_dprintf.cdl
+ * @brief  Debug text formatter for driving teletext framebuffer SRAM writes
  *
- * CDL implementation of a module that takes SRAM writes into a
- * framebuffer, including a mapping to a dual-port SRAM (write on one
- * side, read on the other), where the video side uses a teletext
- * decoder and drives out vsync, hsync, data enable and pixel data.
+ * CDL implementation of a module that takes an input debug requests
+ * and converts them in to a stream of SRAM writes into a teletext
+ * framebuffer. The debug request is similar to a 'printf' string, in
+ * that it allows formatted data.
  *
- * The video side is asynchronous to the SRAM write side.
+ *  A request is effectively a bytestream with an SRAM address.  The
+ *  byte stream consists of ASCII characters plus potentially 'video
+ *  control' characters - all in the range 1 to 127, plus control
+ *  codes of 0 or 128 to 255.
  *
- * The video output side has a programmable horizontal period that
- * starts with hsync high for one clock, and then has a programmable
- * back porch, followed by a programmable number of pixels (with data
- * out enabled only if on the correct vertical portion of the display),
- * followed by a programmable front porch, repeating.
+ *  The code 0 is just skipped; it allows for simple alignment of data
+ *  in the dprintf request.
  *
- * The video output side has a programmable vertical period that is in
- * units of horizontal period; it starts with vsync high for one
- * horizontal period, and then has a programmable front porch,
- * followed by a programmable number of displayed lined, followed by a
- * programmable front porch, repeating.
+ *  A code of 128 to 191 is a zero-padded hex format field. The
+ *  encoding is 8h10xxssss; x is unused, and the size @ss is 0-f,
+ *  indicating 1 to 16 following nybbles are data (msb first). The
+ *  data follows in the succeeding bytes.
  *
- * The video output start at a programmable base address in SRAM;
- * moving down a line adds a programmable amount to the address in
- * SRAM.
+ *  A code of 192 to 154 is a space-padded decimal format field. The
+ *  The encoding is 8h11ppppss; the @size is 0-3 for 1 to 4 bytes of
+ *  data, in the succeeding bytes. The @padding (pppp) is zero for no
+ *  padding; 1 forces the string to be at least 2 characters long
+ *  (prepadded with space if required); 2 is pad to 3 characters, and
+ *  so on. The maximum padding is to a ten character output (pppp of 9).
+ *
+ *  A code of 255 terminates the string.
  */
 /*a Includes */
 include "bbc_micro_types.h" // for t_bbc_display_sram_write
@@ -177,24 +181,9 @@ module teletext_dprintf( clock clk "Clock for data in and display SRAM write out
 
     /*b Debug printf buffer */
     debug_printf_logic """
-    A single request is stored and handled at any one time. When the dprintf logic is idle it can accept a new request, and start to process it.
-
-    A request is effectively a bytestream with an SRAM address.  The
-    byte stream consists of ASCII characters plus potentially 'video
-    control' characters - all in the range 1 to 127, plus control
-    codes of 0 or 128 to 255.
-
-    The code 0 is just skipped; it allows for simple alignment of data
-    in the dprintf request.
-
-    A code of 128 to 254 is a size-format field. The size is 00-0f,
-    indicating 1 to 16 following nybbles are data (msb first). The format
-    is currently only hex. The top bit indicates this form of control
-    code, so the acutal usage is 128 to 191 is format, with the top 2
-    bits being 2b10, and the next six bits being 0fssss (1 bit format,
-    3 bits size) - with format defined to be zero for now.
-
-    A code of 255 terminates the string.
+    A single request is stored and handled at any one time. When the
+    dprintf logic is idle it can accept a new request, and start to
+    process it.
 
     This logic manages the request buffer
     """: {

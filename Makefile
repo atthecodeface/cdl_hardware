@@ -61,6 +61,11 @@ shm_vnc: ${SHM_VNC_OBJS}
 	${Q}${LINKASBIN} shm_vnc $(SHM_VNC_OBJS) ${LOCAL_LINKLIBS}
 
 #a Test targets
+.PHONY: regression
+regression:
+	$(MAKE) clean ALL
+	./regress_all
+
 test_python_6502: ${TARGET_DIR}/py_engine.so
 	echo "Currently fails one test test_atc_test_6502_brk_rti"
 	./python/test6502.py
