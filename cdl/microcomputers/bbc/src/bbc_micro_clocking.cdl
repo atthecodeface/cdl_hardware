@@ -229,7 +229,8 @@ module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
             divider.phase_ending_2MHz <= 1;
         }
 
-        cpu_clk.phase_ending = divider.phase_ending_cpu && !control.disable_cpu;
+        cpu_clk.phase_ending = (divider.phase_ending_cpu && !control.disable_cpu) || cpu_clk_high; // don't let CPU rest high as it blocks video etc
+        //cpu_clk.phase_ending = divider.phase_ending_cpu && !control.disable_cpu;
         cpu_clk.fall_enable = cpu_clk_high && cpu_clk.phase_ending;
         cpu_clk.rise_enable = cpu_clk_low  && cpu_clk.phase_ending;
         if (cpu_clk.phase_ending) { 

@@ -119,15 +119,6 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
         }
 
         debug_state.update <= debug_state.update+1;
-        if (debug_combs.timer_10ms) {
-            debug_state.update <= 0;
-            debug_state.cpu_ticks <= 0;
-            debug_state.video_2MHz_ticks <= 0;
-            debug_state.rising_1MHz_ticks <= 0;
-            debug_state.falling_1MHz_ticks <= 0;
-            debug_state.counter_0 <= 0;
-            debug_state.counter_1 <= 0;
-        }
         if (clock_control.enable_cpu)          {debug_state.cpu_ticks <= debug_state.cpu_ticks+1; }
         if (clock_control.enable_2MHz_video)   {debug_state.video_2MHz_ticks <= debug_state.video_2MHz_ticks+1;}
         if (clock_control.enable_1MHz_rising)  {debug_state.rising_1MHz_ticks <= debug_state.rising_1MHz_ticks+1;}
@@ -137,6 +128,16 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
         if (clock_control.debug[1] && !switches[4]) { debug_state.counter_1 <= debug_state.counter_1+1; }
         if (clock_control.debug[2] &&  switches[4]) { debug_state.counter_0 <= debug_state.counter_0+1; }
         if (clock_control.debug[3] &&  switches[4]) { debug_state.counter_1 <= debug_state.counter_1+1; }
+
+        if (debug_combs.timer_10ms) {
+            debug_state.update <= 0;
+            debug_state.cpu_ticks <= 0;
+            debug_state.video_2MHz_ticks <= 0;
+            debug_state.rising_1MHz_ticks <= 0;
+            debug_state.falling_1MHz_ticks <= 0;
+            debug_state.counter_0 <= 0;
+            debug_state.counter_1 <= 0;
+        }
     }
 
     /*b Miscellaneous logic */
@@ -303,8 +304,8 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
             dprintf_req[4] <= {valid=1, address=160, data_0=64h32_4d_68_7a_20_56_69_64, data_1=bundle(24h65_6f_3a, 8hc3+(6<<2), debug_state.video_2MHz_ticks)};
             dprintf_req[5] <= {valid=1, address=200, data_0=64h31_4d_68_7a_20_66_61_6c, data_1=bundle(24h6c_20_3a, 8hc3+(6<<2), debug_state.falling_1MHz_ticks)};
             dprintf_req[6] <= {valid=1, address=240, data_0=64h31_4d_68_7a_20_72_69_73, data_1=bundle(24h65_20_3a, 8hc3+(6<<2), debug_state.rising_1MHz_ticks)};
-            dprintf_req[7] <= {valid=1, address=280, data_0=64h44_65_62_75_67_20_30_3a, data_1=bundle(8hc3+(6<<2), debug_state.counter_0, 8h81, 16b0)};
-            dprintf_req[8] <= {valid=1, address=320, data_0=64h44_65_62_75_67_20_31_3a, data_1=bundle(8hc3+(6<<2), debug_state.counter_1, 8h81, 12b0, clock_control.debug)};
+            dprintf_req[7] <= {valid=1, address=280, data_0=64h44_65_62_75_67_20_30_3a, data_1=bundle(8hc3+(6<<2), debug_state.counter_0, 8h83, 16b0)};
+            dprintf_req[8] <= {valid=1, address=320, data_0=64h44_65_62_75_67_20_31_3a, data_1=bundle(8hc3+(6<<2), debug_state.counter_1, 8h83, 12b0, clock_control.debug)};
         }
 
         teletext_dprintf_mux tdm01( clk <- clk,
