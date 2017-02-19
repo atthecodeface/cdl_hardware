@@ -1,0 +1,96 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_bbc_display_sram.cdl
+ * @brief Testbench for BBC display SRAM
+ *
+ */
+/*a Includes */
+include "bbc_micro_types.h"
+include "bbc_submodules.h"
+include "srams.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk,
+                               output t_bbc_display display,
+                               input t_bbc_display_sram_write sram_write,
+                               output t_apb_request apb_request,
+                               input t_apb_response apb_response
+    )
+{
+    timing from rising clock clk   display, apb_request;
+    timing to   rising clock clk   sram_write, apb_response;
+}
+
+/*a Module */
+module tb_bbc_display_sram( clock clk,
+                            input bit reset_n
+)
+{
+
+    /*b Nets */
+    net t_bbc_display display;
+    net t_bbc_display_sram_write sram_write;
+
+    net t_apb_request   apb_request;
+    net t_apb_response  apb_response;
+
+    net t_csr_request      csr_request;
+    net t_csr_response     csr_response;
+
+    /*b Instantiations */
+    instantiations: {
+        se_test_harness th( clk <- clk,
+                            display => display,
+                            sram_write <= sram_write,
+                            apb_request => apb_request,
+                            apb_response <= apb_response );
+
+        csr_master_apb master( clk <- clk,
+                               reset_n <= reset_n,
+                               apb_request <= apb_request,
+                               apb_response => apb_response,
+                               csr_request => csr_request,
+                               csr_response <= csr_response );
+
+        bbc_display_sram dut( clk <- clk,
+                              reset_n <= reset_n,
+                              display <= display,
+                              sram_write => sram_write,
+                              csr_request <= csr_request,
+                              csr_response => csr_response );
+
+        se_sram_mrw_2_16384x48 framebuffer ( sram_clock_0 <- clk,
+                                             select_0 <= sram_write.enable,
+                                             read_not_write_0 <= 0,
+                                             address_0 <= sram_write.address[14;0],
+                                             write_data_0 <= sram_write.data,
+                                             //data_out_0 => 
+                                             sram_clock_1 <- clk,
+                                             select_1 <= 0,
+                                             read_not_write_1 <= 0,
+                                             address_1 <= 0,
+                                             write_data_1 <= 0 );
+
+    }
+
+    /*b All done */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/
