@@ -125,6 +125,8 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
             debug_state.video_2MHz_ticks <= 0;
             debug_state.rising_1MHz_ticks <= 0;
             debug_state.falling_1MHz_ticks <= 0;
+            debug_state.counter_0 <= 0;
+            debug_state.counter_1 <= 0;
         }
         if (clock_control.enable_cpu)          {debug_state.cpu_ticks <= debug_state.cpu_ticks+1; }
         if (clock_control.enable_2MHz_video)   {debug_state.video_2MHz_ticks <= debug_state.video_2MHz_ticks+1;}
