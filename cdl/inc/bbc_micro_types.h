@@ -271,6 +271,7 @@ typedef struct {
     bit enable_1MHz_falling      "Asserted if the rising  edge of 'clk' should also be a falling '1MHz' clock edge";
     bit[2] phi                   "Phase of BBC 6502 clock operation - in a real BBC micro this comes from the CPU";
     bit reset_cpu                "Asserted if the CPU should be reset, controlled by a CSR register";
+    bit[4] debug;
 } t_bbc_clock_control;
 
 /*t t_bbc_clock_status */

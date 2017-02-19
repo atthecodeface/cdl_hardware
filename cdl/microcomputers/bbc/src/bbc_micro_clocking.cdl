@@ -200,13 +200,18 @@ module bbc_micro_clocking( clock clk "4MHz clock in as a minimum",
 
     Now the actual clock enable for the CPU is the phi2 ending.
     """: {
-        clock_control.enable_cpu             = cpu_clk_enable;
-        clock_control.will_enable_2MHz_video = two_mhz.rise_enable; 
+        clock_control.enable_cpu             = cpu_clk_enable; // divider.phase_ending_cpu & cpu_clk_low & !control.disable_cpu  and not delaying phi1
+        clock_control.will_enable_2MHz_video = two_mhz.rise_enable; // divider.phase_ending_2MHz & divider.phase_ending_cpu & cpu_clk_low & !control.disable_cpu
         clock_control.enable_2MHz_video      = two_mhz_high;
         clock_control.enable_1MHz_rising     = one_mhz.rise_enable;
         clock_control.enable_1MHz_falling    = one_mhz.fall_enable;
         clock_control.phi = phase_of_clock;
         clock_control.reset_cpu = control.reset_cpu;
+
+        clock_control.debug[0] = cpu_clk_low;
+        clock_control.debug[1] = divider.phase_ending_cpu;
+        clock_control.debug[2] = divider.phase_ending_2MHz;
+        clock_control.debug[3] = control.disable_cpu;
     }
     clocked bit[2] phase_of_clock=2b01;
     comb bit phi1_completed;
