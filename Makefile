@@ -77,6 +77,9 @@ test_6502_adc: ${TARGET_DIR}/py_engine.so
 	./regress_all regression.base6502.Regress6502_Test6502_ALU.test_atc_test_6502_adc
 
 #a Operational targets
+roms:
+	python python/rom_to_mif.py
+
 bbc_run: ${TARGET_DIR}/py_engine.so
 	BBC=1 ./regress_all
 
@@ -98,8 +101,8 @@ help:
 	@echo "To convert other disk images to appropriate MIF format (which includes disk track descriptors,"
 	@echo "not just the data - the 'SSD' format is just 40 track, 10 265 byte sectors) use the python/disk_to_mif"
 
-roms:
-	python python/rom_to_mif.py
+#a Documentation
+include doc/Makefile
 
 #a Editor preferences and notes
 # Local Variables: ***

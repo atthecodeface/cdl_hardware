@@ -1,0 +1,33 @@
+@INCLUDE               = doxyfile.common
+PROJECT_NAME           = "CDL Modules"
+
+FULL_PATH_NAMES        = YES
+TAB_SIZE               = 4
+OPTIMIZE_OUTPUT_FOR_C  = YES
+EXTENSION_MAPPING      = cdl=C
+INLINE_SIMPLE_STRUCTS  = YES
+#TYPEDEF_HIDES_STRUCT   = NO
+
+EXTRACT_ANON_NSPACES   = YES
+HIDE_IN_BODY_DOCS      = NO
+
+INPUT                  = $(DOXYGEN_INPUTS)
+INPUT_ENCODING         = UTF-8
+FILE_PATTERNS          = *.cdl *.h
+FILTER_PATTERNS        = *.cdl=$(DOCUMENTATION)/filters/filter_cdl.py *.h=$(DOCUMENTATION)/filters/filter_cdl.py
+
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = NO
+EXPAND_ONLY_PREDEF     = NO
+SEARCH_INCLUDES        = YES
+INCLUDE_PATH           = $(SRC_ROOT)/cdl/inc
+INCLUDE_FILE_PATTERNS  = *.h
+
+ENUM_VALUES_PER_LINE   = 1
+SHOW_NAMESPACES        = YES
+LAYOUT_FILE            = layout_cdl.xml
+INPUT                 += $(SRC_ROOT)/cdl/README.md
+USE_MDFILE_AS_MAINPAGE = $(SRC_ROOT)/cdl/README.md
+
+HTML_OUTPUT            = cdl_html
+LATEX_OUTPUT           = cdl_latex
