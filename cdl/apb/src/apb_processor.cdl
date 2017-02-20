@@ -17,201 +17,283 @@
  * CDL implementation of an APB master that uses a ROM to generate a
  * set of APB requests.
  *
- * The module is presented with a request to execute a program from
- * the ROM starting at a certain address.
- *
- * The ROM contains 40 bits of data - 8 bits of opcode, 32 bits of
- * data, per word.
- *
- * The opcodes fall in to 6 different classes: ALU, branch, set
- * parameter, APB request, wait, finish.
- *
- * Four ALU ops are supported - OR, BIC, AND, XOR
- *
- * Four branch types are supported - always, if acc is zero, if acc is
- * nonzero, and if repeat count is nonzero (with the side effect of
- * decrementing the repeat count)
- *
- * Set parameter can set the APB address and repeat count
- *
- * Wait uses the accumulator, decrementing it once per cycle, to wait
- * before moving on in the program.
- *
- * APB request can request read, write accumulator, or write using the
- * ROM content as data; these can optionally also auto-increment the address
- *
- * Finish - complete the program
- *
  */
 /*a Includes */
 include "apb.h"
 include "csr_interface.h"
 
 /*a Type */
-/*t t_apb_rom_opcode_class */
+/*t t_apb_rom_opcode_class
+ *
+ * Enumeration specifying the ROM opcode classes used by the
+ * processor; these appear in [3;37] of the ROM data. Subclasses of
+ * the ROM opcode are determined by [5;32] - see @a
+ * t_apb_rom_opcode_subclass.
+ */
 typedef enum[3] {
-    opcode_class_alu           = 0,
-    opcode_class_set_parameter = 1,
-    opcode_class_apb_request   = 2,
-    opcode_class_branch        = 3,
-    opcode_class_wait          = 4,
-    opcode_class_finish        = 5
+    opcode_class_alu           = 0 "ALU operation - add, and, xor, bic, or",
+    opcode_class_set_parameter = 1 "Set the APB address, the processor's accumulator, or repeat count",
+    opcode_class_apb_request   = 2 "Request an APB access - write or read with optional autoincrement",
+    opcode_class_branch        = 3 "Branch to a different location in ROM, possibly conditionally",
+    opcode_class_wait          = 4 "Wait for a number of cycles, as a delay - uses the @a accumulator as a down-counter",
+    opcode_class_finish        = 5 "Finish execution of the APB ROM program",
 } t_apb_rom_opcode_class;
 
-/*t t_apb_rom_opcode_subclass */
+/*t t_apb_rom_opcode_subclass
+ *
+ * Subclass of @a t_apb_rom_opcode_class for a ROM operation; the
+ * subclass is dependent on the class, and appears in ROM bits [5;32]
+ */
 typedef enum[3] {
-    rom_op_alu_or  = 0,
-    rom_op_alu_and = 1,
-    rom_op_alu_bic = 2,
-    rom_op_alu_xor = 3,
-    rom_op_alu_add = 4,
+    rom_op_alu_or  = 0  "For ALU operations, acc = acc | ROM data[32;0]",
+    rom_op_alu_and = 1  "For ALU operations, acc = acc & ROM data[32;0]",
+    rom_op_alu_bic = 2  "For ALU operations, acc = acc &~ ROM data[32;0]",
+    rom_op_alu_xor = 3  "For ALU operations, acc = acc ^ ROM data[32;0]",
+    rom_op_alu_add = 4  "For ALU operations, acc = acc + ROM data[32;0]",
 
-    rom_op_set_address     = 0,
-    rom_op_set_repeat      = 1,
-    rom_op_set_accumulator = 2,
+    rom_op_set_address     = 0 "For Set parameter operations, APB address = ROM data[32;0]",
+    rom_op_set_repeat      = 1 "For Set parameter operations, repeat count = ROM data[32;0]",
+    rom_op_set_accumulator = 2 "For Set parameter operations, accumulator = ROM data[32;0]",
 
-    rom_op_branch = 0,
-    rom_op_beq = 1,
-    rom_op_bne = 2,
-    rom_op_loop = 3,
+    rom_op_branch = 0          "For Branch operations, branch always to ROM data[32;0]",
+    rom_op_beq = 1             "For Branch operations, branch if accumulator is zero to ROM data[32;0]",
+    rom_op_bne = 2             "For Branch operations, branch if accumulator is nonzero to ROM data[32;0]",
+    rom_op_loop = 3            "For Branch operations, decrement loop count, and branch if loop count was nonzero to ROM data[32;0]",
 
-    rom_op_req_read=0,
-    rom_op_req_write_arg=1,
-    rom_op_req_write_acc=2,
+    rom_op_req_read=0          "For APB request operations, perform APB read - if bit[2], is set then post-increment APB address",
+    rom_op_req_write_arg=1     "For APB request operations, perform APB write with ROM data[32;0] as the write data - if bit[2], is set then post-increment APB address",
+    rom_op_req_write_acc=2     "For APB request operations, perform APB write with accumulator as the write data - if bit[2], is set then post-increment APB address",
 } t_apb_rom_opcode_subclass;
 
-/*t t_processor_action */
+/*t t_processor_action
+ *
+ * Action that the processor is taking; this is a decode of the
+ * processor FSM's state and the current opcode and accumulator
+ */
 typedef enum[4] {
-    processor_action_none,
-    processor_action_set_parameter,
-    processor_action_start_apb_request,
-    processor_action_alu,
-    processor_action_branch,
-    processor_action_wait_start,
-    processor_action_decrement_accumulator,
-    processor_action_pending_request,
-    processor_action_complete_wait,
-    processor_action_finish,
+    processor_action_none                  "Processor idle - remain in idle",
+    processor_action_set_parameter         "Set APB address, accumulator, or repeat count - depending on @a opcode subclass",
+    processor_action_start_apb_request     "Start an APB request - type depends on @a opcode subclass",
+    processor_action_alu                   "Perform an ALU operation on the accumulator - type depends on @a opcode subclass",
+    processor_action_branch                "Perform a branch operation, and possibly decrement @a repeat_count - type depends on @a opcode subclass",
+    processor_action_wait_start            "Start a wait delay period",
+    processor_action_decrement_accumulator "Decrement accumulator, for during a wait period",
+    processor_action_pending_request       "Wait for an APB request to be completed",
+    processor_action_complete_wait         "Complete execution of wait delay period",
+    processor_action_finish                "Finish execution of a ROM program",
 } t_processor_action;
 
-/*t t_processor_fsm_state */
+/*t t_processor_fsm_state
+ *
+ * Processor FSM states
+ */
 typedef fsm {
-    processor_fsm_idle;
-    processor_fsm_apb_request;
-    processor_fsm_wait;
+    processor_fsm_idle         "Processor idle - can take a request from the client";
+    processor_fsm_apb_request  "APB request has been started, and waiting for its completion";
+    processor_fsm_wait         "In a wait delay cycle, waiting for accumulator to decrement to zero";
 } t_processor_fsm_state;
 
-/*t t_apb_fsm_state */
+/*t t_apb_fsm_state
+ *
+ * APB FSM state machine states - the APB FSM drives the APB request
+ * out, and monitors the APB response @a pready to determine
+ * completion of the request
+ */
 typedef fsm {
-    apb_fsm_idle;
-    apb_fsm_select_phase;
-    apb_fsm_enable_phase;
+    apb_fsm_idle           "APB request machine idle - it can take a request from the processor";
+    apb_fsm_select_phase   "APB @a psel is asserted but @penable is deasserted, for the first cycle of an APB access";
+    apb_fsm_enable_phase   "Waiting for @a pready to be asserted, indicating completion of the APB access";
 } t_apb_fsm_state;
 
-/*t t_rom_state */
+/*t t_rom_state
+ *
+ * State for the ROM side of the processor - effectively program
+ * counter and the data read from the ROM - plus an indication that
+ * the processor is idle.
+ */
 typedef struct {
-    bit busy;
-    bit opcode_valid;
-    bit[8] opcode;
-    bit[16] address;
-    bit[32] arg_data;
-    bit reading;
-    bit acknowledge;
+    bit busy          "Asserted if the ROM processor is busy (i.e. from a @a request, until a @a finish is executed)";
+    bit opcode_valid  "Asserted if the @a opcode and @arg_data are vaid; if deasserted and @a busy then the ROM should be read or being read";
+    bit[8] opcode     "Fetched opcode from the ROM at @a address - ROM data[8;32]";
+    bit[16] address   "ROM address to fetch next if @a busy and @opcode_valid is deasserted - effectively the program counter";
+    bit[32] arg_data  "Fetched opcode argument data from the ROM - ROM data[32;0]";
+    bit reading       "Asserted if the ROM is being read (i.e. @p rom_access enable was asserted in the last cycle)";
+    bit acknowledge   "Asserted to acknowledge a request from the client - asserted for a single cycle following a taken request";
 } t_rom_state;
 
-/*t t_rom_combs */
+/*t t_rom_combs
+ *
+ * Combinatorial signals decoded from the @a rom_state - basically the ROM read request
+ */
 typedef struct {
-    t_apb_rom_request request;
+    t_apb_rom_request request "ROM read request to present - request read of @a address if @a busy, unless @opcode_valid or @a reading already";
 } t_rom_combs;
 
-/*t t_processor_state */
+/*t t_processor_state
+ *
+ * Processor execution state; FSM and APB address, accumulator and repeat count
+ */
 typedef struct {
-    t_processor_fsm_state fsm_state;
-    bit[32] address;
-    bit[32] accumulator;
-    bit[32] repeat_count;
+    t_processor_fsm_state fsm_state   "Processor FSM state machine state";
+    bit[32] address                   "Address to be used for APB requests, set using a 'set parameter' opcode";
+    bit[32] accumulator               "Program's accumulator, used for calculations, stores read data, and can be used for writes";
+    bit[32] repeat_count              "Repeat count for program looping";
 } t_processor_state;
 
-/*t t_processor_apb_request */
+/*t t_processor_apb_request
+ *
+ * APB request from the processor
+ */
 typedef struct {
     bit valid;
     bit read_not_write;
     bit[32] wdata;
 } t_processor_apb_request;
 
-/*t t_processor_combs */
+/*t t_processor_combs
+ *
+ * Combinatorial decode of the processor state, used to control the ROM state and the APB state machine
+ */
 typedef struct {
-    t_processor_apb_request apb_req;
-    t_processor_action action;
-    bit[32] arg_data;
-    bit acc_is_zero;
-    bit rpt_is_zero;
-    bit take_branch;
-    bit completes_op;
-    bit finishing;
-    t_apb_rom_opcode_subclass  opcode_subclass;
-    t_apb_rom_opcode_class opcode_class;
-    bit opcode_valid;
+    t_processor_apb_request apb_req  "APB request to start; should only be valid if APB state machine is idle";
+    t_processor_action action        "Action that the processor should take";
+    bit[32] arg_data                 "Copy of the ROM argument data - kind of unnecessary, but allows future changes";
+    bit acc_is_zero                  "Asserted if the processor state accumulator is zero";
+    bit rpt_is_zero                  "Asserted if the processor state repeat count is zero";
+    bit take_branch                  "Asserted if a branch is being taken - requires a branch action, and the branch condition to be met; causes the ROM to load the arg_data as the ROM address";
+    bit completes_op                 "Asserted if the processor is completing execution of the opcode - hence the ROM should fetch another opcode";
+    bit finishing                    "Asserted if the processor is executing a 'finish' instruction, hence the ROM should become not busy";
+    t_apb_rom_opcode_subclass  opcode_subclass "Opcode subclass of the ROM data @a opcode - ignore if @a opcode_valid deasserted";
+    t_apb_rom_opcode_class opcode_class        "Opcode class of the ROM data @a opcode - ignore if @a opcode_valid deasserted";
+    bit opcode_valid                           "Asserted if the processor has a valid opcode from the ROM";
 } t_processor_combs;
 
-/*t t_apb_action */
+/*t t_apb_action
+ *
+ * APB action to take - depends on APB state machine and request from processor state machine
+ */
 typedef enum[3] {
-    apb_action_none,
-    apb_action_start_wait,
-    apb_action_start_apb_request_write,
-    apb_action_start_apb_request_read,
-    apb_action_move_to_enable_phase,
-    apb_action_complete,
+    apb_action_none                    "APB should stay in the state it is in",
+    apb_action_start_apb_request_write "APB should be in idle and should start an APB write request",
+    apb_action_start_apb_request_read  "APB should be in idle and should start an APB read request",
+    apb_action_move_to_enable_phase    "APB is presenting the first cycle of an APB request, and should move to the @a enable phase",
+    apb_action_complete                "APB is completing an APB request - it is in the @a enable phase and @a pready is asserted",
 } t_apb_action;
 
-/*t t_apb_state */
+/*t t_apb_state
+ *
+ * State of the APB requester - at least (and only) the APB FSM state machine
+ */
 typedef struct {
-    t_apb_fsm_state fsm_state;
+    t_apb_fsm_state fsm_state  "APB FSM state machine state";
 } t_apb_state;
 
-/*t t_apb_combs */
+/*t t_apb_combs
+ *
+ * Combinatorial decode of the APB FSM state machine, incoming request from the processor, and APB response @a pready
+ */
 typedef struct {
-    t_apb_action action;
-    bit completing_request;
+    t_apb_action action    "Action that the APB state machine should perform";
+    bit completing_request "Asserted if the APB state machine is completing an APB request - it will be in @a idle in the next cycle";
 } t_apb_combs;
 
 /*a Module */
 module apb_processor( clock                    clk        "Clock for the CSR interface; a superset of all targets clock",
-                      input bit                reset_n,
-                      input t_apb_processor_request    apb_processor_request,
-                      output t_apb_processor_response  apb_processor_response,
+                      input bit                reset_n    "Active low reset",
+                      input t_apb_processor_request    apb_processor_request  "Request from the client to execute from an address in the ROM",
+                      output t_apb_processor_response  apb_processor_response "Response to the client acknowledging a request",
                       output t_apb_request     apb_request   "Pipelined csr request interface output",
                       input t_apb_response     apb_response  "Pipelined csr request interface response",
-                      output t_apb_rom_request rom_request,
-                      input bit[40]            rom_data
+                      output t_apb_rom_request rom_request   "Request to the instruction ROM for reading, with address",
+                      input bit[40]            rom_data      "Read data back from the ROM with the APB program instruction"
     )
 """
-The documentation of the CSR interface itself is in other files (at
-this time, csr_target_csr.cdl).
+The module is presented with a request to execute a program from the
+ROM starting at a certain address. It executes the program, and hence
+a set of APB requests, as required.
 
-This module drives a CSR target interface in response to an incoming
-APB interface.
+The purpose of the module is to permit programmed sequences of APB
+transactions without a full-fledge microcontroller being needed, even
+for PLL setup or DDR pin DLL scanning, and so on.
 
-It therefore permits an extension of an APB bus through a CSR target
-pipelined chain.
+A request to run a program is an @a address with a @a valid bit; if a
+valid request is presented, it should be held until acknowledge. The
+module will acknowledge a request using a single cycle @a acknowledge
+in its @p apb_processor_response. Then the module will start reading
+the ROM at the given address, executing 'APB program instructions'
+from the data returned. The ROM is external to this module, and hence
+the @p rom_request and @p rom_data signals permit a simple synchronous
+memory to be attached with the program data.
 
+A second request to run a program may be presented while the APB
+processor module is busy with the previous program request; this is
+perfectly acceptable, but there will not be an @a acknowledge until
+the APB processor is ready to start the new program; the new request
+should be held stable until that point.
+
+The ROM contains the APB program, which is 40 bits of data per
+instruction - 8 bits of opcode, 32 bits of data, per word. The opcode
+is in [8;32], and the operand data is in [32;0].
+ 
+The opcodes fall in to 6 different classes: ALU, branch, set
+parameter, APB request, wait, finish.
+ 
++ ALU
+  Five ALU ops are supported - OR, BIC, AND, XOR, ADD
+ 
++ Branch
+  Four branch types are supported - always, if acc is zero, if acc is
+  nonzero, and if repeat count is nonzero (with the side effect of
+  decrementing the repeat count)
+
++ Set parameter    
+  Set parameter can set the APB address, accumulator and repeat count
+ 
++ Wait
+  Wait uses the accumulator, decrementing it once per cycle, to wait
+  before moving on in the program.
+ 
++ APB request
+  APB request can request read, write accumulator, or write using the
+  ROM content as data; these can optionally also auto-increment the address
+ 
++ Finish
+  Complete the program, and permit a new request to be started
+
+The module presents a registered APB request interface out, and
+accepts an APB response back, including @a pready.
 """
 {
     /*b Clock and reset */
     default clock clk;
     default reset active_low reset_n;
 
-    clocked t_apb_request      apb_request={*=0} "APB request";
-    comb t_rom_combs           rom_combs;
-    clocked t_rom_state        rom_state={*=0};
-    comb t_processor_combs     processor_combs;
-    clocked t_processor_state  processor_state={*=0, fsm_state=processor_fsm_idle};
-    comb t_apb_combs           apb_combs;
-    clocked t_apb_state        apb_state={*=0, fsm_state=apb_fsm_idle};
+    clocked t_apb_request      apb_request={*=0} "APB request being presented, driving the output port";
+    comb t_rom_combs           rom_combs       "Combinatorial decode of ROM state";
+    clocked t_rom_state        rom_state={*=0}                                      "State of the ROM-side; request and ROM access";
+    comb t_processor_combs     processor_combs                                      "Combinatorial decode of the processor state, to determine processor action";
+    clocked t_processor_state  processor_state={*=0, fsm_state=processor_fsm_idle}  "Processor state, including FSM and accumulator";
+    comb t_apb_combs           apb_combs                                            "Combinatorial decode of APB state and APB response";
+    clocked t_apb_state        apb_state={*=0, fsm_state=apb_fsm_idle}              "APB state, including FSM";
 
     /*b Rom interface logic */
     rom_interface_logic """
-    ROM interface logic - start program etc.
+    Start a program (go @a busy) when a valid request comes in,
+    storing the request's @a address as the ROM 'program counter'.
+    Complete the program when the processor indicates it is executing
+    a @a finish instruction.
+
+    Request a read of the ROM if there is not a valid opcode in hand,
+    and a request is being processed (@a busy asserted); don't request
+    a ROM read if it was requested in the last cycle, as the ROM will
+    be presenting the data already.
+
+    If reading the ROM, then capture the data from the ROM as a valid
+    opcode, and move on the 'program counter' @a address.  If the
+    processor, though, has consumed the opcode, then invalidate it
+    (these should be mutually exclusive). If the processor indicates a
+    branch is to be taken, then change the program counter @a address
+    appropriately.
     """: {
         /*b Handle the state of the request/ack */
         rom_state.acknowledge <= 0;
@@ -258,7 +340,28 @@ pipelined chain.
 
     /*b Processor execute logic */
     processor_execute_logic """
-    The processor executes valid opcodes
+    Break out the ROM state data, and determine some simple flags
+    (e.g. @a acc_is_zero).
+
+    From the processor FSM state, determine the action to take. The
+    processor will be in 'idle' if it is ready to start processing of
+    the ROM opcode being presented. Hence most actions are just a
+    decode, when in idle, of the incoming opcode class. However, if
+    the processor FSM is indicating an APB request in process then the
+    processor action is pending the APB request; if the processor is
+    handling a wait delay then either decrement the accumulator or (if
+    it is zero) complete the wait instruction.
+
+    Handling the processor action is the essence of executing the
+    opcode classes, generally; most will complete the opcode execution
+    and return the processor FSM to idle. A pending APB request will
+    need to wait for the APB state machine to complete, and it may
+    (for APB reads) capture the APB @a prdata in the accumulator. A
+    wait start will cause the delay to be written to the accumulator,
+    and wait steps are then to decrement the accumulator or simply
+    complete (if the accumulator is zero). A branch will complete,
+    while indicating to the ROM state machine to take the branch if
+    necessary.
     """: {
         /*b Breakout the state for decode into action */
         processor_combs.arg_data        = rom_state.arg_data;
@@ -398,10 +501,22 @@ pipelined chain.
 
     /*b APB master interface logic */
     apb_master_logic """
-    The APB master interface accepts a request and drives the signals
-    as required by the APB spec, waiting for pready to complete. It
-    always has at least one dead cycle between presenting APB
-    requests.
+    The APB master interface accepts a request from the processor and
+    drives the signals as required by the APB spec, waiting for pready
+    to complete. It always has at least one dead cycle between
+    presenting APB requests, as it will have to transition from idle,
+    to the select phase, to the enable phase, then back to idle.
+
+    The logic is simple enough - an incoming request (which should
+    only be valid when the APB state machine is idle) causes an APB
+    read or write to start, to the @a paddr in the processor's APB
+    address register, using @a pwdata required by the processor
+    (either the accumulator or the ROM data[32;0]). The request out is
+    registered, and so when the APB FSM is in its select phase, the
+    APB request on the bus has @a psel asserted and @a penable
+    deasserted. In the enable phase of the FSM, the APB request out
+    will have @a psel asserted and @a penable asserted, and be waiting
+    for @a pready to be asserted.
     """: {
         apb_combs.action = apb_action_none;
         full_switch (apb_state.fsm_state) {

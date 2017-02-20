@@ -57,7 +57,12 @@ for l in f:
                 sigtype,signame = get_sigtype_and_name(l[:l.find("=")])
                 pass
             if re.match(r'\s*comb\s.*;',l):
-                sigtype,signame = get_sigtype_and_name(l[:l.find(";")])
+                if has_documentation:
+                    sigtype,signame = get_sigtype_and_name(l[:l.find('"')])
+                    pass
+                else:
+                    sigtype,signame = get_sigtype_and_name(l[:l.find(";")])
+                    pass
                 pass
             if signame is not None:
                 if has_documentation:

@@ -1,16 +1,15 @@
-/** Copyright (C) 2004,2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file   apb_target_timer.cdl
  * @brief  Simple timer target for an APB bus
@@ -24,7 +23,10 @@
 include "apb.h"
 
 /*a Types */
-/*t t_apb_address */
+/*t t_apb_address
+ *
+ * APB address map, used to decode paddr
+ */
 typedef enum [4] {
     apb_address_timer = 0,
     apb_address_comparator_0 = 4,
@@ -32,7 +34,10 @@ typedef enum [4] {
     apb_address_comparator_2 = 6,
 } t_apb_address;
 
-/*t t_access */
+/*t t_access
+ *
+ * APB access that is in progress; a decode of psel and paddr
+ */
 typedef enum [3] {
     access_none,
     access_write_comparator,
@@ -41,11 +46,15 @@ typedef enum [3] {
 } t_access;
 
 /*t t_timer
+ *
+ * Timer comparator state; a 31-bit comparator with a single bit that
+ * indicates if the timer value has incremented up to the comparator
+ * value.
  */
 typedef struct
 {
-    bit [31]comparator;
-    bit equalled;
+    bit [31]comparator  "31-bit timer comparator value";
+    bit equalled        "Asserted if the timer counter value has equalled the 31-bit comparator value";
 } t_timer;
 
 /*a Module */
@@ -55,12 +64,18 @@ module apb_target_timer( clock clk         "System clock",
                          input  t_apb_request  apb_request  "APB request",
                          output t_apb_response apb_response "APB response",
 
-                         output bit[3] timer_equalled
+                         output bit[3] timer_equalled       "One output bit per timer, mirroring the three timer's @a equalled state"
     )
 """
 Simple timer with an APB interface.
+This is a monotonically increasing 31-bit timer with three 31-bit comparators.
 
-This is a monotonically increasing 31-bit timer with three comparators
+The timers are read/written through the APB interface with timer 0 at
+address 0, timer 1 at address 1, and so on. When a timer is written it
+writes the 31-bit @a comparator value and it clears the @a timer's @a
+equalled bit. When a timer is read it returns the @a comparator value
+(in bits [31;0]), and it returns the @a equalled status in bit [31] -
+while atomically clearing it.
 
 """
 {
@@ -69,15 +84,23 @@ This is a monotonically increasing 31-bit timer with three comparators
     default reset active_low reset_n;
 
     /*b Decode APB interface */
-    clocked t_access access=access_none;
+    clocked t_access access=access_none   "Access being performed by APB";
 
     /*b Timer state */
-    clocked bit[31] timer_value = 0;
-    clocked t_timer[3] timers = { {comparator=0, equalled=0} };
-    clocked bit[3] timer_equalled=0;
+    clocked bit[31] timer_value = 0       "Timer counter value, autoincrementing";
+    clocked t_timer[3] timers = {*=0}     "Three comparators with @a equalled status";
+    clocked bit[3] timer_equalled=0       "Outputs from the module, clocked to make timing simpler";
 
     /*b APB interface */
     apb_interface_logic """
+    The APB interface is decoded to @a access when @p psel is asserted
+    and @p penable is deasserted - this is the first cycle of an APB
+    access. This permits the access type to be registered, so that the
+    APB @p prdata can be driven from registers, and so that writes
+    will occur correctly when @p penable is asserted.
+
+    The APB read data @p prdata can then be generated based on @a
+    access.
     """ : {
         /*b Decode access */
         access <= access_none;
@@ -119,6 +142,13 @@ This is a monotonically increasing 31-bit timer with three comparators
 
     /*b Handle the timer and comparators */
     timer_logic """
+    The @a timer_value is incremented on every clock tick.  The three
+    @a timers are compared with the @a timer_value, and if they are
+    equal they the @a timers' @a equalled bit is set. Id the
+    comparator is being read, then the @a equalled bit is cleared -
+    with lower priority than the comparison. Finally, the @a timers
+    can be written with a @a comparator value, which clears the @a
+    equalled bit.
     """: {
         timer_value <= timer_value+1;
         timer_equalled <= 0;

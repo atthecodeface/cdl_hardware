@@ -1,16 +1,15 @@
-/** Copyright (C) 2004,2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file   apb_target_gpio.cdl
  * @brief  Simple GPIO target for an APB bus
@@ -24,7 +23,9 @@
 include "apb.h"
 
 /*a Types */
-/*t t_apb_address */
+/*t t_apb_address
+ * APB address map, used to decode paddr
+ */
 typedef enum [2] {
     apb_address_gpio_output_reg   = 0,
     apb_address_gpio_input_status = 1,
@@ -32,43 +33,51 @@ typedef enum [2] {
     apb_address_gpio_input_reg_1  = 3,
 } t_apb_address;
 
-/*t t_access */
+/*t t_access
+ * APB access that is in progress; a decode of psel and paddr
+ */
 typedef enum [3] {
-    access_none,
-    access_write_gpio_output,
-    access_write_gpio_input,
-    access_read_gpio_output,
-    access_read_gpio_inputs_0_7,
-    access_read_gpio_inputs_8_15,
-    access_read_gpio_input_status
+    access_none                     "No access being performed",
+    access_write_gpio_output        "Write to GPIO output register in progress",
+    access_write_gpio_input         "Write to one of the two GPIO input registers in progress",
+    access_read_gpio_output         "Read of the GPIO output register in progress",
+    access_read_gpio_inputs_0_7     "Read of the GPIO input register for pins 0 to 7 in progress",
+    access_read_gpio_inputs_8_15    "Read of the GPIO input register for pins 8 to 15 in progress",
+    access_read_gpio_input_status   "Read of the GPIO input status in progress",
 } t_access;
 
-/*t t_gpio_output */
+/*t t_gpio_output
+ * Output pin state, determining how outputs are driven, or if they are tristated
+ */
 typedef struct
 {
-    bit value;
-    bit enable;
+    bit value    "Assert if the output should be driven high - ignored if enable is low";
+    bit enable   "Assert to drive the output pin; deassert to tristate the output - this is the reset value";
 } t_gpio_output;
 
-/*t t_gpio_input_type */
+/*t t_gpio_input_type
+ * Input pin event generation type, with one copy stored for each input pin
+ */
 typedef enum [3]
 {
-    gpio_input_type_none = 0, // 0 for reset
-    gpio_input_type_low,
-    gpio_input_type_high,
-    gpio_input_type_rising,
-    gpio_input_type_falling,
-    gpio_input_type_any_edge
+    gpio_input_type_none     = 0       "Reset value - input ignored (no event generated based on the input)",
+    gpio_input_type_low      = 1       "Set input event if the input pin (synchronized) is low",
+    gpio_input_type_high     = 2       "Set input event if the input pin (synchronized) is high",
+    gpio_input_type_rising   = 3       "Set input event if the input pin rises",
+    gpio_input_type_falling  = 4       "Set input event if the input pin falls",
+    gpio_input_type_any_edge = 5       "Set input event if the input pin rises or falls",
 } t_gpio_input_type;
 
-/*t t_gpio_input */
+/*t t_gpio_input
+ * State maintained for each input pin
+ */
 typedef struct
 {
-    t_gpio_input_type input_type;
-    bit sync_value;
-    bit last_sync_value;
-    bit value; // not updated if a read is in progress and not finishing (pselect && !penable) so the read data is held constant for two cycles
-    bit event; // asserted if the type of event has occurred between value and last_sync_value: not updated during reads either
+    t_gpio_input_type input_type      "Determines what input pin status/edges set the event for this pin";
+    bit sync_value                    "Synchronized value of the input";
+    bit last_sync_value               "Last synchronized value of the input - used for edge detection";
+    bit value                         "Not updated if a read is in progress and not finishing (pselect && !penable) so the read data is held constant for two cycles";
+    bit event                         "Asserted if the type of event has occurred between value and last_sync_value: not updated during reads either";
 } t_gpio_input;
 
 /*a Module
@@ -79,18 +88,48 @@ module apb_target_gpio( clock clk         "System clock",
                         input  t_apb_request  apb_request  "APB request",
                         output t_apb_response apb_response "APB response",
 
-                        output bit[16] gpio_output,
-                        output bit[16] gpio_output_enable,
-                        input bit[16]  gpio_input,
-                        output bit     gpio_input_event
+                        output bit[16] gpio_output         "GPIO output values, if @p gpio_output_enable is set",
+                        output bit[16] gpio_output_enable  "GPIO output enables",
+                        input bit[16]  gpio_input          "GPIO input pin connections",
+                        output bit     gpio_input_event    "Driven high when at least one GPIO input event has occurred, for use as an interrupt to a CPU"
     )
 """
 Simple APB interface to a GPIO system.
 
-16 outputs, each with separate enables which reset to off
+The module has 16 outputs, each with separate enables which reset to
+off; it also has 16 inputs, each of which is synced and then edge
+detected (or other configured event).
 
-16 inputs, each of which is synced and then edge detected (or other configured event).
-We do not support atomic read-and-clear of events; so race conditions exist, but this is meant for low speed I/O.
+This module has four APB-addressable registers:
++ OutputControl (0):
+
+  Each output (16 of them) has 2 bits; bit 0 is used for GPIO
+  output 0 @a value, and bit 1 is used for its @a enable. Bits 2 and 3
+  are used for GPIO output 1, and so on.
+     
++ InputStatus (1):
+
+  This register contains the input pin values and the event status
+  for the 16 GPIO inputs. The bottom 16 bits contain the input pin
+  @a value for each of the 16 inputs; the top 16 bits contain the
+  @a event status.
+
++ InputReg0 (2):
+
+  On reads, this register contains the input pin event types for input
+  pins - see the @a t_gpio_input_type for the decode; bits [3;0] are
+  used for GPIO 0, [3;4] for GPIO1, and so on up to [3;28] for GPIO7.
+  On writes, this register writes a *single* GPIO input control:
+  bits[4;0] contain the GPIO input to control; and bits [3;12] contain
+  the event type - which is only written if bit[8] is set; and if
+  bit[9] then the input event is cleared.
+
++ InputReg1 (3):
+
+  This register contains the input pin event types for the top 8 GPIO
+  pins, in a manner identical to InputReg0.
+     
+
 """
 {
     /*b Clock and reset */
@@ -98,14 +137,22 @@ We do not support atomic read-and-clear of events; so race conditions exist, but
     default reset active_low reset_n;
 
     /*b Decode APB interface */
-    clocked t_access access=access_none;
+    clocked t_access access=access_none   "Access being performed by APB";
 
     /*b Input and output state */
-    clocked t_gpio_input[16]  inputs = {*=0};
-    clocked t_gpio_output[16] outputs = {*=0};
+    clocked t_gpio_input[16]  inputs = {*=0}   "GPIO input configuration and state";
+    clocked t_gpio_output[16] outputs = {*=0}  "GPIO output controls";
 
     /*b APB interface */
     apb_interface_logic """
+    The APB interface is decoded to @a access when @p psel is asserted
+    and @p penable is deasserted - this is the first cycle of an APB
+    access. This permits the access type to be registered, so that the
+    APB @p prdata can be driven from registers, and so that writes
+    will occur correctly when @p penable is asserted.
+
+    The APB read data @p prdata can then be generated based on @a
+    access.
     """ : {
         /*b Decode access */
         access <= access_none;
@@ -159,7 +206,7 @@ We do not support atomic read-and-clear of events; so race conditions exist, but
 
     /*b Output */
     output_logic """
-    GPIO outputs are simply driven outputs and output enables
+    GPIO outputs are simply driven outputs and output enables.
     """: {
         for (i; 16) {
             if (access==access_write_gpio_output) {
@@ -175,14 +222,25 @@ We do not support atomic read-and-clear of events; so race conditions exist, but
     /*b Inputs
      */
     input_logic """
-    GPIO inputs; allow writing one input at a time
+    GPIO inputs; allow writing one input at a time, using @p pwdata[4;0] to specify which input is to be written.
+
+    Bits [3;12] will be written as the @p input_type, but only if bit[8] is set.
+    The input event status may be cleared (separately, or at the same time) by writing with bit[9] set.
+
+    The input pin state is synchronized with two flops. The
+    sychronized value (in @a last_sync_value) is copied to the GPIO
+    input value only if the APB access is not being used - this
+    permits event detection to be performed with atomic-read-and-clear
+    (if implemented). The input event can then be detected straight
+    from the input value, or from a difference between the input value
+    and the newly synchronized value.
     """: {
         /*b Configure inputs */
         for (i; 16) {
             if (apb_request.pwdata[4;0]==i) {
                 if (access==access_write_gpio_input) {
                     if (apb_request.pwdata[8]) {// write type
-                        inputs[i].input_type <= apb_request.pwdata[3;16];
+                        inputs[i].input_type <= apb_request.pwdata[3;12];
                     }
                     if (apb_request.pwdata[9]) {// clear event
                         inputs[i].event <= 0;
