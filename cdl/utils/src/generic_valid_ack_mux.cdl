@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file   generic_valid_ack_mux.cdl
  * @brief  A generic valid/ack multiplexer to combine buses with valid/ack protocol
@@ -21,59 +20,82 @@
  */
 /*a Includes */
 
-/*a Constants */
-
 /*a Types */
-/*t t_arbiter_state */
+/*t t_arbiter_state
+ *
+ * State held by the arbiter
+ */
 typedef struct {
     bit last_request_from_port_a "Asserted if the last request taken was from port A";
 } t_arbiter_state;
 
-/*t t_arbiter_combs */
+/*t t_arbiter_combs
+ *
+ * Combinatorial decode of downstream ack and upstream requests,
+ * arbiter state and state of output
+ */
 typedef struct {
-    bit new_request_permitted;
-    bit take_req_a;
-    bit take_req_b;
+    bit new_request_permitted "Asserted if a new upstream request may be taken";
+    bit take_req_a            "Asserted if upstream port 'A' request is being taken";
+    bit take_req_b            "Asserted if upstream port 'B' request is being taken";
 } t_arbiter_combs;
 
 /*a Module
  */
-module generic_valid_ack_mux( clock clk "Clock for data in and display SRAM write out",
-                              input bit reset_n,
-                              input gt_generic_valid_req req_a,
-                              input gt_generic_valid_req req_b,
-                              output bit ack_a,
-                              output bit ack_b,
-                              output gt_generic_valid_req req,
-                              input bit ack
+module generic_valid_ack_mux( clock clk                         "Clock for logic",
+                              input bit reset_n                 "Active low reset",
+                              input gt_generic_valid_req req_a  "Request from upstream 'A' port, which must have a @p valid bit",
+                              input gt_generic_valid_req req_b  "Request from upstream 'B' port, which must have a @p valid bit",
+                              output bit ack_a                  "Acknowledge to upstream 'A' port",
+                              output bit ack_b                  "Acknowledge to upstream 'B' port",
+                              output gt_generic_valid_req req   "Request out downstream, which must have a @p valid bit",
+                              input bit ack                     "Acknowledge from downstream"
     )
 """
+Generic multiplexer for two identical requesters (with a valid signal
+each), to arbitrate for an output request, with a response with an
+'ack' signal.
+
+This module may be used with a different type (using type remapping)
+to generate a specific multiplexer for two validated requests, which
+have just an ack in response (e.g. the teletext dprintf requests).
+
+The module registers its output request; it remembers which requester
+it consumed from last, and will preferentially consue from the other
+port next - hence supplying some degree of fairness.
+
+When its output is not valid, or is being acknowledged, it may take a
+new request from one of the two requesting masters, using the desired
+priority. It will also then acknowledge that requester.
+
+If its output is valid and is not acknowledged, then it will not
+consumer another request.
 """
 {
     /*b State etc  */
     default reset active_low reset_n;
     default clock clk;
 
-    clocked gt_generic_valid_req req={*=0};
-    clocked bit ack_a=0;
-    clocked bit ack_b=0;
-    clocked t_arbiter_state arbiter_state={*=0};
-    comb t_arbiter_combs arbiter_combs;
+    clocked gt_generic_valid_req req={*=0}       "Request out downstream";
+    clocked bit ack_a=0                          "Ack out to 'A' port";
+    clocked bit ack_b=0                          "Ack out to 'B' port";
+    clocked t_arbiter_state arbiter_state={*=0}  "Arbiter state - which port was last consumed";
+    comb t_arbiter_combs arbiter_combs           "Combinatorial decode of acks and requests";
 
     /*b Arbiter logic */
     arbiter_logic """
     First determine if a new request may be presented.
     If it may, then chose one of the incoming requests, if either is valid.
-    Else present NUL request.
 
-    If a new request may not be presented then hold the output request
-    stable and do not chose another request.
+    Maintain a record of the last requester that was granted, for fairness.
     """: {
+        /*b Determine if a request can be consumed */
         arbiter_combs.new_request_permitted = 0;
         if (!req.valid || ack) {
             arbiter_combs.new_request_permitted = 1;
         }
 
+        /*b Determine which requester to take a request from, if any */
         arbiter_combs.take_req_a = 0;
         arbiter_combs.take_req_b = 0;
         if (arbiter_combs.new_request_permitted) {
@@ -86,6 +108,7 @@ module generic_valid_ack_mux( clock clk "Clock for data in and display SRAM writ
             }
         }
 
+        /*b Maintain arbiter state - which port was consumed from last */
         if (arbiter_combs.take_req_a) {
             arbiter_state.last_request_from_port_a <= 1;
         } elsif (arbiter_combs.take_req_b) {
@@ -98,6 +121,8 @@ module generic_valid_ack_mux( clock clk "Clock for data in and display SRAM writ
     Clear current request out if it is being acked.
     If taking a new request, then register that.
     Register the taking of a request as the ack to that requester.
+    If a new request may not be presented then hold the output request
+    stable and do not chose another request.
     """: {
         ack_a <= arbiter_combs.take_req_a;
         ack_b <= arbiter_combs.take_req_b;

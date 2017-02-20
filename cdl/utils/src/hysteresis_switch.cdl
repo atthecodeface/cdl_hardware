@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file   hysteresis_switch.cdl
  * @brief  A hystersis detector using counter pairs
@@ -24,28 +23,28 @@
  * indefinitely without overflow anyway, the counters divide by 2 on a
  * configurable divider (effectively filtering the input stream).
  *
- * The two notional counters are @cycles_low and @cycles_high.
+ * The two notional counters are @a cycles_low and @a cycles_high.
  *
  * To switch to a 'high' output from a current 'low' output requires
- * the @cycles_high - @cycles_low to be greater than half of the
+ * the @a cycles_high - @a cycles_low to be greater than half of the
  * filter period.
  *
  * To switch to a 'low' output from a current 'high' output requires
- * the @cycles_high - @cycles_low to be less than minus half of the
+ * the @a cycles_high - @a cycles_low to be less than minus half of the
  * filter period.
  *
  * Hence a n+1 bit difference would need to be maintained for
- * @cycles_high and @cycles_low. This difference would increase by 1
+ * @a cycles_high and @a cycles_low. This difference would increase by 1
  * if the input is high, and decrease by 1 if the input is low.
  *
  * Hence an actual implementation can maintain an up/down counter
- * @cycles_diff, which is divided by 2 every filter period, and which
+ * @a cycles_diff, which is divided by 2 every filter period, and which
  * is incremented on input of 1, and decremented on input of 0.
  *
- * When the output is low and the @cycles_diff is > half the filter
+ * When the output is low and the @a cycles_diff is > half the filter
  * period the output shifts to high.
  *
- * When the output is high and the @cycles_diff is < -half the filter
+ * When the output is high and the @a cycles_diff is < -half the filter
  * period the output shifts to low.
  */
 /*a Includes */
@@ -53,34 +52,72 @@
 /*a Constants */
 
 /*a Types */
-/*t t_hysteresis_state */
+/*t t_hysteresis_state
+ *
+ * State of the hysteresis
+ */
 typedef struct {
-    bit     output_level;
-    bit[16] cycles_diff;
-    bit[16] period_counter;
+    bit     output_level   "Output level, zero or one";
+    bit[16] cycles_diff    "Signed cycles of difference - more negative if input level has been zero recently, more positive if one";
+    bit[16] period_counter "Filter period counter; when this expires, @p cycles_diff is halved - this keeps @p cycles_diff in the range +- 2*period_counter";
 } t_hystersis_state;
 
-/*t t_hystersis_combs */
+/*t t_hystersis_combs
+ *
+ * Combinatorial decode of the hysteresis state and filter_level
+ */
 typedef struct {
-    bit     period_expired;
-    bit[16] cycles_diff_div_two;
-    bit[16] next_cycles_diff;
-    bit[17] switch_adder   "Amount to add to cycles_diff to see if the output should toggle";
-    bit[17] switch_level   "Sum of switch_adder and cycles_diff, sign of which indicates desired output level";
-    bit     toggle_output_level;
+    bit     period_expired      "Asserted if the @a period_counter has expired";
+    bit[16] cycles_diff_div_two "Signed divide by two of @a cycles_diff";
+    bit[16] next_cycles_diff    "Next value for @a cycles_diff; will be @a cycles_diff (/2 possibly) +- 1, depending on input level";
+    bit[17] switch_adder        "Signed amount to add to cycles_diff to see if the output should toggle - note this is one bit longer than @a cycles_diff";
+    bit[17] switch_level        "Sum of switch_adder and cycles_diff, sign of which indicates desired output level";
+    bit     toggle_output_level "Asserted if @a output_level should toggle";
 } t_hysteresis_combs;
 
 /*a Module
  */
-module hysteresis_switch( clock clk,
-                          input bit reset_n,
-                          input bit clk_enable "Assert to enable the internal clock; this permits I/O switches to easily use a slower clock",
-                          input bit input_value,
-                          output bit output_value,
-                          input bit[16] filter_period "Period over which to filter the input - the larger the value, the longer it takes to switch, but the more glitches are removed",
-                          input bit[16] filter_level  "Value to exceed to switch output levels - the larger the value, the larger the hysteresis; must be less than 2*filter_period"
+module hysteresis_switch( clock clk                    "Clock for the module",
+                          input bit reset_n            "Active low reset",
+                          input bit clk_enable         "Assert to enable the internal clock; this permits I/O switches to easily use a slower clock",
+                          input bit input_value        "Input pin level, to apply hysteresis to",
+                          output bit output_value      "Output level, after hysteresis",
+                          input bit[16] filter_period  "Period over which to filter the input - the larger the value, the longer it takes to switch, but the more glitches are removed",
+                          input bit[16] filter_level   "Value to exceed to switch output levels - the larger the value, the larger the hysteresis; must be less than 2*filter_period"
     )
 """
+ * CDL implementation of a module that takes an input signal and
+ * notionally keeps a count of cycles that the input is low, and
+ * cycles that the input is high; using these counters it makes a
+ * decision on the real value of the output, using hysteresis.
+ *
+ * Since infinite history is not sensible and the counters cannot run
+ * indefinitely without overflow anyway, the counters divide by 2 on a
+ * configurable divider (effectively filtering the input stream).
+ *
+ * The two notional counters are @a cycles_low and @a cycles_high.
+ *
+ * To switch to a 'high' output from a current 'low' output requires
+ * the @a cycles_high - @a cycles_low to be greater than half of the
+ * filter period.
+ *
+ * To switch to a 'low' output from a current 'high' output requires
+ * the @a cycles_high - @a cycles_low to be less than minus half of the
+ * filter period.
+ *
+ * Hence a n+1 bit difference would need to be maintained for
+ * @a cycles_high and @a cycles_low. This difference would increase by 1
+ * if the input is high, and decrease by 1 if the input is low.
+ *
+ * Hence an actual implementation can maintain an up/down counter
+ * @a cycles_diff, which is divided by 2 every filter period, and which
+ * is incremented on input of 1, and decremented on input of 0.
+ *
+ * When the output is low and the @a cycles_diff is > half the filter
+ * period the output shifts to high.
+ *
+ * When the output is high and the @a cycles_diff is < -half the filter
+ * period the output shifts to low.
 """
 {
     /*b State etc  */
@@ -88,12 +125,19 @@ module hysteresis_switch( clock clk,
     default reset active_low reset_n;
     default clock slow_clk;
 
-    clocked t_hystersis_state hysteresis_state={*=0};
-    comb t_hysteresis_combs hysteresis_combs;
+    clocked t_hystersis_state hysteresis_state={*=0} "Hysteresis state";
+    comb t_hysteresis_combs hysteresis_combs         "Combinatorial decode of the hysteresis state";
 
     /*b Hysteresis logic */
     hysteresis_logic """
-    Count the filter period and implement the up/down counter with filter period
+    Count the filter period and divide the adder by 2 (signed
+    division) every time it expires, incrementing it if the input is
+    high, decrementing it if the input is low.
+
+    Compare the adder to filter_level (appropriately +/-, based on
+    the output level). If the adder has gone beyond the hysteresis
+    level (e.g. output_level low, and adder > filter_level ), then
+    toggle the output_level.
     """: {
         /*b Maintain the cycles diff filtered value */
         hysteresis_combs.period_expired      = (hysteresis_state.period_counter==0);
