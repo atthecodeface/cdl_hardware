@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file   csr_master_apb.cdl
  * @brief  Pipelined CSR request/response master, driven by an APB
@@ -24,34 +23,46 @@
 /*a Includes */
 include "apb.h"
 include "csr_interface.h"
+
 /*a Type */
-/*t t_apb_action */
+/*t t_apb_action
+ *
+ * Action that the APB state machine should take, based on the state
+ * machine and APB request in
+ */
 typedef enum[3] {
-    apb_action_none,
-    apb_action_start_wait,
-    apb_action_start_csr_request_write,
-    apb_action_start_csr_request_read,
-    apb_action_complete_write,
-    apb_action_present_read,
-    apb_action_complete_read
+    apb_action_none                    "Hold status quo",
+    apb_action_start_wait              "Want to start a CSR request, but must wait",
+    apb_action_start_csr_request_write "Start a CSR write request",
+    apb_action_start_csr_request_read  "Start a CSR read request",
+    apb_action_complete_write          "APB has completed a required write, so complete the APB transaction",
+    apb_action_present_read            "Move to present read data on APB interface",
+    apb_action_complete_read           "Presenting read data, so can complete APB transaction",
 } t_apb_action;
 
-/*t t_apb_fsm_state */
+/*t t_apb_fsm_state
+ *
+ * APB FSM state
+ */
 typedef fsm {
-    apb_fsm_idle;
-    apb_fsm_waiting_for_previous_csr_request;
-    apb_fsm_csr_requesting_write;
-    apb_fsm_csr_requesting_read;
-    apb_fsm_presenting_read_data;
+    apb_fsm_idle                             "Waiting for APB request";
+    apb_fsm_waiting_for_previous_csr_request "Waiting for a previous CSR request to complete";
+    apb_fsm_csr_requesting_write             "Requesting a CSR write";
+    apb_fsm_csr_requesting_read              "Requesting a CSR read";
+    apb_fsm_presenting_read_data             "Presenting read data on APB @a prdata";
 } t_apb_fsm_state;
 
+/*t t_apb_state
+ *
+ * State (clocked data) for the module 
+ */
 typedef struct {
-    t_apb_fsm_state fsm_state;
+    t_apb_fsm_state fsm_state "APB FSM state";
 } t_apb_state;
 
 /*a Module */
-module csr_master_apb( clock                    clk        "Clock for the CSR interface; a superset of all targets clock",
-                       input bit                reset_n,
+module csr_master_apb( clock                    clk           "Clock for the APB and CSR interface; must be a superset of all targets clock",
+                       input bit                reset_n       "Active low reset",
                        input t_apb_request      apb_request   "APB request from master",
                        output t_apb_response    apb_response  "APB response to master",
                        input t_csr_response     csr_response  "Pipelined csr request interface response",
@@ -61,33 +72,54 @@ module csr_master_apb( clock                    clk        "Clock for the CSR in
 The documentation of the CSR interface itself is in other files (at
 this time, csr_target_csr.cdl).
 
-This module drives a CSR target interface in response to an incoming
-APB interface.
+This module drives a CSR interface in response to an incoming APB
+interface; it is an APB target presenting a CSR master interface.  Its
+purpose is to permit an extension of an APB bus through a CSR target
+pipelined chain, hence providing for a timing-friendly CSR interface
+in an FPGA or ASIC.
 
-It therefore permits an extension of an APB bus through a CSR target
-pipelined chain.
+The APB has a 32-bit @p paddr field, which is presented as 16 bits of
+CSR select and 16 bits of CSR address on the CSR interface. There is
+no timeout in this module on the CSR interface, so accesses to CSRs
+that have no responder on the bus will hang the module.
+
+It is therefore wise to add a CSR target that detects very long
+transactions, and which responds by acknowledging them, to the CSR
+chain.
+
 """
 {
     /*b Clock and reset */
     default clock clk;
     default reset active_low reset_n;
 
-    clocked t_csr_request  csr_request={*=0};
-    comb t_apb_action       apb_action;
-    clocked t_apb_state     apb_state={*=0, fsm_state=apb_fsm_idle};
-    clocked t_apb_response  apb_response={*=0};
-    clocked bit csr_request_in_progress = 0;
+    clocked t_csr_request   csr_request={*=0}                       "CSR request out to CSR chain";
+    comb t_apb_action       apb_action                              "Decode of APB state and request to determine next action";
+    clocked t_apb_state     apb_state={*=0, fsm_state=apb_fsm_idle} "State of the APB interface";
+    clocked t_apb_response  apb_response={*=0}                      "APB response back to the master, generated from CSR response";
+    clocked bit csr_request_in_progress = 0                         "Asserted if a CSR request is in progress";
 
     /*b APB target interface logic */
     apb_target_logic """
     The APB target interface accepts an incoming request, holding it
-    with 'pready' low until the CSR request can start (i.e. until
-    csr_request_in_progress is clear).
+    with @p pready low until the CSR request can start (i.e. until
+    csr_request_in_progress is clear). It does this by the FSM staying
+    in the state, waiting for previous CSR request.
 
-    Then a write transaction is taken and pready asserts.
+    When an APB request can be taken, the APB will have either an
+    action to start a CSR write or to start a CSR read. These will
+    kick the state machines on appropriately, and drive the CSR
+    request out with the required data.
+
+    A write transaction completes at this point, asserting @p
+    pready. If another APB transaction comes in before the CSR
+    interface completes the current write (which occurs when the CSR
+    @a ack goes high and then low), then that transaction will be
+    waited.
 
     A read transaction has to wait for read_data_valid from the
-    target.
+    target; hence it waits for the ack, and the read_data_valid, and
+    then presents @p prdata and @p pready high.
     """: {
         apb_response.perr <= 0;
 

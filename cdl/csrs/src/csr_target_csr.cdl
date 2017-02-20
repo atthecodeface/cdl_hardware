@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file   csr_target_csr.cdl
  * @brief  Pipelined CSR request/response interface to simple CSR read/write
@@ -27,7 +26,7 @@ include "csr_interface.h"
 /*a Module
  */
 module csr_target_csr( clock                       clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
-                          input bit                reset_n,
+                          input bit                reset_n       "Active low reset",
                           input t_csr_request      csr_request   "Pipelined csr request interface input",
                           output t_csr_response    csr_response  "Pipelined csr request interface response",
                           output t_csr_access      csr_access    "Registered CSR access request to client",
@@ -47,9 +46,9 @@ simplest variant being a fixed latency master-to-target and a fixed
 latency target-to-master. The current design uses a
 valid/acknowledgement system to replace the fixed latency.
 
-A valid request is received, and if it matches the @csr_select field
+A valid request is received, and if it matches the @a csr_select field
 then the request is acknowledged. Since the master is a fair distance
-away, and the @valid signal will not be removed until an @ack is seen,
+away, and the @a valid signal will not be removed until an @a ack is seen,
 the handshake is effectively: valid low, ack low; valid high, ack low;
 valid high, ack high; valid high, ack low; valid low, ack low.
 
@@ -79,11 +78,32 @@ target to use a derived clock.
     default clock clk;
     default reset active_low reset_n;
 
-    clocked t_csr_response csr_response={*=0};
-    clocked t_csr_access   csr_access={*=0};
-    clocked bit csr_request_in_progress = 0;
+    clocked t_csr_response csr_response={*=0}  "CSR response back up the chain";
+    clocked t_csr_access   csr_access={*=0}    "CSR access to the client";
+    clocked bit csr_request_in_progress = 0    "Asserted if a CSR access is in progress";
+    
+    /*b Access logic */
+    access_logic """
+    If a CSR read transaction is completing (@p read_data_valid is
+    asserted), then that indication can be cleared, and the @p
+    read_data must be zeroed (to permit a wired-or bus upstream).
 
-    access """
+    If a CSR access is in progress (should be exclusive to the read
+    transaction completing), then remove the upstream @a ack and
+    remove the downstream @a csr_access; if it is a read, then drive
+    the read data valid upstream.
+
+    If a CSR request is being handled (i.e. the @p csr_request.valid
+    was asserted and targeted at this CSR target), and the @p
+    csr_request.valid has been taken away (presumably in response to
+    the upstream @p ack being asserted by this module) then the CSR
+    access has completed as far as this module is concerned, so kill
+    @a csr_request_in_progress.
+
+    Finally, if a request does come in (which should be exclusive to
+    all the previous cases) and it targets this CSR target - as
+    determined by the @p csr_select field matching - then start the
+    CSR access downstream, and acknowledge the request upstream.
     """: {
 
         if (csr_response.read_data_valid) {
