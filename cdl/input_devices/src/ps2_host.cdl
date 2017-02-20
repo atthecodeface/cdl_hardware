@@ -1,22 +1,90 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * @file   ps2.cdl
+ * @file   ps2_host.cdl
  * @brief  PS2 interface for keyboard or mouse
  *
- * CDL implementation of a PS2 interface driver
+ * CDL implementation of a PS2 interface host driver
  *
+ * The PS/2 interface is a bidirectional serial interface running on an
+ * open collector bus pin pair (clock and data).
+ * 
+ * A slave, such as a keyboard or mouse, owns the @clock pin, except for
+ * the one time that a host can usurp it to request transfer from host to
+ * slave. (Known as clock-inhibit)
+ * 
+ * A slave can present data to the host (this module) by:
+ * 
+ * 0. Ensure clock is high for 50us
+ * 1. Pull data low; wait 5us to 25us.
+ * 2. Pull clock low; wait 30us.
+ * 3. Let clock rise; wait 15us.
+ * 4. Pull data low or let it rise; wait 15us (data bit 0)
+ * 5. Pull clock low; wait 30us.
+ * 6. Let clock rise; wait 15us.
+ * 7... Pull data low or let it rise; wait 15us (data bit 1..7)
+ * 8... Pull clock low; wait 30us
+ * 9... Let clock rise; wait 15us - repeat from 7
+ * 10... Pull data low or let it rise; wait 15us (parity bit)
+ * 11... Pull clock low; wait 30us
+ * 12... Let clock rise; wait 15us.
+ * 13... Let data rise; wait 15us (stop bit)
+ * 14... Pull clock low; wait 30us
+ * 15... Let clock rise; wait 15us.
+ * 
+ * If the clock fails to rise on any of the pulses - because the host is
+ * driving it low (clock-inhibit) - the slave will have to retransmit the
+ * byte (and any other byte of a packet that it has already sent).
+ * 
+ * A host can present data to the slave with:
+ * 1. Pull clock low for 100us; start 15ms timeout
+ * 2. Pull data low, wait for 15us.
+ * 3. Let clock rise, wait for 15us.
+ * 4. Check the clock is high.
+ * 5. Wait for clock low
+ * 6. On clock low, wait for 10us, and set data to data bit 0
+ * 7. Wait for clock high
+ * 8. Wait for clock low
+ * 9... On clock low, wait for 10us, and set data to data bit 1..7
+ * 10... Wait for clock high
+ * 11... Wait for clock low
+ * 12. On clock low, wait for 10us, and set data to parity bit
+ * 13. Wait for clock high
+ * 14. Wait for clock low
+ * 15. On clock low, wait for 10us, let data rise (stop bit)
+ * 16. Wait for clock high
+ * 17. Wait for clock low
+ * 18. Wait for 10us, check that data is low (ack)
+ * 
+ * A strategy is to run at (for example) ~3us per 'tick', and use that to
+ * look for valid data streams on the pins.
+ * 
+ * As a host, to receive data from the slave (the first target for the design), we have to:
+ * 1. Look for clock falling
+ * 2. If data is low, then assume this is a start bit. Set timeout timer.
+ * 3. Wait for clock falling. Clock in data bit 0
+ * 4. Wait for clock falling. Clock in data bit 1
+ * 5. Wait for clock falling. Clock in data bit 2
+ * 6. Wait for clock falling. Clock in data bit 3
+ * 7. Wait for clock falling. Clock in data bit 4
+ * 8. Wait for clock falling. Clock in data bit 5
+ * 9. Wait for clock falling. Clock in data bit 6
+ * 10. Wait for clock falling. Clock in data bit 7
+ * 11. Wait for clock falling. Clock in parity bit.
+ * 12. Wait for clock falling. Clock in stop bit.
+ * 13. Wait for clock high.
+ * 14. Validate data (stop bit 1, parity correct)
+ * 
  */
 
 /*a Includes */
@@ -26,132 +94,116 @@ include "input_devices.h"
 constant integer timeout_rx_data=1000; // 11 bits at 10kHz is 1.1ms, which is 330*3us
 
 /*a Types */
+/*t t_rx_action
+ *
+ *
+ */
 typedef enum [4] {
-    action_rx_none,
-    action_rx_start,
-    action_rx_clock_finishing_data,
-    action_rx_clock_rising_in_bit,
-    action_rx_clock_data,
-    action_rx_acknowledge_timeout,
-    action_rx_acknowledge_error,
-    action_rx_error,
-    action_rx_timeout
+    action_rx_none                 "Keep status quo",
+    action_rx_start                "Start receiving data, as clock is falling and data is low",
+    action_rx_clock_finishing_data "Clock rising at the end of a transaction (still to check parity, though, but protocol was okay)",
+    action_rx_clock_rising_in_bit  "Clock rising during a data bit",
+    action_rx_clock_data           "Clock a (non-start, non-finish) data bit in",
+    action_rx_acknowledge_timeout  "Acknowledge that a timeout has occurred",
+    action_rx_acknowledge_error    "Acknowledge that a protocol error has occurred",
+    action_rx_error                "Protocol error occured - e.g. start bit high, stop bit low",
+    action_rx_timeout              "Timeout occurred",
 } t_rx_action;
 
+/*t t_receive_fsm
+ *
+ * Receive FSM state
+ */
 typedef fsm {
-    receive_fsm_idle;
-    receive_fsm_data_bit_clock_low;
-    receive_fsm_data_bit_clock_high;
-    receive_fsm_error;
-    receive_fsm_timeout;
+    receive_fsm_idle                "Waiting for the PS2 clock pin to fall";
+    receive_fsm_data_bit_clock_low  "Data bit, after clock has fallen";
+    receive_fsm_data_bit_clock_high "Data bit, after clock has risen";
+    receive_fsm_error               "Protocol error - e.g. start data bit high, stop data bit low";
+    receive_fsm_timeout             "Timeout - clock did not toggle fast enough after starting a transaction";
 } t_receive_fsm;
 
+/*t t_clock_state
+ *
+ * State kept in the fast clock domain - clock counter for the divider, particularly
+ */
 typedef struct {
-    bit[16] counter;
-} t_clock_state;
+    bit[16] counter "Counter used for clock divider, to generate the slow clock";
+} t_clock_state; 
 
+/*t t_clock_combs
+ *
+ * Combinatorials from the fast clock domain
+ */
 typedef struct {
-    bit clk_enable;
+    bit clk_enable  "Asserted if the clock divider expired";
 } t_clock_combs;
 
+/*t t_ps2_input_state
+ *
+ * Input pin state - slow clock, so metastability is not an issue
+ */
 typedef struct {
-    bit data;
-    bit last_data;
-    bit clk;
-    bit last_clk;
+    bit data         "Registered version of the PS2 data pin";
+    bit last_data    "Last value of the @a data bit";
+    bit clk          "Registered version of the PS2 clk pin";
+    bit last_clk     "Last value of the @a clk bit";
 } t_ps2_input_state;
 
+/*t t_ps2_input_combs
+ *
+ * Combinatorial decode of the PS2 input state
+ */
 typedef struct {
-    bit rising_clk;
-    bit falling_clk;
+    bit rising_clk  "Asserted if the PS2 clock rose";
+    bit falling_clk "Asserted if the PS2 clock fell";
 } t_ps2_input_combs;
 
+/*t t_rx_result
+ *
+ * Receive result
+ */
 typedef struct {
-    bit valid;
-    bit protocol_error;
-    bit parity_error;
-    bit timeout;
+    bit valid           "Asserted if the receive result is valid";
+    bit protocol_error  "Asserted if a protocol error occured; ignore if @a valid deasserted";
+    bit parity_error    "Asserted if a parity error occured; ignore if @a valid deasserted";
+    bit timeout         "Asserted if a timeout occured; ignore if @a valid deasserted";
 } t_rx_result;
 
+/*t t_ps2_receive_state
+ *
+ * State of the PS2 decoder and handler
+ */
 typedef struct {
     t_receive_fsm fsm_state;
-    bit[12] timeout;
-    bit[4] bits_left;
-    bit[10] shift_register;
-    t_rx_result result;
+    bit[12] timeout        "Timeout down-counter";
+    bit[4] bits_left       "Number of bits left in the PS2 stream";
+    bit[10] shift_register "Shift register of bits, shifted right";
+    t_rx_result result     "Result (excluding data bits) of PS2 receive";
 } t_ps2_receive_state;
 
+/*t t_ps2_receive_combs
+ *
+ * PS2 decoder combinatorials
+ */
 typedef struct {
-    bit parity_error;
-    t_rx_action action;
+    bit parity_error   "Asserted if the shift register has invalid odd parity";
+    t_rx_action action "Action to take based on receive state machine";
 } t_ps2_receive_combs;
 
 /*a Module
  */
-module ps2_host( clock        clk     "Clock",
-                 input bit    reset_n,
+module ps2_host( clock        clk          "Clock",
+                 input bit    reset_n      "Active low reset",
                  input t_ps2_pins ps2_in   "Pin values from the outside",
                  output t_ps2_pins ps2_out "Pin values to drive - 1 means float high, 0 means pull low",
 
-                 output t_ps2_rx_data ps2_rx_data,
-                 input bit[16] divider
+                 output t_ps2_rx_data ps2_rx_data "PS2 receive data from the device, in parallel",
+                 input bit[16] divider     "Clock divider input to generate approx 3us from @p clk"
     )
 """
-The PS/2 interface is a bidirectional serial interface running on an
-open collector bus pin pair (clock and data).
+As a PS2 host, to receive data from the slave (the first target for the design), the module:
 
-A slave, such as a keyboard or mouse, owns the @clock pin, except for
-the one time that a host can usurp it to request transfer from host to
-slave. (Known as clock-inhibit)
-
-A slave can present data to the host (this module) by:
-
-0. Ensure clock is high for 50us
-1. Pull data low; wait 5us to 25us.
-2. Pull clock low; wait 30us.
-3. Let clock rise; wait 15us.
-4. Pull data low or let it rise; wait 15us (data bit 0)
-5. Pull clock low; wait 30us.
-6. Let clock rise; wait 15us.
-7... Pull data low or let it rise; wait 15us (data bit 1..7)
-8... Pull clock low; wait 30us
-9... Let clock rise; wait 15us - repeat from 7
-10... Pull data low or let it rise; wait 15us (parity bit)
-11... Pull clock low; wait 30us
-12... Let clock rise; wait 15us.
-13... Let data rise; wait 15us (stop bit)
-14... Pull clock low; wait 30us
-15... Let clock rise; wait 15us.
-
-If the clock fails to rise on any of the pulses - because the host is
-driving it low (clock-inhibit) - the slave will have to retransmit the
-byte (and any other byte of a packet that it has already sent).
-
-A host can present data to the slave with:
-1. Pull clock low for 100us; start 15ms timeout
-2. Pull data low, wait for 15us.
-3. Let clock rise, wait for 15us.
-4. Check the clock is high.
-5. Wait for clock low
-6. On clock low, wait for 10us, and set data to data bit 0
-7. Wait for clock high
-8. Wait for clock low
-9... On clock low, wait for 10us, and set data to data bit 1..7
-10... Wait for clock high
-11... Wait for clock low
-12. On clock low, wait for 10us, and set data to parity bit
-13. Wait for clock high
-14. Wait for clock low
-15. On clock low, wait for 10us, let data rise (stop bit)
-16. Wait for clock high
-17. Wait for clock low
-18. Wait for 10us, check that data is low (ack)
-
-A strategy is to run at (for example) ~3us per 'tick', and use that to
-look for valid data streams on the pins.
-
-As a host, to receive data from the slave (the first target for the design), we have to:
-1. Look for clock falling
+1. Looks for clock falling
 2. If data is low, then assume this is a start bit. Set timeout timer.
 3. Wait for clock falling. Clock in data bit 0
 4. Wait for clock falling. Clock in data bit 1
@@ -166,6 +218,7 @@ As a host, to receive data from the slave (the first target for the design), we 
 13. Wait for clock high.
 14. Validate data (stop bit 1, parity correct)
 
+If a timeout timer expires, which could happen if the framing is bad, then an abort can be taken.
 """
 {
     /*b Default clock and reset */
@@ -175,18 +228,19 @@ As a host, to receive data from the slave (the first target for the design), we 
     gated_clock clock clk active_high clk_enable slow_clk;
 
     /*b State and signals */
-    clocked t_clock_state clock_state={*=0};
-    comb t_clock_combs clock_combs;
+    clocked t_clock_state       clock_state={*=0}     "High speed clock state - just the clock divider";
+    comb t_clock_combs          clock_combs           "High speed clock combinatorials - clock gate for slow logic";
     default clock slow_clk;
-    clocked t_ps2_input_state ps2_input_state={*=0};
-    comb t_ps2_input_combs ps2_input_combs;
-    clocked t_ps2_receive_state receive_state={*=0};
-    comb t_ps2_receive_combs    receive_combs;
+    clocked t_ps2_input_state   ps2_input_state={*=0} "PS2 input state logic";
+    comb t_ps2_input_combs      ps2_input_combs       "PS2 combinatorials; clock falling, rising";
+    clocked t_ps2_receive_state receive_state={*=0}   "State of the PS2 decoder";
+    comb t_ps2_receive_combs    receive_combs         "Combinatorial decode of PS2 decoder and state";
 
     /*b Clock divider */
     clock_divider_logic """
-    Simple clock divider resetting to the 'divider' input.
-    This should generate a clock enable every 3us or so; hence for 50MHz the divider should be roughly 150
+    Simple clock divider resetting to the 'divider' input.  This
+    should generate a clock enable every 3us or so; hence for a 50MHz
+    clock, the @p divider should be set to roughly 150.
     """: {
         clock_combs.clk_enable = 0;
         clock_state.counter <= clock_state.counter-1;
@@ -199,7 +253,9 @@ As a host, to receive data from the slave (the first target for the design), we 
 
     /*b Pin input logic and clock divider */
     pin_logic """
-    Pin inputs are captured
+    Capture the pin inputs, and determine if the clock is falling or rising.
+
+    The PS2 outputs are not required (as yet) - keyboard work without it
     """: {
         ps2_input_combs.falling_clk = !ps2_input_state.clk &  ps2_input_state.last_clk;
         ps2_input_combs.rising_clk  =  ps2_input_state.clk & !ps2_input_state.last_clk;
@@ -215,15 +271,30 @@ As a host, to receive data from the slave (the first target for the design), we 
 
     /*b Receive logic */
     receive_logic """
-    Wait for clock falling; check that data is low, and then start
-    The PS2 protocol is ODD parity, hence all 9 bits zero would be a parity error.
+    Determine the parity of the shift register, and parity error - if
+    the parity is invalid odd parity.
+
+    The receiver action depends on the FSM state, and the PS2 input
+    (clock rising/falling, data high/low).  The PS2 stream starts with
+    a start bit - data low with clock falling. Data is then on
+    successive clock falling pulses, until the shift register is full
+    (i.e. 10 bits are shifted in). This should then include eight data
+    bits, a parity bit, and a high stop bit. Hence the receive action
+    will be start, clock rising in bit, clock falling to capture data,
+    and clock rising at end of last bit; these, plus possibilities for
+    protocol error and timeout error.
+
+    Depending on the action, update the state machine, timeout, shift_register and bits_left
     """: {
+        /*b Determine receive parity */
         receive_combs.parity_error = 1;
         for (i; 9) {
             if (receive_state.shift_register[i]) {
                 receive_combs.parity_error = !receive_combs.parity_error;
             }
         }
+
+        /*b Determine receive action */
         receive_combs.action = action_rx_none;
         full_switch (receive_state.fsm_state) {
         case receive_fsm_idle: {
@@ -268,6 +339,7 @@ As a host, to receive data from the slave (the first target for the design), we 
             receive_state.timeout <= 0;
         }
 
+        /*b Handle receive action - update state machine, timeout, shift_register and bits_left */
         full_switch(receive_combs.action) {
         case action_rx_start: {
             receive_state.timeout <= timeout_rx_data;
@@ -300,6 +372,7 @@ As a host, to receive data from the slave (the first target for the design), we 
         }
         }
 
+        /*b Receive_state result */
         receive_state.result.valid <= 0;
         if (receive_combs.action==action_rx_acknowledge_error) {
             receive_state.result <= {*=0};
@@ -315,10 +388,12 @@ As a host, to receive data from the slave (the first target for the design), we 
                     parity_error=receive_combs.parity_error};
         }
 
+        /*b Drive output */
         ps2_rx_data = {valid = receive_state.result.valid & clock_combs.clk_enable,
                        data  = receive_state.shift_register[8;0],
                        parity_error = receive_state.result.parity_error,
                        protocol_error = receive_state.result.protocol_error,
                        timeout = receive_state.result.timeout };
+        /*b All done */
     }
 }

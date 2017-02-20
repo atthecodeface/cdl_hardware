@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file   ps2_host_keyboard.cdl
  * @brief  PS2 interface converter for keyboard as host
@@ -24,22 +23,29 @@
 include "input_devices.h"
 
 /*a Types */
+/*t t_key_action */
 typedef enum [3] {
-    action_none,
-    action_reset,
-    action_extend,
-    action_key_up,
-    action_key
+    action_none     "Keep the status quo",
+    action_reset    "Reset the key state output - due to a timeout, parity error, etc",
+    action_extend   "Occurs if the received key is an 'extended' key - an 0xe0 is received",
+    action_key_up   "Occurs if the key is beind released - i.e. a 0xf0 is received",
+    action_key      "Occurs when a key code is received, terminating a key, implying a valid @p ps2_key out",
 } t_key_action;
 
 /*a Module
  */
-module ps2_host_keyboard( clock                   clk     "Clock",
-                          input bit               reset_n,
-                          input t_ps2_rx_data     ps2_rx_data,
-                          output t_ps2_key_state  ps2_key
+module ps2_host_keyboard( clock                   clk          "Clock",
+                          input bit               reset_n      "Active low reset",
+                          input t_ps2_rx_data     ps2_rx_data  "Receive data from a ps2_host module",
+                          output t_ps2_key_state  ps2_key      "PS2 key decoded"
     )
 """
+Module to convert from PS2 receive data, from a host PS2 receive
+module, in to keyboard data (up/down, extended key).
+
+An incoming valid byte helps build the result. An 0xe0 sets the @p
+extended bit. A 0xf0 sets the @p released bit. The rest set the @p key
+field, and @p valid out. @p valid is made in to a single cycle pulse.
 """
 {
     /*b Default clock and reset */
@@ -52,8 +58,16 @@ module ps2_host_keyboard( clock                   clk     "Clock",
 
     /*b Interpretation logic */
     interpretation_logic """
-    Interpret the PS2 keyboard codes
+    Decode an incoming valid PS2 data; 0xe0 implies an extended key,
+    0xf0 implies key release, and then the key number. Normal keys are
+    just (0xf0, keycode) for key release, or keycode alone if the key
+    is pressed. Extended keys are (0xe0, 0xf0, keycode) or (0xe0,
+    keycode) for key pressed.
+
+    Build the output from the actions decoded; simply build up
+    ps2_key.
     """: {
+        /*b Decode the key action */
         key_action = action_none;
         if (ps2_rx_data.valid) {
             if (ps2_rx_data.parity_error ||
@@ -69,6 +83,7 @@ module ps2_host_keyboard( clock                   clk     "Clock",
             }
         }
 
+        /*b Build and drive the output */
         if (ps2_key.valid) {
             ps2_key <= {valid=0, extended=0, release=0};
         }
@@ -90,5 +105,7 @@ module ps2_host_keyboard( clock                   clk     "Clock",
             ps2_key.valid <= 0;
         }
         }
+
+        /*b All done */
     }
 }
