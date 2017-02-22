@@ -185,7 +185,7 @@ even 'lines' in SRAM, and odd lines just to the odd 'lines'.
                                     sram_offset_per_scanline     = 40, // 
                                     sram_interlace_in_same_buffer= 0,  // if set then success lines in same field are 2x writes per scanline apart
                                     sram_scanlines=500,
-                                    h_back_porch=-280,
+                                    h_back_porch=-140,
                                     v_back_porch=-70 };
     clocked t_display_state display_state={*=0};
     comb    t_display_combs display_combs;

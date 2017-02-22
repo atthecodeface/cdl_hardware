@@ -5,11 +5,11 @@ csr_select["clock_control"] = 0
 csr_select["bbc_display"] = 1
 clock_control = (csr_select["clock_control"]<<16)|0
 display_porches = (csr_select["bbc_display"]<<16)|2
-speeds = [0x000b, 0x010b, 0x020b, 0x040b, 0x060b, 0x080b, 0x0a0b,
-          0x031c, 0x011c]
-porches = [(65536-280-12) | (((65536-70)<<16)),
-           (65536-280-8) | (((65536-70)<<16)),
-           (65536-280-6) | (((65536-70)<<16)),
+speeds = [0x0015, 0x0215, 0x0415b, 0x0615, 0x0815, 0x0a15,
+          0x1215, 0x1515]
+porches = [(65536-140-14) | (((65536-70)<<16)),
+           (65536-140-8) | (((65536-70)<<16)),
+           (65536-140-2) | (((65536-70)<<16)),
     ]
            
 def set_speed(speed):
