@@ -1,16 +1,16 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
  *
  * @file   led_seven_segment.cdl
  * @brief  Simple module to support 7-segment hex display
@@ -30,11 +30,22 @@ module led_seven_segment( input bit[4] hex   "Hexadecimal to display on 7-segmen
 """
 Simple module to map a hex value to the LEDs required to make the
 appropriate symbol in a 7-segment display.
+
+The module combinatorially takes in a hex value, and drives out 7 LED
+values.
 """
 {
-    comb bit[16][7] segment_consts;
+    /*b Combinatorial map of the segment constants to an indexable array */
+    comb bit[16][7] segment_consts  "Array to hold value from constants from leds.h";
+
+    /*b Decode hex to segments */
     decode_logic """
     Simply map input through constants provided by leds.h
+
+    Segment [0] is taken from bit [hex] of the 16-bit
+    led_seven_seg_hex_a constant, similarly for other segment
+    bits. This means that there are 7 constants in leds.h which define
+    the actual LED segments that light up for each input hex value.
     """: {
         segment_consts[0] = led_seven_seg_hex_a;
         segment_consts[1] = led_seven_seg_hex_b;

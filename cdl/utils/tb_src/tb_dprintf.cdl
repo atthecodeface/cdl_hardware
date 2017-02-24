@@ -23,39 +23,39 @@ include "teletext.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk,
-                         output t_dprintf_req   dprintf_req  "Debug printf request",
-                         input bit            dprintf_ack  "Debug printf acknowledge",
-                         input t_bbc_display_sram_write display_sram_write
+                         output t_dprintf_req_4   dprintf_req  "Debug printf request",
+                         input bit              dprintf_ack  "Debug printf acknowledge",
+                         input t_dprintf_byte dprintf_byte
     )
 {
     timing from rising clock clk dprintf_req;
-    timing to   rising clock clk dprintf_ack, display_sram_write;
+    timing to   rising clock clk dprintf_ack, dprintf_byte;
 }
 
 /*a Module */
-module tb_teletext_dprintf( clock clk,
-                    input bit reset_n
+module tb_dprintf( clock clk,
+                   input bit reset_n
 )
 {
 
     /*b Nets */
-    net t_dprintf_req   dprintf_req  "Debug printf request";
-    net bit            dprintf_ack  "Debug printf acknowledge";
-    net t_bbc_display_sram_write display_sram_write;
+    net t_dprintf_req_4   dprintf_req  "Debug printf request";
+    net bit               dprintf_ack  "Debug printf acknowledge";
+    net t_dprintf_byte dprintf_byte;
 
     /*b Instantiations */
     instantiations: {
         se_test_harness th( clk <- clk,
                           dprintf_req => dprintf_req,
                           dprintf_ack <= dprintf_ack,
-                          display_sram_write <=  display_sram_write
+                          dprintf_byte <= dprintf_byte
                                 );
         
-        teletext_dprintf dut( clk <- clk,
+        dprintf dut( clk <- clk,
                           reset_n <= reset_n,
                           dprintf_req <= dprintf_req,
                           dprintf_ack => dprintf_ack,
-                          display_sram_write =>  display_sram_write
+                          dprintf_byte =>  dprintf_byte
             );
     }
 

@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file   led_ws2812_chain.cdl
  * @brief  'Neopixel' LED chain driver module
@@ -18,113 +17,144 @@
  * CDL implementation of a module that drives a chain of Neopixel
  * LEDs, based on data that it requests.
  *
- * A chain of any length can be driven by this module
- *
- * The interface is a request/data interface; this module presents a
- * 'ready' request to the client, which then presents a valid 24-bit
- * RGB data value. When the module takes the data it removes its
- * 'ready' request. The client keeps supplying data in response to the
- * 'ready' requests.
- * 
- * To terminate the chain the client supplies data with a 'last'
- * indication asserted.
- *
- * To ease implementation of the client, the request includes a
- * 'first' indicator and an 'led_number' indicator - effectively a
- * client can read a register file based on 'led_number' and drive
- * 'valid' when the data is valid, and 'last' if led_number matches
- * the end of the register file.
- *
- * This module copes with all of the requirements of the Neopixel
- * chain, and it takes a constant clock input. To provide the correct
- * frequency of data pin toggling to the Neopixels a clock divider
- * value must be supplied, with the approximate number of clock ticks
- * that make up 400ns (ideally 408ns).
  */
 /*a Includes */
 include "leds.h"
 
 /*a Types */
-/*t t_data_state_fsm */
+/*t t_data_state_fsm
+ *
+ * State machine states for the requesting state machine; it requests
+ * data for the LEDs, and buffers that for the transmit state machine
+ * to drive out, modulated appropriately
+ */
 typedef fsm {
-    data_state_idle;
-    data_state_request_data;
-    data_state_data_in_hand;
-    data_state_last_data;
+    data_state_idle          "Requesting first LED data; stays here until the first LED data is supplied";
+    data_state_request_data  "Requesting LED data for anything except the first LED";
+    data_state_data_in_hand  "Data is in hand, ready to be taken by the transmit side, when it can";
+    data_state_last_data     "Has received the last LED data, and waiting for the transmit side to load the LEDs before going back to idle";
 } t_data_state_fsm;
 
-/*t t_data_state */
+/*t t_data_state
+ *
+ * State required by the data request side;
+ */
 typedef struct {
-    t_data_state_fsm  fsm_state;
-    bit[8]            led_number;
-    t_led_ws2812_data buffer;
-    bit load_leds;
+    t_data_state_fsm  fsm_state   "FSM state";
+    bit[8]            led_number  "LED that is being requested";
+    t_led_ws2812_data buffer      "Data for the LED from the client, loaded in to the transmit shift register";
+    bit load_leds                 "Asserted if the transmit side should load the LEDs, as the data for the whole LED chain is complete";
 } t_data_state;
 
-/*t t_transmit_state_fsm */
+/*t t_transmit_state_fsm
+ *
+ * Transmit state machine states, for the transmit state machine that
+ * modulates the data out pin at the required frequency and pulse
+ * widths to present the data for the LED chain, and to hold the data
+ * pin low to load the LED chain
+ */
 typedef fsm {
-    transmit_state_idle;
-    transmit_state_red;
-    transmit_state_green;
-    transmit_state_blue;
-    transmit_state_load_leds;
+    transmit_state_idle       "The idle state, ready to take an LED value in to the shift register or to load the LEDs";
+    transmit_state_green      "Transmitting and shifting the @a green element of the shift register";
+    transmit_state_red        "Transmitting and shifting the @a red element of the shift register";
+    transmit_state_blue       "Transmitting and shifting the @a blue element of the shift register";
+    transmit_state_load_leds  "Loading the LEDs into the chain";
 } t_transmit_fsm;
 
-/*t t_drive_bits */
+/*t t_drive_bits
+ *
+ * Validated 3-bit data field, used to modulate the actual data pin to
+ * drive a 1 (value of 3b110), a 0 (value of 100), or to load the LEDs
+ * (value of 3b000)
+ */
 typedef struct {
-    bit valid;
-    bit[3] value;
+    bit valid    "Indicates that the structure has valid data";
+    bit[3] value "Three bits that are to be driven to the pin; a mux selects which";
 } t_drive_bits;
 
-/*t t_data_transmitter_combs */
+/*t t_data_transmitter_combs
+ *
+ * Combinatorial signals used in the transmitter
+ */
 typedef struct {
-    bit loading_leds;
-    bit taking_data;
-    bit needs_data;
-    bit idle_transmitter;
-    bit selected_data;
-    bit load_leds;
-    t_drive_bits drive_bits;
-    bit counter_expired;
+    bit loading_leds         "Asserted for one cycle when the transmitter is near the end of loading the LEDs";
+    bit taking_data          "Asserted if the transmitter is taking data from the @a data_state @a buffer";
+    bit needs_data           "Asserted if the transmitter needs data, i.e. its shift register is not valid";
+    bit idle_transmitter     "Asserted when the transmit state machine is idle; determines whether to drive valid @a drive_bits";
+    bit selected_data        "Selected data bit from the shift register - one of green[7], red[7] or blue[7]";
+    bit load_leds            "Asserted if the transmitter is in the load LED state, to make the modulator drive 3b000";
+    t_drive_bits drive_bits  "Bits that the modulator should drive when it is next ready";
+    bit counter_expired      "Asserted if the counter has down-counted to zero, i.e. 8 green bits, 8 red bits or 8 blue bits have been sent, or 40 load 3b000s have been sent";
 } t_data_transmitter_combs;
 
-/*t t_data_transmitter_state */
+/*t t_data_transmitter_state
+ *
+ */
 typedef struct {
-    t_transmit_fsm fsm_state;
-    t_led_ws2812_data shift_register;
-    bit[6] counter "6 bits permits count to 40";
+    t_transmit_fsm fsm_state          "FSM state";
+    t_led_ws2812_data shift_register  "Data used as separate shift registers for red, green and blue, to select data to drive out";
+    bit[6] counter                    "Counter for the bits to transmit (8 per color) or the load LED data pin reset length (40 periods)";
 } t_data_transmitter_state;
 
-/*t t_data_chain_combs */
+/*t t_data_chain_combs
+ *
+ * Modulator combinatorials, decoding the modulator (data_chain) state
+ */
 typedef struct {
-    bit clk_enable;
-    bit taking_transmitter_data;
+    bit clk_enable                "Asserted if the clock divider has down-counted to zero";
+    bit taking_transmitter_data   "Asserted when the transmitter is taking data from the transmitter state machine";
 } t_data_chain_combs;
 
-/*t t_data_chain_state */
+/*t t_data_chain_state
+ *
+ */
 typedef struct {
-    bit[8] divider       "Clock divider counter";
+    bit[8] divider       "Clock divider down-counter, restarting at @a divider whenever it expires";
     bit    active        "Asserted from the start of driving the first of three output values, until just after starting to drive the third output value";
-    t_drive_bits sr      "'shift register' of three output values to drive and associated valid";
+    t_drive_bits sr      "Three output bit values to drive, and associated valid; a mux selects the appropriate bit at any time";
     bit[2] value_number  "Which value number to drive next";
-    bit    output_data   "Output data driver, driven with value from 'shift register', or 0 if idle";
+    bit    output_data   "Output data driver, driven with value from @a sr, or 0 if idle";
 } t_data_chain_state;
 
 /*a Module */
-module led_ws2812_chain( clock clk                   "system clock - not the pin clock",
-                         input bit    reset_n  "async reset",
+module led_ws2812_chain( clock clk                   "System clock - not the pin clock, which is derived from this",
+                         input bit    reset_n        "Active low reset",
                          input bit[8] divider_400ns  "clock divider value to provide for generating a pulse every 400ns based on clk",
-                         output t_led_ws2812_request led_request  "LED data request",
+                         output t_led_ws2812_request led_request  "LED data request, to get data from the next LED to light",
                          input t_led_ws2812_data     led_data     "LED data, for the requested led",
-                         output bit led_chain                     "Data in pin for LED chain"
+                         output bit led_chain                     "Data pin for LED chain, modulated by this module to drive LED settings"
     )
     /*b Documentation */
 """
-The WS2812 LED chains use a serial data stream with encoded clock to
-provide data to the LEDs.
+A chain of any length of Neopixel LEDs can be driven by this module
+ 
+The interface is a request/data interface; this module presents a
+@a ready request to the client, which then presents a valid 24-bit
+RGB data value. When the module takes the data it removes its
+@a ready request. The client keeps supplying data in response to the
+@a ready requests.
+ 
+To terminate the chain the client supplies data with a @a last
+indication asserted.
+
+To ease implementation of the client, the request includes a
+@a first indicator and an @a led_number indicator - effectively a
+client can read a register file based on @a led_number and drive
+@a valid when the data is valid, and @a last if led_number matches
+the end of the register file.
+
+This module copes with all of the requirements of the Neopixel
+chain, and it takes a constant clock input. To provide the correct
+frequency of data pin toggling to the Neopixels a clock divider
+value must be supplied, with the approximate number of clock ticks
+that make up 400ns (ideally 408ns).
+
+The Neopixel WS2812 LED chains use a serial data stream with encoded
+clock to provide data to the LEDs.
 
 If the LED chain data is held low for >50us then the stream performs a
-'load to LEDs'.
+'load to LEDs' - this transfers the serial data already loaded in to
+the LEDs to the actual LED drivers themselves.
 
 Before loading the LEDs the chain should be fed data.  The data is fed
 using a high/low data pulse per bit. The ratio high/low provides the
@@ -146,7 +176,7 @@ data in hand, and need data to feed in to the LED stream. At this
 point it requests a valid first LED data. When valid data is received
 into a buffer the state machine transitions to the data-in-hand state;
 it remains there until the data transmitter takes the data, when it
-either requests more data (as per idle0, or if the last LED data was
+either requests more data (as per idle), or if the last LED data was
 provided by the client, it moves to requests an LED load, and it waits
 in loading state until that completes. At this point it transitions
 back to idle, and the process restarts.
@@ -162,23 +192,24 @@ at a time.
     /*b Signals and state */
     default clock clk;
     default reset active_low reset_n;
-    clocked t_data_state data_state={*=0, fsm_state=data_state_idle};
-    clocked t_data_transmitter_state data_transmitter_state={*=0, fsm_state=transmit_state_idle};
-    comb    t_data_transmitter_combs  data_transmitter_combs;
-    clocked t_data_chain_state data_chain_state={*=0};
-    comb    t_data_chain_combs  data_chain_combs;
+    clocked t_data_state data_state={*=0, fsm_state=data_state_idle}   "Data state, the state of the interface to the client";
+    clocked t_data_transmitter_state data_transmitter_state={*=0,
+                                                             fsm_state=transmit_state_idle} "Transmitter state, the state of the internal transmit state machine";
+    comb    t_data_transmitter_combs  data_transmitter_combs "Combinatorial decode of the transmitter state";
+    clocked t_data_chain_state data_chain_state={*=0}        "Modulator (data_chain) state";
+    comb    t_data_chain_combs  data_chain_combs             "Combinatorial decode of modulator state";
 
     /*b Data state machine logic */
     data_state_machine_logic """
-    The data state machine is effectively a simple interface to the
-    led request and led_data, feeding the data transmitter shift
-    register when it can.
+    The data state machine is a simple interface to the led request
+    and led_data, feeding the data transmitter shift register when it
+    can.
 
     It has a data_buffer that it stores incoming led data in, and it
     feeds this to the data transmitter shift register when permitted,
     invalidating the data buffer.
 
-    If the transmitter takes a 'last' data then the state machine will
+    If the transmitter takes a @a last data then the state machine will
     then request that the transmitter 'load the leds'; this request
     will, of course, have to wait for the completion of the current
     shift register contents (the last LED), and then the correct 50us
@@ -190,6 +221,8 @@ at a time.
     are being loaded in the last microsecond of so of the 50us of
     'load led' time.
     """: {
+
+        /*b Handle the state machine and LED request */
         led_request = {ready=0, first=0, led_number=data_state.led_number};
         full_switch (data_state.fsm_state) {
         case data_state_idle: {
@@ -222,27 +255,32 @@ at a time.
             }
         }
         }
+
+        /*b Update the data buffer */
         if (led_request.ready && led_data.valid) {
             data_state.buffer <= led_data;
         }
         if (data_transmitter_combs.taking_data) {
             data_state.buffer.valid <= 0;
         }
+
+        /*b All done */
     }
 
     /*b Data transmitter state machine logic */
     data_transmitter_logic """
     The data transmitter is responsible for reading data bits to the
-    Neopixel data chain driver.
+    Neopixel data chain driver (modulator).
 
-    It maintains a shift register (with separate red, green and blue
-    components), with a 'valid' bit.
+    It maintains a shift register (with separate @a red, @a green and @a blue
+    components), with a @a valid bit.
 
     Data is loaded into the shift register when it is not valid. The
     transmitter then shifts straight in to asking the drive chain to
-    output green[7]. It shifts the green bits up every time the drive
-    chain takes a bit, and after 8 bits it moves to the red, and then
-    the blue. At the end of the blue it invalidates the shift register.
+    output @a green[7]. It shifts the @a green bits up every time the
+    drive chain takes a bit, and after 8 bits it moves to the @a red,
+    and then the @a blue. At the end of the @a blue it invalidates the
+    shift register.
 
     The shift register should be filled quickly enough for the data
     chain to not miss a beat, if further LED data is to be driven.
@@ -252,10 +290,12 @@ at a time.
     on the output, which is achieved here by roughly 40 sets of drives
     of '0' for 1.25us each.
     """: {
+        /*b Simple decode of the buffer, shift register and counters */
         data_transmitter_combs.needs_data   = !data_transmitter_state.shift_register.valid;
         data_transmitter_combs.taking_data  = data_state.buffer.valid && data_transmitter_combs.needs_data;
         data_transmitter_combs.counter_expired = (data_transmitter_state.counter==0);
 
+        /*b Decode the state machine */
         data_transmitter_combs.idle_transmitter = 0;
         data_transmitter_combs.selected_data    = 0;
         data_transmitter_combs.load_leds        = 0;
@@ -280,6 +320,7 @@ at a time.
         }
         }
 
+        /*b Determine data to drive with the modulator, when it is ready */
         data_transmitter_combs.drive_bits = {*=0};
         if (data_transmitter_combs.load_leds) {
             data_transmitter_combs.drive_bits.valid = 1;
@@ -289,6 +330,7 @@ at a time.
             data_transmitter_combs.drive_bits.value = bundle(1b0, data_transmitter_combs.selected_data, 1b1);
         }
 
+        /*b Update state machine and shift register */
         data_transmitter_combs.loading_leds = 0;
         if (data_transmitter_combs.taking_data) {
             data_transmitter_state.shift_register <= data_state.buffer;
@@ -343,18 +385,20 @@ at a time.
             }
         }
         }
+
+        /*b All done */
     }
 
     /*b Neopixel chain driver logic */
     data_chain_driver_logic """
-    The data chain side starts 'inactive' (it is basically active or
+    The data chain (modulator) starts 'inactive' (it is basically active or
     inactive).  It can enter active ONLY on a 400ns clock boundary,
     and then only when there is a valid 3-value in hand.  When it
-    enters 'active' it drives the output pin with value[0].
+    enters 'active' it drives the output pin with @a value[0].
 
     The data chain is then active for 2 whole 400ns periods; at the
-    end of the first period it drives out value[1], and at the end of
-    the second period it drives out value[2] and becomes inactive, and
+    end of the first period it drives out @a value[1], and at the end of
+    the second period it drives out @a value[2] and becomes inactive, and
     invalidates the value-in-hand.
 
     The value-in-hand can only be loaded if it is invalid - this can
@@ -363,14 +407,17 @@ at a time.
     or 3b110), or it can be part of an LED load train (value of
     3b000).
     """: {
+        /*b Simple decode of divider and shift register */
         data_chain_combs.clk_enable = (data_chain_state.divider==0);
         data_chain_combs.taking_transmitter_data = !data_chain_state.sr.valid && data_transmitter_combs.drive_bits.valid;
 
+        /*b Update clock divider */
         data_chain_state.divider <= data_chain_state.divider-1;
         if (data_chain_combs.clk_enable) {
             data_chain_state.divider <= divider_400ns;
         }
 
+        /*b Handle drive_chain state; if active then output appropriate data, if inactive then become active if shift register is valid */
         if (data_chain_state.active) {
             if (data_chain_combs.clk_enable) {
                 data_chain_state.output_data <= data_chain_state.sr.value[data_chain_state.value_number];
@@ -387,10 +434,16 @@ at a time.
                 data_chain_state.output_data <= data_chain_state.sr.value[0];
             }
         }
+
+        /*b Load the shift register if required */
         if (!data_chain_state.sr.valid && data_transmitter_combs.drive_bits.valid) {
             data_chain_state.sr <= data_transmitter_combs.drive_bits;
         } 
+
+        /*b Drive output */
         led_chain = data_chain_state.output_data;
+
+        /*b All done */
     }
 
     /*b All done */

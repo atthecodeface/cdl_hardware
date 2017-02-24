@@ -102,11 +102,13 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
     net  t_de1_cl_inputs_control  inputs_control;
     net  t_de1_cl_user_inputs     user_inputs;
 
-    net t_bbc_display_sram_write tt_display_sram_write;
     net bit[num_dprintf_requesters] dprintf_ack;
-    clocked clock clk reset active_low reset_n t_dprintf_req[num_dprintf_requesters] dprintf_req={*=0};
+    clocked clock clk reset active_low reset_n t_dprintf_req_4[num_dprintf_requesters] dprintf_req={*=0};
     net bit[num_dprintf_requesters-1]           dprintf_mux_ack;
-    net t_dprintf_req[num_dprintf_requesters-1] dprintf_mux_req;
+    net t_dprintf_req_4[num_dprintf_requesters-1] dprintf_mux_req;
+    net t_dprintf_byte dprintf_byte;
+    comb t_bbc_display_sram_write tt_display_sram_write;
+
     comb t_debug_combs debug_combs;
     clocked clock clk reset active_low reset_n t_debug_state debug_state={*=0};
     clocked clock clk reset active_low reset_n t_key_state key_state={*=0};
@@ -300,10 +302,8 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
             }
         }
         if (debug_combs.timer_10ms) {
-            dprintf_req[0] <= {valid=1, address=00, data_0=64h0d_04_1d_02_43_50_55_20, data_1=64h53_70_65_65_64_20_ff_ff };
-            dprintf_req[1] <= {valid=1, address=40, data_0=64h0d_04_1d_02_43_50_55_20, data_1=64h53_70_65_65_64_20_ff_ff };
-            dprintf_req[2] <= {valid=1, address=14, data_0=bundle(8hc3+(5<<2), debug_state.cpu_ticks, 24h30_30_20), data_1=64h46_6a_ff_00_00_00_00_00};
-            dprintf_req[3] <= {valid=1, address=54, data_0=bundle(8hc3+(5<<2), debug_state.cpu_ticks, 24h30_30_20), data_1=64h46_6a_ff_00_00_00_00_00};
+            dprintf_req[0] <= {valid=1, address=00, data_0=64h0d_04_1d_02_43_50_55_20, data_1=64h53_70_65_65_64_20_ff_ff, data_2=bundle(8hc3+(5<<2), debug_state.cpu_ticks, 24h30_30_20), data_3=64h46_6a_ff_00_00_00_00_00};
+            dprintf_req[1] <= {valid=1, address=40, data_0=64h0d_04_1d_02_43_50_55_20, data_1=64h53_70_65_65_64_20_ff_ff, data_2=bundle(8hc3+(5<<2), debug_state.cpu_ticks, 24h30_30_20), data_3=64h46_6a_ff_00_00_00_00_00};
 
             dprintf_req[4] <= {valid=1, address=240,  data_0=64h52_69_67_68_74_20_44_69, data_1=bundle(24h61_6c_3a, user_inputs.right_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.last_fn_key,16hff)};
             dprintf_req[5] <= {valid=1, address=280,  data_0=64h4c_65_66_74_20_44_69_61, data_1=bundle(24h6c_20_3a, user_inputs.left_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.speed_selection,16hff)};
@@ -319,7 +319,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                     data_1=bundle(ps2_key.release?8h02:8h01, ps2_key.extended?8h45:8h00, 8h81, ps2_key.key_number, 32h2020ffff) };
         }
 
-        teletext_dprintf_mux tdm01( clk <- clk,
+        dprintf_4_mux tdm01( clk <- clk,
                                     reset_n <= reset_n,
                                     req_a <= dprintf_req[0],
                                     ack_a => dprintf_ack[0],
@@ -329,7 +329,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                                     ack <= dprintf_mux_ack[0] );
 
         for (i; num_dprintf_requesters-2) {
-            teletext_dprintf_mux tdm[i]( clk <- clk, reset_n <= reset_n,
+            dprintf_4_mux tdm[i]( clk <- clk, reset_n <= reset_n,
                                          req_a <= dprintf_req[2+i],
                                          ack_a => dprintf_ack[2+i],
                                          req_b <= dprintf_mux_req[i],
@@ -338,13 +338,16 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                                          ack <= dprintf_mux_ack[i+1] );
         }
 
-        teletext_dprintf dprintf( clk <- clk,
-                                  reset_n <= reset_n,
-                                  dprintf_req <= dprintf_mux_req[num_dprintf_requesters-2],
-                                  dprintf_ack => dprintf_mux_ack[num_dprintf_requesters-2],
-                                  display_sram_write =>  tt_display_sram_write
+        dprintf dprintf( clk <- clk,
+                         reset_n <= reset_n,
+                         dprintf_req <= dprintf_mux_req[num_dprintf_requesters-2],
+                         dprintf_ack => dprintf_mux_ack[num_dprintf_requesters-2],
+                         dprintf_byte => dprintf_byte
             );
 
+        tt_display_sram_write = {enable = dprintf_byte.valid,
+                                 address = dprintf_byte.address,
+                                 data = bundle(40b0, dprintf_byte.data) };
         framebuffer_teletext ftb( csr_clk <- clk,
                                   sram_clk <- clk,
                                   video_clk <- video_clk,

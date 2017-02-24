@@ -25,25 +25,26 @@ include "teletext.h"
 extern module se_test_harness( clock clk,
                                output bit[4] reqs,
                                input bit[4] acks,
-                               input t_bbc_display_sram_write display_sram_write
+                               input t_dprintf_byte dprintf_byte
     )
 {
     timing from rising clock clk reqs;
-    timing to   rising clock clk acks, display_sram_write;
+    timing to   rising clock clk acks, dprintf_byte;
 }
 
 /*a Module */
-module tb_teletext_dprintf_mux( clock clk,
-                    input bit reset_n
+module tb_dprintf_mux( clock clk,
+                       input bit reset_n
 )
 {
 
     /*b Nets */
     net bit[4] reqs;
     //net bit[4] acks;
-    net t_dprintf_req   req_01;
-    net t_dprintf_req   req_012;
-    net t_dprintf_req   req_0123;
+    net t_dprintf_req_2   req_01;
+    net t_dprintf_req_2   req_012;
+    comb t_dprintf_req_4  req_012b;
+    net t_dprintf_req_4   req_0123;
     net bit             ack_0;
     net bit             ack_1;
     net bit             ack_2;
@@ -51,25 +52,25 @@ module tb_teletext_dprintf_mux( clock clk,
     net bit             ack_01;
     net bit             ack_012;
     net bit             ack_0123;
-    net t_bbc_display_sram_write display_sram_write;
-    comb t_dprintf_req   req_0;
-    comb t_dprintf_req   req_1;
-    comb t_dprintf_req   req_2;
-    comb t_dprintf_req   req_3;
+    net t_dprintf_byte dprintf_byte;
+    comb t_dprintf_req_2   req_0;
+    comb t_dprintf_req_2   req_1;
+    comb t_dprintf_req_2   req_2;
+    comb t_dprintf_req_4   req_3;
 
     /*b Instantiations */
     instantiations: {
         req_0 = {valid=reqs[0], address=0x1010, data_0=64h41_42_43_44_45_46_47_48, data_1=64h_83_de_ad_83_be_ef_ff_00 };
         req_1 = {valid=reqs[1], address=0x2010, data_0=64h20_ff_0000_00000000, data_1=0};
         req_2 = {valid=reqs[2], address=0x3010, data_0=64h22_ff_0000_00000000, data_1=0};
-        req_3 = {valid=reqs[3], address=0x4010, data_0=64h33_ff_0000_00000000, data_1=0};
+        req_3 = {valid=reqs[3], address=0x4010, data_0=64h33_00_0000_00000000, data_1=0, data_2=64h34_00_0000_00000000, data_3=64h00000000_000000_35};
         se_test_harness th( clk <- clk,
                             reqs => reqs,
                             acks <= bundle(ack_3, ack_2, ack_1, ack_0),
-                            display_sram_write <=  display_sram_write
+                            dprintf_byte <=  dprintf_byte
                                 );
         
-        teletext_dprintf_mux mux01( clk <- clk,
+        dprintf_2_mux mux01( clk <- clk,
                                    reset_n <= reset_n,
                                    req_a <= req_0,
                                    req_b <= req_1,
@@ -78,7 +79,7 @@ module tb_teletext_dprintf_mux( clock clk,
                                    req => req_01,
                                    ack <= ack_01 );
 
-        teletext_dprintf_mux mux012( clk <- clk,
+        dprintf_2_mux mux012( clk <- clk,
                                    reset_n <= reset_n,
                                    req_a <= req_01,
                                    req_b <= req_2,
@@ -87,20 +88,27 @@ module tb_teletext_dprintf_mux( clock clk,
                                    req => req_012,
                                    ack <= ack_012 );
 
-        teletext_dprintf_mux mux013( clk <- clk,
+        req_012b = {valid   = req_012.valid,
+                    address = req_012.address,
+                    data_0  = req_012.data_0,
+                    data_1  = req_012.data_1,
+                    data_2  = -1,
+                    data_3  = -1};
+                    
+        dprintf_4_mux mux013( clk <- clk,
                                    reset_n <= reset_n,
-                                   req_a <= req_012,
+                                   req_a <= req_012b,
                                    req_b <= req_3,
                                    ack_a => ack_012,
                                    ack_b => ack_3,
                                    req => req_0123,
                                    ack <= ack_0123 );
 
-        teletext_dprintf dut( clk <- clk,
+        dprintf dut( clk <- clk,
                               reset_n <= reset_n,
                               dprintf_req <= req_0123,
                               dprintf_ack => ack_0123,
-                              display_sram_write =>  display_sram_write
+                              dprintf_byte =>  dprintf_byte
             );
     }
 

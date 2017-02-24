@@ -23,42 +23,80 @@
 include "bbc_micro_types.h"
 
 /*a Types */
-/*t t_dprintf_req */
+/*t t_dprintf_req_4 */
 typedef struct {
     bit valid;
     bit[16] address;
     bit[64] data_0;
     bit[64] data_1;
-} t_dprintf_req;
+    bit[64] data_2;
+    bit[64] data_3;
+} t_dprintf_req_4;
+
+/*t t_dprintf_req_2 */
+typedef struct {
+    bit valid;
+    bit[16] address;
+    bit[64] data_0;
+    bit[64] data_1;
+} t_dprintf_req_2;
 
 /*t t_dprintf_resp */
 typedef struct {
     bit ack;
 } t_dprintf_resp;
 
+/*t t_dprintf_byte
+ *
+ * Validated byte with address; the output of the dprintf module
+ */
+typedef struct {
+    bit valid;
+    bit[8]  data;
+    bit[16] address;
+} t_dprintf_byte;
+
 /*a Modules */
-/*m teletext_dprintf */
+/*m dprintf */
 extern
-module teletext_dprintf( clock clk "Clock for data in and display SRAM write out",
-                         input bit reset_n,
-                         input t_dprintf_req   dprintf_req  "Debug printf request",
-                         output bit            dprintf_ack  "Debug printf acknowledge",
-                         output t_bbc_display_sram_write display_sram_write
+module dprintf( clock clk "Clock for data in and display SRAM write out",
+                input bit reset_n,
+                input t_dprintf_req_4   dprintf_req  "Debug printf request",
+                output bit              dprintf_ack  "Debug printf acknowledge",
+                output t_dprintf_byte   dprintf_byte "Byte to output"
     )
 {
     timing to   rising clock clk dprintf_req;
-    timing from rising clock clk dprintf_ack, display_sram_write;
+    timing from rising clock clk dprintf_ack, dprintf_byte;
 }
 
-/*m teletext_dprintf_mux */
+/*m dprintf_2_mux */
 extern
-module teletext_dprintf_mux( clock clk,
+module dprintf_2_mux( clock clk,
                               input bit reset_n,
-                              input t_dprintf_req req_a,
-                              input t_dprintf_req req_b,
+                              input t_dprintf_req_2 req_a,
+                              input t_dprintf_req_2 req_b,
                               output bit ack_a,
                               output bit ack_b,
-                              output t_dprintf_req req,
+                              output t_dprintf_req_2 req,
+                              input bit ack
+    )
+{
+    timing to    rising clock clk req_a, req_b;
+    timing from  rising clock clk ack_a, ack_b;
+
+    timing from  rising clock clk req;
+    timing to    rising clock clk ack;
+}
+/*m dprintf_4_mux */
+extern
+module dprintf_4_mux( clock clk,
+                              input bit reset_n,
+                              input t_dprintf_req_4 req_a,
+                              input t_dprintf_req_4 req_b,
+                              output bit ack_a,
+                              output bit ack_b,
+                              output t_dprintf_req_4 req,
                               input bit ack
     )
 {

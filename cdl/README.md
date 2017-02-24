@@ -39,6 +39,8 @@ The modules are grouped into separate directories based on function.
   this is mainly the Terasic Cyclone V DE1 board, with the Cambridge
   University Computer Laboratory I/O daughterboard.
 
+* cpus
+
 * csrs
 
   The CSR modules (control/status register) map the APB bus to a
@@ -77,3 +79,11 @@ The modules are grouped into separate directories based on function.
 * utils
 
 * video
+
+## Documentation progress
+
+Currently documented: apb, csrs, input_devices, utils, led
+
+In progress: video
+
+To do: storage, microcomputers, cpus, serial

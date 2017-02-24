@@ -1,0 +1,464 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   dprintf.cdl
+ * @brief  Debug text formatter
+ *
+ * CDL implementation of a module that takes an input debug requests
+ * and converts them in to a stream of bytes. The debug request is
+ * similar to a 'printf' string, in that it allows formatted data.
+ *
+ */
+/*a Includes */
+include "bbc_micro_types.h" // for t_bbc_display_sram_write
+include "dprintf.h"
+include "teletext.h"
+
+/*a Constants */
+constant integer cfg_downsize_x=0;
+constant integer cfg_downsize_y=1;
+
+/*a Types */
+/*t t_data_buffer_state */
+typedef struct {
+    bit full;
+    bit[16] address;
+    bit[64][4] data;
+} t_data_buffer_state;
+
+/*t t_decimal_action */
+typedef enum[4] {
+    decimal_action_none,
+    decimal_action_zero,
+    decimal_action_shift_data,
+    decimal_action_multiply_by_ten,
+    decimal_action_subtract_10e9,
+} t_decimal_action;
+
+/*t t_decimal_combs */
+typedef struct {
+    bit[35] acc_minus_10e9     "Accumulator minus 10e9";
+    bit     acc_less_than_10e9 "Asserted if accumulator is less than 10E9";
+    bit     acc_is_zero        "Asserted if accumulator is zero";
+} t_decimal_combs;
+
+/*t t_decimal_state */
+typedef struct {
+    bit[34] accumulator "Accumulator, repeated subtraction of 1E9 to get dividend/remainder";
+    bit[4] dividend     "Result of accumulator / 1E9";
+} t_decimal_state;
+
+/*t t_format_fsm */
+typedef fsm {
+    state_idle;
+    state_start_byte;
+    state_hex_top_nybble;
+    state_hex_bottom_nybble;
+    state_decimal_capture;
+    state_decimal_predigits;
+    state_decimal_nonzero;
+} t_format_fsm;
+
+/*t t_format_action */
+typedef enum[4] {
+    action_none,
+    action_start_formatting,
+    action_skip_byte,
+    action_complete_string,
+    action_write_byte,
+    action_start_hex_format,
+    action_write_hex_top_nybble,
+    action_write_hex_bottom_nybble,
+    action_start_decimal_format,
+    action_capture_decimal,
+    action_decimal_subtract,
+    action_decimal_skip,
+    action_decimal_output_zero,
+    action_decimal_output,
+} t_format_action;
+
+/*t t_write_buffer_op */
+typedef enum[2] {
+    op_idle,
+    op_write_next_data,
+} t_write_buffer_op;
+
+/*t t_format_combs */
+typedef struct {
+    bit[8] byte               "Byte of data_buffer to handle in current state";
+    bit[8] hex_top_nybble     "Character for the hexadecimal of the top nybble of byte";
+    bit[8] hex_bottom_nybble  "Character for the hexadecimal of the bottom nybble of byte";
+    bit    byte_terminates_string "Asserted if 'byte' is the termination character";
+    bit    byte_nul               "Asserted if 'byte' is the nul character (0)";
+    bit    byte_is_control_hex        "Asserted if 'byte' is a control character to format hex (possibly nul or terminates too - this is lower priority)";
+    bit    byte_is_control_decimal    "Asserted if 'byte' is a control character to format decimal (possibly nul or terminates too - this is lower priority)";
+    t_format_action action "Action to take given current state and data";
+    t_decimal_action decimal_action "Decimal action to take given format action";
+    t_write_buffer_op write_buffer_op "Write buffer operation to do based on action";
+    bit[8] write_data "Data to write to SRAM write buffer based on action";
+    bit pop_byte      "Asserted based on action if the data buffer should pop a byte";
+    bit increment_address "Asserted based on action if the data buffer address should increment";
+    bit completed_string  "Asserted based on action if the data buffer has been completed";
+} t_format_combs;
+
+/*t t_format_state */
+typedef struct {
+    t_format_fsm fsm_state;
+    bit[4] bytes_left;
+    bit[4] skip_left;
+} t_format_state;
+
+/*t t_sram_write_buffer_combs */
+typedef struct {
+    bit will_be_empty;
+} t_sram_write_buffer_combs;
+
+/*a Module
+ */
+module dprintf( clock clk "Clock for data in and display SRAM write out",
+                input bit reset_n,
+                input t_dprintf_req_4   dprintf_req  "Debug printf request",
+                output bit            dprintf_ack  "Debug printf acknowledge",
+                output t_dprintf_byte dprintf_byte "Byte to output"
+    )
+"""
+This module that takes an input debug request and converts it in to a
+stream of bytes. The debug request is similar to a 'printf' string, in
+that it allows formatted data.
+
+A request is effectively a bytestream with an SRAM address.  The
+byte stream consists of ASCII characters plus potentially 'video
+control' characters - all in the range 1 to 127, plus control
+codes of 0 or 128 to 255.
+
+The code 0 is just skipped; it allows for simple alignment of data
+in the dprintf request.
+
+A code of 128 to 191 is a zero-padded hex format field. The
+encoding is 8h10xxssss; x is unused, and the size @ss is 0-f,
+indicating 1 to 16 following nybbles are data (msb first). The
+data follows in the succeeding bytes.
+
+A code of 192 to 154 is a space-padded decimal format field. The
+The encoding is 8h11ppppss; the @size is 0-3 for 1 to 4 bytes of
+data, in the succeeding bytes. The @padding (pppp) is zero for no
+padding; 1 forces the string to be at least 2 characters long
+(prepadded with space if required); 2 is pad to 3 characters, and
+so on. The maximum padding is to a ten character output (pppp of 9).
+
+A code of 255 terminates the string.
+"""
+{
+    /*b State and combs */
+    default reset active_low reset_n;
+    default clock clk;
+
+    clocked t_dprintf_byte dprintf_byte={*=0};
+    clocked bit dprintf_ack=0;
+
+    clocked t_data_buffer_state data_buffer_state={*=0};
+    clocked t_decimal_state decimal_state={*=0};
+    comb    t_decimal_combs decimal_combs;
+    clocked t_format_state format_state={*=0};
+    comb    t_format_combs format_combs;
+    comb    t_sram_write_buffer_combs sram_write_buffer_combs;
+
+    /*b Debug printf buffer */
+    debug_printf_logic """
+    A single request is stored and handled at any one time. When the
+    dprintf logic is idle it can accept a new request, and start to
+    process it.
+
+    This logic manages the request buffer
+    """: {
+        dprintf_ack <= 0;
+        if (dprintf_req.valid && !data_buffer_state.full) {
+            dprintf_ack <= 1;
+            data_buffer_state.full <= 1;
+            data_buffer_state.address <= dprintf_req.address;
+            data_buffer_state.data[0] <= dprintf_req.data_0;
+            data_buffer_state.data[1] <= dprintf_req.data_1;
+            data_buffer_state.data[2] <= dprintf_req.data_2;
+            data_buffer_state.data[3] <= dprintf_req.data_3;
+        }
+        if (format_combs.pop_byte) {
+            for (i; 4-1) {
+                data_buffer_state.data[i] <= bundle(data_buffer_state.data[i][56;0], data_buffer_state.data[i+1][8;56]);
+            }
+            data_buffer_state.data[3] <= bundle(data_buffer_state.data[3][56;0], 8hff);
+        }
+        if (format_combs.increment_address) {
+            data_buffer_state.address <= data_buffer_state.address + 1;
+        }
+        if (format_combs.completed_string) {
+            data_buffer_state.full <= 0;
+        }
+    }
+    
+    /*b Decimal divider */
+    decimal_logic """
+    This logic maintains a 34-bit decimal accumulator which permits
+    repeated subtraction of 10^9, and multiplication by ten. Combined,
+    this permits a decimal representation of a 32-bit value to be
+    determined.
+
+    The accumulator is 34 bits long, to store 10^10-1 (34h2_540b_e3ff)
+
+    For repeated subtraction to be used the accumulator must have a
+    'minus 10^9' value calculated; if this is negative then the
+    accumulator should be mutliplied by ten to work on the next digit,
+    but if not then the dividend should be incremented and the 'minus
+    10^9' value stored in the accumulator.
+
+    A single 4-bit dividend is maintained to permit a digit value to
+    be determined; once evaluated, the digit is presumably output, and
+    the accumulator can be multiplied by ten to work on the next least
+    significant digit.
+    """: {
+        /*b Subtract 10^9 from the accumulator, determine underflow, and detect if accumulator is zero */
+        decimal_combs.acc_minus_10e9 = bundle(1b0,decimal_state.accumulator) - 35h03b9aca00;
+        decimal_combs.acc_less_than_10e9 = decimal_combs.acc_minus_10e9[34];
+        decimal_combs.acc_is_zero = (decimal_state.accumulator==0);
+
+        /*b Update accumulator and dividend depending on the @a decimal_action */
+        full_switch (format_combs.decimal_action) {
+        case decimal_action_none: {
+            decimal_state.accumulator <= decimal_state.accumulator;
+        }
+        case decimal_action_zero: {
+            decimal_state.accumulator <= 0;
+            decimal_state.dividend <= 0;
+        }
+        case decimal_action_shift_data: {
+            decimal_state.accumulator <= bundle(decimal_state.accumulator[26;0], format_combs.byte);
+        }
+        case decimal_action_multiply_by_ten: {
+            decimal_state.accumulator <= ( bundle(decimal_state.accumulator[33;0],1b0) +
+                                           bundle(decimal_state.accumulator[31;0],3b0) );
+                                           
+            decimal_state.dividend <= 0;
+        }
+        case decimal_action_subtract_10e9: {
+            decimal_state.accumulator <= decimal_combs.acc_minus_10e9[34;0];
+            decimal_state.dividend <= decimal_state.dividend+1;
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b Formatter */
+    format_logic """
+    This logic implements a state machine and consumes bytes from the data_buffer
+
+    It consumes bytes from the data_buffer_state.data, and the state
+    machine handles the operation of formatting different characters
+    """: {
+        /*b Decode the working byte - the first byte of data - the top 8 bits of the data buffer */
+        format_combs = {*=0};
+        format_combs.byte = data_buffer_state.data[0][8;56];
+        format_combs.byte_terminates_string  = (format_combs.byte==8hff);
+        format_combs.byte_nul                = (format_combs.byte==8h00);
+        format_combs.byte_is_control_hex     = (format_combs.byte[2;6]==2b10);
+        format_combs.byte_is_control_decimal = (format_combs.byte[2;6]==2b11);
+        format_combs.hex_top_nybble          = 8h30 | bundle(4b0, format_combs.byte[4;4]);
+        if (format_combs.byte[4;4]>9) {format_combs.hex_top_nybble = 8d55 + bundle(4b0, format_combs.byte[4;4]);}
+        format_combs.hex_bottom_nybble         = 8h30 | bundle(4b0, format_combs.byte[4;0]);
+        if (format_combs.byte[4;0]>9) {format_combs.hex_bottom_nybble = 8d55 + bundle(4b0, format_combs.byte[4;0]);}
+
+        /*b Determine action given current FSM state and working byte */
+        format_combs.action = action_none;
+        full_switch (format_state.fsm_state) {
+        case state_idle: {
+            if (data_buffer_state.full) {
+                format_combs.action = action_start_formatting;
+            }
+        }
+        case state_start_byte: {
+            format_combs.action = action_write_byte;
+            if (format_combs.byte_terminates_string) {
+                format_combs.action = action_complete_string;
+            } elsif (format_combs.byte_nul) {
+                format_combs.action = action_skip_byte;
+            } elsif (format_combs.byte_is_control_hex) {
+                format_combs.action = action_start_hex_format;
+            } elsif (format_combs.byte_is_control_decimal) {
+                format_combs.action = action_start_decimal_format;
+            }
+        }
+        case state_hex_top_nybble: {
+            format_combs.action = action_write_hex_top_nybble;
+        }
+        case state_hex_bottom_nybble: {
+            format_combs.action = action_write_hex_bottom_nybble;
+        }
+        case state_decimal_capture: { // capture byte in to decimal accumulator shift register
+            format_combs.action = action_capture_decimal;
+        }
+        case state_decimal_predigits: { // no digits output yet - output nothing or space for zero
+            format_combs.action = action_decimal_subtract;
+            if (decimal_combs.acc_less_than_10e9) {
+                format_combs.action = action_decimal_skip; // if last byte output zero; if not then space of nothing
+            }
+        }
+        case state_decimal_nonzero: { // will output non-zero, or has output a digit already - subtract or output until done
+            format_combs.action = action_decimal_subtract;
+            if (decimal_combs.acc_less_than_10e9) {
+                format_combs.action = action_decimal_output;
+            }
+        }
+        }
+        
+        /*b Handle the determined action */
+        format_combs.write_buffer_op = op_idle;
+        format_combs.increment_address = 0;
+        format_combs.pop_byte = 0;
+        format_combs.completed_string = 0;
+        format_combs.write_data = format_combs.byte;
+        format_combs.decimal_action = decimal_action_none;
+        full_switch (format_combs.action) {
+            /*b action_none */
+        case action_none: {
+            format_state.fsm_state <= format_state.fsm_state;
+        }
+            /*b action_start_formatting */
+        case action_start_formatting: {
+            format_state.fsm_state <= state_start_byte;
+        }
+            /*b action_write_byte */
+        case action_write_byte: {
+            format_combs.write_buffer_op = op_write_next_data;
+            format_combs.increment_address = 1;
+            format_combs.pop_byte = 1;
+            format_state.fsm_state <= state_start_byte;
+        }
+            /*b action_skip_byte */
+        case action_skip_byte: {
+            format_combs.pop_byte = 1;
+            format_state.fsm_state <= state_start_byte;
+        }
+            /*b action_start_hex_format */
+        case action_start_hex_format: {
+            format_combs.pop_byte = 1;
+            format_state.bytes_left <= format_combs.byte[4;1];
+            if (format_combs.byte[0]) {
+                format_state.fsm_state <= state_hex_top_nybble;
+            } else {
+                format_state.fsm_state <= state_hex_bottom_nybble;
+            }
+        }
+            /*b action_write_hex_top_nybble */
+        case action_write_hex_top_nybble: {
+            format_combs.write_buffer_op = op_write_next_data;
+            format_combs.write_data = format_combs.hex_top_nybble;
+            format_combs.increment_address = 1;
+            format_state.fsm_state <= state_hex_bottom_nybble;
+        }
+            /*b action_write_hex_bottom_nybble */
+        case action_write_hex_bottom_nybble: {
+            format_combs.write_buffer_op = op_write_next_data;
+            format_combs.write_data = format_combs.hex_bottom_nybble;
+            format_combs.increment_address = 1;
+            format_combs.pop_byte = 1;
+            format_state.bytes_left <= format_state.bytes_left-1;
+            format_state.fsm_state <= state_hex_top_nybble;
+            if (format_state.bytes_left==0) {
+                format_state.fsm_state <= state_start_byte;
+            }
+        }
+            /*b action_start_decimal_format */
+        case action_start_decimal_format: {
+            format_combs.pop_byte = 1;
+            format_combs.decimal_action = decimal_action_zero;
+            format_state.bytes_left <= bundle(2b0,format_combs.byte[2;0]);
+            format_state.skip_left  <= format_combs.byte[4;2];
+            format_state.fsm_state <= state_decimal_capture;
+        }
+            /*b action_capture_decimal */
+        case action_capture_decimal: {
+            format_combs.decimal_action = decimal_action_shift_data;
+            format_combs.pop_byte = 1;
+            format_state.bytes_left <= format_state.bytes_left-1;
+            format_state.fsm_state <= format_state.fsm_state;
+            if (format_state.bytes_left==0) {
+                format_state.fsm_state <= state_decimal_predigits;
+                format_state.bytes_left <= 9;
+            }
+        }
+            /*b action_decimal_skip */
+        case action_decimal_skip: {
+            if (format_state.bytes_left <= format_state.skip_left) {
+                format_combs.write_buffer_op = op_write_next_data;
+                format_combs.write_data = 8h20;
+                format_combs.increment_address = 1;
+            }
+            if (format_state.bytes_left == 0) {
+                format_combs.write_buffer_op = op_write_next_data;
+                format_combs.write_data = 8h30;
+                format_combs.increment_address = 1;
+            }
+            format_combs.decimal_action = decimal_action_multiply_by_ten;
+            format_state.bytes_left <= format_state.bytes_left-1;
+            if (format_state.bytes_left==0) {
+                format_state.fsm_state <= state_start_byte;
+            }
+        }
+            /*b action_decimal_output */
+        case action_decimal_output: {
+            format_combs.write_buffer_op = op_write_next_data;
+            format_combs.write_data = 8h30 | bundle(4b0,decimal_state.dividend);
+            format_combs.increment_address = 1;
+            format_state.fsm_state <= state_decimal_nonzero;
+            format_combs.decimal_action = decimal_action_multiply_by_ten;
+            format_state.bytes_left <= format_state.bytes_left-1;
+            if (format_state.bytes_left==0) {
+                format_state.fsm_state <= state_start_byte;
+            }
+        }
+            /*b action_decimal_subtract */
+        case action_decimal_subtract: {
+            format_combs.decimal_action = decimal_action_subtract_10e9;
+            format_state.fsm_state <= state_decimal_nonzero;
+        }
+            /*b action_complete_string */
+        case action_complete_string: {
+            format_combs.completed_string = 1;
+            format_state.fsm_state <= state_idle;
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b SRAM write buffer */
+    sram_write_buffer_logic """
+    """: {
+        sram_write_buffer_combs.will_be_empty = 1;
+
+        full_switch (format_combs.write_buffer_op) {
+        case op_write_next_data: {
+            dprintf_byte <= {address=data_buffer_state.address,
+                    valid=1,
+                    data=format_combs.write_data};
+        }
+        default: {
+            dprintf_byte <= dprintf_byte;
+            dprintf_byte.valid <= 0;
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b All done */
+}
