@@ -7,3 +7,4 @@ build/*/*cpp
 *vcd
 *log
 models.make
+gh_pages/
