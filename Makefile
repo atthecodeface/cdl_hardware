@@ -77,7 +77,11 @@ test_6502_adc: ${TARGET_DIR}/py_engine.so
 	./regress_all regression.base6502.Regress6502_Test6502_ALU.test_atc_test_6502_adc
 
 #a Operational targets
+.PHONY: roms
 roms:
+	python python/teletext_font.py > roms/teletext.mif
+	python python/apb_speed_selection.py > roms/apb_rom.mif
+	python python/ps2_bbc_kbd_map.py
 	python python/rom_to_mif.py
 
 bbc_run: ${TARGET_DIR}/py_engine.so

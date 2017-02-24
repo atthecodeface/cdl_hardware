@@ -33,7 +33,7 @@ include "apb.h"
 /*a Constants */
 constant bit[8] sr_divider    = 49; // 1MHz
 constant bit[8] divider_400ns = 19; // 2.5MHz
-constant integer num_dprintf_requesters=9;
+constant integer num_dprintf_requesters=12;
 
 /*a Types */
 /*t t_debug_combs */
@@ -57,8 +57,10 @@ typedef struct {
 typedef struct {
     bit[10] fn_keys_down;
     bit[4] last_fn_key;
+    bit speed_selection_changed;
+    bit video_selection_changed;
     bit[4] speed_selection;
-    bit left_dial_was_pressed;
+    bit[4] video_selection;
 } t_key_state;
 
 /*a Module */
@@ -96,6 +98,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
 
     net  t_led_ws2812_request led_request;
     comb t_led_ws2812_data    led_data;
+    clocked clock clk reset active_low reset_n t_led_ws2812_data[12] led_state={*=0};
     net  t_de1_cl_inputs_control  inputs_control;
     net  t_de1_cl_user_inputs     user_inputs;
 
@@ -143,6 +146,8 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
     /*b Miscellaneous logic */
     misc_logic """
     """: {
+        key_state.speed_selection_changed <= 0;
+        key_state.video_selection_changed <= 0;
 
         if (user_inputs.right_dial.direction_pulse) {
             key_state.fn_keys_down <= 0;
@@ -159,15 +164,21 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
             }
         }
         if (user_inputs.left_dial.direction_pulse) {
-            if (user_inputs.left_dial.direction) {
-                key_state.speed_selection <= key_state.speed_selection+1;
-                if (key_state.speed_selection==11) {
-                    key_state.speed_selection <= 0;
+            if (user_inputs.left_dial.pressed) {
+                if (user_inputs.left_dial.direction) {
+                    key_state.video_selection <= key_state.video_selection+1;
+                    if (key_state.video_selection==11) {key_state.video_selection <= 0;}
+                } else {
+                    key_state.video_selection <= key_state.video_selection-1;
+                    if (key_state.video_selection==0) {key_state.video_selection <= 11;}
                 }
             } else {
-                key_state.speed_selection <= key_state.speed_selection-1;
-                if (key_state.speed_selection==0) {
-                    key_state.speed_selection <= 11;
+                if (user_inputs.left_dial.direction) {
+                    key_state.speed_selection <= key_state.speed_selection+1;
+                    if (key_state.speed_selection==11) {key_state.speed_selection <= 0;}
+                } else {
+                    key_state.speed_selection <= key_state.speed_selection-1;
+                    if (key_state.speed_selection==0) {key_state.speed_selection <= 11;}
                 }
             }
         }
@@ -177,42 +188,38 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
         } else {
             key_state.fn_keys_down <= 0;
         }
-        key_state.left_dial_was_pressed <= user_inputs.left_dial.pressed;
         lcd_source = switches[3];
     }
 
     /*b LED chain logic */
     led_chain_logic """
     """: {
+        for (i; 12) {
+            led_state[i] <= {*=0};
+            if (user_inputs.left_dial.pressed) {
+                if (key_state.video_selection>=i) {led_state[i].blue <= 8h3f;}
+            } else {
+                if (key_state.speed_selection>=i) {led_state[i].red <= 8h3f;}
+            }
+        }
+
         led_data = {*=0};
         if (led_request.ready) {
-            led_data.valid = 1;            
             part_switch(led_request.led_number) {
-            case 0: {led_data = {red=(key_state.last_fn_key== 0) ? 8h3f : 8h00};}
-            case 1: {led_data = {red=(key_state.last_fn_key== 1) ? 8h3f : 8h00};}
-            case 2: {led_data = {red=(key_state.last_fn_key== 2) ? 8h3f : 8h00};}
-            case 3: {led_data = {red=(key_state.last_fn_key== 3) ? 8h3f : 8h00};}
-            case 4: {led_data = {red=(key_state.last_fn_key== 4) ? 8h3f : 8h00};}
-            case 5: {led_data = {red=(key_state.last_fn_key== 5) ? 8h3f : 8h00};}
-            case 6: {led_data = {red=(key_state.last_fn_key== 6) ? 8h3f : 8h00};}
-            case 7: {led_data = {red=(key_state.last_fn_key== 7) ? 8h3f : 8h00};}
-            case 8: {led_data = {red=(key_state.last_fn_key== 8) ? 8h3f : 8h00};}
-            case 9: {led_data = {red=(key_state.last_fn_key== 9) ? 8h3f : 8h00};}
+            case  0: {led_data = led_state[0]; }
+            case  1: {led_data = led_state[1]; }
+            case  2: {led_data = led_state[2]; }
+            case  3: {led_data = led_state[3]; }
+            case  4: {led_data = led_state[4]; }
+            case  5: {led_data = led_state[5]; }
+            case  6: {led_data = led_state[6]; }
+            case  7: {led_data = led_state[7]; }
+            case  8: {led_data = led_state[8]; }
+            case  9: {led_data = led_state[9]; }
+            case 10: {led_data = led_state[10]; }
+            case 11: {led_data = led_state[11]; }
             }
-            part_switch(led_request.led_number) {
-            case 0: {led_data = {blue=(key_state.speed_selection== 0) ? 8h3f : 8h00};}
-            case 1: {led_data = {blue=(key_state.speed_selection== 1) ? 8h3f : 8h00};}
-            case 2: {led_data = {blue=(key_state.speed_selection== 2) ? 8h3f : 8h00};}
-            case 3: {led_data = {blue=(key_state.speed_selection== 3) ? 8h3f : 8h00};}
-            case 4: {led_data = {blue=(key_state.speed_selection== 4) ? 8h3f : 8h00};}
-            case 5: {led_data = {blue=(key_state.speed_selection== 5) ? 8h3f : 8h00};}
-            case 6: {led_data = {blue=(key_state.speed_selection== 6) ? 8h3f : 8h00};}
-            case 7: {led_data = {blue=(key_state.speed_selection== 7) ? 8h3f : 8h00};}
-            case 8: {led_data = {blue=(key_state.speed_selection== 8) ? 8h3f : 8h00};}
-            case 9: {led_data = {blue=(key_state.speed_selection== 9) ? 8h3f : 8h00};}
-            case 10: {led_data = {blue=(key_state.speed_selection== 10) ? 8h3f : 8h00};}
-            case 11: {led_data = {blue=(key_state.speed_selection== 11) ? 8h3f : 8h00};}
-            }
+            led_data.valid = 1;
             if (led_request.led_number==11) {
                 led_data.last=1;
             }
@@ -292,20 +299,24 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                 dprintf_req[i].valid <= 0;
             }
         }
+        if (debug_combs.timer_10ms) {
+            dprintf_req[0] <= {valid=1, address=00, data_0=64h0d_04_1d_02_43_50_55_20, data_1=64h53_70_65_65_64_20_ff_ff };
+            dprintf_req[1] <= {valid=1, address=40, data_0=64h0d_04_1d_02_43_50_55_20, data_1=64h53_70_65_65_64_20_ff_ff };
+            dprintf_req[2] <= {valid=1, address=14, data_0=bundle(8hc3+(5<<2), debug_state.cpu_ticks, 24h30_30_20), data_1=64h46_6a_ff_00_00_00_00_00};
+            dprintf_req[3] <= {valid=1, address=54, data_0=bundle(8hc3+(5<<2), debug_state.cpu_ticks, 24h30_30_20), data_1=64h46_6a_ff_00_00_00_00_00};
+
+            dprintf_req[4] <= {valid=1, address=240,  data_0=64h52_69_67_68_74_20_44_69, data_1=bundle(24h61_6c_3a, user_inputs.right_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.last_fn_key,16hff)};
+            dprintf_req[5] <= {valid=1, address=280,  data_0=64h4c_65_66_74_20_44_69_61, data_1=bundle(24h6c_20_3a, user_inputs.left_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.speed_selection,16hff)};
+            dprintf_req[6] <= {valid=1, address=360, data_0=64h32_4d_68_7a_20_56_69_64, data_1=bundle(24h65_6f_3a, 8hc3+(6<<2), debug_state.video_2MHz_ticks)};
+            dprintf_req[7] <= {valid=1, address=400, data_0=64h31_4d_68_7a_20_66_61_6c, data_1=bundle(24h6c_20_3a, 8hc3+(6<<2), debug_state.falling_1MHz_ticks)};
+            dprintf_req[8] <= {valid=1, address=440, data_0=64h31_4d_68_7a_20_72_69_73, data_1=bundle(24h65_20_3a, 8hc3+(6<<2), debug_state.rising_1MHz_ticks)};
+            dprintf_req[9] <= {valid=1, address=480, data_0=64h44_65_62_75_67_20_30_3a, data_1=bundle(8hc3+(6<<2), debug_state.counter_0, 8h83, 16b0)};
+            dprintf_req[10] <= {valid=1, address=520, data_0=64h44_65_62_75_67_20_31_3a, data_1=bundle(8hc3+(6<<2), debug_state.counter_1, 8h83, 12b0, clock_control.debug)};
+        }
         if (ps2_key.valid) {
-            dprintf_req[0] <= {valid=1, address=0,
+            dprintf_req[11] <= {valid=1, address=600,
                     data_0=64h50_53_32_20_6b_65_79_3a,
                     data_1=bundle(ps2_key.release?8h02:8h01, ps2_key.extended?8h45:8h00, 8h81, ps2_key.key_number, 32h2020ffff) };
-        }
-        if (debug_combs.timer_10ms) {
-            dprintf_req[1] <= {valid=1, address=40,  data_0=64h52_69_67_68_74_20_44_69, data_1=bundle(24h61_6c_3a, user_inputs.right_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.last_fn_key,16hff)};
-            dprintf_req[2] <= {valid=1, address=80,  data_0=64h4c_65_66_74_20_44_69_61, data_1=bundle(24h6c_20_3a, user_inputs.left_dial.pressed?8h01:8h06, 8h80, 4b0,key_state.speed_selection,16hff)};
-            dprintf_req[3] <= {valid=1, address=120, data_0=64h43_50_55_20_74_69_63_6b, data_1=bundle(24h73_20_3a, 8hc3+(6<<2), debug_state.cpu_ticks)};
-            dprintf_req[4] <= {valid=1, address=160, data_0=64h32_4d_68_7a_20_56_69_64, data_1=bundle(24h65_6f_3a, 8hc3+(6<<2), debug_state.video_2MHz_ticks)};
-            dprintf_req[5] <= {valid=1, address=200, data_0=64h31_4d_68_7a_20_66_61_6c, data_1=bundle(24h6c_20_3a, 8hc3+(6<<2), debug_state.falling_1MHz_ticks)};
-            dprintf_req[6] <= {valid=1, address=240, data_0=64h31_4d_68_7a_20_72_69_73, data_1=bundle(24h65_20_3a, 8hc3+(6<<2), debug_state.rising_1MHz_ticks)};
-            dprintf_req[7] <= {valid=1, address=280, data_0=64h44_65_62_75_67_20_30_3a, data_1=bundle(8hc3+(6<<2), debug_state.counter_0, 8h83, 16b0)};
-            dprintf_req[8] <= {valid=1, address=320, data_0=64h44_65_62_75_67_20_31_3a, data_1=bundle(8hc3+(6<<2), debug_state.counter_1, 8h83, 12b0, clock_control.debug)};
         }
 
         teletext_dprintf_mux tdm01( clk <- clk,
@@ -356,9 +367,13 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
     net bit[40]                   apb_rom_data;
     apb_csr_logic """
     """ : {
-        apb_processor_request.valid = 0;
-        apb_processor_request.address[4;4] = key_state.speed_selection;
-        if (user_inputs.left_dial.pressed && !key_state.left_dial_was_pressed) {
+        apb_processor_request = {*=0};
+        if (key_state.speed_selection_changed) {
+            apb_processor_request.address[5;4] = bundle(1b0,key_state.speed_selection);
+            apb_processor_request.valid = 1;
+        }
+        if (key_state.video_selection_changed) {
+            apb_processor_request.address[5;4] = bundle(1b0,key_state.video_selection);
             apb_processor_request.valid = 1;
         }
 

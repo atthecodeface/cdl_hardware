@@ -5,12 +5,9 @@ csr_select["clock_control"] = 0
 csr_select["bbc_display"] = 1
 clock_control = (csr_select["clock_control"]<<16)|0
 display_porches = (csr_select["bbc_display"]<<16)|2
-speeds = [0x0015, 0x0215, 0x0415b, 0x0615, 0x0815, 0x0a15,
-          0x1215, 0x1515]
-porches = [(65536-140-14) | (((65536-70)<<16)),
-           (65536-140-8) | (((65536-70)<<16)),
-           (65536-140-2) | (((65536-70)<<16)),
-    ]
+speeds = [0x0015, 0x0215, 0x0415, 0x0615, 0x0815, 0x0a15, 0x0c15, 0x0e15, 0x1015, 0x1215, 0x1415, 0x1515]
+
+porches = [(65536-170+16-3*i) | (((65536-68)<<16)) for i in range(12)]
            
 def set_speed(speed):
     return [(apb_rom.rom.op_set("address",clock_control),["speed%d:"%speed]),
@@ -27,6 +24,7 @@ program["code"] = []
 for i in range(len(speeds)):
     program["code"] += set_speed(i)
     pass
+program["code"] += ([ (apb_rom.rom.op_finish(),), ]*64)
 for i in range(len(porches)):
     program["code"] += set_porch(i)
     pass
