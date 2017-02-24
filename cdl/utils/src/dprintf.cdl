@@ -20,9 +20,7 @@
  *
  */
 /*a Includes */
-include "bbc_micro_types.h" // for t_bbc_display_sram_write
 include "dprintf.h"
-include "teletext.h"
 
 /*a Constants */
 constant integer cfg_downsize_x=0;
@@ -118,10 +116,10 @@ typedef struct {
     bit[4] skip_left;
 } t_format_state;
 
-/*t t_sram_write_buffer_combs */
+/*t t_byte_output_combs */
 typedef struct {
     bit will_be_empty;
-} t_sram_write_buffer_combs;
+} t_byte_output_combs;
 
 /*a Module
  */
@@ -145,13 +143,13 @@ The code 0 is just skipped; it allows for simple alignment of data
 in the dprintf request.
 
 A code of 128 to 191 is a zero-padded hex format field. The
-encoding is 8h10xxssss; x is unused, and the size @ss is 0-f,
+encoding is 8h10xxssss; x is unused, and the size @a ss is 0-f,
 indicating 1 to 16 following nybbles are data (msb first). The
 data follows in the succeeding bytes.
 
 A code of 192 to 154 is a space-padded decimal format field. The
-The encoding is 8h11ppppss; the @size is 0-3 for 1 to 4 bytes of
-data, in the succeeding bytes. The @padding (pppp) is zero for no
+The encoding is 8h11ppppss; the @a size is 0-3 for 1 to 4 bytes of
+data, in the succeeding bytes. The @a padding (pppp) is zero for no
 padding; 1 forces the string to be at least 2 characters long
 (prepadded with space if required); 2 is pad to 3 characters, and
 so on. The maximum padding is to a ten character output (pppp of 9).
@@ -163,15 +161,16 @@ A code of 255 terminates the string.
     default reset active_low reset_n;
     default clock clk;
 
-    clocked t_dprintf_byte dprintf_byte={*=0};
-    clocked bit dprintf_ack=0;
+    clocked t_dprintf_byte dprintf_byte={*=0}  "Data byte result, output to client (e.g. SRAM)";
+    clocked bit dprintf_ack=0                  "Single cycle acknowledge to client, indicating a request has been taken";
 
-    clocked t_data_buffer_state data_buffer_state={*=0};
-    clocked t_decimal_state decimal_state={*=0};
-    comb    t_decimal_combs decimal_combs;
-    clocked t_format_state format_state={*=0};
-    comb    t_format_combs format_combs;
-    comb    t_sram_write_buffer_combs sram_write_buffer_combs;
+    clocked t_data_buffer_state data_buffer_state={*=0,
+                                                   data={*=-1}} "Data buffer, reset data to all ones as that matches the data shifted in";
+    clocked t_decimal_state decimal_state={*=0} "State of decimal divide circuit used to format decimal numbers";
+    comb    t_decimal_combs decimal_combs       "Combinatorials for decimal divide circuit";
+    clocked t_format_state format_state={*=0}   "Formatter state";
+    comb    t_format_combs format_combs         "Combinatorial state of format logic";
+    comb    t_byte_output_combs byte_output_combs;
 
     /*b Debug printf buffer */
     debug_printf_logic """
@@ -179,7 +178,13 @@ A code of 255 terminates the string.
     dprintf logic is idle it can accept a new request, and start to
     process it.
 
-    This logic manages the request buffer
+    This logic manages the request buffer, loading it, and shifting
+    data when the formatter consumes it.
+
+    The shift register shifts in 8hff, the 'finish' token, so that a
+    string is guaranteed to complete. Because of this the reset value
+    for the shift register should be all ones, and any clients should
+    drive ones on unused data bits (to reduce unnecessary logic)
     """: {
         dprintf_ack <= 0;
         if (dprintf_req.valid && !data_buffer_state.full) {
@@ -440,10 +445,12 @@ A code of 255 terminates the string.
         /*b All done */
     }
 
-    /*b SRAM write buffer */
-    sram_write_buffer_logic """
+    /*b Data output buffer */
+    byte_output_logic """
+    Drive a valid data byte out if given by the formatter, else hold
+    the data but invalidated.
     """: {
-        sram_write_buffer_combs.will_be_empty = 1;
+        byte_output_combs.will_be_empty = 1;
 
         full_switch (format_combs.write_buffer_op) {
         case op_write_next_data: {
