@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file  teletext.cdl
  * @brief CDL implementation of a teletext decoder
@@ -22,15 +21,27 @@
  * The input is a byte of per clock of character data.
  *
  * The implementation does not currently support double width or
- * double height characters.
+ * double size characters.
  *
  */
 /*a Includes */
 include "teletext.h"
 
+/*a Constants */
+constant integer flashing_on_count=10;
+constant integer max_flashing_count=40;
+
 /*a Types */
+/*t t_color
+ *
+ * Three-bit color, one bit for R, G and B
+ */
 typedef bit[3] t_color;
-/*t t_character_state */
+
+/*t t_character_state
+ *
+ * State of the character as the line is decoded
+ */
 typedef struct {
     bit[3] background_color;
     bit[3] foreground_color;
@@ -43,14 +54,16 @@ typedef struct {
     bit    reset_held_graphics;
 } t_character_state;
 
-/*t t_load_state */
+/*t t_load_state
+ *
+ */
 typedef struct {
     t_teletext_character character;
 } t_load_state;
-constant integer flashing_on_count=10;
-constant integer max_flashing_count=40;
 
-/*t t_timing_state */
+/*t t_timing_state
+ *
+ */
 typedef struct {
     bit[5] scanline;
     bit last_scanline;
@@ -60,7 +73,9 @@ typedef struct {
     bit    scanline_displayed "Asserted if there has been a valid character in the scanline";
 } t_timing_state;
 
-/*t t_teletext_combs */
+/*t t_teletext_combs
+ *
+ */
 typedef struct {
     t_character_state next_character_state;
     t_character_state current_character_state;
@@ -68,7 +83,9 @@ typedef struct {
     bit[5] pixel_scanline;
 } t_teletext_combs;
 
-/*t t_teletext_state */
+/*t t_teletext_state
+ *
+ */
 typedef struct {
     t_teletext_character character "Used for graphics decode";
     t_character_state character_state;
@@ -76,7 +93,9 @@ typedef struct {
     bit last_row_contained_dbl_height;
 } t_teletext_state;
 
-/*t t_pixel_combs */
+/*t t_pixel_combs
+ *
+ */
 typedef struct {
     bit[10] rom_scanline_data;
     bit[12] graphics_data;
@@ -106,6 +125,15 @@ module teletext( clock clk     "Character clock",
        )
     /*b Documentation */
 """
+ * This is an implementaion of the core of a teletext decoder, for
+ * arbitrary sized teletext output displays.
+ *
+ * The output is supplied at 12 pixels per clock (one character width)
+ * The input is a byte of per clock of character data.
+ *
+ * The implementation does not currently support double width or
+ * double size characters.
+ *
 Teletext characters are displayed from a 12x20 grid.
 The ROM characters have two background rows, and then are displayed with 2 background pixels on the left, and then 10 pixels from the ROM
 The ROM is actually 5x9, and it is doubled to 10x18
