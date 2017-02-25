@@ -253,55 +253,26 @@ class teletext_test_page(teletext_page):
                fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff b0 b4
                94 9a 9e f3 91 99 95 80 95 81 8d a0 85 9d 82 d4 e5 f3 f4 a0 d0 e1 e7 e5 a0 a0 9c 8c 9e 92 f3 96 98 93 80 97 98 81 b0 b5
                94 9a 9e f3 91 99 95 80 95 81 8d a0 85 9d 82 d4 e5 f3 f4 a0 d0 e1 e7 e5 a0 a0 9c 8c 9e 92 f3 96 98 93 80 97 98 81 b0 b5
-               81 80 81 a0 80 a0 81 9e a0 9e a0 97 ac 93 93 96
-               96 92 92 92 95 95 91 91 94 94 94 a0 a0 94 80 81
-               80 81 80 81 80 81 b0 b7 fe ff fe ff fe ff fe ff
-               fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff
-               fe ff fe ff fe ff fe ff fe ff fe ff fe ff b0 b8
-               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80
-               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80
-               81 80 81 80 81 80 b0 b9 fe ff fe ff fe ff fe ff
-               fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff
-               fe ff fe ff fe ff fe ff fe ff fe ff fe ff b1 b0
-               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80
-               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80
-               81 80 81 80 81 80 b1 b1 fe ff fe ff fe ff fe ff
-               fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff
-               fe ff fe ff fe ff fe ff fe ff fe ff fe ff b1 b2
-               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80
-               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80
-               81 80 81 80 81 80 b1 b3 fe ff fe ff fe ff fe ff
-               fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff
-               fe ff fe ff fe ff fe ff fe ff fe ff fe ff b1 b4
-               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80
-               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80
-               81 80 81 80 81 80 b1 b5 fe ff fe ff fe ff fe ff
-               fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff
-               fe ff fe ff fe ff fe ff fe ff fe ff fe ff b1 b6
-               d7 e8 e9 f4 e5 83 d9 e5 ec ec ef f7 86 c3 f9 e1
-               ee 82 c7 f2 e5 e5 ee 85 cd e1 e7 e5 ee f4 e1 81
-               d2 e5 e4 84 c2 ec f5 e5 97 9a a1 a2 a3 93 a4 a5
-               a6 a7 96 a8 a9 aa ab 92 ac ad ae af 99 b0 b1 b2
-               b3 95 b4 b5 b6 b7 91 b8 b9 ba bb 94 bc bd be bf
-               a0 a0 a1 a2 a3 a0 a4 a5 a6 a7 a0 a8 a9 aa ab a0
-               ac ad ae af a0 b0 b1 b2 b3 a0 b4 b5 b6 b7 a0 b8
-               b9 ba bb a0 bc bd be bf a0 c0 c1 c2 c3 a0 c4 c5
-               c6 c7 a0 c8 c9 ca cb a0 cc cd ce cf a0 d0 d1 d2
-               d3 a0 d4 d5 d6 d7 a0 d8 d9 da db a0 dc dd de df
-               a0 e0 e1 e2 e3 a0 e4 e5 e6 e7 a0 e8 e9 ea eb a0
-               ec ed ee ef a0 f0 f1 f2 f3 a0 f4 f5 f6 f7 a0 f8
-               f9 fa fb a0 fc fd fe ff 94 e0 e1 e2 e3 91 e4 e5
-               e6 e7 95 e8 e9 ea eb 92 ec ed ee ef 9a f0 f1 f2
-               f3 96 f4 f5 f6 f7 93 f8 f9 fa fb 97 fc fd fe ff
-               83 98 c3 ef ee e3 e5 e1 ec 88 c6 ec e1 f3 e8 83
-               aa 8b 8b c2 ef f8 89 d3 f4 e5 e1 e4 f9 98 c7 ef
-               ee e5 8a 8a bf 96 de ff 82 45 6e 67 69 6e 65 65
-               72 69 6e 67 20 00 00 00 00 00 00 00 00 00 00 00
-               00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-               00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-               00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-               00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-               00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+               81 80 81 a0 80 a0 81 9e a0 9e a0 97 ac 93 93 96 96 92 92 92 95 95 91 91 94 94 94 a0 a0 94 80 81 80 81 80 81 80 81 b0 b7
+               fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff b0 b8
+               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 b0 b9
+               fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff b1 b0
+               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 b1 b1
+               fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff b1 b2
+               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 b1 b3
+               fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff b1 b4
+               81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 81 80 b1 b5
+               fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff fe ff b1 b6
+               d7 e8 e9 f4 e5 83 d9 e5 ec ec ef f7 86 c3 f9 e1 ee 82 c7 f2 e5 e5 ee 85 cd e1 e7 e5 ee f4 e1 81 d2 e5 e4 84 c2 ec f5 e5
+               97 9a a1 a2 a3 93 a4 a5 a6 a7 96 a8 a9 aa ab 92 ac ad ae af 99 b0 b1 b2 b3 95 b4 b5 b6 b7 91 b8 b9 ba bb 94 bc bd be bf
+               a0 a0 a1 a2 a3 a0 a4 a5 a6 a7 a0 a8 a9 aa ab a0 ac ad ae af a0 b0 b1 b2 b3 a0 b4 b5 b6 b7 a0 b8 b9 ba bb a0 bc bd be bf
+               a0 c0 c1 c2 c3 a0 c4 c5 c6 c7 a0 c8 c9 ca cb a0 cc cd ce cf a0 d0 d1 d2 d3 a0 d4 d5 d6 d7 a0 d8 d9 da db a0 dc dd de df
+               a0 e0 e1 e2 e3 a0 e4 e5 e6 e7 a0 e8 e9 ea eb a0 ec ed ee ef a0 f0 f1 f2 f3 a0 f4 f5 f6 f7 a0 f8 f9 fa fb a0 fc fd fe ff
+               94 e0 e1 e2 e3 91 e4 e5 e6 e7 95 e8 e9 ea eb 92 ec ed ee ef 9a f0 f1 f2 f3 96 f4 f5 f6 f7 93 f8 f9 fa fb 97 fc fd fe ff
+               83 98 c3 ef ee e3 e5 e1 ec 88 c6 ec e1 f3 e8 83 aa 8b 8b c2 ef f8 89 d3 f4 e5 e1 e4 f9 98 c7 ef ee e5 8a 8a bf 96 de ff
+               82 45 6e 67 69 6e 65 65 72 69 6e 67 20 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+               00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+               00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
                """
     pass
 
@@ -333,7 +304,8 @@ class c_test_one(simple_tb.base_th):
         self.bfm_wait(1)
         if self.ch_valid_pipeline.pop(0):
             if (self.ios.pixels__valid.value()==0):
-                die
+                self.failtest(0,"Expected a valid pixel out of teletext pipeline, but did not get one")
+                #return
             rgb = (self.ios.pixels__red.value(),
                    self.ios.pixels__green.value(),
                    self.ios.pixels__blue.value())
