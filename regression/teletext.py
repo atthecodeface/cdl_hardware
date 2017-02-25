@@ -332,7 +332,7 @@ class c_test_one(simple_tb.base_th):
             if type(d)==str: d=ord(d)
             self.ios.character__character.drive(d)
             self.character_tick(1,1)
-            if False:
+            if True:
                 self.character_tick(0,1)
                 pass
             pass

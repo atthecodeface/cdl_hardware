@@ -1,4 +1,3 @@
-
 /** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
  * @copyright
@@ -42,7 +41,7 @@ typedef bit[3] t_color; // Red in [0], green in [1], blue in [2]
 
 /*t t_character_state
  *
- * State of the character as the line is decoded
+ * State of the character as the line is decoded, used in a number of places in the pipeline
  */
 typedef struct {
     t_color background_color    "Color of background";
@@ -102,7 +101,7 @@ typedef struct {
     bit[5]               pixel_scanline      "Scanline of the character for decode; for double height characters this differs from the timing_state scanline";
     bit[12]              graphics_data       "Decode of teletext_state.character as a graphics character, or possibly the held graphics";
     bit                  use_graphics_data   "Asserted if @a graphics_data should be used for the pixels, deasserted if the rom_scanline_data (possibly smoothed) should be used";
-    bit[12]              held_graphics_data  "Last graphics data character, unless reset by reset_held_graphics; used to replace control characters when in hold_graphics_mode";
+    bit[12]              held_graphics_data  "Last graphics data, unless reset by reset_held_graphics; used to replace control characters when in hold_graphics_mode";
 } t_pixel_state;
 
 /*t t_pixel_combs
@@ -114,185 +113,223 @@ typedef struct {
     bit[5] diagonal_1                 "SW Diagonal detection of ROM scanline data used in smoothing";
     bit[5] diagonal_2                 "NE Diagonal detection of ROM scanline data used in smoothing";
     bit[5] diagonal_3                 "NE Diagonal detection of ROM scanline data used in smoothing";
-    bit[12] smoothed_scanline_data    "Smoothed scanline data generated from the two ROM scanlines depending on the actual scanline and the required smoothing";
+    bit[12] smoothed_scanline_data    "Smoothed scanline data generated from the two registered ROM scanlines depending on the actual scanline and the required smoothing";
 } t_pixel_combs;
 
 /*a Module teletext */
-module teletext( clock clk     "Character clock",
-                 input bit reset_n,
+module teletext( clock clk                                "Character clock",
+                 input bit reset_n                        "Active low reset",
                  input t_teletext_character    character  "Parallel character data in, with valid signal",
                  input t_teletext_timings      timings    "Timings for the scanline, row, etc",
-                 output t_teletext_rom_access  rom_access "Teletext ROM access",
+                 output t_teletext_rom_access  rom_access "Teletext ROM access, registered output",
                  input bit[45]                 rom_data   "Teletext ROM data, valid in cycle after rom_access",
-                 output t_teletext_pixels pixels       "Output pixels, two clock ticks delayed from clk in"
+                 output t_teletext_pixels pixels          "Output pixels, three clock ticks delayed from valid data in"
        )
     /*b Documentation */
 """
- * This is an implementaion of the core of a teletext decoder, for
- * arbitrary sized teletext output displays.
- *
- * The output is supplied at 12 pixels per clock (one character width)
- * The input is a byte of per clock of character data.
- *
- * The implementation does not currently support double width or
- * double size characters.
- *
-Teletext characters are displayed from a 12x20 grid.
-The ROM characters have two background rows, and then are displayed with 2 background pixels on the left, and then 10 pixels from the ROM
-The ROM is actually 5x9, and it is doubled to 10x18
-Doubling without smoothing can be achieved be true doubling
+This is an implementaion of the core of a presentation level 1.0
+teletext decoder, for arbitrary sized teletext output displays.
+
+The output is supplied at 12 pixels per clock (one character width)
+The input is a byte of per clock of character data.
+
+The implementation does not currently support double width or
+double size characters - they are not presentation level 1.0 features.
+
+Teletext characters are displayed from a 12x20 grid. The ROM
+characters have two background rows, and then are displayed with 2
+background pixels on the left, and then 10 pixels from the ROM The ROM
+is actually 5x9, and it is doubled to 10x18.
+
+The type of pixel doubling is controlled with the @a timings input. It
+can be pure doubling, or smoothed. Some outputs may not want to use
+the doubling, for which the best approach is to request only even
+scanlines (in the @a timings) and to not smoothe, and then to select
+alternate pixel color values from the output bus.
+
+### Doubling
+
+Doubling without smoothing can be achieved be true doubling of pixels
 
 A simple smoothing can be performed for a pixel depending on its NSEW neighbors:
 
-  |NN|
-  |NN|
-WW|ab|EE
-WW|cd|EE
-  |SS|
-  |SS|
 
-a is filled if the pixel is filled itself, or if N&W
-b is filled if the pixel is filled itself, or if N&E
-c is filled if the pixel is filled itself, or if S&W
-d is filled if the pixel is filled itself, or if S&E
+      |NN|
+      |NN|
+    WW|ab|EE
+    WW|cd|EE
+      |SS|
+      |SS|
+
+* a is filled if the pixel is filled itself, or if N&W
+
+* b is filled if the pixel is filled itself, or if N&E
+
+* c is filled if the pixel is filled itself, or if S&W
+
+* d is filled if the pixel is filled itself, or if S&E
 
 Hence one would get:
-..|**|**|**|..|
-..|**|**|**|..|
----------------
-**|..|..|**|**|
-**|..|..|**|**|
----------------
-..|**|..|..|**|
-..|**|..|..|**|
+
+    |..|**|**|**|..|
+    |..|**|**|**|..|
+    |---------------
+    |**|..|..|**|**|
+    |**|..|..|**|**|
+    |---------------
+    |..|**|..|..|**|
+    |..|**|..|..|**|
 
 smoothed to:
-..|**|**|**|..|
-.*|**|**|**|*.|
----------------
-**|*.|.*|**|**|
-**|*.|..|**|**|
----------------
-.*|**|..|.*|**|
-..|**|..|..|**|
+
+    |..|**|**|**|..|
+    |.*|**|**|**|*.|
+    |---------------
+    |**|*.|.*|**|**|
+    |**|*.|..|**|**|
+    |---------------
+    |.*|**|..|.*|**|
+    |..|**|..|..|**|
 
 Or, without intervening lines:
-..******..
-..******..
-**....****
-**....****
-..**....**
-..**....**
+
+    |..******..|
+    |..******..|
+    |**....****|
+    |**....****|
+    |..**....**|
+    |..**....**|
 
 smoothed to:
-..******..
-.********.
-***..*****
-***...****
-.***...***
-..**....**
+
+    |..******..|
+    |.********.|
+    |***..*****|
+    |***...****|
+    |.***...***|
+    |..**....**|
 
 So for even scanlines ('a' and 'b') the smoother needs row n and row n-1.
-a is set if n[x] or n[x-left]&(n-1)[x]
-b is set if n[x] or n[x-right]&(n-1)[x]
+
+* a is set if n[x] or n[x-left]&(n-1)[x]
+
+* b is set if n[x] or n[x-right]&(n-1)[x]
 
 For odd scanlines ('c' and 'd') the smoother needs row n and row n+1.
-c is set if n[x] or n[x-left]&(n+1)[x]
-d is set if n[x] or n[x-right]&(n+1)[x]
+
+* c is set if n[x] or n[x-left]&(n+1)[x]
+
+* d is set if n[x] or n[x-right]&(n+1)[x]
 
 This method has the unfortunate impact of smoothing two crossing lines, such as a plus:
-....**....     ....**....
-....**....     ....**....
-....**....     ....**....
-....**....     ...****...
-**********     **********
-**********     **********
-....**....     ...****...
-....**....     ....**....
-....**....     ....**....
-....**....     ....**....
+
+    |....**....|     |....**....|
+    |....**....|     |....**....|
+    |....**....|     |....**....|
+    |....**....|     |...****...|
+    |**********|     |**********|
+    |**********|     |**********|
+    |....**....|     |...****...|
+    |....**....|     |....**....|
+    |....**....|     |....**....|
+    |....**....|     |....**....|
+
 
 Hence a better smoothing can be performed for a pixel depending on all its neighbors:
 
-NW|NN|NE
-  |NN|
-WW|ab|EE
-WW|cd|EE
-  |SS|
-SW|SS|SE
+    |NW|NN|NE|
+    |  |NN|  |
+    |WW|ab|EE|
+    |WW|cd|EE|
+    |  |SS|  |
+    |SW|SS|SE|
 
-a is filled if the pixel is filled itself, or if (N&W) but not NW
-b is filled if the pixel is filled itself, or if (N&E) but not NE
-c is filled if the pixel is filled itself, or if (S&W) but not SW
-d is filled if the pixel is filled itself, or if (S&E) but not SE
+* a is filled if the pixel is filled itself, or if (N&W) but not NW
+
+* b is filled if the pixel is filled itself, or if (N&E) but not NE
+
+* c is filled if the pixel is filled itself, or if (S&W) but not SW
+
+* d is filled if the pixel is filled itself, or if (S&E) but not SE
 
 Hence one would get:
-..|**|**|**|..|
-..|**|**|**|..|
----------------
-**|..|..|**|**|
-**|..|..|**|**|
----------------
-..|**|..|..|**|
-..|**|..|..|**|
+
+    |..|**|**|**|..|
+    |..|**|**|**|..|
+    |---------------
+    |**|..|..|**|**|
+    |**|..|..|**|**|
+    |---------------
+    |..|**|..|..|**|
+    |..|**|..|..|**|
 
 smoothed to:
-..|**|**|**|..|
-.*|**|**|**|..|
----------------
-**|*.|..|**|**|
-**|*.|..|**|**|
----------------
-.*|**|..|..|**|
-..|**|..|..|**|
+
+    |..|**|**|**|..|
+    |.*|**|**|**|..|
+    |---------------
+    |**|*.|..|**|**|
+    |**|*.|..|**|**|
+    |---------------
+    |.*|**|..|..|**|
+    |..|**|..|..|**|
 
 Or, without intervening lines:
-..******..
-..******..
-**....****
-**....****
-..**....**
-..**....**
+
+    |..******..|
+    |..******..|
+    |**....****|
+    |**....****|
+    |..**....**|
+    |..**....**|
 
 smoothed to:
-..******..
-.*******..
-***...****
-***...****
-.***....**
-..**....**
+
+    |..******..|
+    |.*******..|
+    |***...****|
+    |***...****|
+    |.***....**|
+    |..**....**|
 
 So for even scanlines ('a' and 'b') the smoother needs row n and row n-1.
-a is set if n[x] or (n[x-left]&(n-1)[x]) &~ (n-1)[x-left]
-b is set if n[x] or (n[x-right]&(n-1)[x]) &~ (n-1)[x-right]
+
+*a is set if n[x] or (n[x-left]&(n-1)[x]) &~ (n-1)[x-left]
+
+*b is set if n[x] or (n[x-right]&(n-1)[x]) &~ (n-1)[x-right]
 
 For odd scanlines ('c' and 'd') the smoother needs row n and row n+1.
-c is set if n[x] or (n[x-left]&(n+1)[x]) &~ (n+1)[x-left]
-d is set if n[x] or (n[x-right]&(n+1)[x]) &~ (n+1)[x-left]
 
+*c is set if n[x] or (n[x-left]&(n+1)[x]) &~ (n+1)[x-left]
+
+*d is set if n[x] or (n[x-right]&(n+1)[x]) &~ (n+1)[x-left]
+
+
+## Graphics
 Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
-000111 .00.11
-000111 .00.11
-000111 ......
-222333 .22.33
-222333 .22.33
-222333 .22.33
-222333 ......
-444555 .44.55
-444555 .44.55
-444555 ......
+
+    |000111| |.00.11|
+    |000111| |.00.11|
+    |000111| |......|
+    |222333| |.22.33|
+    |222333| |.22.33|
+    |222333| |.22.33|
+    |222333| |......|
+    |444555| |.44.55|
+    |444555| |.44.55|
+    |444555| |......|
 
 """
 {
     /*b Defaults */
     default reset active_low reset_n;
     default clock clk;
-    clocked t_timing_state    timing_state = {*=0};
+    clocked t_timing_state    timing_state = {*=0}        "Record of which scanline and flashing, and so on; valid throughout a scanline";
     clocked t_teletext_character character_buffer = {*=0} "Character buffer to hold data while presenting ROM access";
-    clocked t_teletext_state  teletext_state = {*=0};
-    comb    t_teletext_combs  teletext_combs;
-    comb    t_pixel_combs     pixel_combs    "Decode of teletext_state and rom_data";
-    clocked t_pixel_state pixel_state={*=0};
+    clocked t_teletext_state  teletext_state = {*=0}      "Teletext character state and graphics decode, one cycle later than @a character_buffer";
+    comb    t_teletext_combs  teletext_combs              "Decode of the teletext state - determines graphics mode, colors, etc, and graphics character scanline data";
+    clocked t_pixel_state     pixel_state={*=0}           "State from which the pixels are generated; registered data from the @a teletext_combs";
+    comb    t_pixel_combs     pixel_combs                 "Decode of @a pixel_state to generate output pixels";
 
     /*b Timing control and character buffer stage */
     scanline_and_loading """
@@ -454,6 +491,11 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
     code only effects the following characters (as being in text mode,
     foreground color red).
 
+    The graphics data that a character represents is also created;
+    this will only be used if a graphics character is to be presented,
+    but its generation parallels the ROM reading of the character
+    scanline data so they are valid at the same time.
+    
     This work is performed while the ROM data (for text characters) is
     being read.
     """: {
@@ -549,6 +591,13 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
 
     /*b Pixel state logic - register ROM data and decoded graphics data */
     pixel_state_logic """
+    Register the required scanlines of the character ROM, and store
+    the appropriate graphics data to be used (if graphics is to be
+    used instead of the text scanline data).
+
+    Also, determine which color should be used as foreground - if
+    flashing and the flash counter indicates 'flash off', then the
+    background color replaces the foreground color in the state.
     """: {
         /*b Select scanline of ROM data for pixel and store it */
         full_switch (teletext_state.pixel_scanline[4;1]) {
@@ -602,6 +651,7 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
         pixel_state.character       <= teletext_state.character; // for the valid
         if (!teletext_state.character.valid) {
             pixel_state <= pixel_state;
+            pixel_state.character.valid <= 0;
         }
         pixel_state.character_state <= teletext_combs.set_at_character_state; // for the colors
         if (!timing_state.flash_on && teletext_combs.set_at_character_state.flashing) {
@@ -613,6 +663,9 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
 
     /*b Pixel combinatorials - smoothe text, select text/graphics data */
     pixel_comb_logic """
+    Smoothe the register scanline data, and select either that data or
+    the graphics data, as determined in the previous cycle and stored
+    in @a pixel_state.
     """: {
         /*b Create 'diagonals' for the character scanlines */
         pixel_combs.diagonal_0 = pixel_state.rom_scanline_data[5;5] & bundle(pixel_state.rom_scanline_data[4;0], 1b0);
@@ -674,7 +727,7 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
     output_pixel_selection """
     Generate output pixels by selecting the foreground or background
     color, based on either the character data or the graphics data
-    which is presented as pixel_comvs.smoothed_scanline_data.
+    which is presented as @a pixel_combs.smoothed_scanline_data.
 
     For flashing colors the foreground_color should have already been
     changed (if flash off) to match the background color, so no need
