@@ -1,3 +1,4 @@
+
 /** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
  * @copyright
@@ -34,83 +35,91 @@ constant integer max_flashing_count=40;
 /*a Types */
 /*t t_color
  *
- * Three-bit color, one bit for R, G and B
+ * Three-bit color, one bit for R, G and B; this suffices for teletext
+ * output
  */
-typedef bit[3] t_color;
+typedef bit[3] t_color; // Red in [0], green in [1], blue in [2]
 
 /*t t_character_state
  *
  * State of the character as the line is decoded
  */
 typedef struct {
-    bit[3] background_color;
-    bit[3] foreground_color;
-    bit    held_character;
-    bit    flashing;
-    bit    text_mode;
-    bit    contiguous_graphics;
-    bit    dbl_height;
-    bit    hold_graphics;
-    bit    reset_held_graphics;
+    t_color background_color    "Color of background";
+    t_color foreground_color    "Color of text and graphics";
+    bit     flashing            "Asserted if the foreground  is flashing";
+    bit     text_mode           "Asserted if the characters should be displayed as text, rather than 6-element graphics";
+    bit     contiguous_graphics "Asserted if 6-element graphics should be smoothly connected; deasserted for separated elements";
+    bit     double_height       "Asserted if the current character should be displayed double height";
+    bit     hold_graphics_mode  "Asserted if the 'hold graphics' mode is engaged";
+    bit     reset_held_graphics "Asserted if the character decodes to a control character that clears the held graphics data to space";
 } t_character_state;
-
-/*t t_load_state
- *
- */
-typedef struct {
-    t_teletext_character character;
-} t_load_state;
 
 /*t t_timing_state
  *
+ * State of the teletext frame / scanlines, to determine which part of
+ * characters is to be displayed
  */
 typedef struct {
-    bit[5] scanline;
-    bit last_scanline;
-    t_teletext_timings timings;
-    bit[6] flashing_counter; // 50 fields per second, 3/4 second, max of ~40, flash on at 10
-    bit    flash_on;
-    bit    scanline_displayed "Asserted if there has been a valid character in the scanline";
+    bit[5] scanline             "Scanline of character, 0 to 19; if interlaced output then 0 to 18 or 1 to 19, in twos";
+    bit    last_scanline        "Asserted if on the last scanline of characters; scanline of 18 for even interlace, 19 otherwise";
+    t_teletext_timings timings  "Timings as supplied by the client; effectively hsync, vsync, and how to interlace or not, etc";
+    bit[6] flashing_counter     "Up-counter to determine the output color for flashing pixels; pixels turn on (foreground) if flashing_counter>flashing_on_count, counter maxes at max_flashing_count";
+    bit    flash_on             "Asserted if flashing pixels should be foreground color; deasserted if they should be background";
+    bit    scanline_displayed   "Asserted if there has been a valid character provided in the scanline";
 } t_timing_state;
-
-/*t t_teletext_combs
- *
- */
-typedef struct {
-    t_character_state next_character_state;
-    t_character_state current_character_state;
-    bit can_be_replaced_with_hold;
-    bit[5] pixel_scanline;
-} t_teletext_combs;
 
 /*t t_teletext_state
  *
+ * State of the line and character, valid one cycle after the input character
  */
 typedef struct {
-    t_teletext_character character "Used for graphics decode";
-    t_character_state character_state;
-    bit row_contains_dbl_height;
-    bit last_row_contained_dbl_height;
+    t_teletext_character character            "Registered version of input_character, used for graphics decode; this matches the character data being fetched by the ROM";
+    t_character_state character_state         "State prior to any set-at effects of the current input character";
+    bit row_contains_double_height            "Asserted if the row has had any double-height control characters";
+    bit last_row_was_double_height_top        "Asserted if the last row had the top of any double-height control characters";
+    bit[5] pixel_scanline                     "Scanline of the character for decode; for double height characters this differs from the timing_state scanline";
 } t_teletext_state;
+
+/*t t_teletext_combs
+ *
+ * Combinatorial decode of the current state and the input character
+ */
+typedef struct {
+    t_character_state set_at_character_state "State of current character given current character state and input character; incorporates set-at effects of the input character";
+    t_character_state set_after_character_state    "State of next character given current character state and input character; incorporates set-at and set-after effects of the input character";
+} t_teletext_combs;
 
 /*t t_pixel_combs
  *
+ * Decode of character ROM output and teletext_state, for storing in pixel_state
  */
 typedef struct {
-    bit[10] rom_scanline_data;
-    bit[12] graphics_data;
-    bit[12] smoothed_scanline_data;
-    bit[5] diagonal_0;
-    bit[5] diagonal_1;
-    bit[5] diagonal_2;
-    bit[5] diagonal_3;
+    bit[10] rom_scanline_data         "Two scanlines of the character data from the ROM";
+    bit[5] diagonal_0                 "SE Diagonal detection of ROM scanline data used in smoothing";
+    bit[5] diagonal_1                 "SW Diagonal detection of ROM scanline data used in smoothing";
+    bit[5] diagonal_2                 "NE Diagonal detection of ROM scanline data used in smoothing";
+    bit[5] diagonal_3                 "NE Diagonal detection of ROM scanline data used in smoothing";
+    bit[12] smoothed_scanline_data    "Smoothed scanline data generated from the two ROM scanlines depending on the actual scanline and the required smoothing";
+    bit[12] graphics_data             "Scanline of contiguous/separated 6-element graphics data given teletext_state.character";
 } t_pixel_combs;
 
-/*t t_output_state */
+/*t t_pixel_state
+ *
+ * State of the pixels, valid two cycles after the input character; depends on teletext_state and the character ROM output
+ */
 typedef struct {
-    t_character_state character_state;
-    bit[12] held_graphics_data;
-    t_color[12] colors;
+    t_teletext_character character            "Registered version of input_character, used for graphics decode; this matches the character data being fetched by the ROM";
+    t_character_state character_state     "Character state";
+    bit[12]           held_graphics_data;
+} t_pixel_state;
+
+/*t t_output_state
+ *
+ * State of the pixels, valid two cycles after the input character; depends on teletext_state and the character ROM output
+ */
+typedef struct {
+    t_color[12]       colors;
     bit valid;
 } t_output_state;
 
@@ -284,19 +293,17 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
     /*b Defaults */
     default reset active_low reset_n;
     default clock clk;
-    clocked t_load_state      load_state = {*=0};
     clocked t_timing_state    timing_state = {*=0};
     clocked t_teletext_state  teletext_state = {*=0};
     clocked t_teletext_rom_access  rom_access = {*=0};
     comb    t_teletext_combs  teletext_combs;
-    comb    t_pixel_combs     pixel_combs;
+    comb    t_pixel_combs     pixel_combs    "Decode of teletext_state and rom_data";
+    clocked t_pixel_state pixel_state={*=0};
     clocked t_output_state output_state={*=0};
 
-    /*b Timing control and load_state stage */
+    /*b Timing control and character buffer stage */
     scanline_and_loading """
     """: {
-        load_state.character <= character;
-
         rom_access.select <= 0;
         if (character.valid) {
             rom_access <= {select=1,
@@ -335,7 +342,7 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
         if (timings.end_of_scanline) {
             timing_state.scanline_displayed <= 0;
         }
-        if (load_state.character.valid) {
+        if (teletext_state.character.valid) {
             timing_state.scanline_displayed <= 1;
         }
 
@@ -362,88 +369,88 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
           rest are 'set-after'.
           'set-at' means it takes immediate effect for this character, 'set-after' just for the following characters
          */
-        teletext_combs.next_character_state    = teletext_state.character_state;
-        teletext_combs.current_character_state = teletext_state.character_state;
-        teletext_combs.can_be_replaced_with_hold = 1;
-        teletext_combs.current_character_state.reset_held_graphics = 0;
-        part_switch (load_state.character.character) {
+        teletext_combs.set_after_character_state    = teletext_state.character_state;
+        teletext_combs.set_at_character_state = teletext_state.character_state;
+        teletext_combs.set_at_character_state.reset_held_graphics = 0;
+        teletext_combs.set_after_character_state.reset_held_graphics = 0; // should always be clear, only 'current' is used
+        part_switch (teletext_state.character.character) {
         case 0: { // probably also the other un-interpreted <32 characters...
-            teletext_combs.can_be_replaced_with_hold = 1;
+            teletext_combs.set_at_character_state.reset_held_graphics = 0;
         }
         case 1,2,3,4,5,6,7: {
-            teletext_combs.next_character_state.foreground_color = load_state.character.character[3;0];
-            teletext_combs.next_character_state.text_mode = 1;
-            teletext_combs.current_character_state.hold_graphics = 0; // Note that this is leaving mosaics mode
-            teletext_combs.next_character_state.hold_graphics = 0; // immediately... hence no hold for this
-            teletext_combs.current_character_state.reset_held_graphics = !teletext_state.character_state.text_mode;
+            teletext_combs.set_after_character_state.foreground_color = teletext_state.character.character[3;0];
+            teletext_combs.set_after_character_state.text_mode = 1;
+            teletext_combs.set_after_character_state.hold_graphics_mode = 0; // Leaving graphics set-after, immediately... hence no hold for this
+            teletext_combs.set_at_character_state.hold_graphics_mode = 0; // Although documented as set-after, it appears that the text-mode side is set-at
+            teletext_combs.set_at_character_state.reset_held_graphics = !teletext_state.character_state.text_mode;
         }
-        case 8: { teletext_combs.next_character_state.flashing = 1; }
+        case 8: { teletext_combs.set_after_character_state.flashing = 1; }
         case 9: { // steady is set-at
-            teletext_combs.current_character_state.flashing = 0;
-            teletext_combs.next_character_state.flashing = 0;
+            teletext_combs.set_at_character_state.flashing = 0;
+            teletext_combs.set_after_character_state.flashing = 0;
             // does this reset the held graphics?
         }
         case 17,18,19,20,21,22,23: {
-            teletext_combs.next_character_state.foreground_color = load_state.character.character[3;0];
-            teletext_combs.next_character_state.text_mode = 0;
-            teletext_combs.current_character_state.reset_held_graphics = teletext_state.character_state.text_mode;
+            teletext_combs.set_after_character_state.foreground_color = teletext_state.character.character[3;0];
+            teletext_combs.set_after_character_state.text_mode = 0;
+            teletext_combs.set_at_character_state.reset_held_graphics = teletext_state.character_state.text_mode;
             // does this reset the held graphics?
         }
         case 12: { // normal size is set-at
-            teletext_combs.current_character_state.dbl_height = 0;
-            teletext_combs.next_character_state.dbl_height    = 0;
-            teletext_combs.current_character_state.reset_held_graphics = 1;
+            teletext_combs.set_at_character_state.double_height = 0;
+            teletext_combs.set_after_character_state.double_height    = 0;
+            teletext_combs.set_at_character_state.reset_held_graphics = 1;
             // does this reset the held graphics?
         }
         case 13: { // double height is set-after
-            teletext_combs.current_character_state.reset_held_graphics = 1;
-            teletext_combs.next_character_state.dbl_height = 1;
+            teletext_combs.set_at_character_state.reset_held_graphics = 1;
+            teletext_combs.set_after_character_state.double_height = 1;
             // does this reset the held graphics?
         }
         case 25: { // contiguous graphics is set-at
-            teletext_combs.current_character_state.contiguous_graphics = 1;
-            teletext_combs.next_character_state.contiguous_graphics = 1;
+            teletext_combs.set_at_character_state.contiguous_graphics = 1;
+            teletext_combs.set_after_character_state.contiguous_graphics = 1;
         }
         case 26: { // separated graphics is set-at
-            teletext_combs.current_character_state.contiguous_graphics = 0;
-            teletext_combs.next_character_state.contiguous_graphics = 0;
+            teletext_combs.set_at_character_state.contiguous_graphics = 0;
+            teletext_combs.set_after_character_state.contiguous_graphics = 0;
         }
         case 28: { // black background is set-at
-            teletext_combs.current_character_state.background_color = 0;
-            teletext_combs.next_character_state.background_color = 0;
+            teletext_combs.set_at_character_state.background_color = 0;
+            teletext_combs.set_after_character_state.background_color = 0;
         }
         case 29: { // new background is set-at
-            teletext_combs.current_character_state.background_color = teletext_state.character_state.foreground_color;
-            teletext_combs.next_character_state.background_color    = teletext_state.character_state.foreground_color;
+            teletext_combs.set_at_character_state.background_color = teletext_state.character_state.foreground_color;
+            teletext_combs.set_after_character_state.background_color    = teletext_state.character_state.foreground_color;
         }
         case 30: { // hold mode is set-at
-            teletext_combs.current_character_state.hold_graphics = 1; // note that a held character is the last graphics character INCLUDING separated or not
-            teletext_combs.next_character_state.hold_graphics = 1;
+            teletext_combs.set_at_character_state.hold_graphics_mode = 1; // note that a held character is the last graphics character INCLUDING separated or not
+            teletext_combs.set_after_character_state.hold_graphics_mode = 1;
         }
         case 31: { // release graphics is set-after
-            teletext_combs.next_character_state.hold_graphics = 0;
+            teletext_combs.set_after_character_state.hold_graphics_mode = 0;
         }
-        default: {
-            teletext_combs.can_be_replaced_with_hold = 0;
+        case  10, 11, 14, 15, 16, 24, 27:{
+            teletext_combs.set_at_character_state.reset_held_graphics = 0;
         }
         }
 
         /*b Determine scanline - using double height if necessary */
-        teletext_combs.pixel_scanline = timing_state.scanline;
-        if (teletext_state.character_state.dbl_height) {
-            teletext_combs.pixel_scanline = bundle(1b0,timing_state.scanline[4;1]);
-            if (teletext_state.last_row_contained_dbl_height) {
-                teletext_combs.pixel_scanline = teletext_combs.pixel_scanline + 10;
+        teletext_state.pixel_scanline <= timing_state.scanline;
+        if (teletext_state.character_state.double_height) {
+            teletext_state.pixel_scanline <= bundle(1b0,timing_state.scanline[4;1]);
+            if (teletext_state.last_row_was_double_height_top) {
+                teletext_state.pixel_scanline <= bundle(1b0,timing_state.scanline[4;1]) + 10;
             }
         }
 
         /*b Handle change of control state at end of character */
         teletext_state.character.valid <= 0;
-        if (load_state.character.valid) {
-            teletext_state.character <= load_state.character;
-            teletext_state.character_state  <= teletext_combs.next_character_state;
-            if (teletext_combs.current_character_state.dbl_height) {
-                teletext_state.row_contains_dbl_height <= 1;
+        if (character.valid) {
+            teletext_state.character <= character;
+            teletext_state.character_state  <= teletext_combs.set_after_character_state;
+            if (teletext_combs.set_at_character_state.double_height) {
+                teletext_state.row_contains_double_height <= 1;
             }
         }
 
@@ -451,24 +458,23 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
         if (timing_state.timings.end_of_scanline) {
             teletext_state.character_state.background_color <= 0;
             teletext_state.character_state.foreground_color <= 3b111;
-            teletext_state.character_state.held_character <= 0;
             teletext_state.character_state.flashing <= 0;
-            teletext_state.character_state.dbl_height <= 0;
+            teletext_state.character_state.double_height <= 0;
             teletext_state.character_state.text_mode <= 1;
-            teletext_state.character_state.hold_graphics <= 0;
+            teletext_state.character_state.hold_graphics_mode <= 0;
             teletext_state.character_state.contiguous_graphics <= 1;
         }
 
         /*b Handle reset of control state at end of character row */
         if (timing_state.timings.end_of_scanline && timing_state.last_scanline) {
-            teletext_state.last_row_contained_dbl_height <= teletext_state.row_contains_dbl_height ^ teletext_state.last_row_contained_dbl_height;
-            teletext_state.row_contains_dbl_height <= 0;
+            teletext_state.last_row_was_double_height_top <= teletext_state.row_contains_double_height ^ teletext_state.last_row_was_double_height_top;
+            teletext_state.row_contains_double_height <= 0;
         }
 
         /*b Handle reset of control state at end of field */
         if (timing_state.timings.restart_frame) {
-            teletext_state.last_row_contained_dbl_height <= 0;
-            teletext_state.row_contains_dbl_height <= 0;
+            teletext_state.last_row_was_double_height_top <= 0;
+            teletext_state.row_contains_double_height <= 0;
         }
     }
 
@@ -476,7 +482,7 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
     character_rom_and_pixel_generation """
     """: {
         /*b Select scanline of ROM data for pixel */
-        full_switch (teletext_combs.pixel_scanline[4;1]) { //scanline_of_character changes every scanline, so no need to have a pixel pipeline stage version
+        full_switch (teletext_state.pixel_scanline[4;1]) { //scanline_of_character changes every scanline, so no need to have a pixel pipeline stage version
         case 0: { pixel_combs.rom_scanline_data = bundle(rom_data[5;0],5b0); }
         case 1: { pixel_combs.rom_scanline_data = rom_data[10;0]; }
         case 2: { pixel_combs.rom_scanline_data = rom_data[10;5]; }
@@ -499,7 +505,7 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
         pixel_combs.diagonal_1 = pixel_combs.diagonal_1 &~ bundle(1b0,pixel_combs.rom_scanline_data[4;6]);
         pixel_combs.diagonal_2 = pixel_combs.diagonal_2 &~ bundle(pixel_combs.rom_scanline_data[4;0], 1b0);
         pixel_combs.diagonal_3 = pixel_combs.diagonal_3 &~ bundle(1b0,pixel_combs.rom_scanline_data[4;1]);
-        if (!teletext_combs.pixel_scanline[0]) {
+        if (!teletext_state.pixel_scanline[0]) {
             pixel_combs.smoothed_scanline_data = bundle( 2b0,
                                                          pixel_combs.rom_scanline_data[4]|pixel_combs.diagonal_1[4],
                                                          pixel_combs.rom_scanline_data[4]|pixel_combs.diagonal_0[4],
@@ -537,41 +543,45 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
 
         /*b Generate graphcis data */
         pixel_combs.graphics_data = 12h00;
-        full_switch (teletext_combs.pixel_scanline[4;1]) {
+        full_switch (teletext_state.pixel_scanline[4;1]) { // could perhaps use a state version of this
         case 0, 1, 2: {
-            pixel_combs.graphics_data = (teletext_state.character.character[0]?12hfc0:12h0) | (teletext_state.character.character[1]?12h03f:12h0);
+            pixel_combs.graphics_data = (pixel_state.character.character[0]?12hfc0:12h0) | (pixel_state.character.character[1]?12h03f:12h0);
         }
         case 7,8,9: {
-            pixel_combs.graphics_data = (teletext_state.character.character[4]?12hfc0:12h0) | (teletext_state.character.character[6]?12h03f:12h0);
+            pixel_combs.graphics_data = (pixel_state.character.character[4]?12hfc0:12h0) | (pixel_state.character.character[6]?12h03f:12h0);
         }
         default: {
-            pixel_combs.graphics_data = (teletext_state.character.character[2]?12hfc0:12h0) | (teletext_state.character.character[3]?12h03f:12h0);
+            pixel_combs.graphics_data = (pixel_state.character.character[2]?12hfc0:12h0) | (pixel_state.character.character[3]?12h03f:12h0);
         }
         }
-        if (!output_state.character_state.contiguous_graphics) {
+        if (!pixel_state.character_state.contiguous_graphics) {
             pixel_combs.graphics_data[2;10] = 2b00;
             pixel_combs.graphics_data[2; 4]  = 2b00;
-            part_switch (teletext_combs.pixel_scanline[4;1]) {
+            part_switch (teletext_state.pixel_scanline[4;1]) {
             case 2, 6, 9: {pixel_combs.graphics_data = 0;}
             }
         }
 
         /*b Override character ROM if in graphics mode or held*/
-        if (!output_state.character_state.text_mode) {
-            if (teletext_state.character.character[5]) {
+        if (!pixel_state.character_state.text_mode) { // actually mirrors the state, since text/graphics mode is set-after
+            if (pixel_state.character.character[5]) {
                 pixel_combs.smoothed_scanline_data = pixel_combs.graphics_data;
-                output_state.held_graphics_data <= pixel_combs.graphics_data;
             }
         }
-        if (output_state.character_state.hold_graphics && (teletext_state.character.character[2;5]==0)) {
-            pixel_combs.smoothed_scanline_data = output_state.held_graphics_data;
+        if (pixel_state.character_state.hold_graphics_mode && (pixel_state.character.character[2;5]==0)) {
+            pixel_combs.smoothed_scanline_data = pixel_state.held_graphics_data^12h401;
+        }
+        if (!pixel_state.character_state.text_mode) {
+            if (pixel_state.character.character[5]) {
+                pixel_state.held_graphics_data <= pixel_combs.graphics_data;
+            }
         }
 
         if (timing_state.timings.end_of_scanline) {
-            output_state.held_graphics_data <= 0;
+            pixel_state.held_graphics_data <= 0;
         }
-        if (output_state.character_state.reset_held_graphics) {
-            output_state.held_graphics_data <= 0;
+        if (pixel_state.character_state.reset_held_graphics) {
+            pixel_state.held_graphics_data <= 0;
         }
     }
 
@@ -579,14 +589,15 @@ Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
     character_pixel_generation """
     Get two scanlines - current and next (next of 0 if none)
     """: {
-        output_state.character_state <= teletext_combs.current_character_state;
-        output_state.valid <= teletext_state.character.valid;
+        pixel_state.character_state <= teletext_combs.set_at_character_state;
+        pixel_state.character       <= teletext_state.character;
 
         pixels.red = 0;
         pixels.blue = 0;
         pixels.green = 0;
+        output_state.valid           <= pixel_state.character.valid;
         for (i; 12) {
-            output_state.colors[i] <= pixel_combs.smoothed_scanline_data[i] ? output_state.character_state.foreground_color : output_state.character_state.background_color;
+            output_state.colors[i] <= pixel_combs.smoothed_scanline_data[i] ? pixel_state.character_state.foreground_color : pixel_state.character_state.background_color;
         }
         for (i; 12) {
             pixels.red[i]   = output_state.colors[i][0];
