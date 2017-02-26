@@ -51,6 +51,7 @@ cdl cdl/utils/tb_src tb_dprintf_mux  inc:cdl/inc
 cdl cdl/video/src saa5050      inc:cdl/inc
 cdl cdl/video/src crtc6845     inc:cdl/inc
 cdl cdl/video/src framebuffer  inc:cdl/inc
+cdl cdl/video/src framebuffer_timing  inc:cdl/inc
 cdl cdl/video/src framebuffer_teletext  inc:cdl/inc
 cdl cdl/video/src teletext     inc:cdl/inc
 cdl cdl/video/tb_src tb_teletext     inc:cdl/inc
