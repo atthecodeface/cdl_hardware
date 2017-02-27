@@ -82,6 +82,8 @@ module bbc_vidproc( clock clk_cpu         "2MHz bus clock",
     default reset active_low reset_n;
     default clock clk_2MHz_video;
     clocked bit[8] pixel_shift_register=0;
+    clocked bit disen_sr=0;
+    clocked bit disen_pv=0;
     clocked t_palette_entry[8] pixel_values = {*=0};
     comb t_pixel_color[8] pixel_color;
     comb t_pixel_color[8] colors_out;
@@ -112,6 +114,7 @@ module bbc_vidproc( clock clk_cpu         "2MHz bus clock",
         pixel_values[5] <= palette[ bundle(pixel_shift_register[2], pixel_shift_register[0], 2b11) ];
         pixel_values[6] <= palette[ bundle(pixel_shift_register[1], 3b111) ];
         pixel_values[7] <= palette[ bundle(pixel_shift_register[0], 3b111) ];
+        disen_pv <= disen_sr;
         for (i; 8) {
             pixel_color[i] = ~pixel_values[i].base_color;
             if (cursor_r ^ (pixel_values[i].flashing & flash_r)) {
@@ -151,7 +154,7 @@ module bbc_vidproc( clock clk_cpu         "2MHz bus clock",
             pixels_valid_per_clock <= bbc_ppc_1;
         }
         }
-        if (!disen) {
+        if (!disen_pv) {
             for (i; 8) {
                 colors_out[i] = 0;
             }
@@ -188,6 +191,7 @@ module bbc_vidproc( clock clk_cpu         "2MHz bus clock",
         }
         if (crtc_clock_enable) {
             pixel_shift_register <= pixel_data_in;
+            disen_sr <= disen;
             cursor_shift_register <= bundle(cursor_shift_register[3;0],1b0);
             if (cursor) {
                 cursor_shift_register[3] <= control.cursor_segments[2];

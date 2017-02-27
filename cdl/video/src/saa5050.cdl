@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file  saa5050.cdl
  * @brief CDL implementation of Mullard SAA5050
@@ -20,179 +19,96 @@
  * teletext character interpretation to supply 3bpp color video from a
  * bytestream of video memory data.
  *
- * Currently this implementation does not support double-height
- * characters, blanking during control characters, or smoothing. The
- * teletext character ROM is implemented as an SRAM that is filled
- * through a host SRAM request bus - it is not readable.
  */
 /*a Includes */
-include "bbc_submodules.h"
+include "bbc_micro_types.h"
+include "srams.h"
 include "teletext.h"
 
 /*a Types */
 typedef bit[3] t_color;
-/*t t_load_state */
+/*t t_load_state
+ *
+ * Load state, run at the 1MHz clock speed, used to control timing
+ * inputs to the teletext module
+ */
 typedef struct {
-    bit last_lose;
-    bit last_glr;
-    bit end_of_scanline;
-    bit restart_frame;
-    t_teletext_vertical_interpolation interpolate_vertical;
+    bit last_glr         "Asserted if glr (hsync) was asserted in the last cycle, to support rising edge detection of hsync";
+    bit end_of_scanline  "Asserted for a single 1MHz cycle at the end of a scanline";
+    bit restart_frame    "Asserted during vsync to indicate to the teletext module that the frame is restarting";
+    t_teletext_vertical_interpolation interpolate_vertical "Type of interpolation to do, derived from vsync and crs";
 } t_load_state;
 
-/*t t_pixel_state */
+/*t t_pixel_state
+ *
+ * Pixel-level state, used to present the correct data to the output
+ * at 2MHz (since the teletext module presents 12 pixels per 1MHz
+ * 'clock')
+ */
 typedef struct {
-    bit last_valid;
-    bit left_pixels;
+    bit last_valid "Asserted if the pixel data was valid from the teletext module in the last cycle, hence the right-most 6 pixels are still valid for output";
 } t_pixel_state;
 
 /*a Module saa5050 */
-module saa5050( clock clk_2MHz     "Supposedly 6MHz pixel clock (TR6), except we use 2MHz and deliver 3 pixels per tick; rising edge should be coincident with clk_1MHz edges",
+module saa5050( clock clk_2MHz            "Supposedly 6MHz pixel clock (TR6), except we use 2MHz and deliver 3 pixels per tick; rising edge should be coincident with clk_1MHz edges",
                 input bit clk_1MHz_enable "Clock enable high for clk_2MHz when the SAA's 1MHz would normally tick",
-                input bit reset_n,
-                input bit superimpose_n "Not implemented",
-                input bit data_n "Serial data in, not implemented",
-                input bit[7] data_in "Parallel data in",
-                input bit dlim "clocks serial data in somehow (datasheet is dreadful...)",
-                input bit glr "General line reset - can be tied to hsync - assert once per line before data comes in",
-                input bit dew "Data entry window - used to determine flashing rate and resets the ROM decoders - can be tied to vsync",
-                input bit crs "Character rounding select - drive high on even interlace fields to enable use of rounded character data (kinda indicates 'half line')",
-                input bit bcs_n "Assert (low) to enable double-height characters (?) ",
-                output bit tlc_n "Asserted (low) when double-height characters occur (?) ",
-                input bit lose "Load output shift register enable - must be low before start of character data in a scanline, rising with (or one tick earlier?) the data; changes off falling F1, rising clk_1MHz",
-                input bit de "Display enable",
-                input bit po "Picture on",
-                output bit[6] red,
-                output bit[6] green,
-                output bit[6] blue,
-                output bit blan,
+                input bit reset_n         "Active low reset",
+                input bit superimpose_n   "Not implemented",
+                input bit data_n          "Serial data in, not implemented",
+                input bit[7] data_in      "Parallel character data in",
+                input bit dlim            "Not implemented, clocks serial data in somehow",
+                input bit glr             "General line reset, can be tied to hsync - assert once per line before data comes in",
+                input bit dew             "Data entry window - used to determine flashing rate and resets the ROM decoders - can be tied to vsync",
+                input bit crs             "Character rounding select - drive high on even interlace fields to enable use of rounded character data (kinda indicates 'half line')",
+                input bit bcs_n           "Assert (low) to enable double-height characters (?) ",
+                output bit tlc_n          "Asserted (low) when double-height characters occur (?) ",
+                input bit lose            "Load output shift register enable - must be low before start of character data in a scanline, rising with (or one tick earlier?) the data; changes off falling F1, rising clk_1MHz",
+                input bit de              "Display enable",
+                input bit po              "Picture on",
+                output bit[6] red         "Red pixels out, 6 per 2MHz clock tick",
+                output bit[6] green       "Green pixels out, 6 per 2MHz clock tick",
+                output bit[6] blue        "Blue pixels out, 6 per 2MHz clock tick",
+                output bit blan           "Not implemented",
                 input t_bbc_micro_sram_request host_sram_request "Write only, writes on clk_2MHz rising, acknowledge must be handled by supermodule"
        )
     /*b Documentation */
 """
-Teletext characters are displayed from a 12x20 grid.
-The ROM characters have two background rows, and then are displayed with 2 background pixels on the left, and then 10 pixels from the ROM
-The ROM is actually 5x9, and it is doubled to 10x18
-Doubling without smoothing can be achieved be true doubling
-Doubling with smoothing is done on intervening lines:
-
-The ROM A is:
-..*..
-.*.*.
-*...*
-*...*
-*****
-*...*
-*...*
-.....
-.....
-
-So a non-smoothed A is
-....**....
-....**....
-..**..**..
-..**..**..
-**......**
-**......**
-**......**
-**......**
-**********
-**********
-**......**
-**......**
-**......**
-**......**
-..........
-..........
-..........
-..........
-
-..*..
-.*.*.
-*...*
-*...*
-*****
-*...*
-*...*
-.....
-.....
-
-The smoothing is only to smoothe diagonals.
-So the centroids are added on diagonals (baseline requirement...)
-In fact, one can add 2x2 blobs on the diagonals:
-
-A smoothed A is then:
-....**....
-...****...
-..******..
-.***..***.
-***....***
-**......**
-**......**
-**......**
-**********
-**********
-**......**
-**......**
-**......**
-**......**
-..........
-..........
-..........
-..........
-
-
-Graphics characters are 6 blobs on a 6x10 grid (contiguous, separated):
-000111 .00.11
-000111 .00.11
-000111 ......
-222333 .22.33
-222333 .22.33
-222333 .22.33
-222333 ......
-444555 .44.55
-444555 .44.55
-444555 ......
-
-The BBC micro seems to use 19 rows per character, but in practice (since it is interlaced sync and video) it will use 10 in each field, and CRS will be set for even fields
-
-
+This module instantiates the @a teletext module to provide a teletext
+decoder that is compatible with the SAA5050 as it is used in the BBC
+microcomputer (i.e. some features of the chip are not supported, such
+as superimpose).
 """
 {
     /*b Defaults */
     default reset active_low reset_n;
     default clock clk_2MHz;
     gated_clock clock clk_2MHz active_high clk_1MHz_enable clk_1MHz;
-    net bit[64] pixel_rom_data;
-    clocked t_load_state     load_state = {*=0}; // Enabled by clk_1MHz_enable
-    clocked t_pixel_state    pixel_state = {*=0};
+    net bit[64] pixel_rom_data                     "Pixel ROM output data";
+    clocked t_load_state     load_state = {*=0}    "Load state, enabled by the clk_1MHz_enable";
+    clocked t_pixel_state    pixel_state = {*=0}   "Pixel state";
 
-    comb t_teletext_character  tt_character  "Parallel character data in, with valid signal";
-    comb t_teletext_timings    tt_timings    "Timings for the scanline, row, etc";
-    net t_teletext_rom_access  tt_rom_access "Teletext ROM access";
+    comb t_teletext_character  tt_character    "Parallel character data in to teletext module, with valid signal";
+    comb t_teletext_timings    tt_timings      "Timings for the scanline, row, etc";
+    net t_teletext_rom_access  tt_rom_access   "Teletext ROM access";
     net t_teletext_pixels      tt_pixels       "Output pixels, two clock ticks delayed from clk in";
 
-    /*b Timing control and load_state stage (1MHz clock in) - scanline and character loading  */
-    scanline_and_loading """
+    /*b Implementation  */
+    implementation """
+    Maintain some @a load_state in the 1MHz 'domain', to determine
+    when the frame and line complete; also, since the SAA5050 always
+    rounds, use CRS to determine which way to interpolate.
+
+    The @a load_state feeds the @a teletext module (with its character
+    ROM), which does the hard work; it is run at 2MHz but with
+    character data on every other clock tick.
+
+    The @a teletext module delivers 12 pixels per 1MHz clock, and so 6
+    of these are selected per 2MHz clock for the output.
+
+    This leads to three 2MHz clock cycles between input data and
+    output data.
     """: {
-        teletext tt(clk <- clk_1MHz, // Character clock
-                    reset_n <= reset_n,
-                    character <= tt_character,
-                    timings <= tt_timings,
-                    rom_access => tt_rom_access,
-                    rom_data <= pixel_rom_data[45;0],
-                    pixels => tt_pixels );
-
-
-        tt_character = {valid=lose, character=data_in};
-        tt_timings = { restart_frame         = load_state.restart_frame,
-                       end_of_scanline       = load_state.end_of_scanline,
-                       first_scanline_of_row = 0,
-                       smoothe               = 1,
-                       interpolate_vertical =  load_state.interpolate_vertical
-        };
-
-        load_state.last_lose <= lose;
+        /*b Load state */
         load_state.last_glr <= glr;
         if (clk_1MHz_enable) {
             load_state.end_of_scanline <= 0;
@@ -206,10 +122,26 @@ The BBC micro seems to use 19 rows per character, but in practice (since it is i
             load_state.restart_frame <= 1;
         }
 
-        /*b Decode 'character_data' and scanline_of_character in ROM to get 2 lines of character
-        address for ROM is character_data, and we read out 45 bits (5*9).
-        Select appropriate ten bits using scanline_of_character */
-        se_sram_srw_128x64 character_rom(sram_clock     <- clk_1MHz,
+        /*b Prepare inputs to the teletext module */
+        tt_character = { valid=lose & clk_1MHz_enable, character=data_in };
+        tt_timings   = { restart_frame         = load_state.restart_frame,
+                         end_of_scanline       = load_state.end_of_scanline,
+                         first_scanline_of_row = 0,
+                         smoothe               = 1,
+                         interpolate_vertical =  load_state.interpolate_vertical
+        };
+
+        /*b Instantiate the teletext module */
+        teletext tt( clk <- clk_2MHz, // Character clock
+                     reset_n <= reset_n,
+                     character <= tt_character,
+                     timings <= tt_timings,
+                     rom_access => tt_rom_access,
+                     rom_data <= pixel_rom_data[45;0],
+                     pixels => tt_pixels );
+
+        /*b Teletext character ROM */
+        se_sram_srw_128x64 character_rom(sram_clock     <- clk_2MHz,
                                          select         <= 1,
                                          read_not_write <= !host_sram_request.write_enable,
                                          write_enable   <= host_sram_request.write_enable&&(host_sram_request.select==bbc_sram_select_cpu_teletext),
@@ -217,30 +149,19 @@ The BBC micro seems to use 19 rows per character, but in practice (since it is i
                                          write_data     <= host_sram_request.write_data,
                                          data_out       => pixel_rom_data );
 
-    }
-
-    /*b Outputs mapped from teletext module */
-    outputs_from_teletext """
-    """: {
+        /*b Drive outputs depending on when pixels became valid */
         pixel_state.last_valid <= tt_pixels.valid;
-        if (tt_pixels.valid && !pixel_state.last_valid) {
-            pixel_state.left_pixels <= 0;
-        } elsif (tt_pixels.valid) {
-            pixel_state.left_pixels <= !pixel_state.left_pixels;
-        }
         red = 0;
         blue = 0;
         green = 0;
         if (tt_pixels.valid) {
-            if (pixel_state.left_pixels) {
-                red   = tt_pixels.red  [6;6];
-                green = tt_pixels.green[6;6];
-                blue  = tt_pixels.blue [6;6];
-            } else {
-                red   = tt_pixels.red  [6;0];
-                green = tt_pixels.green[6;0];
-                blue  = tt_pixels.blue [6;0];
-            }
+            red   = tt_pixels.red  [6;6];
+            green = tt_pixels.green[6;6];
+            blue  = tt_pixels.blue [6;6];
+        } elsif (pixel_state.last_valid) {
+            red   = tt_pixels.red  [6;0];
+            green = tt_pixels.green[6;0];
+            blue  = tt_pixels.blue [6;0];
         }
         blan = 0;
         tlc_n = 0;

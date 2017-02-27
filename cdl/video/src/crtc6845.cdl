@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file  crtc6845.cdl
  * @brief CDL implementation of 6845 CRTC
@@ -21,111 +20,147 @@
  *
  */
 /*a Types */
-/*t t_horizontal */
+/*t t_horizontal_combs
+ *
+ * Combinatorial decodes of the @a hoizontal_state
+ */
 typedef struct {
-    bit    complete;
-    bit    sync_start;
-    bit    sync_done;
-    bit    display_end;
-    bit    halfway;
-    bit[8] next_counter;
-} t_horizontal;
+    bit    end_of_scanline  "Asserted at the end of a scanline when @horizontal_state.counter equals the total clocks per scanline";
+    bit    sync_start       "Asserted at the start of the hsync pulse when @horizontal_state.counter equals the the @a h_sync_pos";
+    bit    sync_done        "Asserted at the end of the hsync pulse when @horizontal_state.sync_counter equals the the @a h_sync_width";
+    bit    display_end      "Asserted at the end of the display period when @horizontal_state.counter equals the the @a h_displayed-1";
+    bit    halfway          "Asserted at the half-way point of a scanline";
+    bit[8] next_counter     "Incremented value for the counter; used in combinatorials as well as next state";
+} t_horizontal_combs;
 
-/*t t_horizontal_state */
+/*t t_horizontal_state
+ *
+ * State of the horizontal (scanline) timing
+ */
 typedef struct {
-    bit[8] counter;
-    bit[4] sync_counter;
-    bit    sync;
-    bit    display_enable;
+    bit[8] counter        "Up-counter for where in the line the horizontal scan has reached";
+    bit[4] sync_counter   "Up-counter for the horizontal sync pulse to meet the sync width requirement";
+    bit    sync           "Asserted during hsync - set at start of sync pulse, cleared after sync width";
+    bit    display_enable "Asserted from end of back porch to the end of the displayed portion of a scanline, indpendent of scanline number in a frame";
 } t_horizontal_state;
 
-/*t t_vertical */
+/*t t_vertical_combs
+ *
+ * Combinatorial decodes of the @a vertical_state
+ */
 typedef struct {
-    bit    field_restart;
-    bit    sync_start;
-    bit    sync_done;
-    bit    display_end;
-    bit    max_scan_line;
-    bit    row_restart;
-    bit    field_rows_complete;
-    bit    adjust_complete;
-    bit    start_vsync;
-    bit    cursor_start "Asserted if the next scan line is the cursor start scan line";
-    bit    cursor_end   "Asserted if the current scan line is the cursor end scan line";
-    bit[7] next_character_row_counter;
-    bit[5] next_scan_line_counter;
-    bit[5] next_adjust_counter;
-} t_vertical;
+    bit    field_rows_complete  "Asserted for the last character row of every field";
+    bit    display_end          "Asserted for the last displayed character row of every field, prior to the vertical front porch";
+    bit    sync_done            "Asserted for the scanline when vertical_state.sync_counter matches the vertical sync width";
+    bit    start_vsync          "Indicates where in a scanline vsync should start; asserted for a single clock at either the end of a scanline or halfway through the scanline for odd interlaced fields";
+    bit    max_scan_line        "Asserted throughout the last scanline of a character row";
+    bit    adjust_complete      "Asserted at the end of the vertical adjust phase";
+    bit    field_restart        "Asserted at the end of every field for a single tick";
+    bit    row_restart          "Asserted for a single clock tick at the end of the last scanline of a row";
+    bit[7] next_character_row_counter "The character row counter for the next scanline, valid at the end of a row and when @a sync_start is asserted";
+    bit[5] next_scan_line_counter     "The next scanline of the character row, valid at the end of a scanline; ignore during the adjust phase";
+    bit[5] next_adjust_counter        "The next adjust counter; only used in the adjust phase, zeroed when the phase starts (or set to one for odd fields)";
+    bit    sync_start           "Asserted for a single clock at the end of a line, or for odd field interlaced at the middle of a line";
+    bit    cursor_start         "Asserted if the next scan line is the cursor start scan line";
+    bit    cursor_end           "Asserted if the current scan line is the cursor end scan line";
+} t_vertical_combs;
 
-/*t t_vertical_state */
+/*t t_vertical_state
+ *
+ * State of the vertical timing (character rows, scanlines and adjust phase)
+ */
 typedef struct {
-    bit[7] character_row_counter "Character row of video field, incremented when scan_line_counter indicates end of character row";
-    bit[5] scan_line_counter "Scan line within the character row, 0 to control.max_scan_line inclusive";
-    bit[5] adjust_counter    "Counter of number of 'adjust' row for fractional rows-per-field; 1 if in first adjust row...";
-    bit[4] sync_counter      "Counter for vsync pulse width";
-    bit[6] vsync_counter     "Counter incrementing on every vsync, for cursor blinking";
-    bit    doing_adjust      "Asserted for scan lines in 'adjust' row";
-    bit    cursor_line       "Asserted for scan lines >= control.cursor_start <= control.cursor_end";
-    bit    sync;
-    bit    display_enable;
-    bit    even_field;
+    bit[7] character_row_counter  "Character row of video field, incremented when scan_line_counter indicates end of character row";
+    bit[5] scan_line_counter      "Scan line within the character row, 0 to control.max_scan_line inclusive";
+    bit[5] adjust_counter         "Counter of number of 'adjust' row for fractional rows-per-field; 1 if in first adjust row...";
+    bit[4] sync_counter           "Counter for vsync pulse width, incrementing at every hsync or the middle of a line (for odd-field interlaced)";
+    bit[6] vsync_counter          "Counter incrementing on every vsync, for cursor blinking";
+    bit    doing_adjust           "Asserted for scan lines in 'adjust' row";
+    bit    cursor_line            "Asserted for scan lines >= control.cursor_start <= control.cursor_end";
+    bit    sync                   "Asserted for the correct vsync width";
+    bit    display_enable         "Asserted if the current scan line is in the display region";
+    bit    even_field             "Asserted for alternate fields/frames - hence asserted for even fields of interlaced frames";
 } t_vertical_state;
 
-/*t t_address_state */
+/*t t_address_state
+ *
+ * State of the address handler
+ */
 typedef struct {
-    bit[14] memory_address;
-    bit[14] memory_address_line_start;
+    bit[14] memory_address             "Current character memory address";
+    bit[14] memory_address_line_start  "Memory address of the start of the current character row";
 } t_address_state;
 
-/*t t_cursor_decode */
+/*t t_cursor_decode
+ *
+ * Decode of the cursor state
+ */
 typedef struct {
-    bit disabled;
-    bit enable;
-    bit address_match;
+    bit disabled        "Asserted if the cursor is disabled; decode of the cursor state and vsync counter";
+    bit address_match   "Asserted if the control cursor address matches the current character memory address";
+    bit enable          "Asserted if the cursor is not disabled, and the address matches, and the scan line is between the cursor start/end";
 } t_cursor_decode;
 
-/*t t_cursor_mode */
+/*t t_cursor_mode
+ *
+ * Enumeration for the cursor type
+ */
 typedef enum[2] {
-    cursor_mode_steady = 2b00,
-    cursor_mode_invisible = 2b01,
-    cursor_mode_flash_vsync_16 = 2b10,
-    cursor_mode_flash_vsync_32 = 2b11,
+    cursor_mode_steady = 2b00            "Steady cursor, turned on, not flashing",
+    cursor_mode_invisible = 2b01         "No cursor (invisible)",
+    cursor_mode_flash_vsync_16 = 2b10    "Flashing cursor at rate of 16 vsyncs on/off",
+    cursor_mode_flash_vsync_32 = 2b11    "Flashing cursor at rate of 32 vsyncs on/off",
 } t_cursor_mode;
 
-/*t t_cursor_control */
+/*t t_cursor_control
+ *
+ * Configuration of the cursor, written by the CPU
+ *
+ */
 typedef struct {
-    t_cursor_mode mode;
-    bit[5] start;
-    bit[5] end;
-    bit[14] address;
+    t_cursor_mode mode "";
+    bit[5] start       "";
+    bit[5] end         "";
+    bit[14] address    "";
 } t_cursor_control;
 
-/*t t_interlace_mode */
+/*t t_interlace_mode
+ *
+ * Enumeration from the datasheet of the interlace modes
+ */
 typedef enum[2] {
-    interlace_mode_normal          =2b00,
-    interlace_mode_sync            =2b01,
-    interlace_mode_sync_and_video  =2b11,
+    interlace_mode_normal          =2b00 "No interlace, vsync always starting with hsync",
+    interlace_mode_sync            =2b01 "Use interleace sync but keep the row addressing as 0+ in both fields",
+    interlace_mode_sync_and_video  =2b11 "Use interlace sync and supply even row addresses in even fields, odd row address in odd fields",
 } t_interlace_mode;
 
-/*t t_control */
+/*t t_control
+ *
+ * Control register data, written by the CPU
+ *
+ */
 typedef struct {
-    bit[8] h_total;
-    bit[8] h_displayed;
-    bit[8] h_sync_pos;
-    bit[4] h_sync_width;
-    bit[7] v_total;
-    bit[5] v_total_adjust;
-    bit[7] v_displayed;
-    bit[7] v_sync_pos;
-    bit[4] v_sync_width;
-    bit[5] v_max_scan_line;
-    t_cursor_control cursor;
-    t_interlace_mode interlace_mode;
-    bit[6] start_addr_h;
-    bit[8] start_addr_l;
+    bit[8] h_total                     "Total number of video clock ticks for a scanline (gap between hsync's)";
+    bit[8] h_displayed                 "Start clock tick on  a line to end the displayed area (start of front porch)";
+    bit[8] h_sync_pos                  "Start clock tick for hsync in a line";
+    bit[4] h_sync_width                "Width, in clock ticks. of hsync";
+    bit[7] v_total                     "Total number of video clock ticks for a scanline (gap between hsync's)";
+    bit[5] v_total_adjust              "Number of scanlines (on top of character rows) for a field";
+    bit[7] v_displayed                 "Last charcter row of the displayed area (start of front porch)";
+    bit[7] v_sync_pos                  "Start character row for vsync in a field";
+    bit[4] v_sync_width                "Width, in scanlines. of vsync";
+    bit[5] v_max_scan_line             "Number of scanlines in a character row (minus 1)";
+    t_cursor_control cursor            "Cursor configuration";
+    t_interlace_mode interlace_mode    "Interlace mode (normal, interlaced sync, interlaced sync and video)";
+    bit[6] start_addr_h                "Start address in memory of the field, high bits";
+    bit[8] start_addr_l                "Start address in memory of the field, low bits";
 } t_control;
 
-/*t t_address */
+/*t t_address
+ *
+ * Address decode defined by the datasheet to specify how the CPU accesses control registers
+ *
+ */
 typedef enum[5] {
     addr_h_total           =  0,
     addr_h_displayed       =  1,
@@ -148,42 +183,54 @@ typedef enum[5] {
 } t_address;
 
 /*a Module crtc6845 */
-module crtc6845( clock clk_2MHz,
-                 clock clk_1MHz       "Clock that rises when the 'enable' of the 6845 completes - but a real clock for this model",
-                 input bit reset_n,
-                 output bit[14] ma        "Memory address",
-                 output bit[5] ra         "Row address",
-                 input bit read_not_write "Indicates a read transaction if asserted and chip selected",
-                 input bit chip_select_n  "Active low chip select",
-                 input bit rs             "Register select - address line really",
-                 input bit[8] data_in     "Data in (from CPU)",
-                 output bit[8] data_out   "Data out (to CPU)",
-                 input bit lpstb_n "Light pen strobe",
-                 input bit crtc_clock_enable "Not on the real chip - really CLK - the character clock - but this is an enable for clk_2MHz",
-                 output bit de,
-                 output bit cursor,
-                 output bit hsync,
-                 output bit vsync                 
+module crtc6845( clock clk_2MHz             "2MHz clock that runs the memory interface and video sync output",
+                 clock clk_1MHz             "Clock that rises when the 'enable' of the 6845 completes - but a real clock for this model - used for the CPU interface",
+                 input bit reset_n          "Active low reset",
+                 output bit[14] ma          "Memory address",
+                 output bit[5] ra           "Row address",
+                 input bit read_not_write   "Indicates a read transaction if asserted and chip selected",
+                 input bit chip_select_n    "Active low chip select",
+                 input bit rs               "Register select - address line really",
+                 input bit[8] data_in        "Data in (from CPU) for writing",
+                 output bit[8] data_out      "Data out (to CPU) for reading",
+                 input bit lpstb_n           "Light pen strobe input, used to capture the memory address of the display when the CRT passes it; not much use nowadays",
+                 input bit crtc_clock_enable "An enable for clk_2MHz for the character clock - on the real chip this is actually a clock",
+                 output bit de               "Display enable output, asserted during horizontal display when vertical display is also permitted",
+                 output bit cursor           "Driven when the cursor is configured and the cursor address is matched",
+                 output bit hsync            "Horizontal sync strobe, of configurable position and width",
+                 output bit vsync            "Vertical sync strobe, of configurable position and width"
        )
+    /*b Documentation */
+"""
+This is an implementation of the Motorola 6845 CRTC, which was used
+in the BBC microcomputer for sync and video memory address
+generation.
+"""
 {
     /*b Defaults */
     default reset active_low reset_n;
     default clock clk_1MHz;
-    clocked bit[5] address_register=0;
-    clocked t_control control={*=0};
+    clocked bit[5] address_register=0   "CPU-written address, indicating which data register is accessed";
+    clocked t_control control={*=0}     "CPU-written control state";
 
-    //gated_clock clock clk_2MHz active_high crtc_clock_enable clk_pixel;
-    //default clock clk_pixel;
-    default clock clk_2MHz; //clk_pixel;
-    comb t_horizontal     horizontal;
-    comb t_vertical       vertical;
-    comb t_cursor_decode  cursor_decode;
-    clocked t_horizontal_state horizontal_state={*=0};
-    clocked t_vertical_state vertical_state={*=0};
-    clocked t_address_state  address_state={*=0};
+    default clock clk_2MHz;
+    comb t_horizontal_combs     horizontal_combs       "Decode of the horizontal state";
+    comb t_vertical_combs       vertical_combs         "Decode of the vertical state";
+    comb t_cursor_decode        cursor_decode          "Cursor decode, determining where in a character and which character to assert the cursor output";
+    clocked t_horizontal_state  horizontal_state={*=0} "Only changing when crtc_clock_enable is asserted, maintains the horizontal timing state";
+    clocked t_vertical_state    vertical_state={*=0}   "Only changing when crtc_clock_enable is asserted, maintains the vertical timing state";
+    clocked t_address_state     address_state={*=0}    "Only changing when crtc_clock_enable is asserted, maintains the memory address of the current character";
 
     /*b Outputs  */
-    outputs """
+    output_logic """
+    The @a de output is asserted when BOTH the horizontal and vertical
+    state indicate that the display is enabled.
+
+    The row address for the scanline is usually the line counter,
+    except when interlaced, in which case every line appears twice as
+    a row address and @a ra[0] is set for odd fields.
+
+    The memory address, sync signals, and cursor come directly from decode.
     """: {
         de = 1;
         if (!horizontal_state.display_enable) { de=0; }
@@ -194,19 +241,57 @@ module crtc6845( clock clk_2MHz,
             ra = bundle(vertical_state.scan_line_counter[4;0],vertical_state.even_field);
         }
         ma = address_state.memory_address;
-        cursor = 0;
+        cursor = cursor_decode.enable;
         hsync = horizontal_state.sync;
         vsync = vertical_state.sync;
     }
 
-    /*b Horizontal and vertical timing */
-    horizontal_timing """
+    /*b Horizontal timing */
+    horizontal_timing_logic """
     Horizontal timing is control.h_total+1 characters wide (count from 0 to control.h_total inclusive)
-    At control.h_displayed characters (count+1 == control.h_displayed) front porch starts (disen low)
-    At control.h_sync_pos characters (count+1 == control.h_sync_pos) hsync asserted, sync down count reset
-    After control.h_sync_width characters hsync deasserted (back porch starts)
-    Back porch continues until control.h_total+1 characters wide reached, then disen rises (if vertical permis) and the next row starts
+    At control.h_displayed characters (count+1 == control.h_displayed) front porch starts (display_enable falls)
+    At control.h_sync_pos characters (count+1 == control.h_sync_pos) hsync is asserted, and the sync counter is reset
+    After control.h_sync_width characters hsync is deasserted (back porch starts)
+    Back porch continues until control.h_total+1 characters wide reached, then display_enable rises and the next row starts
+    """: {
+        /*b Horizontal timing */
+        horizontal_combs.next_counter    = horizontal_state.counter+1;
+        horizontal_combs.halfway         = (horizontal_state.counter==bundle(1b0,control.h_total[7;1]));
+        horizontal_combs.display_end     = (horizontal_combs.next_counter==control.h_displayed);
+        horizontal_combs.sync_start      = (horizontal_state.counter==control.h_sync_pos);
+        horizontal_combs.sync_done       = (horizontal_state.sync_counter==control.h_sync_width);
+        horizontal_combs.end_of_scanline = (horizontal_state.counter==control.h_total);
 
+        horizontal_state.counter <= horizontal_combs.next_counter;
+        if (horizontal_combs.end_of_scanline) { // Start new line
+            horizontal_state.counter <= 0;
+            horizontal_state.display_enable <= 1;
+        }
+        if (horizontal_combs.display_end) { // Front porch start - go to black
+            horizontal_state.display_enable <= 0;
+        }
+        if (horizontal_state.sync) {
+            horizontal_state.sync_counter <= horizontal_state.sync_counter+1;
+        }
+        if (horizontal_combs.sync_start) {  // Horizontal sync start
+            if (control.h_sync_width!=0) {
+                horizontal_state.sync <= 1;
+                horizontal_state.sync_counter <= 1;
+            }
+        } elsif (horizontal_combs.sync_done) {  // Horizontal sync done
+            horizontal_state.sync <= 0;
+        }
+
+        /*b Clock enable */
+        if (!crtc_clock_enable) {
+            horizontal_state <= horizontal_state;
+        }
+
+        /*b All done */
+    }
+
+    /*b Vertical timing */
+    vertical_timing """
     With interlace the odd field is done first.
     Then a horizontal half line is counted off, the even field starts at 0.
 
@@ -223,108 +308,88 @@ module crtc6845( clock clk_2MHz,
     to make vsync occur at even spacing
 
     Because the vsync has to start half-way through the row, h_total must be odd (hence h_total+1 characters is even, and divisible by 2)
-    
     """: {
-        /*b Horizontal timing */
-        horizontal.next_counter      = horizontal_state.counter+1;
-        horizontal.halfway      = (horizontal_state.counter==bundle(1b0,control.h_total[7;1]));
-        horizontal.display_end  = (horizontal.next_counter==control.h_displayed);
-        horizontal.sync_start   = (horizontal_state.counter==control.h_sync_pos);
-        horizontal.sync_done    = (horizontal_state.sync_counter==control.h_sync_width);
-        horizontal.complete     = (horizontal_state.counter==control.h_total);
+        /*b Vertical timing */
+        vertical_combs.field_rows_complete  = (vertical_state.character_row_counter==control.v_total);
+        vertical_combs.display_end          = (vertical_state.character_row_counter==control.v_displayed);
+        vertical_combs.sync_done            = (vertical_state.sync_counter==control.v_sync_width);
 
-        horizontal_state.counter <= horizontal.next_counter;
-        if (horizontal.complete) { // Start new line
-            horizontal_state.counter <= 0;
-            horizontal_state.display_enable <= 1;
-        }
-        if (horizontal.display_end) { // Front porch start - go to black
-            horizontal_state.display_enable <= 0;
-        }
-        if (horizontal_state.sync) {
-            horizontal_state.sync_counter <= horizontal_state.sync_counter+1;
-        }
-        if (horizontal.sync_start) {  // Horizontal sync start
-            if (control.h_sync_width!=0) {
-                horizontal_state.sync <= 1;
-                horizontal_state.sync_counter <= 1;
-            }
-        } elsif (horizontal.sync_done) {  // Horizontal sync done
-            horizontal_state.sync <= 0;
-        }
-
-        /*b Vertical timing - no interlace handling yet */
-        vertical.next_character_row_counter = vertical_state.character_row_counter;
-        vertical.next_scan_line_counter     = vertical_state.scan_line_counter;
-        vertical.next_adjust_counter        = vertical_state.adjust_counter;
-        vertical.max_scan_line   = (vertical_state.scan_line_counter == control.v_max_scan_line);
-        if (control.interlace_mode==interlace_mode_sync_and_video) {
-            vertical.max_scan_line   = (vertical_state.scan_line_counter == bundle(1b0,control.v_max_scan_line[4;1]));
-        }
-        vertical.field_rows_complete = (vertical_state.character_row_counter==control.v_total);
-
-        vertical.adjust_complete = (vertical_state.adjust_counter==control.v_total_adjust+1);
-        if (!vertical_state.doing_adjust) { vertical.adjust_complete = 0; }
+        // if interlace and even field, then use horizontal_combs.halfway
+        vertical_combs.start_vsync = horizontal_combs.halfway;
         if ((control.interlace_mode == interlace_mode_normal) ||
             !vertical_state.even_field) {
-            vertical.adjust_complete = (vertical_state.adjust_counter==control.v_total_adjust);
+            vertical_combs.start_vsync = horizontal_combs.end_of_scanline;
+        }
+        vertical_combs.max_scan_line        = (vertical_state.scan_line_counter == control.v_max_scan_line);
+        if (control.interlace_mode==interlace_mode_sync_and_video) {
+            vertical_combs.max_scan_line   = (vertical_state.scan_line_counter == bundle(1b0,control.v_max_scan_line[4;1]));
+        }
+
+        vertical_combs.adjust_complete = (vertical_state.adjust_counter==control.v_total_adjust+1);
+        if (!vertical_state.doing_adjust) { vertical_combs.adjust_complete = 0; }
+        if ((control.interlace_mode == interlace_mode_normal) ||
+            !vertical_state.even_field) {
+            vertical_combs.adjust_complete = (vertical_state.adjust_counter==control.v_total_adjust);
             if (!vertical_state.doing_adjust) {
-                vertical.adjust_complete = (control.v_total_adjust==0);
+                vertical_combs.adjust_complete = (control.v_total_adjust==0);
             }
         }
  
-        vertical.field_restart = 0;
-        vertical.row_restart = 0;
-        if (horizontal.complete) {
-            vertical.next_scan_line_counter = vertical_state.scan_line_counter + 1;
+        vertical_combs.field_restart = 0;
+        vertical_combs.row_restart = 0;
+        vertical_combs.next_character_row_counter = vertical_state.character_row_counter;
+        vertical_combs.next_scan_line_counter     = vertical_state.scan_line_counter;
+        vertical_combs.next_adjust_counter        = vertical_state.adjust_counter;
+        if (horizontal_combs.end_of_scanline) {
+            vertical_combs.next_scan_line_counter = vertical_state.scan_line_counter + 1;
             if (vertical_state.doing_adjust) {
-                vertical.next_adjust_counter = vertical_state.adjust_counter+1;
-                if (vertical.adjust_complete) {
-                    vertical.field_restart = 1;
+                vertical_combs.next_adjust_counter = vertical_state.adjust_counter+1;
+                if (vertical_combs.adjust_complete) {
+                    vertical_combs.field_restart = 1;
                 }
-            } elsif (vertical.max_scan_line) {
-                vertical.row_restart = 1;
-                vertical.next_character_row_counter = vertical_state.character_row_counter+1;
-                vertical.next_scan_line_counter     = 0;
-                vertical.next_adjust_counter        = 0;
-                if (vertical.field_rows_complete) {
-                    if (vertical.adjust_complete) {
-                        vertical.field_restart = 1;
+            } elsif (vertical_combs.max_scan_line) {
+                vertical_combs.row_restart = 1;
+                vertical_combs.next_character_row_counter = vertical_state.character_row_counter+1;
+                vertical_combs.next_scan_line_counter     = 0;
+                vertical_combs.next_adjust_counter        = 0;
+                if (vertical_combs.field_rows_complete) {
+                    if (vertical_combs.adjust_complete) {
+                        vertical_combs.field_restart = 1;
                     } else {
-                        vertical.next_adjust_counter = 1;
+                        vertical_combs.next_adjust_counter = 1;
                     }
                 }
             }
         }
 
-        vertical.sync_start   = (vertical_state.scan_line_counter==0) && (vertical_state.character_row_counter==control.v_sync_pos);
+        vertical_combs.sync_start   = (vertical_state.scan_line_counter==0) && (vertical_state.character_row_counter==control.v_sync_pos);
         if ((control.interlace_mode == interlace_mode_normal) ||
             !vertical_state.even_field) {
-            vertical.sync_start   = vertical.max_scan_line && (vertical.next_character_row_counter==control.v_sync_pos);
+            vertical_combs.sync_start   = vertical_combs.max_scan_line && (vertical_combs.next_character_row_counter==control.v_sync_pos);
         }
-        vertical.display_end  = (vertical_state.character_row_counter==control.v_displayed);
-        vertical.sync_done    = (vertical_state.sync_counter==control.v_sync_width);
-        vertical.cursor_start = (vertical.next_scan_line_counter==control.cursor.start);
-        vertical.cursor_end   = (vertical_state.scan_line_counter==control.cursor.end);
 
-        if (horizontal.complete) {
-            vertical_state.character_row_counter <= vertical.next_character_row_counter;
-            vertical_state.scan_line_counter     <= vertical.next_scan_line_counter;
-            vertical_state.adjust_counter        <= vertical.next_adjust_counter;
-            if (vertical.cursor_end || vertical.row_restart) {
+        vertical_combs.cursor_start = (vertical_combs.next_scan_line_counter==control.cursor.start);
+        vertical_combs.cursor_end   = (vertical_state.scan_line_counter==control.cursor.end);
+
+        /*b Update vertical_state, except for vsync */
+        if (horizontal_combs.end_of_scanline) {
+            vertical_state.character_row_counter <= vertical_combs.next_character_row_counter;
+            vertical_state.scan_line_counter     <= vertical_combs.next_scan_line_counter;
+            vertical_state.adjust_counter        <= vertical_combs.next_adjust_counter;
+            if (vertical_combs.cursor_end || vertical_combs.row_restart) {
                 vertical_state.cursor_line <= 0;
             }
-            if (vertical.cursor_start) {
+            if (vertical_combs.cursor_start) {
                 vertical_state.cursor_line <= 1;
             }
-            if (vertical.max_scan_line && vertical.display_end) {
+            if (vertical_combs.max_scan_line && vertical_combs.display_end) {
                 vertical_state.display_enable <= 0;
             }
-            if (vertical.max_scan_line && vertical.field_rows_complete) {
+            if (vertical_combs.max_scan_line && vertical_combs.field_rows_complete) {
                 vertical_state.doing_adjust <= 1;
             }
         }
-        if (vertical.field_restart) {
+        if (vertical_combs.field_restart) {
             vertical_state.even_field <= !vertical_state.even_field;
             vertical_state.doing_adjust <= 0;
             vertical_state.scan_line_counter <= 0;
@@ -332,20 +397,15 @@ module crtc6845( clock clk_2MHz,
             vertical_state.display_enable <= 1;
         }
 
-        vertical.start_vsync = horizontal.halfway;
-        // if interlace and even field, then use horizontal.halfway
-        if ((control.interlace_mode == interlace_mode_normal) ||
-            !vertical_state.even_field) {
-            vertical.start_vsync = horizontal.complete;
-        }
-        if (vertical.start_vsync) {
+        /*b Update vsync state */
+        if (vertical_combs.start_vsync) {
             if (vertical_state.sync) {
                 vertical_state.sync_counter <= vertical_state.sync_counter+1;
             }
-            if (vertical.sync_done) {
+            if (vertical_combs.sync_done) {
                 vertical_state.sync <= 0;
             }
-            if (vertical.sync_start) {
+            if (vertical_combs.sync_start) {
                 vertical_state.sync <= 1;
                 vertical_state.sync_counter <= 1;
                 vertical_state.vsync_counter <= vertical_state.vsync_counter+1; // used in cursor blinking
@@ -354,34 +414,36 @@ module crtc6845( clock clk_2MHz,
 
         /*b Clock enable */
         if (!crtc_clock_enable) {
-            horizontal_state <= horizontal_state;
             vertical_state <= vertical_state;
         }
+
+        /*b All done */
     }
 
     /*b Address register and cursor */
     address_and_cursor """
+    Address register and cursor
     """: {
+        /*b Memory address handling */
         if (horizontal_state.display_enable) {
             address_state.memory_address <= address_state.memory_address+1;
         }
-        if (horizontal.complete) {
-            if (vertical.row_restart) {
+        if (horizontal_combs.end_of_scanline) {
+            if (vertical_combs.row_restart) {
                 address_state.memory_address_line_start <= address_state.memory_address;
             } else {
                 address_state.memory_address <= address_state.memory_address_line_start;
             }
         }
-        if (vertical.field_restart) {
+        if (vertical_combs.field_restart) {
             address_state.memory_address            <= bundle(control.start_addr_h, control.start_addr_l);
             address_state.memory_address_line_start <= bundle(control.start_addr_h, control.start_addr_l);
         }
-
-        /*b Clock enable */
         if (!crtc_clock_enable) {
             address_state <= address_state;
         }
 
+        /*b Cursor address detection */
         cursor_decode.address_match = (control.cursor.address == address_state.memory_address);
         cursor_decode.disabled = 0;
         full_switch (control.cursor.mode)
@@ -393,11 +455,20 @@ module crtc6845( clock clk_2MHz,
         }
         cursor_decode.enable = !cursor_decode.disabled && cursor_decode.address_match && vertical_state.cursor_line;
 
+        /*b All done */
+
     }
 
-    /*b Read/write interface */
-    read_write_interface : {
+    /*b CPU Read/write interface */
+    read_write_interface """
+    The CPU interface has two registers: the first is the address
+    register, which defines which control will be written to; the
+    other is the data register, which accesses the register specified
+    by the address register.
 
+    Currently reads are not supported in this model. Might just be
+    laziness - but is the 6845 readable?
+    """: {
         /*b Chip selection, read/write action, data_out */
         data_out = -1;
         if (!chip_select_n && (rs==0) && !read_not_write) {
