@@ -118,10 +118,10 @@ typedef enum[2] {
  *
  */
 typedef struct {
-    t_cursor_mode mode "";
-    bit[5] start       "";
-    bit[5] end         "";
-    bit[14] address    "";
+    t_cursor_mode mode "Cursor mode - steady, flashing + speed, or invisible";
+    bit[5] start       "Start scanline of the cursor in the character row";
+    bit[5] end         "End scanline of the cursor in the character row";
+    bit[14] address    "Character address for the cursor";
 } t_cursor_control;
 
 /*t t_interlace_mode

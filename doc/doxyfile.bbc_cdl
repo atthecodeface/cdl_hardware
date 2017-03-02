@@ -28,6 +28,6 @@ SHOW_NAMESPACES        = YES
 LAYOUT_FILE            = layout_cdl.xml
 INPUT                 += $(SRC_ROOT)/cdl/README.md
 USE_MDFILE_AS_MAINPAGE = $(SRC_ROOT)/cdl/README.md
-
+COLLABORATION_GRAPH = NO
 HTML_OUTPUT            = cdl_html
 LATEX_OUTPUT           = cdl_latex

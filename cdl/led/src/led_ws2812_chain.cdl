@@ -52,9 +52,18 @@ typedef struct {
  * modulates the data out pin at the required frequency and pulse
  * widths to present the data for the LED chain, and to hold the data
  * pin low to load the LED chain
+ *
+ * @dot
+ * digraph fsm {
+ *  node [];
+ *  idle
+ * }
+ * @enddot
  */
 typedef fsm {
-    transmit_state_idle       "The idle state, ready to take an LED value in to the shift register or to load the LEDs";
+    transmit_state_idle      { transmit_state_load_leds,
+            transmit_state_green
+            } "The idle state, ready to take an LED value in to the shift register or to load the LEDs";
     transmit_state_green      "Transmitting and shifting the @a green element of the shift register";
     transmit_state_red        "Transmitting and shifting the @a red element of the shift register";
     transmit_state_blue       "Transmitting and shifting the @a blue element of the shift register";

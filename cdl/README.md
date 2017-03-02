@@ -72,18 +72,60 @@ The modules are grouped into separate directories based on function.
 
 * network
 
+  At present, empty
+
 * serial
 
 * storage
 
+  The storage modules currently consist of only a model of the Intel
+  8271 floppy disk controller; this was the initial floppy disk
+  controller for the BBC microcomputer. Instead of supporting a
+  physical disk drive, the FDC8271 module uses an SRAM to supply track
+  format and sector information, as well as disk data.
+
 * utils
 
+  The utils directory contains some generic utility modules. Firstly
+  there is a generic module to support multiplexing two
+  request/acknowledge buses on to a single request/acknowledge
+  bus. This has to be compiled using CDL options to specify the actual
+  request/acknowledge type bus required for a module - this is the CDL
+  1.4 method for parametrizing types. This module is used in two @a
+  dprintf multiplexer modules also in the utils directory.
+
+  The dprintf module is an sprintf-like module: it is used for debug
+  printing. The module is supplied with a request - a format string to
+  display with arguments, and an address - and it generates a stream
+  of output bytes (with addresses) that are the output of the
+  formatting. The module supports 7-bit characters (suitable for
+  teletext), and hexadecimal and decimal formatted numbers (with field
+  size).
+
+  The utils also includes a hysteresis_switch module. This module
+  takes an input and generates a filtered output using hysteresis; it
+  may be used, for example, to debounce an input switch.
+
 * video
+
+  The video modules relate to video output, currently. There are two
+  framebuffer modules - one uses a bitmap framebuffer, and the other a
+  teletext framebuffer (where the SRAM contains characters and control
+  codes). These use a framebuffer_timing module, that generates the
+  timing for a video output (vsync, hsync, display area enable, and so
+  on).
+
+  To provide the teletext decoding there is a teletext decoder module;
+  this is used also by the Mullard SAA5050 implementation, used by the
+  BBC microcomputer.
+
+  There is also a Motorola 6845 CRTC controller module, which was a
+  character video timing generator, that was used for all the display
+  modes in the BBC microcomputer.
+
 
 ## Documentation progress
 
 Currently documented: apb, csrs, input_devices, utils, led
-
-In progress: video
 
 To do: storage, microcomputers, cpus, serial

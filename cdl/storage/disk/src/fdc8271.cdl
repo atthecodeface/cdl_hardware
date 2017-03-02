@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file  fdc8271.cdl
  * @brief CDL implementation of 8271 FDC
@@ -22,80 +21,62 @@
  */
 /*a Includes */
 include "bbc_micro_types.h"
-// bbc
-// 0x8cd9 - read adddress 0
-// 0x8cdf - read adddress 1
-// 0x8cd9 - read adddress 0
-// 0x8cdf - read adddress 1
-// 0x8cc9 - read adddress 0
-// 0x8cce - write 0x6c to address 0
-// 0x8cd9 - read adddress 0
-// 0x8cdf - read adddress 1
-// 0x8cd5 - read adddress 1
-// 0x8cc9 - read adddress 0
-// 0x8cce - write 0x3a to address 0 write special reg
-// 0x8cb4 - read adddress 0
-// 0x8cbc - write 0x23 to address 1 drive control output port
-// 0x8cb4 - read adddress 0
-// 0x8cbc - write 0x48 to address 1 select=01, load head
-// 0x8cc9 - read adddress 0
 
-// 0x8cce - write 0x6c to address 0
-// 0x8cd9 - read adddress 0
-// 0x8cdf - read adddress 0
-// 0x8cd5 - read adddress 1
-// 0x8cc9 - read adddress 0
+/*a Constants
+ */
+constant integer timer_data_counter_value=128 "32us in clock ticks for single density (?)";
+constant integer timer_10us_counter_value=2   "10us in clock ticks (should be 20 2MHz ticks for verisimilitude)";
+constant integer timer_1ms_counter_value=8    "1ms in clock ticks (should be 2000 2MHz ticks for verisimilitude)";
 
-// 0x8cce - write 0x6c to address 0
-// 0x8cd9 - read adddress 0
-// 0x8cdf - read adddress 0
-// 0x8cd5 - read adddress 1
-// 0x8cc9 - read adddress 0
-
-//
 /*a Types */
-/*t t_drive_outputs */
+/*t t_drive_outputs
+ *
+ * Outputs to a floppy drive; this is mainly used as internal state,
+ * as the actual operation of the floppy drive is performed with the
+ * @a floppy_op and @a floppy_response ports
+ */
 typedef struct {
-    bit direction;
-    bit step;
-    bit load_head;
-    bit write_enable;
-    bit[2] select;
-    bit fault_reset;
-    bit low_current;
+    bit direction     "Direction to step in, asserted to move towards track zero (head outwards)";
+    bit step          "Asserted to step the head out; asserted for 10us then deasserted for >1ms, configurable, on a real drive";
+    bit load_head     "Assert to load the head (put it next to the disc surface)";
+    bit write_enable  "Assert to write to the drive";
+    bit[2] select     "Select lines - originally one per drive for two drives (one-hot), but can be used as a full decode";
+    bit fault_reset   "Assert to reset the fault";
+    bit low_current   "Asserted (in real systems) for the inner tracks, to reduce the write-current on slower linear speed writing";
 } t_drive_outputs;
 
 /*t t_drive_timing
-  Note that the time enables need not occur at the counter frequency they match,
-  indeed the expectation is that they will occur 4 times as often, and that the
-  counters are initialized to 4x the required value, so that the jitter in the counter
-  expiration is of the order of 1/4 of the counter frequency.
+ *
+ * State used in the drive timing.
+ *
+ * Note that the time enables need not occur at the counter frequency they match,
+ * indeed the expectation is that they will occur 4 times as often, and that the
+ * counters are initialized to 4x the required value, so that the jitter in the counter
+ * expiration is of the order of 1/4 of the counter frequency.
  */
 typedef struct {
-    bit[8]   step_timer_1ms "Number of 1ms for a step completion";
-    bit[8]   head_timer_4ms "Number of 4ms for head settling";
+    bit[8]   step_timer_1ms   "Number of 1ms for a step completion";
+    bit[8]   head_timer_4ms   "Number of 4ms for head settling";
 
-    bit time_10us_completed "Asserted if the 10us counter has finished";
-    bit time_1ms_tick       "Asserted if the 1ms counter reaches zero (it auto-restarts)";
+    bit time_10us_completed   "Asserted if the 10us counter has finished";
+    bit time_1ms_tick         "Asserted if the 1ms counter reaches zero (it auto-restarts)";
 
-    bit time_10us_start     "Asserted if the 10us counter should restart - at start of direction change, or step going high, or step falling";
-    bit time_1ms_restart    "Asserted if the 1ms counter should restart - at start of step";
+    bit time_10us_start       "Asserted if the 10us counter should restart - at start of direction change, or step going high, or step falling";
+    bit time_1ms_restart      "Asserted if the 1ms counter should restart - at start of step";
 
     bit direction_can_be_set  "Asserted if the 'direction' pin can change (setup/hold time being met)";
     bit step_can_start        "Asserted if the 'step' pin can force a step (setup/hold time being met)";
 
-    bit step_in_progress  "Asserted if a step has started and has not settled";
-    bit step_settled      "Asserted if a step has settled (inverse of step_in_progress)";
-    bit head_settled      "Asserted if the head has settled and hence a read/write can start";
-    bit data_byte_ready   "Asserted if a new data byte is 'ready' - to pace out data";
+    bit step_in_progress      "Asserted if a step has started and has not settled";
+    bit step_settled          "Asserted if a step has settled (inverse of step_in_progress)";
+    bit head_settled          "Asserted if the head has settled and hence a read/write can start";
+    bit data_byte_ready       "Asserted if a new data byte is 'ready' - to pace out data";
 } t_drive_timing;
 
 /*t t_drive_timing_state
-  Counters for timing drive operation
+ *
+ * Counters for timing drive operation
  */
-constant integer timer_data_counter_value=128; // 32us in clock ticks for single density (?)
-constant integer timer_10us_counter_value=2; // 10us in clock ticks (should be 20 ticks)
-constant integer timer_1ms_counter_value=8;  // 1ms in clock ticks (should be 2000 ticks)
 typedef struct {
     bit[8]   timer_data        "Data byte timer";
     bit[5]   timer_10us        "Timer used for 10us pulse timing";
@@ -107,56 +88,61 @@ typedef struct {
     bit[8+2] head_counter      "Number of 1ms ticks for head settling";
 } t_drive_timing_state;
 
-/*t t_drive_operation */
+/*t t_drive_operation
+ *
+ * Decode of the drive operation state machine, driving the timing
+ * subsystem and indicating progress to the drive execution state
+ * machine
+ */
 typedef struct {
-    bit direction_set;
-    bit direction_value;
-    bit step_start;
-    bit load_head;
-    bit starting_op;
-    bit completing_op;
-    bit read_id;
-    bit read_data;
-    bit capture_id;
-    bit capture_data;
-    bit read_data_capture_id;
-    bit read_data_capture_data;
+    bit direction_set          "Asserted to set the direction pin (with associated timing)";
+    bit direction_value        "Value to give the direction pin";
+    bit step_start             "Asserted to start a step operation (with associated timing)";
+    bit load_head              "Asserted to load the head (and manage data etc with associated timing)";
+    bit read_id                "Asserted to read the next sector id; held high until internal_id_ready";
+    bit read_data              "Asserted to read the next data; held high until internal_read_data_valid";
+    bit capture_id             "Asserted to make the drive operation state capture the sector id presented from the lower levels";
+    bit capture_data           "Asserted to make the drive operation state capture the data presented from the lower levels";
+    bit read_data_capture_id   "Asserted to make the drive execution state capture the sector id from the drive operation state";
+    bit read_data_capture_data "Asserted to make the drive execution state capture the data from the drive operation state";
+    bit starting_op            "Asserted if the drive operation state machine is starting the operation for the drive execution state machine";
+    bit completing_op          "Asserted if the drive operation state machine is completing the operation for the drive execution state machine";
 } t_drive_operation;
 
 /*t t_dos_fsm */
 typedef fsm {
-    dos_fsm_idle;
-    dos_fsm_complete_okay;
-    dos_fsm_complete_track_0_not_found;
-    dos_fsm_seek_zero_start;
-    dos_fsm_seek_zero_step;
-    dos_fsm_seek_zero_wait_until_settled;
-    dos_fsm_seek_nonzero_check_bad_track_1;
-    dos_fsm_seek_nonzero_check_bad_track_2;
-    dos_fsm_seek_nonzero_calculate_steps;
-    dos_fsm_seek_nonzero_set_direction;
-    dos_fsm_seek_nonzero_step;
-    dos_fsm_seek_sector_id;
-    dos_fsm_seek_sector_id_check;
-    dos_fsm_load_head;
-    dos_fsm_read_id;
-    dos_fsm_read_id_copy_data;
-    dos_fsm_read_data;
-    dos_fsm_read_data_wait;
-    dos_fsm_read_data_present_data;
-    dos_fsm_present_data;
-    dos_fsm_find_index;
-    dos_fsm_find_index_wait;
+    dos_fsm_idle                            "";
+    dos_fsm_complete_okay                   "";
+    dos_fsm_complete_track_0_not_found      "";
+    dos_fsm_seek_zero_start                 "";
+    dos_fsm_seek_zero_step                  "";
+    dos_fsm_seek_zero_wait_until_settled    "";
+    dos_fsm_seek_nonzero_check_bad_track_1              "";
+    dos_fsm_seek_nonzero_check_bad_track_2              "";
+    dos_fsm_seek_nonzero_calculate_steps              "";
+    dos_fsm_seek_nonzero_set_direction              "";
+    dos_fsm_seek_nonzero_step              "";
+    dos_fsm_seek_sector_id              "";
+    dos_fsm_seek_sector_id_check              "";
+    dos_fsm_load_head              "";
+    dos_fsm_read_id              "";
+    dos_fsm_read_id_copy_data              "";
+    dos_fsm_read_data              "";
+    dos_fsm_read_data_wait              "";
+    dos_fsm_read_data_present_data              "";
+    dos_fsm_present_data              "";
+    dos_fsm_find_index              "";
+    dos_fsm_find_index_wait              "";
 } t_dos_fsm;
 
 /*t t_drive_operation_state */
 typedef struct {
-    bit[8]    retry_count;
+    bit[8]    retry_count              "";
     bit[8]    words_remaining;
-    t_dos_fsm fsm_state;
-    bit[8]    current_track;
-    bit[32]   read_data_buffer;
-    t_bbc_floppy_sector_id sector_id;
+    t_dos_fsm fsm_state              "";
+    bit[8]    current_track              "";
+    bit[32]   read_data_buffer              "";
+    t_bbc_floppy_sector_id sector_id              "";
 } t_drive_operation_state;
 
 /*t t_drive_execution_operation */
@@ -172,40 +158,40 @@ typedef enum[3] {
 
 /*t t_drive_execution_result */
 typedef struct {
-    bit valid;
+    bit valid              "";
 } t_drive_execution_result;
 
 /*t t_drive_execution */
 typedef struct {
-    bit direction_set;
-    bit direction_value;
-    t_drive_execution_result result;
-    bit takes_command;
+    bit direction_set              "";
+    bit direction_value              "";
+    t_drive_execution_result result              "";
+    bit takes_command              "";
 } t_drive_execution;
 
 /*t t_des_fsm */
 typedef fsm {
-    des_fsm_idle;
-    des_fsm_find_index;
-    des_fsm_finding_index;
-    des_fsm_seek_load;
-    des_fsm_seek_load_wait_for_load;
-    des_fsm_seek;
-    des_fsm_seek_in_progress;
-    des_fsm_seek_sector_id;
-    des_fsm_seek_sector_id_in_progress;
-    des_fsm_read_id;
-    des_fsm_read_id_in_progress;
-    des_fsm_read_data;
-    des_fsm_read_data_in_progress;
+    des_fsm_idle              "";
+    des_fsm_find_index              "";
+    des_fsm_finding_index              "";
+    des_fsm_seek_load              "";
+    des_fsm_seek_load_wait_for_load              "";
+    des_fsm_seek              "";
+    des_fsm_seek_in_progress              "";
+    des_fsm_seek_sector_id              "";
+    des_fsm_seek_sector_id_in_progress              "";
+    des_fsm_read_id              "";
+    des_fsm_read_id_in_progress              "";
+    des_fsm_read_data              "";
+    des_fsm_read_data_in_progress              "";
 } t_des_fsm;
 
 /*t t_drive_execution_state */
 typedef struct {
-    t_des_fsm fsm_state;
-    t_drive_execution_operation operation;
-    bit[32] read_data_buffer;
-    bit[4] read_data_valid;
+    t_des_fsm fsm_state              "";
+    t_drive_execution_operation operation              "";
+    bit[32] read_data_buffer              "";
+    bit[4] read_data_valid              "";
 } t_drive_execution_state;
 
 /*t t_drive_execution_command */
@@ -221,109 +207,109 @@ typedef enum[3] {
 
 /*t t_set_outputs */
 typedef struct {
-    bit valid;
-    bit write_enable;
-    bit seek_step;
-    bit direction;
-    bit load_head;
-    bit low_head_current;
-    bit write_fault_reset;
-    bit[2] select;
+    bit valid              "";
+    bit write_enable              "";
+    bit seek_step              "";
+    bit direction              "";
+    bit load_head              "";
+    bit low_head_current              "";
+    bit write_fault_reset              "";
+    bit[2] select              "";
 } t_set_outputs;
 
 /*t t_command */
 typedef struct {
-    t_drive_execution_command drive_execution_command;
-    bit takes_command;
-    bit takes_parameter;
-    bit generate_interrupt;
-    t_set_outputs set_outputs;
+    t_drive_execution_command drive_execution_command              "";
+    bit takes_command              "";
+    bit takes_parameter              "";
+    bit generate_interrupt              "";
+    t_set_outputs set_outputs              "";
 } t_command;
 
 /*t t_cs_fsm */
 typedef fsm {
-    cs_fsm_idle;
-    cs_fsm_specify_0;
-    cs_fsm_specify_init_step_rate;
-    cs_fsm_specify_init_head_settling_time;
-    cs_fsm_specify_init_load_time;
-    cs_fsm_specify_load_bad_track_1;
-    cs_fsm_specify_load_bad_track_2;
-    cs_fsm_specify_load_current_track;
-    cs_fsm_write_special_reg;
-    cs_fsm_write_special_data;
-    cs_fsm_read_special_reg;
-    cs_fsm_seek_get_track;
-    cs_fsm_seek_start;
-    cs_fsm_seek_wait_for_result;
-    cs_fsm_read_write_multi_sector;
-    cs_fsm_read_write_multi_sector_get_sector;
-    cs_fsm_read_write_multi_sector_get_length;
-    cs_fsm_read_write_multi_sector_find_sector;
-    cs_fsm_read_write_multi_sector_seek_load;
-    cs_fsm_read_write_multi_sector_wait_for_find;
-    cs_fsm_read_write_multi_sector_read_data;
-    cs_fsm_read_write_multi_sector_reading_data;
-    cs_fsm_read_multi_id;
-    cs_fsm_read_multi_id_zero_param;
-    cs_fsm_read_multi_id_num_ids;
-    cs_fsm_read_multi_id_seek_load;
-    cs_fsm_read_multi_id_find_index;
-    cs_fsm_read_multi_id_start;
-    cs_fsm_read_multi_id_wait_for_result;
-    cs_fsm_read_write_sector;
-    cs_fsm_read_write_sector_get_sector;
-    cs_fsm_read_write_sector_find_sector;
-    cs_fsm_read_write_sector_seek_load;
-    cs_fsm_read_write_sector_wait_for_find;
-    cs_fsm_read_write_sector_read_data;
-    cs_fsm_read_write_sector_reading_data;
-    cs_fsm_command_format_track;
-    cs_fsm_result_none;
-    cs_fsm_result_ready;
-    cs_fsm_result_capture;
-    cs_fsm_command_status_0;
-    cs_fsm_drive_status;
+    cs_fsm_idle              "";
+    cs_fsm_specify_0              "";
+    cs_fsm_specify_init_step_rate              "";
+    cs_fsm_specify_init_head_settling_time              "";
+    cs_fsm_specify_init_load_time              "";
+    cs_fsm_specify_load_bad_track_1              "";
+    cs_fsm_specify_load_bad_track_2              "";
+    cs_fsm_specify_load_current_track              "";
+    cs_fsm_write_special_reg              "";
+    cs_fsm_write_special_data              "";
+    cs_fsm_read_special_reg              "";
+    cs_fsm_seek_get_track              "";
+    cs_fsm_seek_start              "";
+    cs_fsm_seek_wait_for_result              "";
+    cs_fsm_read_write_multi_sector              "";
+    cs_fsm_read_write_multi_sector_get_sector              "";
+    cs_fsm_read_write_multi_sector_get_length              "";
+    cs_fsm_read_write_multi_sector_find_sector              "";
+    cs_fsm_read_write_multi_sector_seek_load              "";
+    cs_fsm_read_write_multi_sector_wait_for_find              "";
+    cs_fsm_read_write_multi_sector_read_data              "";
+    cs_fsm_read_write_multi_sector_reading_data              "";
+    cs_fsm_read_multi_id              "";
+    cs_fsm_read_multi_id_zero_param              "";
+    cs_fsm_read_multi_id_num_ids              "";
+    cs_fsm_read_multi_id_seek_load              "";
+    cs_fsm_read_multi_id_find_index              "";
+    cs_fsm_read_multi_id_start              "";
+    cs_fsm_read_multi_id_wait_for_result              "";
+    cs_fsm_read_write_sector              "";
+    cs_fsm_read_write_sector_get_sector              "";
+    cs_fsm_read_write_sector_find_sector              "";
+    cs_fsm_read_write_sector_seek_load              "";
+    cs_fsm_read_write_sector_wait_for_find              "";
+    cs_fsm_read_write_sector_read_data              "";
+    cs_fsm_read_write_sector_reading_data              "";
+    cs_fsm_command_format_track              "";
+    cs_fsm_result_none              "";
+    cs_fsm_result_ready              "";
+    cs_fsm_result_capture              "";
+    cs_fsm_command_status_0              "";
+    cs_fsm_drive_status              "";
 } t_cs_fsm;
 
 /*t t_command_state */
 typedef struct {
-    t_cs_fsm fsm_state;
-    bit busy;
+    t_cs_fsm fsm_state              "";
+    bit busy              "";
     bit[2] select "Select to be driven out when command is taken";
     bit surface   "Used only for setting bad tracks etc";
-    bit[8] special_reg;
-    bit[8] command_track;
-    bit[8] command_sector;
-    bit[5] command_num_sectors;
-    bit[3] command_sector_length;
+    bit[8] special_reg              "";
+    bit[8] command_track              "";
+    bit[8] command_sector              "";
+    bit[5] command_num_sectors              "";
+    bit[3] command_sector_length              "";
 } t_command_state;
 
 /*t t_control_scan */
 typedef struct {
-    bit[8] sector;
-    bit[8] msb;
-    bit[7] lsb;
+    bit[8] sector              "";
+    bit[8] msb              "";
+    bit[7] lsb              "";
 } t_control_scan;
 
 /*t t_control_drive */
 typedef struct {
-    bit[8] current_track;
-    bit[8] bad_track_1;
-    bit[8] bad_track_2;
+    bit[8] current_track              "";
+    bit[8] bad_track_1              "";
+    bit[8] bad_track_2              "";
 } t_control_drive;
 
 /*t t_control */
 typedef struct {
-    t_control_scan scan;
-    t_control_drive drive_0;
-    t_control_drive drive_1;
-    bit non_dma_mode;
-    bit double_actuator;
-    bit[8] step_time;
-    bit[8] head_settling_time;
-    bit[4] head_load_time;
-    bit[4] head_unload_count;
+    t_control_scan scan              "";
+    t_control_drive drive_0              "";
+    t_control_drive drive_1              "";
+    bit non_dma_mode              "";
+    bit double_actuator              "";
+    bit[8] step_time              "";
+    bit[8] head_settling_time              "";
+    bit[4] head_load_time              "";
+    bit[4] head_unload_count              "";
 } t_control;
 
 /*t t_read_action */
@@ -345,30 +331,30 @@ typedef enum[3] {
 
 /*t t_command_register */
 typedef struct {
-    bit full;
-    bit[8] data;
+    bit full              "";
+    bit[8] data              "";
 } t_command_register;
 
 /*t t_parameter_register */
 typedef struct {
-    bit full;
-    bit[8] data;
+    bit full              "";
+    bit[8] data              "";
 } t_parameter_register;
 
 /*t t_result_register */
 typedef struct {
-    bit full;
-    bit[8] data;
+    bit full              "";
+    bit[8] data              "";
 } t_result_register;
 
 /*t t_status_register */
 typedef struct {
-    bit command_busy;
-    bit command_register_full;
-    bit parameter_register_full;
-    bit result_register_full;
-    bit non_dma_data_request;
-    bit interrupt_request;
+    bit command_busy              "";
+    bit command_register_full              "";
+    bit parameter_register_full              "";
+    bit result_register_full              "";
+    bit non_dma_data_request              "";
+    bit interrupt_request              "";
 } t_status_register;
 
 /*a Module fdc8271 */
@@ -538,9 +524,10 @@ Total of 47 cycles, or 23.5us per byte for data transfers
     comb bit    internal_write_protect    "Asserted if the selected drive is write-protected";
     comb bit    internal_index            "Asserted if the selected drive is at the last sector";
     comb bit    internal_read_data_valid  "Asserted if the read data is currently valid";
+    comb bit    internal_id_ready;
+    clocked bit interrupt_pending=0;
 
     /*b Read/write logic */
-    clocked bit interrupt_pending=0;
     read_write_logic """
     Read, write, DMA and control logic
     """: {
@@ -647,12 +634,6 @@ Total of 47 cycles, or 23.5us per byte for data transfers
             interrupt_pending <= 1;
         }
         /*b All done */
-    }
-
-    /*b Serial interface controller */
-    serial_interface_controller """
-    Serial interface controller.
-    """: {
     }
 
     /*b Command controller */
@@ -1588,17 +1569,23 @@ Total of 47 cycles, or 23.5us per byte for data transfers
 
     /*b Drive control timings and outputs */
     drive_control_timings """
-    The drive controls have specific timing constraints, and this logic manages that.
+    The drive controls have specific timing constraints, and this
+    logic manages that.
 
-    The direction pin has 10us setup to 'step' rising and 10us hold on 'step' falling
+    The direction pin has 10us setup to 'step' rising and 10us hold on
+    'step' falling. It utilizes a 10us timer to achieve this.
 
     The step pin (in pulse mode) has a 10us high period, and the step
-    has a configurable settling time (in 1ms increments)
+    has a configurable settling time (in 1ms increments). Hence there
+    is a step_counter that decrements every 1ms, using a 1ms timer. A
+    10us high period uses the 10us timer.
 
     The head may not be used (for reading or writing) until a
-    configurable number of 4ms ticks after the step settling time.
+    configurable number of 4ms ticks after the step settling
+    time. This is again performed with the 1ms timer, using a
+    down-counter set to 4 times the configured head timer.
     """: {
-        /*b Timing counters - fake them out for now */
+        /*b Timing counters */
         drive_timing.step_timer_1ms = control.step_time;
         drive_timing.head_timer_4ms = control.head_settling_time;
 
@@ -1729,28 +1716,41 @@ Total of 47 cycles, or 23.5us per byte for data transfers
     }
 
     /*b BBC drive modeling interface */
-comb bit internal_id_ready;
     bbc_drive_interface """
+    The @a bbc_floppy_op is a registered output, dependent on the
+    drive_outputs and drive_operation.
+
+    The @bbc_floppy_response inputs are mapped combinatorially to
+    internal signals
     """: {
+
+        /*b Drive the floppy operation out */
         bbc_floppy_op.step_out <= drive_outputs.step && !drive_outputs.direction;
         bbc_floppy_op.step_in  <= drive_outputs.step && drive_outputs.direction;
-        if (drive_operation.read_id)             { bbc_floppy_op.next_id <= 1; }
-        if (bbc_floppy_response.sector_id_valid) { bbc_floppy_op.next_id <= 0; }
+        if (drive_operation.read_id)               { bbc_floppy_op.next_id <= 1; }
+        if (bbc_floppy_response.sector_id_valid)   { bbc_floppy_op.next_id <= 0; }
         if (drive_operation.read_data)             { bbc_floppy_op.read_data_enable <= 1; }
         if (bbc_floppy_response.read_data_valid)   { bbc_floppy_op.read_data_enable <= 0; }
         bbc_floppy_op.write_data_enable <= 0;
         bbc_floppy_op.write_data <= 0;
         bbc_floppy_op.write_sector_id_enable <= 0;
         bbc_floppy_op.sector_id <= {*=0};
+
+        /*b Map bbc_floppy_response to internal signals */
         internal_read_data_valid         = bbc_floppy_response.read_data_valid;
-        internal_index         = bbc_floppy_response.index;
-        internal_write_protect = bbc_floppy_response.write_protect;
-        internal_track_0       = bbc_floppy_response.track_zero;
-        internal_id_ready      = bbc_floppy_response.sector_id_valid;
+        internal_index                   = bbc_floppy_response.index;
+        internal_write_protect           = bbc_floppy_response.write_protect;
+        internal_track_0                 = bbc_floppy_response.track_zero;
+        internal_id_ready                = bbc_floppy_response.sector_id_valid;
+
+        /*b All done */
     }
 
     /*b Logging */
     logging """
+    Various logging options are provided, as the breadth of actions of
+    the FDC are large, and actual transactions tend not to be too
+    numerous.
     """: {
         if (command.takes_command) {
             log("Command",
