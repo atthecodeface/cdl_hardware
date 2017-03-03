@@ -270,11 +270,13 @@ class c_cdl_file:
     def parse_comment_start_string(self, nl, nr, which):
         if which == "/*":  return (nl, nr, self.parse_states+["comment"], True)
         if which == '"': 
-            result = (nl, nr[:-1]+"/** "+self.pending_documentation,  self.parse_states+["singleline_doc"], True)
+            if self.pending_documentation=="": self.pending_documentation=" "
+            result = (nl, nr[:-1]+"/**"+self.pending_documentation,  self.parse_states+["singleline_doc"], True)
             self.pending_documentation = ""
             return result
         if which == '"""':
-            result = (nl, nr[:-3]+"/** "+self.pending_documentation,  self.parse_states+["multiline_doc"], True)
+            if self.pending_documentation=="": self.pending_documentation=" "
+            result = (nl, nr[:-3]+"/**"+self.pending_documentation,  self.parse_states+["multiline_doc"], True)
             self.pending_documentation = ""
             return result
         if which == "//":  return ("", nr+nl, None, True)
@@ -318,23 +320,8 @@ class c_cdl_file:
         if l[-5:]=="input": which="input"
         if l[-6:]=="output": which="output"
         if which is not None:
+            self.pending_documentation = '<%s '%({"clock":"[in]","input":"[in]","output":"[out]"}[which])
             l = l[:-len(which)]
-            if which in ["input", "output"]:
-                (u,ws,nl) = self.try_parse_user_id(l)
-                if u is not None:
-                    r += ws+u
-                    l = nl
-                    m = re.match("(\s*\[[^\]]*\])(.*)", l)
-                    if m:
-                        r += m.group(1)
-                        l = m.group(2)+"\n"
-                        pass
-                    pass
-                pass
-            (u,ws,nl) = self.try_parse_user_id(l)
-            if u is not None:
-                self.pending_documentation = '@param %s%s '%({"clock":"[in]","input":"[in]","output":"[out]"}[which],u)
-                pass
             pass
         (nl, nr, which) = self.find_first(l, r, [",", ")"]  + self.comment_start_strings )
         (nl, nr, which, parsed) = self.parse_comment_start_string( nl, nr, which )

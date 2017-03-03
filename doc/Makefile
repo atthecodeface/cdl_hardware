@@ -7,7 +7,9 @@ clean_doc:
 documentation: $(DOCUMENTATION)/doc_pdf
 
 .PHONY: doxygen_cdl
+# Must do documents twice to generate the dotfiles
 doxygen_cdl:
+	(cd $(DOCUMENTATION); DOXYGEN_INPUTS=$(SRC_ROOT)/cdl $(DOXYGEN) $(DOCUMENTATION)/doxyfile.bbc_cdl)
 	(cd $(DOCUMENTATION); DOXYGEN_INPUTS=$(SRC_ROOT)/cdl $(DOXYGEN) $(DOCUMENTATION)/doxyfile.bbc_cdl)
 
 .PHONY: doxygen_cmodel
