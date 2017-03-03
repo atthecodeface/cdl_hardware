@@ -1,0 +1,89 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   csr_target_timeout.cdl
+ * @brief  Timeout target to auto-complete CSR transactions on a timeout
+ *
+ */
+/*a Includes */
+include "csr_interface.h"
+
+/*a Module
+ */
+module csr_target_timeout( clock                       clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
+                           input bit                reset_n       "Active low reset",
+                           input t_csr_request      csr_request   "Pipelined csr request interface input",
+                           output t_csr_response    csr_response  "Pipelined csr request interface response",
+                           input bit[16]            csr_timeout   "Number of cycles to wait for until auto-acknowledging a request"
+    )
+"""
+This module provides a CSR target interface which never directly
+responds to a request, but which will complete a read or write if the
+request stays for a specified period of time.
+
+This permits any transaction to be attempted by a CSR interface
+master, even if no target decodes the transaction. Such transactions
+will be handled by this module.
+"""
+{
+    default clock clk;
+    default reset active_low reset_n;
+
+    clocked t_csr_response csr_response={*=0}   "Registered CSR response back up the CSR chain";
+    clocked bit[16] timeout_counter=0           "Timeout counter, set to csr_timeout on a valid CSR request, and generating a response on timeout";
+    clocked bit csr_request_in_progress = 0     "Asserted if a CSR request is in progress";
+
+    /*b CSR interface logic */
+    csr_interface_logic """
+    This target detects any valid CSR request, and when it starts it
+    sets the @a timeout_counter.  While the request is still present
+    the @a timeout_counter decrements, until it is about to expire. At
+    this point the module claims the CSR request by driving the @a
+    csr_response.ack signal back.
+
+    Since no transaction is really taking place, the steps thereafter
+    are automatic; @a ack is removed after one cycle, and if the
+    request had been a read then valid read data of 0 is returned in
+    the following cycle too.
+    """: {
+        csr_response.read_data <= 0;
+        if (csr_response.read_data_valid) {
+            csr_response.read_data_valid <= 0;
+        }
+
+        if (csr_response.ack) {
+            csr_response.ack <= 0;
+            if (csr_request.read_not_write) {
+                csr_response.read_data_valid <= 1;
+            }
+        }
+
+        if (csr_request_in_progress) {
+            timeout_counter <= timeout_counter-1;
+            if (timeout_counter==0) {
+                timeout_counter <= 0;
+            }
+            if (timeout_counter==1) {
+                csr_response.ack <= 1;
+            }
+            if (!csr_request.valid) {
+                csr_request_in_progress <= 0;
+            }
+        } elsif (csr_request.valid) {
+            csr_request_in_progress <= 1;
+            timeout_counter <= csr_timeout;
+        }
+    }
+
+    /*b All done */
+}

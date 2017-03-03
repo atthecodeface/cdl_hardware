@@ -45,11 +45,23 @@ typedef enum[3] {
  * APB FSM state
  */
 typedef fsm {
-    apb_fsm_idle                             "Waiting for APB request";
-    apb_fsm_waiting_for_previous_csr_request "Waiting for a previous CSR request to complete";
-    apb_fsm_csr_requesting_write             "Requesting a CSR write";
-    apb_fsm_csr_requesting_read              "Requesting a CSR read";
-    apb_fsm_presenting_read_data             "Presenting read data on APB @a prdata";
+    apb_fsm_idle {
+            apb_fsm_waiting_for_previous_csr_request,
+            apb_fsm_csr_requesting_write,
+            apb_fsm_csr_requesting_read
+            } "Waiting for APB request";
+    apb_fsm_waiting_for_previous_csr_request { 
+            apb_fsm_csr_requesting_write,
+            apb_fsm_csr_requesting_read
+            } "Waiting for a previous CSR request to complete";
+    apb_fsm_csr_requesting_write  {
+            apb_fsm_idle } "Requesting a CSR write";
+    apb_fsm_csr_requesting_read   {
+            apb_fsm_presenting_read_data
+            } "Requesting a CSR read";
+    apb_fsm_presenting_read_data  {
+            apb_fsm_idle
+            } "Presenting read data on APB @a prdata";
 } t_apb_fsm_state;
 
 /*t t_apb_state

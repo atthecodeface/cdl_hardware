@@ -88,9 +88,15 @@ typedef enum[4] {
  * Processor FSM states
  */
 typedef fsm {
-    processor_fsm_idle         "Processor idle - can take a request from the client";
-    processor_fsm_apb_request  "APB request has been started, and waiting for its completion";
-    processor_fsm_wait         "In a wait delay cycle, waiting for accumulator to decrement to zero";
+    processor_fsm_idle  {
+        processor_fsm_apb_request, processor_fsm_wait
+    }     "Processor idle - can take a request from the client";
+    processor_fsm_apb_request {
+        processor_fsm_idle
+    }     "APB request has been started, and waiting for its completion";
+    processor_fsm_wait {
+        processor_fsm_idle
+    }     "In a wait delay cycle, waiting for accumulator to decrement to zero";
 } t_processor_fsm_state;
 
 /*t t_apb_fsm_state
@@ -100,9 +106,15 @@ typedef fsm {
  * completion of the request
  */
 typedef fsm {
-    apb_fsm_idle           "APB request machine idle - it can take a request from the processor";
-    apb_fsm_select_phase   "APB @a psel is asserted but @penable is deasserted, for the first cycle of an APB access";
-    apb_fsm_enable_phase   "Waiting for @a pready to be asserted, indicating completion of the APB access";
+    apb_fsm_idle {
+        apb_fsm_select_phase
+    }             "APB request machine idle - it can take a request from the processor";
+    apb_fsm_select_phase {
+        apb_fsm_enable_phase
+    }  "APB @a psel is asserted but @penable is deasserted, for the first cycle of an APB access";
+    apb_fsm_enable_phase {
+        apb_fsm_idle
+    }  "Waiting for @a pready to be asserted, indicating completion of the APB access";
 } t_apb_fsm_state;
 
 /*t t_rom_state

@@ -34,7 +34,7 @@ typedef fsm {
     data_state_request_data  { data_state_data_in_hand
             } "Requesting LED data for anything except the first LED";
     data_state_data_in_hand  { data_state_request_data,
-            data_state_last_data,
+            data_state_last_data
             } "Data is in hand, ready to be taken by the transmit side, when it can";
     data_state_last_data     { data_state_idle
             } "Has received the last LED data, and waiting for the transmit side to load the LEDs before going back to idle";
@@ -63,13 +63,13 @@ typedef fsm {
     transmit_state_idle      { transmit_state_load_leds,
             transmit_state_green
             } "The idle state, ready to take an LED value in to the shift register or to load the LEDs";
-    transmit_state_green      { transmit_state_red,
+    transmit_state_green      { transmit_state_red
             } "Transmitting and shifting the @a green element of the shift register";
-    transmit_state_red        { transmit_state_blue,
+    transmit_state_red        { transmit_state_blue
             } "Transmitting and shifting the @a red element of the shift register";
-    transmit_state_blue       { transmit_state_idle,
+    transmit_state_blue       { transmit_state_idle
             } "Transmitting and shifting the @a blue element of the shift register";
-    transmit_state_load_leds  { transmit_state_idle,
+    transmit_state_load_leds  { transmit_state_idle
             } "Loading the LEDs into the chain";
 } t_transmit_fsm;
 
