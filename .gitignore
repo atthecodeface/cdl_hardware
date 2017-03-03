@@ -4,6 +4,11 @@ build/*/sim
 build/*/*o
 build/*/*cdlh
 build/*/*cpp
+doc/html
+doc/latex
+doc/cdl_html
+doc/cdl_latex
+doc/dots
 *vcd
 *log
 models.make

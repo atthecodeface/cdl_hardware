@@ -24,10 +24,17 @@ INCLUDE_PATH           = $(SRC_ROOT)/cdl/inc
 INCLUDE_FILE_PATTERNS  = *.h
 
 ENUM_VALUES_PER_LINE   = 1
-SHOW_NAMESPACES        = YES
+SHOW_NAMESPACES        = NO
 LAYOUT_FILE            = layout_cdl.xml
 INPUT                 += $(SRC_ROOT)/cdl/README.md
 USE_MDFILE_AS_MAINPAGE = $(SRC_ROOT)/cdl/README.md
 COLLABORATION_GRAPH = NO
 HTML_OUTPUT            = cdl_html
 LATEX_OUTPUT           = cdl_latex
+DOT_IMAGE_FORMAT = svg
+
+# Removing the source browser takes out 40% of the documentation
+SOURCE_BROWSER         = YES
+
+# Changing this had no effect
+#MAX_DOT_GRAPH_DEPTH    = 100

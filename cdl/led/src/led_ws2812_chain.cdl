@@ -29,10 +29,15 @@ include "leds.h"
  * to drive out, modulated appropriately
  */
 typedef fsm {
-    data_state_idle          "Requesting first LED data; stays here until the first LED data is supplied";
-    data_state_request_data  "Requesting LED data for anything except the first LED";
-    data_state_data_in_hand  "Data is in hand, ready to be taken by the transmit side, when it can";
-    data_state_last_data     "Has received the last LED data, and waiting for the transmit side to load the LEDs before going back to idle";
+    data_state_idle          { data_state_data_in_hand
+            } "Requesting first LED data; stays here until the first LED data is supplied";
+    data_state_request_data  { data_state_data_in_hand
+            } "Requesting LED data for anything except the first LED";
+    data_state_data_in_hand  { data_state_request_data,
+            data_state_last_data,
+            } "Data is in hand, ready to be taken by the transmit side, when it can";
+    data_state_last_data     { data_state_idle
+            } "Has received the last LED data, and waiting for the transmit side to load the LEDs before going back to idle";
 } t_data_state_fsm;
 
 /*t t_data_state
@@ -53,21 +58,19 @@ typedef struct {
  * widths to present the data for the LED chain, and to hold the data
  * pin low to load the LED chain
  *
- * @dot
- * digraph fsm {
- *  node [];
- *  idle
- * }
- * @enddot
  */
 typedef fsm {
     transmit_state_idle      { transmit_state_load_leds,
             transmit_state_green
             } "The idle state, ready to take an LED value in to the shift register or to load the LEDs";
-    transmit_state_green      "Transmitting and shifting the @a green element of the shift register";
-    transmit_state_red        "Transmitting and shifting the @a red element of the shift register";
-    transmit_state_blue       "Transmitting and shifting the @a blue element of the shift register";
-    transmit_state_load_leds  "Loading the LEDs into the chain";
+    transmit_state_green      { transmit_state_red,
+            } "Transmitting and shifting the @a green element of the shift register";
+    transmit_state_red        { transmit_state_blue,
+            } "Transmitting and shifting the @a red element of the shift register";
+    transmit_state_blue       { transmit_state_idle,
+            } "Transmitting and shifting the @a blue element of the shift register";
+    transmit_state_load_leds  { transmit_state_idle,
+            } "Loading the LEDs into the chain";
 } t_transmit_fsm;
 
 /*t t_drive_bits
@@ -117,7 +120,8 @@ typedef struct {
 /*t t_data_chain_state
  *
  */
-typedef struct {
+typedef struct
+{
     bit[8] divider       "Clock divider down-counter, restarting at @a divider whenever it expires";
     bit    active        "Asserted from the start of driving the first of three output values, until just after starting to drive the third output value";
     t_drive_bits sr      "Three output bit values to drive, and associated valid; a mux selects the appropriate bit at any time";
@@ -136,7 +140,7 @@ module led_ws2812_chain( clock clk                   "System clock - not the pin
     /*b Documentation */
 """
 A chain of any length of Neopixel LEDs can be driven by this module
- 
+
 The interface is a request/data interface; this module presents a
 @a ready request to the client, which then presents a valid 24-bit
 RGB data value. When the module takes the data it removes its
@@ -457,3 +461,5 @@ at a time.
 
     /*b All done */
 }
+
+

@@ -1,6 +1,9 @@
 DOCUMENTATION = $(SRC_ROOT)/doc
 DOXYGEN = DOCUMENTATION=$(DOCUMENTATION) SRC_ROOT=$(SRC_ROOT) doxygen
 
+clean_doc:
+	(cd $(DOCUMENTATION); rm -rf cdl_latex cdl_html dots/*dot)
+
 documentation: $(DOCUMENTATION)/doc_pdf
 
 .PHONY: doxygen_cdl
