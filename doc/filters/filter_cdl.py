@@ -58,6 +58,10 @@ class c_cdl_file:
 
         self.is_header_file = (self.filename_ext=="h")
         self.is_source_file = (self.filename_ext=="cdl")
+        self.internal = ("@internal", "@endinternal")
+        if self.is_header_file:
+            self.internal = ("", "")
+            pass
         pass
     #f get_uid
     def get_uid(self):
@@ -199,11 +203,7 @@ class c_cdl_file:
             pass
         if fsm is not None:
             self.fsm = c_fsm(self)
-            r = r[:-7]+self.fsm.header()+"typedef"
-            #r += fsm.group(1)+self.fsm.header()+"enum" # leads to anon enum
-            #r += fsm.group(1)+"enum" + self.fsm.header()
-            #r += self.fsm.header()+fsm.group(1)+"enum" # leads to anon enum
-            r += fsm.group(1)+"enum"
+            r = r[:-7] + self.fsm.header() + "typedef" + fsm.group(1)+"enum"
             l = fsm.group(2)+"\n"
             self.parse_states[-1] = "typedef_fsm"
             return (l, r, None)
@@ -233,17 +233,6 @@ class c_cdl_file:
         if which == "{":
             return (nl, nr[:-1], self.parse_states + ["typedef_fsm_transitions"])
         if which == "}":
-            #nr = nr[:-1]
-            #nr+=",state_diagram "+self.fsm.header()
-            #nr += "}"
-            #nr += self.fsm.header() # Leads to no dot file
-            if False: # leads to no dot file
-                (u,ws,nnl) = self.try_parse_user_id(nl)
-                if u is not None:
-                    nr += ws + u + self.fsm.header()
-                    nl = nnl
-                    pass
-                pass
             self.fsm.write_dotfile()
             self.parse_states.pop()
             return (nl, nr, None)
@@ -339,7 +328,7 @@ class c_cdl_file:
         self.pending_documentation = ""
         code_block_match = re.match(r'\s*([^ ]*)\s*"""',l)
         if code_block_match:
-            self.pending_documentation="@section %s__%s"%(self.filename_leaf_root,code_block_match.group(1))
+            self.pending_documentation="%s @section %s__%s"%(self.internal[0], self.filename_leaf_root,code_block_match.group(1))
             pass
         (nl, nr, which) = self.find_first(l, r, ["clocked", "comb", "net", ":"] + self.comment_start_strings )
         (nl, nr, which, parsed) = self.parse_comment_start_string( nl, nr, which )
@@ -367,7 +356,7 @@ class c_cdl_file:
             if self.parse_states[-1] != "code_block":
                 raise Exception("Mismatch in braces - expected end of code block")
             self.parse_states.pop()
-            return (nl, nr, None)
+            return (nl, nr + "/** %s */"%(self.internal[1]), None)
         return ("", r+l, None)
     #f parse_finish_statement
     def parse_finish_statement(self, l, r):
@@ -400,7 +389,7 @@ class c_cdl_file:
         if signame is None:
             self.parse_states.pop()
             return ("", r+l, None)
-        self.pending_documentation = '@param %s:%s '%(sigtype,signame)
+        self.pending_documentation = '%s @param %s:%s '%(self.internal[0],sigtype,signame)
         r += l[:p]
         l = l[p:]
         # Do the following to 'insert' documentation - probably unwise, and better to encourage documentation in the code

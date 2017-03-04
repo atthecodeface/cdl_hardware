@@ -5,8 +5,10 @@ FULL_PATH_NAMES        = YES
 TAB_SIZE               = 4
 OPTIMIZE_OUTPUT_FOR_C  = YES
 EXTENSION_MAPPING      = cdl=C
+# Apparently has no real effect
 INLINE_SIMPLE_STRUCTS  = YES
-#TYPEDEF_HIDES_STRUCT   = NO
+# Should have typedef_hides_struct as it CDL all structs must be typedefed - although this may be moot as CDL does not do struct <fred> { }; at all
+TYPEDEF_HIDES_STRUCT   = YES
 
 EXTRACT_ANON_NSPACES   = YES
 HIDE_IN_BODY_DOCS      = NO
@@ -19,22 +21,28 @@ FILTER_PATTERNS        = *.cdl=$(DOCUMENTATION)/filters/filter_cdl.py *.h=$(DOCU
 ENABLE_PREPROCESSING   = YES
 MACRO_EXPANSION        = NO
 EXPAND_ONLY_PREDEF     = NO
+
+# Seems to have no effect
+INCLUDE_GRAPH          = YES
 SEARCH_INCLUDES        = YES
 INCLUDE_PATH           = $(SRC_ROOT)/cdl/inc
 INCLUDE_FILE_PATTERNS  = *.h
 
 ENUM_VALUES_PER_LINE   = 1
 SHOW_NAMESPACES        = NO
-LAYOUT_FILE            = layout_cdl.xml
+LAYOUT_FILE            = layout_cdl_$(DOC_TYPE).xml
 INPUT                 += $(SRC_ROOT)/cdl/README.md
 USE_MDFILE_AS_MAINPAGE = $(SRC_ROOT)/cdl/README.md
 COLLABORATION_GRAPH = NO
-HTML_OUTPUT            = cdl_html
-LATEX_OUTPUT           = cdl_latex
+HTML_OUTPUT            = cdl_$(DOC_TYPE)_html
+LATEX_OUTPUT           = cdl_$(DOC_TYPE)_latex
 DOT_IMAGE_FORMAT = svg
 
 # Removing the source browser takes out 40% of the documentation
-SOURCE_BROWSER         = YES
+SOURCE_BROWSER         = $(DOC_INTERNAL)
 
 # Changing this had no effect
 #MAX_DOT_GRAPH_DEPTH    = 100
+
+# Enable for internal docs
+INTERNAL_DOCS          = $(DOC_INTERNAL)

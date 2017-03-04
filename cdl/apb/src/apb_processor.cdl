@@ -251,25 +251,31 @@ The opcodes fall in to 6 different classes: ALU, branch, set
 parameter, APB request, wait, finish.
  
 + ALU
+
   Five ALU ops are supported - OR, BIC, AND, XOR, ADD
  
 + Branch
+
   Four branch types are supported - always, if acc is zero, if acc is
   nonzero, and if repeat count is nonzero (with the side effect of
   decrementing the repeat count)
 
 + Set parameter    
+
   Set parameter can set the APB address, accumulator and repeat count
  
 + Wait
+
   Wait uses the accumulator, decrementing it once per cycle, to wait
   before moving on in the program.
  
 + APB request
+
   APB request can request read, write accumulator, or write using the
   ROM content as data; these can optionally also auto-increment the address
  
 + Finish
+
   Complete the program, and permit a new request to be started
 
 The module presents a registered APB request interface out, and

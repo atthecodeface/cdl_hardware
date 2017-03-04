@@ -110,9 +110,6 @@
   <file>
     <briefdescription visible="yes"/>
     <detaileddescription title=""/>
-    <includes visible="yes"/>
-    <includegraph visible="yes"/>
-    <sourcelink visible="yes"/>
     <memberdecl>
       <functions title="Modules"/>
       <classes visible="yes" title=""/>
@@ -148,22 +145,6 @@
     <groupgraph visible="$GROUP_GRAPHS"/>
     <memberdef>
       <functions title="Modules"/>
-    </memberdef>
-    <memberdef>
-      <enums title=""/>
-      <enumvalues title=""/>
-      <pagedocs/>
-      <inlineclasses title=""/>
-      <defines title=""/>
-      <typedefs title=""/>
-      <variables title=""/>
-      <signals title=""/>
-      <publicslots title=""/>
-      <protectedslots title=""/>
-      <privateslots title=""/>
-      <events title=""/>
-      <properties title=""/>
-      <friends title=""/>
     </memberdef>
     <authorsection visible="yes"/>
   </group>
