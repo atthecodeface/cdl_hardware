@@ -24,4 +24,5 @@ doxygen_python:
 	(cd $(DOCUMENTATION); DOXYGEN_INPUTS=$(SRC_ROOT)/python $(DOXYGEN) $(DOCUMENTATION)/doxyfile.bbc_cdl)
 
 $(DOCUMENTATION)/doc_pdf: doxygen_cdl
-	(cd $(DOCUMENTATION)/cdl_latex; $(MAKE))
+	(cd $(DOCUMENTATION)/cdl_internal_latex; $(MAKE))
+	(cd $(DOCUMENTATION)/cdl_external_latex; $(MAKE))
