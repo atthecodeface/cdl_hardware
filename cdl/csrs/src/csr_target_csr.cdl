@@ -112,10 +112,11 @@ target to use a derived clock.
         }
         if (csr_access.valid) {
             csr_access.valid <= 0;
-            csr_response.ack <= 0;
+            csr_response.acknowledge <= 0;
             if (csr_access.read_not_write) {
                 csr_response.read_data_valid <= 1;
                 csr_response.read_data <= csr_access_data;
+                csr_response.read_data_error <= 0;
             }
         }
 
@@ -130,7 +131,7 @@ target to use a derived clock.
                         read_not_write = csr_request.read_not_write,
                         address = csr_request.address,
                         data    = csr_request.data };
-                csr_response.ack <= 1;
+                csr_response.acknowledge <= 1;
             }
         }
     }

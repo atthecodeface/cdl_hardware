@@ -328,7 +328,7 @@ class c_cdl_file:
         self.pending_documentation = ""
         code_block_match = re.match(r'\s*([^ ]*)\s*"""',l)
         if code_block_match:
-            self.pending_documentation="%s @section %s__%s"%(self.internal[0], self.filename_leaf_root,code_block_match.group(1))
+            self.pending_documentation="%s **Code block** %s:%s :<br>"%(self.internal[0], self.filename_leaf_root, code_block_match.group(1))
             pass
         (nl, nr, which) = self.find_first(l, r, ["clocked", "comb", "net", ":"] + self.comment_start_strings )
         (nl, nr, which, parsed) = self.parse_comment_start_string( nl, nr, which )

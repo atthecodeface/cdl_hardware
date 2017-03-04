@@ -49,22 +49,24 @@ will be handled by this module.
     sets the @a timeout_counter.  While the request is still present
     the @a timeout_counter decrements, until it is about to expire. At
     this point the module claims the CSR request by driving the @a
-    csr_response.ack signal back.
+    csr_response.acknowledge signal back.
 
     Since no transaction is really taking place, the steps thereafter
-    are automatic; @a ack is removed after one cycle, and if the
+    are automatic; @a acknowledge is removed after one cycle, and if the
     request had been a read then valid read data of 0 is returned in
     the following cycle too.
     """: {
         csr_response.read_data <= 0;
         if (csr_response.read_data_valid) {
             csr_response.read_data_valid <= 0;
+            csr_response.read_data_error <= 0;
         }
 
-        if (csr_response.ack) {
-            csr_response.ack <= 0;
+        if (csr_response.acknowledge) {
+            csr_response.acknowledge <= 0;
             if (csr_request.read_not_write) {
                 csr_response.read_data_valid <= 1;
+                csr_response.read_data_error <= 1;
             }
         }
 
@@ -74,7 +76,7 @@ will be handled by this module.
                 timeout_counter <= 0;
             }
             if (timeout_counter==1) {
-                csr_response.ack <= 1;
+                csr_response.acknowledge <= 1;
             }
             if (!csr_request.valid) {
                 csr_request_in_progress <= 0;

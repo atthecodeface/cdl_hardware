@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file   csr_interface.h
  * @brief  Types and modules for the CSR interface
@@ -27,14 +26,11 @@ include "apb.h"
 /*a Types */
 /*t t_csr_request */
 /**
- * The BBC micro implementation is controlled from outside through
- * control register reads and writes implemented by a request
- * interface with this structure (the CSR bus). The bus can be
- * pipelined as much as is required by timing, in both request and
- * response directions.
+ * This is the request structure for the pipelined CSR interface.
  *
- * A valid request has 'valid' asserted; this must remain asserted
- * until 'ack' is seen in response.
+ * A valid request has @a valid asserted; this must remain asserted
+ * until @a acknowledge is seen in response; another request must not
+ * be driven until @a acknowledge is seen to be low.
  *
  * A valid request has read_not_write (1 for read, 0 for write);
  * select (a 16-bit field) and address (a 16-bit field).
@@ -42,12 +38,25 @@ include "apb.h"
  * For write requests the data is up to 64 bits - although many
  * registers are shorter.
  *
- * For read responses a valid request will return a 'data_valid'
- * signal with valid read data.
+ * For read responses a valid request will return a @a read_data_valid
+ * signal with valid @a read_data.
  *
- * This structure should terminate in a target in a bbc_csr_interface
- * module, which provides a t_csr_access to a target, which is a
- * much simpler interface.
+ * This structure should be driven by:
+ *
+ *   csr_master_apb
+ *     In response to an APB, this masters the CSR pipelined interface
+ *  
+ * This structure should terminate (as leaves) in one or more of:
+ *
+ *   csr_target_csr
+ *     Provides a t_csr_access to a target
+ *
+ *   csr_target_apb
+ *     Provides an APB interface to a target
+ *
+ *   csr_target_timeout
+ *     Automatically times out transactions if the bus hangs for a while
+ *
  */
 typedef struct {
     bit valid;
@@ -71,8 +80,9 @@ typedef struct {
  * together, and pipeline stages may be added as required for timing.
  */
 typedef struct {
-    bit ack;
+    bit acknowledge;
     bit read_data_valid;
+    bit read_data_error;
     bit[32] read_data;
 } t_csr_response;
 
@@ -107,8 +117,9 @@ typedef bit[32] t_csr_access_data;
 
 /*a Modules */
 /*m csr_target_apb */
-extern module csr_target_apb( clock                       clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
-                       input bit                reset_n,
+extern
+module csr_target_apb( clock                    clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
+                       input bit                reset_n       "Active low reset",
                        input t_csr_request      csr_request   "Pipelined csr request interface input",
                        output t_csr_response    csr_response  "Pipelined csr request interface response",
                        output t_apb_request     apb_request   "APB request to target",
@@ -126,7 +137,7 @@ extern module csr_target_apb( clock                       clk           "Clock f
 /*m csr_target_csr */
 extern
 module csr_target_csr( clock                       clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
-                       input bit                reset_n,
+                       input bit                reset_n       "Active low reset",
                        input t_csr_request      csr_request   "Pipelined csr request interface input",
                        output t_csr_response    csr_response  "Pipelined csr request interface response",
                        output t_csr_access      csr_access    "Registered CSR access request to client",
@@ -143,8 +154,8 @@ module csr_target_csr( clock                       clk           "Clock for the 
 
 /*m csr_master_apb */
 extern
-module csr_master_apb( clock                    clk        "Clock for the CSR interface; a superset of all targets clock",
-                       input bit                reset_n,
+module csr_master_apb( clock                    clk           "Clock for the CSR interface; a superset of all targets clock",
+                       input bit                reset_n       "Active low reset",
                        input t_apb_request      apb_request   "APB request from master",
                        output t_apb_response    apb_response  "APB response to master",
                        input t_csr_response     csr_response  "Pipelined csr request interface response",
@@ -160,7 +171,7 @@ module csr_master_apb( clock                    clk        "Clock for the CSR in
 
 /*m csr_target_timeout */
 extern
-module csr_target_timeout( clock                       clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
+module csr_target_timeout( clock                       clk        "Clock for the CSR interface, possibly gated version of master CSR clock",
                            input bit                reset_n       "Active low reset",
                            input t_csr_request      csr_request   "Pipelined csr request interface input",
                            output t_csr_response    csr_response  "Pipelined csr request interface response",

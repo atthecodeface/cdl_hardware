@@ -386,7 +386,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
         leds[1] = apb_processor_response.acknowledge;
         leds[2] = apb_processor_response.rom_busy;
         leds[3] = csr_request.valid;
-        leds[4] = csr_response_r.ack;
+        leds[4] = csr_response_r.acknowledge;
         combined_csr_response = csr_response;
         combined_csr_response |= tt_framebuffer_csr_response;
         csr_response_r <= csr_response;

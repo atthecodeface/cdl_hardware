@@ -126,11 +126,11 @@ chain.
     A write transaction completes at this point, asserting @p
     pready. If another APB transaction comes in before the CSR
     interface completes the current write (which occurs when the CSR
-    @a ack goes high and then low), then that transaction will be
+    @a acknowledge goes high and then low), then that transaction will be
     waited.
 
     A read transaction has to wait for read_data_valid from the
-    target; hence it waits for the ack, and the read_data_valid, and
+    target; hence it waits for the acknowledge, and the read_data_valid, and
     then presents @p prdata and @p pready high.
     """: {
         apb_response.perr <= 0;
@@ -163,7 +163,7 @@ chain.
         }
         }
 
-        if (csr_response.ack && csr_request.valid) {
+        if (csr_response.acknowledge && csr_request.valid) {
             csr_request.valid <= 0;
         }
         if (csr_request_in_progress) {
@@ -172,7 +172,7 @@ chain.
                     csr_request_in_progress <= 0;
                 }
             } else {
-                if (!csr_request.valid && !csr_response.ack) {
+                if (!csr_request.valid && !csr_response.acknowledge) {
                     csr_request_in_progress <= 0;
                 }
             }
@@ -209,6 +209,7 @@ chain.
         case apb_action_present_read: {
             apb_response.pready <= 1;
             apb_response.prdata <= csr_response.read_data;
+            apb_response.perr   <= csr_response.read_data_error;
             apb_state.fsm_state <= apb_fsm_presenting_read_data;
         }
         case apb_action_complete_read: {

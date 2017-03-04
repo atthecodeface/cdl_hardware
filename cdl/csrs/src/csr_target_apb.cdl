@@ -79,9 +79,10 @@ the CSR interface and a registered APB request.
         }
 
         if (apb_access_completing) {
-            csr_response.ack <= 0;
+            csr_response.acknowledge <= 0;
             if (!apb_request.pwrite) {
                 csr_response.read_data_valid <= 1;
+                csr_response.read_data_error <= 0;
                 csr_response.read_data <= apb_response.prdata;
             }
         }
@@ -94,7 +95,7 @@ the CSR interface and a registered APB request.
         } elsif (csr_request.valid) {
             if (csr_request.select==csr_select) {
                 apb_access_start = 1;
-                csr_response.ack <= 1;
+                csr_response.acknowledge <= 1;
                 csr_request_in_progress <= 1;
             }
         }
