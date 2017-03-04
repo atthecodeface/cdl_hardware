@@ -167,6 +167,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
         }
         if (user_inputs.left_dial.direction_pulse) {
             if (user_inputs.left_dial.pressed) {
+                key_state.video_selection_changed <= 1;
                 if (user_inputs.left_dial.direction) {
                     key_state.video_selection <= key_state.video_selection+1;
                     if (key_state.video_selection==11) {key_state.video_selection <= 0;}
@@ -175,6 +176,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                     if (key_state.video_selection==0) {key_state.video_selection <= 11;}
                 }
             } else {
+                key_state.speed_selection_changed <= 1;
                 if (user_inputs.left_dial.direction) {
                     key_state.speed_selection <= key_state.speed_selection+1;
                     if (key_state.speed_selection==11) {key_state.speed_selection <= 0;}
@@ -376,7 +378,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
             apb_processor_request.valid = 1;
         }
         if (key_state.video_selection_changed) {
-            apb_processor_request.address[5;4] = bundle(1b0,key_state.video_selection);
+            apb_processor_request.address[5;4] = bundle(1b1,key_state.video_selection);
             apb_processor_request.valid = 1;
         }
 
