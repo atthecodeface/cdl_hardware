@@ -1,0 +1,27 @@
+var searchData=
+[
+  ['n',['n',['../group__cpu6502.html#a3cb458b05d3c1f94cf393713d965c66c',1,'cpu6502::t_flags']]],
+  ['needs_5fdata',['needs_data',['../group__led__ws2812__chain.html#a58c13082fcf2f6a616fb7e272436d2d5',1,'led_ws2812_chain::t_data_transmitter_combs']]],
+  ['negative',['negative',['../group__cpu6502.html#a87b1bd24cc974ebfb98b163758e3472e',1,'cpu6502::t_alu_result']]],
+  ['new_5fpixels',['new_pixels',['../group__bbc__display__sram.html#ab3f02e508668ed1329266c70e8d9d298',1,'bbc_display_sram::t_display_combs']]],
+  ['new_5frequest_5fpermitted',['new_request_permitted',['../group__generic__valid__ack__mux.html#ad106d89c3198dd2a506fc7a94340cbc7',1,'generic_valid_ack_mux::t_arbiter_combs']]],
+  ['next_5fadjust_5fcounter',['next_adjust_counter',['../group__crtc6845.html#ad953f5b60c2cf0c3e9681e7aa26ca6da',1,'crtc6845::t_vertical_combs']]],
+  ['next_5fcharacter_5frow_5fcounter',['next_character_row_counter',['../group__crtc6845.html#a15ae8d4435101fcd27febe807c7dd307',1,'crtc6845::t_vertical_combs']]],
+  ['next_5fcounter',['next_counter',['../group__crtc6845.html#a5b4f72eebf9e5dd8cdc7a37a2e4eef75',1,'crtc6845::t_horizontal_combs']]],
+  ['next_5fcycle',['next_cycle',['../group__cpu6502.html#a3e8c08561cfa5f8cdde5b061ed2772b7',1,'cpu6502::t_useq_decode']]],
+  ['next_5fcycles_5fdiff',['next_cycles_diff',['../group__hysteresis__switch.html#a73ebc23f12689cd5d49cccd408e0f443',1,'hysteresis_switch::t_hysteresis_combs']]],
+  ['next_5fid',['next_id',['../bbc__micro__types_8h.html#a6174eeb040deaa0c9ac50d65df089018',1,'t_bbc_floppy_op']]],
+  ['next_5fnum_5fvalid',['next_num_valid',['../group__framebuffer.html#ac456670aaf927711b09cebc68c9b61ef',1,'framebuffer::t_pixel_combs::next_num_valid()'],['../group__framebuffer__teletext.html#a356aa919c177357f5160e794b97baf8d',1,'framebuffer_teletext::t_pixel_combs::next_num_valid()']]],
+  ['next_5fscan_5fline_5fcounter',['next_scan_line_counter',['../group__crtc6845.html#a45cba99c750569702d9ffc89b9575167',1,'crtc6845::t_vertical_combs']]],
+  ['next_5fsector_5fis_5fzero',['next_sector_is_zero',['../group__bbc__floppy__sram.html#a6c87312a93375dfae9894cf2c1369ac4',1,'bbc_floppy_sram::t_floppy_disk_state']]],
+  ['nmi_5flast',['nmi_last',['../group__cpu6502.html#ace19ae901075013b071732a29f2abf84',1,'cpu6502::t_interrupt_state']]],
+  ['nmi_5fpending',['nmi_pending',['../group__cpu6502.html#a08aaee0480fcfd3cc67eb62cbb8dc9cd',1,'cpu6502::t_interrupt_state']]],
+  ['non_5fdma_5fdata_5frequest',['non_dma_data_request',['../group__fdc8271.html#a8437d4316a97c9b4dfca6f3b56b33765',1,'fdc8271::t_status_register']]],
+  ['non_5fdma_5fmode',['non_dma_mode',['../group__fdc8271.html#a207579c55866fe6458fc3319531b28ba',1,'fdc8271::t_control']]],
+  ['num_5fbits_5fvalid',['num_bits_valid',['../group__de1__cl__controls.html#af3a7834b0a25cefdc517661c37b6604f',1,'de1_cl_controls::t_sr_state']]],
+  ['num_5fdprintf_5frequesters',['num_dprintf_requesters',['../group__bbc__micro__de1__cl__io.html#ga1e17092ac80fddc15d32473bcff356d7',1,'bbc_micro_de1_cl_io']]],
+  ['num_5fpixels_5fheld_5fvalid',['num_pixels_held_valid',['../group__bbc__display__sram.html#a1c0f148112cb007af2ec4f36793bf866',1,'bbc_display_sram::t_sram_state']]],
+  ['num_5fpixels_5fto_5fadd_5fvalid',['num_pixels_to_add_valid',['../group__bbc__display__sram.html#ad4fe00adb9db5978282ffb60a446e128',1,'bbc_display_sram::t_display_state']]],
+  ['num_5ftracks',['num_tracks',['../group__bbc__floppy__sram.html#a66bbf6aa71aaba2a875ced763fbcdee8',1,'bbc_floppy_sram::t_floppy_disk_state']]],
+  ['num_5fvalid',['num_valid',['../group__framebuffer.html#a050719e6d8698e0620170204a668c9c4',1,'framebuffer::t_pixel_state::num_valid()'],['../group__framebuffer__teletext.html#a5529e17eb742646e9b2902cc2f8adc22',1,'framebuffer_teletext::t_pixel_state::num_valid()']]]
+];

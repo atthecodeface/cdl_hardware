@@ -1,0 +1,23 @@
+var searchData=
+[
+  ['i',['i',['../group__cpu6502.html#a44c51b1d3a3346df06d0f507f640de48',1,'cpu6502::t_flags']]],
+  ['idle_5ftransmitter',['idle_transmitter',['../group__led__ws2812__chain.html#a793d3c228bf71e933786fa4be41ee25a',1,'led_ws2812_chain::t_data_transmitter_combs']]],
+  ['ids_5fdata_5fin',['ids_data_in',['../group__cpu6502.html#a00e567e0142bb0f9aa0736d92ffe827c',1,'cpu6502::t_data_path']]],
+  ['ids_5fdata_5fout',['ids_data_out',['../group__cpu6502.html#a06b97111b869f700dde9a3a57d2a9f2b',1,'cpu6502::t_data_path']]],
+  ['ids_5fenable',['ids_enable',['../group__cpu6502.html#af696ca7384dfda9cef5d27017fb07265',1,'cpu6502::t_ir_decode::ids_enable()'],['../group__cpu6502.html#a83e4c223acf9bd955246aba16aedb0fe',1,'cpu6502::t_useq_decode::ids_enable()']]],
+  ['ids_5fop',['ids_op',['../group__cpu6502.html#acc42867bb4e24ff7b2538741634b2531',1,'cpu6502::t_ir_decode::ids_op()'],['../group__cpu6502.html#a1501a8fd7ff04fbb0c4ab6a98ce911b4',1,'cpu6502::t_useq_decode::ids_op()']]],
+  ['increment_5faddress',['increment_address',['../group__dprintf.html#af59242d3d8034af753ba1d16deb3c512',1,'dprintf::t_format_combs']]],
+  ['index',['index',['../bbc__micro__types_8h.html#a9e1c6ee43f38d82609d058ecfbbc5815',1,'t_bbc_floppy_response']]],
+  ['index_5fis_5fx',['index_is_x',['../group__cpu6502.html#a3f8548941bfe72a241267a09bd599d02',1,'cpu6502::t_ir_decode']]],
+  ['input_5ftype',['input_type',['../group__apb__target__gpio.html#a28b79844a15ab35345a111cf9c204264',1,'apb_target_gpio::t_gpio_input']]],
+  ['interlace_5fmode',['interlace_mode',['../group__crtc6845.html#a597d4ec967095540ef301ff3f85c342a',1,'crtc6845::t_control']]],
+  ['interlaced',['interlaced',['../group__bbc__display__sram.html#a3e23421ccc8883dd0964b0e325bf3bbd',1,'bbc_display_sram::t_display_state']]],
+  ['interpolate_5fvertical',['interpolate_vertical',['../teletext_8h.html#a2a4fe46b11c35c5419c639c83ad304ad',1,'t_teletext_timings::interpolate_vertical()'],['../group__saa5050.html#a00bb847126e0c01a9328978e30ec3121',1,'saa5050::t_load_state::interpolate_vertical()']]],
+  ['interrupt_5freason',['interrupt_reason',['../group__cpu6502.html#af36f99d051dca20e67f4276ea02997a8',1,'cpu6502::t_state']]],
+  ['interrupt_5frequest',['interrupt_request',['../group__fdc8271.html#a61504b4db5d3f69d0cbc632f04d13232',1,'fdc8271::t_status_register']]],
+  ['intoff',['intoff',['../group__bbc__micro.html#aa942bbbef2079b32328cfcb3d5146cd3',1,'bbc_micro::t_address_map_decoded']]],
+  ['inton',['inton',['../group__bbc__micro.html#a0bc472cba3398ef258839c59c4fcb046',1,'bbc_micro::t_address_map_decoded']]],
+  ['ir',['ir',['../group__cpu6502.html#a72c0ccd30e4a7a6037b2af328b6156db',1,'cpu6502::t_state']]],
+  ['irq',['irq',['../group__cpu6502.html#a1e19f16ebf2da7586c4a107f5397aed0',1,'cpu6502::t_alu_result::irq()'],['../group__via6522.html#a4ac484bdd26d73773f56ee80ee9a798f',1,'via6522::t_irq::irq()']]],
+  ['irq_5fpending',['irq_pending',['../group__cpu6502.html#a76bbadc54661d0b6970fedeaed7718c9',1,'cpu6502::t_interrupt_state']]]
+];

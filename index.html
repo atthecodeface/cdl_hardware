@@ -1,1 +1,68 @@
-Nothing to see yet, move along...
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<link href="base.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+<div class="header">
+<div class="title">CDL Hardware Repository Documentation</div></div>
+</div>
+<div class="contents">
+This is the top level documentation page for the CDL hardware repository, on <a href="https://github.com/atthecodeface/bbc_cdl.git">GitHub</a>.
+</div>
+
+<h2>Contents</h2>
+
+The branch contains the external CDL module documentation at present. It is available as <a href="cdl_external_refman.pdf">a PDF document</a> and <a href="cdl_external_html/index.html">directly in HTML</a>.
+
+<h2>Documentation branch creation</h2>
+
+<p>This documentation is in the gh-pages branch of the git repository, and is automatically made available <a href="https://atthecodeface.github.io/bbc_cdl/">on GitHub</a>. The gh-pages branch was created using:</p>
+
+<pre>
+git clone https://github.com/atthecodeface/bbc_cdl.git gh-pages
+cd gh-pages
+git checkout --orphan gh-pages
+git rm -rf .
+... create and edit index.html and base.css ...
+git add index.html base.css
+git commit -m "First pages commit" -a
+git push origin gh-pages
+</pre>
+
+<p>Thereafter, the documentation has been added to the gh-pages branch.</p>
+
+<h2>Documentation generation</h2>
+
+<p>The bulk of the documentation is generated using doxygen, from
+documentation (and a few comments) in the CDL source files and
+comments in the C source code.</p>
+
+<p>Doxygen does not treat CDL natively, so a CDL filter is used in the
+documentation creation process. This part-parses the CDL and generates
+a Doxygen-commmented C output, which Doxygen can generate LaTeX and
+HTML documentation from.</p>
+
+<p?There are two forms of documentation: internal, i.e. the code
+documented so that it may be understood by readers of the code and
+anyone wishing to udpate the code; and external, which is for uses of
+the code. The documentation here is only the external
+documentation. Both are created through a simple makefile invocation,
+though, so if the internal documentation is desired then a 'make
+documentation' in a code branch of the Git repository will generate
+it. For this to be successful both 'doxygen' and the 'dot' tool must
+be installed - and for the PDF to be generated (from LaTeX) then a
+full LaTeX install is required. For example:</p>
+
+<pre>
+git clone https://github.com/atthecodeface/bbc_cdl.git
+cd bbc_cdl
+make clean
+make documentation
+open doc/cdl_internal_html/index.html
+ ... or ...
+open doc/cdl_internal_latex/refman.pdf
+</pre>
+
+</body>
+</html>
