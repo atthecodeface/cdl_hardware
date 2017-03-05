@@ -1,7 +1,11 @@
 @INCLUDE               = doxyfile.common
 PROJECT_NAME           = "CDL Modules"
 
+# Want full path names relative to src_root...
 FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = $(SRC_ROOT)
+#STRIP_FROM_INC_PATH    = $(SRC_ROOT)/cdl/inc
+
 TAB_SIZE               = 4
 OPTIMIZE_OUTPUT_FOR_C  = YES
 EXTENSION_MAPPING      = cdl=C
@@ -11,7 +15,6 @@ INLINE_SIMPLE_STRUCTS  = YES
 TYPEDEF_HIDES_STRUCT   = YES
 
 EXTRACT_ANON_NSPACES   = YES
-HIDE_IN_BODY_DOCS      = NO
 
 INPUT                  = $(DOXYGEN_INPUTS)
 INPUT_ENCODING         = UTF-8
@@ -21,6 +24,15 @@ FILTER_PATTERNS        = *.cdl=$(DOCUMENTATION)/filters/filter_cdl.py *.h=$(DOCU
 ENABLE_PREPROCESSING   = YES
 MACRO_EXPANSION        = NO
 EXPAND_ONLY_PREDEF     = NO
+
+CLASS_GRAPH            = NO
+COLLABORATION_GRAPH    = NO
+GROUP_GRAPHS           = NO
+INCLUDED_BY_GRAPH      = NO
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+GRAPHICAL_HIERARCHY    = NO
+DIRECTORY_GRAPH        = NO
 
 # Seems to have no effect
 INCLUDE_GRAPH          = YES
@@ -46,3 +58,11 @@ SOURCE_BROWSER         = $(DOC_INTERNAL)
 
 # Enable for internal docs
 INTERNAL_DOCS          = $(DOC_INTERNAL)
+HIDE_IN_BODY_DOCS      = NO
+
+ENABLE_PREPROCESSING   = NO
+
+# For external documentation
+EXCLUDE_PATTERNS       = */tb_*cdl
+
+# For external latex documentation

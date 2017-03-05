@@ -111,14 +111,14 @@
     <briefdescription visible="yes"/>
     <detaileddescription title=""/>
     <memberdecl>
-      <functions title="Modules"/>
+      <!--functions title="Modules"-->
       <classes visible="yes" title=""/>
       <namespaces visible="yes" title=""/>
       <constantgroups visible="yes" title=""/>
       <defines title=""/>
       <typedefs title=""/>
       <enums title=""/>
-      <functions title=""/>
+      <!-- functions title="" -->
       <variables title=""/>
       <membergroups visible="yes"/>
     </memberdecl>

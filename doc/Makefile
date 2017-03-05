@@ -1,12 +1,17 @@
 DOCUMENTATION = $(SRC_ROOT)/doc
 DOXYGEN = DOCUMENTATION=$(DOCUMENTATION) SRC_ROOT=$(SRC_ROOT) doxygen 
+CDL_EXTERNAL_REF_SED_SCRIPT = '/\\chapter{Namespace Index}/d;/\\input{namespaces}/d;/\\input{.*cdl}/d;s/\\chapter{File Documentation}/\\chapter{Header Files}/;/\\chapter{Namespace Documentation}/d;/\\input{namespace.*}/d;'
 
 clean: clean_doc
 
 clean_doc:
 	(cd $(DOCUMENTATION); rm -rf cdl_*latex cdl_*html dots/*dot)
+	mkdir -p $(DOCUMENTATION)/cdl_external_latex
+	mkdir -p $(DOCUMENTATION)/cdl_internal_latex
+	mkdir -p $(DOCUMENTATION)/cdl_external_html
+	mkdir -p $(DOCUMENTATION)/cdl_internal_html
 
-documentation: $(DOCUMENTATION)/doc_pdf
+documentation: doxygen_cdl $(DOCUMENTATION)/cdl_external_latex/refman.pdf $(DOCUMENTATION)/cdl_internal_latex/refman.pdf
 
 .PHONY: doxygen_cdl
 # Must do documents twice to generate the dotfiles
@@ -23,6 +28,14 @@ doxygen_cmodel:
 doxygen_python:
 	(cd $(DOCUMENTATION); DOXYGEN_INPUTS=$(SRC_ROOT)/python $(DOXYGEN) $(DOCUMENTATION)/doxyfile.bbc_cdl)
 
-$(DOCUMENTATION)/doc_pdf: doxygen_cdl
-	(cd $(DOCUMENTATION)/cdl_internal_latex; $(MAKE))
-	(cd $(DOCUMENTATION)/cdl_external_latex; $(MAKE))
+$(DOCUMENTATION)/cdl_internal_latex/refman.pdf: doxygen_cdl
+	(cd $(DOCUMENTATION)/cdl_internal_latex; sed -i '/\\chapter{Namespace Index}/d;/\\input{namespaces}/d' refman.tex ; $(MAKE))
+
+cdl_external_pdf: $(DOCUMENTATION)/cdl_external_latex/refman.pdf
+
+remake_cdl_external_pdf:
+	rm $(DOCUMENTATION)/cdl_external_latex/refman.pdf
+	$(MAKE) cdl_external_pdf
+
+$(DOCUMENTATION)/cdl_external_latex/refman.pdf:
+	(cd $(DOCUMENTATION)/cdl_external_latex; sed -i $(CDL_EXTERNAL_REF_SED_SCRIPT) refman.tex ; $(MAKE))
