@@ -1,0 +1,252 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_minimal.cdl
+ * @brief  Minimal RISC-V implementation ported to CDL
+ *
+ * CDL implementation of minimal RISC-V teaching implementation
+ *
+ */
+
+/*a Includes
+ */
+include "riscv_internal_types.h"
+include "riscv.h"
+include "riscv_submodules.h"
+
+/*a Constants
+ */
+constant integer INITIAL_PC=0x80000000;
+
+/*a Types
+ */
+/*t t_decexecrfw_state */
+typedef struct {
+    bit ifetch_requested;
+    t_riscv_word instr_data;
+    bit valid;
+    bit[32] pc                   "PC of the decoded instruction";
+} t_decexecrfw_state;
+
+/*t t_decexecrfw_combs
+ *
+ * Combinatorials of the decexecrfw_state
+ */
+typedef struct {
+    t_riscv_word   rs1;
+    t_riscv_word   rs2;
+    bit[32] next_pc;
+
+    bit[2]  word_offset;
+    bit[32] branch_target;
+    bit branch_taken;
+    bit trap;
+    t_riscv_trap_cause trap_cause;
+    t_riscv_csr_access csr_access;
+    t_riscv_word rfw_write_data;
+    t_riscv_word memory_data;
+} t_decexecrfw_combs;
+
+/*a Module
+ */
+module riscv_minimal( clock clk,
+                     input bit reset_n,
+                     output t_riscv_mem_access_req  dmem_access_req,
+                     input  t_riscv_mem_access_resp dmem_access_resp,
+                     output t_riscv_mem_access_req  imem_access_req,
+                     input  t_riscv_mem_access_resp imem_access_resp
+)
+"""
+This processor tries to keep it as simple as possible, with a 3-stage
+pipeline.
+
+The first stage is instruction fetch; the instruction memory request
+is put out just before the middle of the cycle, and a memory (running
+either at 2x the clock speed, or off the negedge of the clock)
+presents the instruction fetched at the end of the cycle, where it is
+registered.
+
+The second stage takes the fetched instruction, decodes, fetches
+register values, and executes the ALU stage; determining in half a
+cycle the next instruction fetch, and in the whole cycle the data
+memory request, which is valid just before the end
+
+@timegraph
+Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem_req.9 , dmem_resp.9 , RFW
+0  , 0   ,  fetch A   ,       X     ,         ,         ,         ,       ,            ,             ,       
+1  , 0   ,     -      ,    inst A   ,         ,         ,         ,       ,            ,             ,       
+2  , 1   ,  fetch B   ,       X     ,  inst A , inst A  , inst A  , inst A, inst A     ,             ,       
+3  , 1   ,            ,    inst B   ,         ,         ,         ,       ,            ,  inst A     , inst A
+@endtimegraph
+"""
+{
+
+    /*b State and comb
+     */
+    default clock clk;
+    default reset active_low reset_n;
+
+    clocked t_riscv_word[32] registers={*=0} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
+
+    net     t_riscv_i32_decode decexecrfw_idecode;
+    clocked t_decexecrfw_state    decexecrfw_state={*=0, pc=INITIAL_PC};
+    comb    t_decexecrfw_combs    decexecrfw_combs;
+    net     t_riscv_i32_alu_result decexecrfw_alu_result;
+
+    comb t_riscv_csr_controls csr_controls;
+    net t_riscv_csr_data csr_data;
+    net t_riscv_csrs_minimal csrs;
+
+    /*b Ifetch stage
+     */
+    instruction_fetch_stage: {
+        imem_access_req             = {*=0};
+        imem_access_req.read_enable = 1;
+        imem_access_req.address       = decexecrfw_combs.next_pc[14;2];
+        if (!decexecrfw_state.valid) {
+            imem_access_req.address   = decexecrfw_state.pc[14;2];
+        }
+    }
+
+    /*b Decode, RFR, execute and RFW stage - single stage execution
+     */
+    decode_rfr_execute_stage: {
+        /*b Instruction register */
+        decexecrfw_state.valid <= 0;
+        decexecrfw_state.ifetch_requested <= imem_access_req.read_enable;
+        if (decexecrfw_state.ifetch_requested && !imem_access_resp.wait) {
+            decexecrfw_state.valid <= 1;
+            decexecrfw_state.instr_data <= imem_access_resp.read_data;
+        }
+        if (decexecrfw_state.valid) {
+            decexecrfw_state.pc <= decexecrfw_combs.next_pc;
+        }
+
+        /*b Decode instruction */
+        riscv_i32_decode decode( instruction <= decexecrfw_state.instr_data,
+                                 idecode => decexecrfw_idecode );
+
+        /*b Register read */
+        decexecrfw_combs.rs1 = registers[decexecrfw_idecode.rs1]; // note that register 0 is ALWAYS 0 anyway
+        decexecrfw_combs.rs2 = registers[decexecrfw_idecode.rs2]; // note that register 0 is ALWAYS 0 anyway
+
+        /*b Execute ALU stage */
+        riscv_i32_alu alu( idecode <= decexecrfw_idecode,
+                           pc  <= decexecrfw_state.pc,
+                           rs1 <= decexecrfw_combs.rs1,
+                           rs2 <= decexecrfw_combs.rs2,
+                           alu_result => decexecrfw_alu_result );
+
+        /*b Minimal CSRs */
+        csr_controls = {*=0};
+        csr_controls.retire      = decexecrfw_state.valid;
+        csr_controls.timer_inc   = 1;
+
+        decexecrfw_combs.csr_access = decexecrfw_idecode.csr_access;
+        if (!decexecrfw_state.valid || decexecrfw_idecode.illegal) {
+            decexecrfw_combs.csr_access.access = riscv_csr_access_none;
+        }
+        riscv_csrs_minimal csrs( clk <- clk,
+                                 reset_n <= reset_n,
+                                 csr_access     <= decexecrfw_combs.csr_access,
+                                 csr_write_data <= decexecrfw_idecode.illegal ? bundle(27b0, decexecrfw_idecode.rs1) : decexecrfw_combs.rs1,
+                                 csr_data       => csr_data,
+                                 csr_controls   <= csr_controls,
+                                 csrs => csrs);
+
+        /*b Memory access handling - must be valid before middle of cycle */
+        dmem_access_req.read_enable  = (decexecrfw_idecode.op == riscv_op_load);
+        dmem_access_req.write_enable = (decexecrfw_idecode.op == riscv_op_store);
+        dmem_access_req.address      = decexecrfw_alu_result.arith_result[RISCV_DATA_ADDR_WIDTH;2];
+        decexecrfw_combs.word_offset    = decexecrfw_alu_result.arith_result[2;0];
+        dmem_access_req.byte_enable  = 4hf << decexecrfw_combs.word_offset;
+        part_switch (decexecrfw_idecode.memory_width) {
+        case mw_byte: { dmem_access_req.byte_enable  = 4h1 << decexecrfw_combs.word_offset; }
+        case mw_half: { dmem_access_req.byte_enable  = 4h3 << decexecrfw_combs.word_offset; }
+        }
+        dmem_access_req.write_data = decexecrfw_combs.rs2 << (bundle(decexecrfw_combs.word_offset,3b0));
+
+        /*b Determine whether branch would be taken and find next PC */
+        decexecrfw_combs.trap = 0;
+        decexecrfw_combs.trap_cause = 0;
+        decexecrfw_combs.branch_taken = 0;
+        decexecrfw_combs.branch_target = decexecrfw_alu_result.branch_target;
+        part_switch (decexecrfw_idecode.op) {
+        case riscv_op_branch:   { decexecrfw_combs.branch_taken = decexecrfw_alu_result.branch_condition_met; }
+        case riscv_op_jal:      { decexecrfw_combs.branch_taken=1; }
+        case riscv_op_jalr:     { decexecrfw_combs.branch_taken=1; }
+        case riscv_op_system:   {
+            if (decexecrfw_idecode.subop==riscv_subop_mret) {
+                decexecrfw_combs.branch_taken=1;
+                decexecrfw_combs.branch_target = csrs.mepc;
+            }
+            if (decexecrfw_idecode.subop==riscv_subop_ecall) {
+                decexecrfw_combs.trap = 1;
+                decexecrfw_combs.trap_cause = riscv_trap_cause_mecall;
+            }
+        }
+        }
+        if (decexecrfw_idecode.illegal) {
+            decexecrfw_combs.trap = 1;
+            decexecrfw_combs.trap_cause = riscv_trap_cause_illegal;
+        }
+        decexecrfw_combs.next_pc = decexecrfw_state.pc + 4;
+        if (decexecrfw_combs.branch_taken) {
+            decexecrfw_combs.next_pc = decexecrfw_combs.branch_target;
+        }
+        if (decexecrfw_combs.trap) {
+            decexecrfw_combs.next_pc = csrs.mtvec;
+        }
+        csr_controls.trap_cause = decexecrfw_combs.trap_cause;
+        csr_controls.trap       = 0;
+        if (decexecrfw_combs.trap) {
+            csr_controls.trap       = decexecrfw_state.valid;
+        }
+
+        /*b Memory read handling - way late in the second half of the cycle */
+        decexecrfw_combs.memory_data = dmem_access_resp.read_data;
+        part_switch (decexecrfw_idecode.memory_width) {
+        case mw_byte: {
+            decexecrfw_combs.memory_data = (dmem_access_resp.read_data >> (bundle(decexecrfw_combs.word_offset,3b0))) & 0xff;
+            if (!decexecrfw_idecode.memory_read_unsigned && decexecrfw_combs.memory_data[7]) { decexecrfw_combs.memory_data[24;8] = -1; }
+        }
+        case mw_half: {
+            decexecrfw_combs.memory_data = (dmem_access_resp.read_data >> (bundle(decexecrfw_combs.word_offset,3b0))) & 0xffff;
+            if (!decexecrfw_idecode.memory_read_unsigned && decexecrfw_combs.memory_data[15]) { decexecrfw_combs.memory_data[16;16] = -1; }
+        }
+        }
+
+        decexecrfw_combs.rfw_write_data = dmem_access_req.read_enable ? decexecrfw_combs.memory_data : decexecrfw_alu_result.result;
+        if (decexecrfw_state.valid && decexecrfw_idecode.rd_written) {
+            registers[decexecrfw_idecode.rd] <= decexecrfw_combs.rfw_write_data;
+        }
+        registers[0] <= 0; // register 0 is always zero...
+    }
+
+    /*b Logging */
+    logging """
+    """: {
+        riscv_i32_trace trace(clk <- clk,
+                              reset_n <= reset_n,
+                              clk_enable    <= decexecrfw_state.valid,
+                              idecode       <= decexecrfw_idecode,
+                              result        <= decexecrfw_combs.rfw_write_data,
+                              pc            <= decexecrfw_state.pc,
+                              branch_taken  <= decexecrfw_combs.branch_taken,
+                              branch_target <= decexecrfw_combs.branch_target
+            );
+    }
+
+    /*b All done */
+}
+

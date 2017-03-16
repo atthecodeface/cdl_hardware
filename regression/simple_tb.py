@@ -22,7 +22,7 @@ class base_th(pycdl._thfile):
     _auto_wire_same_name = False
     #f compare_expected_list
     def compare_expected_list(self, reason, expectation, actual):
-        expectation = expectation[:]
+        expectation = list(expectation[:])
         for t in actual:
             if len(expectation)>0:
                 et = expectation.pop(0)
@@ -37,6 +37,10 @@ class base_th(pycdl._thfile):
         if len(expectation)>0:
             self.failtest(0,"Expected more %ss: %s"%(reason,str(expectation),))
             pass
+        pass
+    #f set_run_time
+    def set_run_time(self, num_cycles):
+        self.run_time = num_cycles-10
         pass
     #f exec_run
     def exec_run(self):
@@ -95,6 +99,7 @@ class cdl_test_hw(pycdl.hw):
     th_forces = {}
     module_name = ""
     system_clock_half_period = 1
+    loggers = []
     #f __init__
     def __init__(self, test):
         self.test = test
@@ -113,11 +118,14 @@ class cdl_test_hw(pycdl.hw):
                                  inputs = {"reset_n":reset_n},
                                  forces = hw_forces,
                                  )
+        children = [self.dut, system_clock] + self.drivers
+        for l in self.loggers:
+            log_module = pycdl.module( "se_logger", options=self.loggers[l] )
+            children.append(log_module)
+            pass
         pycdl.hw.__init__(self,
                           thread_mapping=None,
-                          children=[self.dut,
-                                    system_clock,
-                            ] + self.drivers,
+                          children=children,
                           )
         self.wave_hierarchies = [self.dut]
         pass
@@ -126,6 +134,7 @@ class cdl_test_hw(pycdl.hw):
         return self.test.passed()
     #f set_run_time
     def set_run_time(self, num_cycles):
+        self.test.set_run_time(num_cycles/2/self.system_clock_half_period)
         pass
 
 #a Simulation test classes
@@ -149,7 +158,7 @@ class base_test(unittest.TestCase):
             waves.add_hierarchy(hw.wave_hierarchies)
             pass
         hw.reset()
-        hw.set_run_time(0xffffffffff)
+        hw.set_run_time(num_cycles)
         if not do_waves:
             hw.step(num_cycles)
             pass

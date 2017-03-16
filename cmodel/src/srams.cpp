@@ -72,7 +72,7 @@ static t_sl_error_level se_sram_mrw_2_ ## size ## x ## width ## _instance_fn(c_e
  * can be registered with CDL, for all the required SRAMs.
  */
 SRAM_WRAPPER(8192, 32, 32)
-SRAM_WRAPPER(16384, 32, 32)
+SRAM_WRAPPER(16384, 32, 8)
 SRAM_WRAPPER(16384, 40, 0)
 SRAM_WRAPPER(16384, 8, 8)
 SRAM_WRAPPER(65536, 8, 8)

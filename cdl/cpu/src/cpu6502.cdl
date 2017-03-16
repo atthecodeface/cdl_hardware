@@ -1,16 +1,15 @@
-/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
  *
  * @file  cpu6502.cdl
  * @brief CDL implementation of 6502 CPU core
@@ -40,7 +39,11 @@
  */
 
 /*a Types */
-/*t t_src_enable */
+/*t t_src_enable
+ *
+ * Bit numbers for one-hot source enables, used in instruction and
+ * microsequencer decode
+ */
 typedef enum[4] {
     src_en_acc  = 0,
     src_en_x    = 1,
@@ -53,10 +56,17 @@ typedef enum[4] {
     src_en_num  = 8,
 } t_src_enable;
 
-/*t t_src_enables */
+/*t t_src_enables
+ *
+ * Bus for one-hot encode of datapath source
+ */
 typedef bit[src_en_num] t_src_enables;
 
-/*t t_src_write_enable */
+/*t t_src_write_enable
+ * 
+ * Encode of source to write - may not be one-hot, on some
+ * undocumented instructions particularly
+ */
 typedef enum[3] {
     src_wr_en_acc   = 0,
     src_wr_en_x     = 1,
@@ -70,7 +80,13 @@ typedef enum[3] {
 /*t t_src_write_enables */
 typedef bit[src_wr_en_num] t_src_write_enables;
 
-/*t t_ids_enable */
+/*t t_ids_enable
+ *
+ * Encode of which sources to drive the inc/dec/shift datapath;
+ * officially one-hot, but can be multitibit in undocumented
+ * instructions (in which case they are wire-ORed)
+ *
+ */
 typedef enum[3] {
     ids_en_pc  = 0,
     ids_en_src = 1,
@@ -83,7 +99,11 @@ typedef enum[3] {
 /*t t_ids_enables */
 typedef bit[ids_en_num] t_ids_enables;
 
-/*t t_mem_data_src */
+/*t t_mem_data_src
+ *
+ * Encode of the data source to drive the databus
+ *
+ */
 typedef enum[2] {
     mem_data_src_src,
     mem_data_src_pcl,
@@ -91,14 +111,22 @@ typedef enum[2] {
     mem_data_src_dl
 } t_mem_data_src;
 
-/*t t_dl_src */
+/*t t_dl_src
+ *
+ * Encode of the data source for the @a data_latch
+ *
+ */
 typedef enum[2] {
     dl_src_data,
     dl_src_alu,
     dl_src_hold
 } t_dl_src;
 
-/*t t_pc_op */
+/*t t_pc_op
+ *
+ * Encode of what to do with the PC
+ *
+ */
 typedef enum[3] {
     pc_op_hold,
     pc_op_inc,

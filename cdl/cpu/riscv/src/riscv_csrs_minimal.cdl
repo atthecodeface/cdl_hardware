@@ -1,0 +1,191 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_csrs_minimal.cdl
+ * @brief  Control/status registers for a minimal RISC-V implementation
+ *
+ * This file contains a module that implements the in-CPU CSRs
+ * required by a RISC-V implementation.
+ */
+
+/*a Includes */
+include "riscv_internal_types.h"
+
+/*a Constants that can be overridden */
+constant integer mimpid = 0;
+constant integer misa = 0;
+constant integer mvendorid = 0;
+constant integer mhartid = 0;
+constant integer mstatus = 0;
+
+/*a Types */
+/*t t_csr_write */
+typedef struct {
+    bit     enable     "Asserted if a CSR write is in progress";
+    bit[32] data       "Write data, dependent on current CSR data potentially";
+} t_csr_write;
+
+/*a Module */
+module riscv_csrs_minimal( clock clk                                   "RISC-V clock",
+                           input bit reset_n                           "Active low reset",
+                           input t_riscv_csr_access csr_access         "RISC-V CSR access, combinatorially decoded",
+                           input t_riscv_word       csr_write_data     "Write data for the CSR access, later in the cycle than @csr_access possibly",
+                           output t_riscv_csr_data csr_data            "CSR respone (including read data), from the current @a csr_access",
+                           input t_riscv_csr_controls csr_controls     "Control signals to update the CSRs",
+                           output t_riscv_csrs_minimal csrs            "CSR values"
+    )
+"""
+This module implements a minimal set of RISC-V CSRs, as per v2.1 (May
+2016) of the RISC-V instruction set manual user level ISA and v1.9.1
+of the privilege architecture (Nov 2016), with the exception that
+MTIME has been removed (as this seems to be the correct thing to do).
+"""
+{
+
+    /*b State
+     */
+    default clock clk;
+    default reset active_low reset_n;
+    clocked t_riscv_csrs_minimal csrs={*=0};
+    comb t_csr_write  csr_write;
+
+    /*b CSR read/write
+     */
+    csr_read_write """
+    CSR_ADDR_MSTATUS
+    CSR_ADDR_MISA
+    CSR_ADDR_MVENDORID
+    CSR_ADDR_MARCHID
+    CSR_ADDR_MIMPID
+    CSR_ADDR_MHARTID
+    """: {
+
+        /*b Decode read data and 'illegal_access' for the CSR access */
+        csr_data = {*=0};
+        csr_data.illegal_access = 1;
+        part_switch (csr_access.address) {
+        case CSR_ADDR_CYCLE     : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;0]; }
+        case CSR_ADDR_CYCLEH    : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;32]; }
+        case CSR_ADDR_MCYCLE    : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;0]; }
+        case CSR_ADDR_MCYCLEH   : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;32]; }
+        case CSR_ADDR_INSTRET   : { csr_data.illegal_access=0; csr_data.read_data = csrs.instret[32;0]; }
+        case CSR_ADDR_INSTRETH  : { csr_data.illegal_access=0; csr_data.read_data = csrs.instret[32;32]; }
+        case CSR_ADDR_MINSTRET  : { csr_data.illegal_access=0; csr_data.read_data = csrs.instret[32;0]; }
+        case CSR_ADDR_MINSTRETH : { csr_data.illegal_access=0; csr_data.read_data = csrs.instret[32;32]; }
+        case CSR_ADDR_TIME      : { csr_data.illegal_access=0; csr_data.read_data = csrs.time[32;0]; }
+        case CSR_ADDR_TIMEH     : { csr_data.illegal_access=0; csr_data.read_data = csrs.time[32;32]; }
+        case CSR_ADDR_MIMPID    : { csr_data.illegal_access=0; csr_data.read_data = mimpid; }
+        case CSR_ADDR_MHARTID   : { csr_data.illegal_access=0; csr_data.read_data = mhartid; }
+        case CSR_ADDR_MISA      : { csr_data.illegal_access=0; csr_data.read_data = misa; }
+        case CSR_ADDR_MVENDORID : { csr_data.illegal_access=0; csr_data.read_data = mvendorid; }
+        case CSR_ADDR_MSTATUS   : { csr_data.illegal_access=0; csr_data.read_data = mstatus; }
+        case CSR_ADDR_MSCRATCH  : { csr_data.illegal_access=0; csr_data.read_data = csrs.mscratch; }
+        case CSR_ADDR_MEPC      : { csr_data.illegal_access=0; csr_data.read_data = csrs.mepc; }
+        case CSR_ADDR_MTVEC     : { csr_data.illegal_access=0; csr_data.read_data = csrs.mtvec; } // can be hardwired to any value, or read/write; tests require read-write
+            // basic RISC-V tests require the following to not be illegal to write to
+        case CSR_ADDR_MEDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
+        case CSR_ADDR_MIDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
+        case CSR_ADDR_MIE       : { csr_data.illegal_access=0; csr_data.read_data = 0; }
+        }
+
+        /*b Decode CSR writes */
+        csr_write.enable = 0;
+        csr_write.data = csr_write_data;
+        part_switch (csr_access.access) {
+        case riscv_csr_access_rw: { csr_write.enable=1; }
+        case riscv_csr_access_rs: { csr_write.enable=1; csr_write.data |= csr_data.read_data; }
+        case riscv_csr_access_rc: { csr_write.enable=1; csr_write.data  = csr_data.read_data &~ csr_write_data; }
+        }
+
+        /*b All done */
+    }
+
+    /*b CSR state update */
+    csr_state_update """
+    """: {
+        /*b Handle CSR cycle state */
+        csrs.cycles[32;0] <= csrs.cycles[32;0] + 1;
+        if (csrs.cycles[32;0]==-1) {csrs.cycles[32;32] <= csrs.cycles[32;32]+1;}
+
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_MCYCLE)) {
+            csrs.cycles[32;0]    <= csr_write.data;
+        }
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_MCYCLEH)) {
+            csrs.cycles[32;32]    <= csr_write.data;
+        }
+
+        /*b Handle timer state */
+        if (csr_controls.timer_clear) { csrs.time <= {*=0}; }
+        if (csr_controls.timer_load)  {
+            csrs.time[32;0]  <= csr_controls.timer_value[32;0];
+            csrs.time[32;32] <= csr_controls.timer_value[32;32];
+        }
+        if (csr_controls.timer_inc)  {
+            if (csrs.time[32;0]==-1)  {csrs.time[32;32]  <= csrs.time[32;32]+1;}
+            csrs.time[32;0]  <= csrs.time[32;0] + 1;
+        }
+
+        /*b Handle instruction retire counter state */
+        if (csr_controls.retire) {
+            csrs.instret[32;0] <= csrs.instret[32;0] + 1;
+            if (csrs.instret[32;0]==-1) {csrs.instret[32;32] <= csrs.instret[32;32]+1;}
+        }
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_MINSTRET)) {
+            csrs.instret[32;0] <= csr_write.data;
+        }
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_MINSTRETH)) {
+            csrs.instret[32;32] <= csr_write.data;
+        }
+
+        /*b Handle MEPC state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_MEPC)) {
+            csrs.mepc <= csr_write.data;
+        }
+
+        /*b Handle MTVEC state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_MTVEC)) {
+            csrs.mtvec <= csr_write.data;
+        }
+
+        /*b Handle MCAUSE state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_MCAUSE)) {
+            csrs.mcause <= csr_write.data;
+        }
+        if (csr_controls.trap) {
+            full_switch (csr_controls.trap_cause) {
+            case riscv_trap_cause_mecall:  { csrs.mcause <= bundle(24b0,riscv_mcause_mecall);  }
+            case riscv_trap_cause_illegal: { csrs.mcause <= bundle(24b0,riscv_mcause_illegal); }
+            }
+        }
+
+        /*b Handle scratch state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_MSCRATCH)) {
+            csrs.mscratch <= csr_write.data;
+        }
+
+        /*b All done */
+    }
+
+    /*b Logging */
+    logging """
+    """: {
+        if (csr_write.enable) {
+            if (csr_access.address == CSR_ADDR_DSCRATCH) {
+                log("Scratch debug write",
+                    "write_data", csr_write_data );
+            }
+        }
+    }
+}
+
+

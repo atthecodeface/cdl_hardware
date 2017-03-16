@@ -60,9 +60,17 @@ cdl cdl/video/tb_src tb_framebuffer_teletext     inc:cdl/inc
 cdl cdl/cpu/src cpu6502        inc:cdl/inc
 cdl cdl/cpu/tb_src tb_6502     inc:cdl/inc
 
+cdl cdl/cpu/riscv/src    riscv_e32_decode    inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_decode    inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_trace     inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_alu       inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_csrs_minimal  inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_minimal       inc:cdl/inc
+cdl cdl/cpu/riscv/tb_src tb_riscv_minimal       inc:cdl/inc
+
 #cdl cdl/cpu/clarvi/src    clarvi        inc:cdl/inc
-#cdl cdl/cpu/clarvi/src    clarvi_csrs   inc:cdl/inc
-#cdl cdl/cpu/clarvi/tb_src tb_clarvi        inc:cdl/inc
+#cdl cdl/cpu/clarvi/src    clarvi_csrs    inc:cdl/inc
+cdl cdl/cpu/clarvi/tb_src tb_clarvi        inc:cdl/inc
 
 cdl cdl/serial/src via6522     inc:cdl/inc
 cdl cdl/serial/src acia6850    inc:cdl/inc

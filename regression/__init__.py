@@ -5,10 +5,11 @@ tests = [#"base6502",
          "csrs",
          "apb",
          "utils",
-         #"clarvi",
+         "riscv_minimal",
          "input_devices",
          "de1_cl",
          "bbc_submodules",
+         # clarvi
          ]
 if "BBC" in os.environ.keys():
     tests = ["bbc",

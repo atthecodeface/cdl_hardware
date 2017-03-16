@@ -1,0 +1,75 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_trace.cdl
+ * @brief  Instruction trace for RISC-V implementation
+ *
+ * CDL implementation of RISC-V instruction trace based on the RISC-V
+ * specification v2.1.
+ *
+ */
+
+/*a Includes
+ */
+include "riscv_internal_types.h"
+include "riscv.h"
+
+/*a Types
+ */
+typedef struct {
+    bit[2]         must_be_ones "Bits that must be one for a valid RISCV I32 base instruction";
+    bit            is_imm_op "Asserted if the instruction is an immediate operation";
+    bit[5]         opc     "Opcode field from 32-bit instruction";
+    bit[7]         funct7  "7-bit function field of instruction";
+    bit[3]         funct3  "3-bit function field of instruction";
+    t_riscv_word   imm_signed "Sign-extension word, basically instruction[31] replicated";
+} t_combs;
+
+/*a Module
+ */
+module riscv_i32_trace( clock clk            "Clock for the CPU",
+                        input bit reset_n     "Active low reset",
+                        input bit clk_enable "Active high clock enable for the tracing",
+                        input t_riscv_i32_decode idecode "Decoded instruction being traced",
+                        input t_riscv_word result "Result of ALU/memory operation for the instruction",
+                        input bit[32] pc          "Program counter of the instruction",
+                        input bit branch_taken    "Asserted if a branch is being taken",
+                        input bit[32] branch_target    "Asserted if a branch is being taken"
+)
+"""
+Trace instruction execution
+"""
+{
+
+    gated_clock clock clk active_high clk_enable trace_clk "Tracing clock";
+    default clock trace_clk;
+    default reset active_low reset_n;
+
+    /*b Logging */
+    logging """
+    """ : {
+        if (idecode.csr_access.access!=riscv_csr_access_none) {
+            log("CSR access",
+                "pc",pc,
+                "access_type",idecode.csr_access.access,
+                "address",    idecode.csr_access.address,
+                "alu_result", result
+                );
+        }
+        log("PC",
+            "pc",pc,
+            "branch_taken",branch_taken,
+            "branch_target",branch_target);
+    }
+    /*b All done */
+}

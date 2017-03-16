@@ -532,7 +532,8 @@ class framebuffer_teletext_hw(simple_tb.cdl_test_hw):
                   "th.clock":"clk",
                   "th.inputs":("csr_response__read_data[32] "+
                                "csr_response__read_data_valid "+
-                               "csr_response__ack "+
+                               "csr_response__read_data_error "+
+                               "csr_response__acknowledge "+
                                "video_bus__blue[8] "+
                                "video_bus__green[8] "+
                                "video_bus__red[8] "+

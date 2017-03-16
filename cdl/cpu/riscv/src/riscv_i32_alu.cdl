@@ -1,0 +1,166 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_alu.cdl
+ * @brief  ALU for i32 RISC-V implementation
+ *
+ * CDL implementation of RISC-V i32 ALU based on the RISC-V
+ * specification v2.1.
+ *
+ */
+
+/*a Includes
+ */
+include "riscv_internal_types.h"
+include "riscv.h"
+
+/*a Types
+ */
+/*t t_alu_combs */
+typedef struct {
+    t_riscv_word  imm_or_rs2;
+    bit[64] rshift_operand;
+    bit[64] rshift_result;
+    bit[5]  shift_amount;
+    bit[32] arith_in_0;
+    bit[32] arith_in_1;
+    bit     arith_carry_in;
+    bit[33] arith_result;
+    bit     arith_eq;
+    bit     arith_unsigned_ge;
+    bit     arith_signed_ge;
+    t_riscv_word  pc_plus_4;
+    t_riscv_word  pc_plus_imm;
+} t_alu_combs;
+
+/*a Module
+ */
+module riscv_i32_alu( input t_riscv_i32_decode      idecode,
+                      input t_riscv_word            pc,
+                      input t_riscv_word            rs1,
+                      input t_riscv_word            rs2,
+                      output t_riscv_i32_alu_result alu_result
+)
+"""
+
+"""
+{
+
+    /*b Signals - just the combs */
+    comb t_alu_combs alu_combs      "Combinatorials used in the module, not exported as the decode";
+
+    /*b ALU operation */
+    alu_operation """
+    """ : {
+
+        /*b Determine rs2 or immediate */
+        alu_combs.imm_or_rs2 = rs2;
+        if (idecode.immediate_valid) { alu_combs.imm_or_rs2 = idecode.immediate; }
+
+        /*b Find shift operands and amount; sign-extend @rshift_operand for sra, zero-extend for srl */
+        alu_combs.rshift_operand = bundle(32b0, rs1);
+        if ((idecode.subop == riscv_subop_sra) & rs1[31]) {alu_combs.rshift_operand[32;32] = -1;}
+
+        alu_combs.shift_amount = alu_combs.imm_or_rs2[5;0];
+        alu_combs.rshift_result = alu_combs.rshift_operand >> alu_combs.shift_amount;
+
+        /*b Arithmetic operation - add with carry of rs1 with rs2+0, ~rs2+1, or imm+0, ~imm+1; used for branches and ALU op */
+        alu_combs.arith_in_0 = rs1;
+        alu_combs.arith_in_1 = alu_combs.imm_or_rs2;
+        alu_combs.arith_carry_in = 0;
+        if ((idecode.subop == riscv_subop_sub) |
+            (idecode.subop == riscv_subop_slt) |
+            (idecode.subop == riscv_subop_sltu)) {
+            alu_combs.arith_in_1     = ~alu_combs.imm_or_rs2;
+            alu_combs.arith_carry_in = 1;
+        }
+        if (idecode.op == riscv_op_branch) {
+            alu_combs.arith_in_1     = ~rs2;
+            alu_combs.arith_carry_in = 1;
+        }
+        if ((idecode.op == riscv_op_jalr) ||
+            (idecode.op == riscv_op_load) ||
+            (idecode.op == riscv_op_store)) {
+            alu_combs.arith_in_1     = idecode.immediate;
+            alu_combs.arith_carry_in = 0;
+        }
+        alu_combs.arith_result      = ( bundle(1b0,alu_combs.arith_in_0) + 
+                                        bundle(1b0,alu_combs.arith_in_1) + 
+                                        bundle(32b0,alu_combs.arith_carry_in) );
+        alu_combs.arith_eq          = (alu_combs.arith_result[32;0] == 0);
+        alu_combs.arith_unsigned_ge = alu_combs.arith_result[32];
+        alu_combs.arith_signed_ge   = !alu_combs.arith_result[31]; // wrong...
+
+        /*b Determine branch condition met */
+        alu_result.branch_condition_met = 0;
+        part_switch (idecode.subop) {
+        case riscv_subop_beq:  {alu_result.branch_condition_met = alu_combs.arith_eq;}
+        case riscv_subop_bne:  {alu_result.branch_condition_met = !alu_combs.arith_eq;}
+        case riscv_subop_bgeu: {alu_result.branch_condition_met = alu_combs.arith_unsigned_ge;}
+        case riscv_subop_bltu: {alu_result.branch_condition_met = !alu_combs.arith_unsigned_ge;}
+        case riscv_subop_bge:  {alu_result.branch_condition_met = alu_combs.arith_signed_ge;}
+        case riscv_subop_blt:  {alu_result.branch_condition_met = !alu_combs.arith_signed_ge;}
+        }
+
+        /*b Determine branch condition met */
+        alu_combs.pc_plus_4   = pc + 4;
+        alu_combs.pc_plus_imm = pc + idecode.immediate;
+        alu_result.arith_result = alu_combs.arith_result[32;0];
+        alu_result.result       = alu_combs.arith_result[32;0];
+        part_switch (idecode.subop) {
+        case riscv_subop_add:   { alu_result.result = alu_combs.arith_result[32;0]; }
+        case riscv_subop_sub:   { alu_result.result = alu_combs.arith_result[32;0]; }
+        case riscv_subop_slt:   { alu_result.result = alu_combs.arith_signed_ge   ? 0:1; }
+        case riscv_subop_sltu:  { alu_result.result = alu_combs.arith_unsigned_ge ? 0:1; }
+        case riscv_subop_xor:   { alu_result.result = rs1 ^ alu_combs.imm_or_rs2;}
+        case riscv_subop_or:    { alu_result.result = rs1 | alu_combs.imm_or_rs2;}
+        case riscv_subop_and:   { alu_result.result = rs1 & alu_combs.imm_or_rs2;}
+        case riscv_subop_sll:   { alu_result.result = rs1 << alu_combs.shift_amount;}
+        case riscv_subop_srl:   { alu_result.result = alu_combs.rshift_result[32;0];}
+        case riscv_subop_sra:   { alu_result.result = alu_combs.rshift_result[32;0];}
+        }
+        part_switch (idecode.op) {
+        case riscv_op_lui:      { alu_result.result = idecode.immediate;}
+        case riscv_op_auipc:    { alu_result.result = alu_combs.pc_plus_imm;}
+        case riscv_op_jal:      { alu_result.result = alu_combs.pc_plus_4; } // jalr stores pc+4 ready for return in register
+        case riscv_op_jalr:     { alu_result.result = alu_combs.pc_plus_4; } // jalr stores pc+4 ready for return in register
+        }
+        alu_result.branch_target = alu_combs.pc_plus_imm;
+        part_switch (idecode.op) {
+        case riscv_op_jalr:     { alu_result.branch_target = bundle(alu_combs.arith_result[30;2],2b0); }
+        }
+
+        /*b CSR access */
+        alu_result.csr_access.access     = riscv_csr_access_none;
+        alu_result.csr_access.address    = idecode.csr_access.address;
+        if (idecode.subop == riscv_subop_csrrw) {
+            alu_result.csr_access.access = riscv_csr_access_rw;
+        }
+        elsif (idecode.subop == riscv_subop_csrrs) {
+            alu_result.csr_access.access = riscv_csr_access_rs;
+        }
+        elsif (idecode.subop == riscv_subop_csrrc) {
+            alu_result.csr_access.access = riscv_csr_access_rc;
+        }
+        if (idecode.rs1 == 0) {
+            alu_result.csr_access.access = riscv_csr_access_read;
+        }
+        if (idecode.op != riscv_op_csr) {
+            alu_result.csr_access.access     = riscv_csr_access_none;
+        }
+
+        /*b All done */
+    }
+
+    /*b All done */
+}
