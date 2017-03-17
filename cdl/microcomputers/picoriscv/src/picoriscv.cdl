@@ -1,0 +1,219 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   picoriscv.cdl
+ * @brief  Pico-RISC-V microcomputer implementation module
+ *
+ * CDL implementation of a BBC microcomputer.
+ *
+ * This is a very simple 'microcomputer' based on a minimal RISC-V
+ * implementation, with 64kB of SRAM and a teletext display.
+ */
+/*a Includes
+ */
+include "picoriscv_types.h"
+include "picoriscv_submodules.h"
+include "framebuffer.h"
+include "srams.h"
+include "csr_interface.h"
+include "bbc_micro_types.h"
+
+/*a Types
+ */
+/*t t_video_mem */
+typedef enum[2] {
+     video_mem_8k =2b01,
+     video_mem_10k=2b11,
+     video_mem_16k=2b00,
+     video_mem_20k=2b10,
+} t_video_mem;
+
+/*t t_address_map_decoded */
+typedef struct {
+    bit fred;
+    bit jim;
+    bit sheila;
+    bit crtc;
+    bit acia;
+    bit serproc;
+    bit intoff;
+    bit vidproc;
+    bit romsel;
+    bit inton;
+    bit via_a;
+    bit via_b;
+    bit fdc;
+    bit adlc;
+    bit adc;
+    bit tube;
+
+    bit access_1mhz;
+    bit[2] rams;
+    bit rom;
+    bit os;
+    bit[4] roms;
+} t_address_map_decoded;
+
+typedef enum[2] {
+    memory_grant_none,
+    memory_grant_cpu,
+    memory_grant_video,
+    memory_grant_host,
+} t_memory_grant;
+
+typedef struct {
+    bit read_enable;
+    bit write_enable;
+    bit[2]  ram_select;
+    bit[4]  rom_select;
+    bit     os_select;
+    bit[14] address;
+    bit[8]  write_data;
+} t_memory_access;
+
+/*a Module
+ */
+module picoriscv( clock clk                   "Clock, divided down for CPU",
+                  input bit reset_n           "Active low reset",
+                  clock video_clk             "Video clock, independent of CPU clock",
+                  input bit video_reset_n     "Active low reset",
+                  output t_video_bus video_bus,
+                  input t_prv_keyboard keyboard,
+                  input t_csr_request   csr_request,
+                  output t_csr_response csr_response
+
+                  //,
+                  //output t_bbc_floppy_op floppy_op,
+                  //input t_bbc_floppy_response floppy_response,
+                  //input t_bbc_micro_sram_request   host_sram_request,
+                  //output t_bbc_micro_sram_response host_sram_response
+)
+{
+    /*b Defaults
+     */
+    default clock clk;
+    default reset active_low reset_n;
+
+    net  t_riscv_mem_access_req  dmem_access_req;
+    comb t_riscv_mem_access_resp dmem_access_resp;
+
+    net  t_riscv_mem_access_req  imem_access_req;
+    comb t_riscv_mem_access_resp imem_access_resp;
+
+    net t_csr_response clk_csr_response;
+    net t_csr_response tt_csr_response;
+    net t_video_bus video_bus;
+    comb t_bbc_display_sram_write tt_display_sram_write;
+
+    /*b State and comb
+     */
+    net bit[32] mem_read_data;
+    comb t_riscv_mem_access_req   mem_access_req;
+
+    /*b Clock control
+     */
+    clocked bit[32] read_data_reg=0;
+    clocked bit[32] ifetch_reg=0;
+    net t_prv_mem_control   mem_control;
+    net t_prv_clock_control clock_control;
+    comb t_prv_clock_status clock_status;
+    comb bit riscv_clk_enable;
+    gated_clock clock clk active_high riscv_clk_enable riscv_clk;
+    clock_control """
+    """: {
+        riscv_clk_enable = clock_control.riscv_clk_enable;
+        csr_response = {*=0};
+        csr_response |= clk_csr_response;
+        csr_response |= tt_csr_response;
+
+        picoriscv_clocking clocking( clk <- clk,
+                                     reset_n <= reset_n,
+                                     clock_status <= clock_status,
+                                     mem_control => mem_control,
+                                     clock_control => clock_control,
+                                     csr_request <= csr_request,
+                                     csr_response => clk_csr_response );
+    }
+
+    /*b Instantiate srams
+     */
+    srams: {
+        mem_access_req = {*=0, address=dmem_access_req.address, byte_enable=dmem_access_req.byte_enable, write_data=dmem_access_req.write_data};
+        if (mem_control.dmem_request) {
+            mem_access_req = {read_enable=dmem_access_req.read_enable,
+                              write_enable=dmem_access_req.write_enable };
+        }
+        if (mem_control.ifetch_request) {
+            mem_access_req = {read_enable=imem_access_req.read_enable, address=imem_access_req.address};
+        }
+        se_sram_srw_16384x32_we8 mem(sram_clock <- clk,
+                                     select         <= mem_access_req.read_enable || mem_access_req.write_enable,
+                                     read_not_write <= mem_access_req.read_enable,
+                                     write_enable   <= mem_access_req.write_enable ? mem_access_req.byte_enable:4b0,
+                                     address        <= mem_access_req.address[14;2],
+                                     write_data     <= mem_access_req.write_data,
+                                     data_out       => mem_read_data );
+        if (mem_control.dmem_set_reg) {
+            read_data_reg <= mem_read_data;
+        }
+        if (mem_control.ifetch_set_reg) {
+            ifetch_reg <= mem_read_data;
+        }
+        imem_access_resp.wait      = 0;
+        dmem_access_resp.wait      = 0;
+        imem_access_resp.read_data  = mem_control.ifetch_use_reg ? ifetch_reg : mem_read_data;
+        dmem_access_resp.read_data  = read_data_reg;
+    }
+
+    /*b Instantiate RISC-V, address decode, and framebuffer
+     */
+    cpu_and_addressing """
+    """: {
+        riscv_minimal riscv( clk <- riscv_clk,
+                             reset_n <= reset_n,
+                             dmem_access_req  => dmem_access_req,
+                             dmem_access_resp <= dmem_access_resp,
+                             imem_access_req  => imem_access_req,
+                             imem_access_resp <= imem_access_resp
+                           );
+
+        clock_status.imem_request = imem_access_req.read_enable;
+        clock_status.io_request = 0;
+        clock_status.io_ready = 1;
+        clock_status.dmem_read_enable   = dmem_access_req.read_enable;
+        clock_status.dmem_write_enable  = dmem_access_req.write_enable;
+        part_switch (dmem_access_req.address[4;28]) {
+        case 4hf: {
+            clock_status.dmem_read_enable   = 0;
+            clock_status.dmem_write_enable  = 0;
+            clock_status.io_request = dmem_access_req.read_enable || dmem_access_req.write_enable;
+        }
+        }
+
+        tt_display_sram_write = {*=0, address=dmem_access_req.address[16;0], data=bundle(16b0,dmem_access_req.write_data) };
+        if (clock_status.io_request && mem_control.io_enable) {
+            tt_display_sram_write.enable = (dmem_access_req.address[4;24]==0);
+        }
+        framebuffer_teletext ftb( csr_clk <- clk,
+                                  sram_clk <- clk,
+                                  video_clk <- video_clk,
+                                  reset_n <= video_reset_n,
+                                  video_bus => video_bus,
+                                  display_sram_write <= tt_display_sram_write,
+                                  csr_request <= csr_request,
+                                  csr_response => tt_csr_response
+            );
+
+    }
+}

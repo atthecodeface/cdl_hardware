@@ -137,7 +137,7 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         }
         ifetch_combs.request = ifetch_state.enable;
         imem_access_req.read_enable = ifetch_combs.request;
-        imem_access_req.address     = ifetch_combs.address[14;2];
+        imem_access_req.address     = ifetch_combs.address;
         ifetch_state.enable <= 1;
     }
 
@@ -199,7 +199,7 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
             dmem_access_req.read_enable  = 0;
             dmem_access_req.write_enable = 0;
         }
-        dmem_access_req.address      = decexecrfw_alu_result.arith_result[RISCV_DATA_ADDR_WIDTH;2];
+        dmem_access_req.address         = decexecrfw_alu_result.arith_result;
         decexecrfw_combs.word_offset    = decexecrfw_alu_result.arith_result[2;0];
         decexecrfw_combs.dmem_misaligned = (decexecrfw_combs.word_offset!=0);
         dmem_access_req.byte_enable  = 4hf << decexecrfw_combs.word_offset;

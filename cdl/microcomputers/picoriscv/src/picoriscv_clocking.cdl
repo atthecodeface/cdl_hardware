@@ -1,0 +1,193 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   picoriscv_clocking.cdl
+ * @brief  Clock control for pico-RISC-V microcomputer
+ *
+ */
+
+/*a Includes
+ */
+include "csr_interface.h"
+include "picoriscv_types.h"
+
+/*a Types
+ */
+/*t t_riscv_clock_phase
+ *
+ * Phase of the RISC-V clock, dependent on the imem/dmem requests it performs
+ */
+typedef fsm {
+    rcp_clock_high          "RISC-V clock high; decode of instruction presents correct dmem/imem requests for the whole RISC-V cycle";
+    rcp_dmem_in_progress    "RISC-V clock low with data memory read or write in progress; will do instruction fetch next";
+    rcp_ifetch_in_progress  "RISC-V clock low with fetch of instruction, clock will go high";
+    rcp_clock_low           "RISC-V clock low with no requests from RISC-V, will go high";
+} t_riscv_clock_phase;
+
+/*t t_riscv_clock_action
+ *
+ * Actions to perform for the RISC-V clock phase
+ */
+typedef enum[3] {
+    riscv_clock_action_rise     "Force the RISC-V clock high (this is the RISC-V clock enabled edge)",
+    riscv_clock_action_low      "Force the clock low, present registered ifetch data",
+    riscv_clock_action_hold_low "Force the clock to stay low and register ifetch data",
+    riscv_clock_action_ifetch   "Present ifetch request to memory, clock low in next cycle",
+    riscv_clock_action_dmem     "Present ifetch request to memory, clock low in next cycle",
+} t_riscv_clock_action;
+
+/*a Module
+ */
+module picoriscv_clocking( clock clk,
+                           input bit reset_n,
+                           input t_prv_clock_status      clock_status,
+                           output t_prv_mem_control      mem_control,
+                           output t_prv_clock_control    clock_control,
+                           input t_csr_request   csr_request,
+                           output t_csr_response csr_response
+    )
+"""
+This module controls the clocking of a Pico-risc-V microcomputer
+"""
+{
+    /*b Defaults
+     */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b State and comb
+     */
+    clocked  t_riscv_clock_phase riscv_clock_phase=rcp_clock_high;
+    comb     t_riscv_clock_action riscv_clock_action;
+    clocked  bit riscv_clk_high = 0;
+    clocked  bit io_access_enable = 0;
+
+    net t_csr_response      csr_response;
+    net t_csr_access      csr_access;
+    comb t_csr_access_data csr_read_data;
+    crst_target_logic """
+    """: {
+        csr_read_data = 0;
+        csr_target_csr csri( clk <- clk,
+                             reset_n <= reset_n,
+                             csr_request      <= csr_request,
+                             csr_response     => csr_response,
+                             csr_access       => csr_access,
+                             csr_access_data  <= csr_read_data,
+                             csr_select       <= prv_csr_select_clocks );
+    }
+
+    /*b Clock control
+     */
+    clock_control """
+    The clock control for a single SRAM implementation could be
+    performed with three high speed clocks for each RISC-V
+    clock. However, this is a slightly more sophisticated design.
+
+    A minimal RISC-V clock cycle requires an instruction fetch and at
+    most one of data read or data write.
+
+    With a synchronous memory, a memory read must be presented to the
+    SRAM at high speed clock cycle n-1 if the data is to be valid at
+    the end of high speed clock cycle n.
+
+    So if just an instruction fetch is required then a first high
+    speed cycle is used to present the ifetch, and a second high speed
+    cycle is the instruction being read. This is presented directly to
+    the RISC-V core.
+
+    So if an instruction fetch and data read are required then a first
+    high speed cycle is used to present the data read, a second to
+    present the ifetch and perform the data read - with the data out
+    registered at the start of a third high speed cycle while the
+    instruction being read. This is presented directly to the RISC-V
+    core; the data read is presented from its stored register
+
+    To ease implementation, and because the minimal RISC-V probably
+    always requests an instruction fetch, if a data fetch only is
+    requested then the flow follows as if an instruction fetch had
+    been requested.
+
+    So if an instruction fetch and data write are required then a
+    first high speed cycle is used to present the data write, a second
+    to present the ifetch and perform the data write, and a third high
+    speed cycle while the instruction being read. This is presented
+    directly to the RISC-V core.
+    """ : {
+        riscv_clock_action = riscv_clock_action_rise;
+        full_switch (riscv_clock_phase) {
+        case rcp_clock_high: { // riscv_clk has just gone high, so core is presenting memory requests
+            full_switch (bundle(clock_status.imem_request, clock_status.dmem_read_enable|clock_status.dmem_write_enable)) {
+            case 2b00:       { riscv_clock_action = riscv_clock_action_low; }
+            case 2b10:       { riscv_clock_action = riscv_clock_action_ifetch; }
+            case 2b11, 2b01: { riscv_clock_action = riscv_clock_action_dmem; }
+            }
+        }
+        case rcp_dmem_in_progress: {
+            riscv_clock_action = riscv_clock_action_ifetch;
+        }
+        case rcp_ifetch_in_progress: {
+            riscv_clock_action = riscv_clock_action_rise;
+            if (clock_status.io_request && !clock_status.io_ready) {
+                riscv_clock_action = riscv_clock_action_hold_low;
+            }
+        }
+        case rcp_clock_low: {
+            riscv_clock_action = riscv_clock_action_rise;
+            if (clock_status.io_request && !clock_status.io_ready) {
+                riscv_clock_action = riscv_clock_action_low;
+            }
+        }
+        }
+
+        clock_control.riscv_clk_enable = 0;
+        mem_control = {*=0};
+        full_switch (riscv_clock_action) {
+        case riscv_clock_action_low: {
+            riscv_clock_phase <= rcp_clock_low;
+            mem_control.ifetch_use_reg = 1;
+        }
+        case riscv_clock_action_hold_low: {
+            riscv_clock_phase <= rcp_clock_low;
+            mem_control.ifetch_set_reg = 1;
+        }
+        case riscv_clock_action_rise: { 
+            riscv_clock_phase <= rcp_clock_high;
+            clock_control.riscv_clk_enable = 1;
+        }
+        case riscv_clock_action_ifetch: {
+            mem_control.ifetch_request = 1;
+            riscv_clock_phase <= rcp_ifetch_in_progress;
+        }
+        case riscv_clock_action_dmem: { 
+            mem_control.dmem_request = 1;
+            riscv_clock_phase <= rcp_dmem_in_progress;
+        }
+        }
+        riscv_clk_high <= clock_control.riscv_clk_enable;
+        if (clock_control.riscv_clk_enable) {
+            io_access_enable <= 1;
+        } else {
+            if (clock_status.io_request && clock_status.io_ready) {
+                io_access_enable <= 0;
+            }
+        }
+        clock_control.debug = 0;
+
+        mem_control.io_enable = io_access_enable;
+        mem_control.dmem_set_reg = (riscv_clock_phase==rcp_dmem_in_progress);
+    }
+
+    /*b All done
+     */
+}

@@ -29,11 +29,11 @@ constant integer RISCV_INSTR_ADDR_WIDTH = 14;
 /*t t_riscv_mem_access_req
  */
 typedef struct {
-    bit[RISCV_DATA_ADDR_WIDTH] address;
-    bit[4]               byte_enable;
-    bit                  write_enable;
-    bit                  read_enable;
-    bit[32]              write_data;
+    bit[32]  address;
+    bit[4]   byte_enable;
+    bit      write_enable;
+    bit      read_enable;
+    bit[32]  write_data;
 } t_riscv_mem_access_req;
 
 /*t t_riscv_mem_access_resp */

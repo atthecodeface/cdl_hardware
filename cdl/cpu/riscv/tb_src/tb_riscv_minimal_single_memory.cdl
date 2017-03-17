@@ -180,7 +180,7 @@ module tb_riscv_minimal_single_memory( clock clk,
                                      select         <= mem_access_req.read_enable || mem_access_req.write_enable,
                                      read_not_write <= mem_access_req.read_enable,
                                      write_enable   <= mem_access_req.write_enable ? mem_access_req.byte_enable:4b0,
-                                     address        <= mem_access_req.address,
+                                     address        <= mem_access_req.address[14;2],
                                      write_data     <= mem_access_req.write_data,
                                      data_out       => mem_read_data );
         if (riscv_clock_phase==rcp_dread_in_progress) {

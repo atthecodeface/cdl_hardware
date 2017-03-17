@@ -41,7 +41,7 @@ typedef struct {
 } t_video_timing;
 
 /*a Modules */
-/*m framebuffer_teletext */
+/*m framebuffer_timing */
 extern
 module framebuffer_timing( clock csr_clk                      "Clock for CSR reads/writes",
                            clock video_clk                    "Video clock, used to generate vsync, hsync, data out, etc",
@@ -59,14 +59,15 @@ module framebuffer_timing( clock csr_clk                      "Clock for CSR rea
 }
 
 /*m framebuffer_teletext */
-extern module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
-                                    clock sram_clk  "SRAM write clock, with frame buffer data",
-                                    clock video_clk "Video clock, used to generate vsync, hsync, data out, etc",
-                                    input bit reset_n,
-                                    input t_bbc_display_sram_write display_sram_write,
-                                    output t_video_bus video_bus,
-                                    input t_csr_request csr_request,
-                                    output t_csr_response csr_response
+extern
+module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
+                             clock sram_clk  "SRAM write clock, with frame buffer data",
+                             clock video_clk "Video clock, used to generate vsync, hsync, data out, etc",
+                             input bit reset_n,
+                             input t_bbc_display_sram_write display_sram_write,
+                             output t_video_bus video_bus,
+                             input t_csr_request csr_request,
+                             output t_csr_response csr_response
     )
 {
     timing to   rising clock sram_clk   display_sram_write;
