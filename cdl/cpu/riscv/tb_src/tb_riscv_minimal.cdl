@@ -68,7 +68,7 @@ module tb_riscv_minimal( clock clk,
                                   address        <= imem_access_req.address,
                                   write_data     <= imem_access_req.write_data,
                                   data_out       => imem_mem_read_data );
-        se_sram_srw_16384x32 dmem(sram_clock <- clk,
+        se_sram_srw_16384x32_we8 dmem(sram_clock <- clk,
                                   select         <= (dmem_access_req.read_enable || dmem_access_req.write_enable) & riscv_clk_high,
                                   read_not_write <= dmem_access_req.read_enable,
                                   write_enable <= -1,

@@ -1,0 +1,208 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   tb_riscv_minimal.cdl
+ * @brief  Testbench for minimal RISC-V
+ *
+ */
+
+/*a Includes
+ */
+include "srams.h"
+include "riscv.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk, input bit a, output bit b )
+{
+    timing to rising clock clk a;
+}
+
+/*a Types
+ */
+/*t t_riscv_clock_phase
+ *
+ * Phase of the RISC-V clock, dependent on the imem/dmem requests it performs
+ */
+typedef fsm {
+    rcp_clock_high          "RISC-V clock high; decode of instruction presents correct dmem/imem requests for the whole RISC-V cycle";
+    rcp_dread_in_progress   "RISC-V clock low with data memory read in progress; will do instruction fetch next";
+    rcp_dwrite_in_progress  "RISC-V clock low with data memory write in progress; will do instruction fetch next or clock will go high";
+    rcp_ifetch_in_progress  "RISC-V clock low with fetch of instruction, clock will go high";
+    rcp_clock_low           "RISC-V clock low with no requests from RISC-V, will go high";
+} t_riscv_clock_phase;
+
+typedef enum[3] {
+    riscv_clock_action_rise,
+    riscv_clock_action_fall,
+    riscv_clock_action_ifetch,
+    riscv_clock_action_dread,
+    riscv_clock_action_dwrite
+} t_riscv_clock_action;
+
+/*a Module
+ */
+module tb_riscv_minimal_single_memory( clock clk,
+                                       input bit reset_n
+)
+{
+
+    /*b Nets
+     */
+    net  t_riscv_mem_access_req  dmem_access_req;
+    comb t_riscv_mem_access_resp dmem_access_resp;
+
+    net  t_riscv_mem_access_req  imem_access_req;
+    comb t_riscv_mem_access_resp imem_access_resp;
+
+    /*b State and comb
+     */
+    net bit[32] mem_read_data;
+    comb t_riscv_mem_access_req   mem_access_req;
+
+    /*b Clock control
+     */
+    comb bit riscv_clk_enable;
+    clocked clock clk reset active_low reset_n t_riscv_clock_phase riscv_clock_phase=rcp_clock_high;
+    clocked clock clk reset active_low reset_n bit[32] read_data_reg=0;
+    comb t_riscv_clock_action riscv_clock_action;
+    clocked clock clk reset active_low reset_n bit riscv_clk_high = 0;
+    gated_clock clock clk active_high riscv_clk_enable riscv_clk;
+    clock_control """
+    The clock control for a single SRAM implementation could be
+    performed with three high speed clocks for each RISC-V
+    clock. However, this is a slightly more sophisticated design.
+
+    A minimal RISC-V clock cycle requires an instruction fetch and at
+    most one of data read or data write.
+
+    With a synchronous memory, a memory read must be presented to the
+    SRAM at high speed clock cycle n-1 if the data is to be valid at
+    the end of high speed clock cycle n.
+
+    So if just an instruction fetch is required then a first high
+    speed cycle is used to present the ifetch, and a second high speed
+    cycle is the instruction being read. This is presented directly to
+    the RISC-V core.
+
+    So if an instruction fetch and data read are required then a first
+    high speed cycle is used to present the data read, a second to
+    present the ifetch and perform the data read - with the data out
+    registered at the start of a third high speed cycle while the
+    instruction being read. This is presented directly to the RISC-V
+    core; the data read is presented from its stored register
+
+    To ease implementation, and because the minimal RISC-V probably
+    always requests an instruction fetch, if a data fetch only is
+    requested then the flow follows as if an instruction fetch had
+    been requested.
+
+    So if an instruction fetch and data write are required then a
+    first high speed cycle is used to present the data write, a second
+    to present the ifetch and perform the data write, and a third high
+    speed cycle while the instruction being read. This is presented
+    directly to the RISC-V core.
+    """ : {
+        riscv_clock_action = riscv_clock_action_rise;
+        full_switch (riscv_clock_phase) {
+        case rcp_clock_high: { // riscv_clk has just gone high, so core is presenting memory requests
+            full_switch (bundle(imem_access_req.read_enable, dmem_access_req.read_enable, dmem_access_req.write_enable)) {
+            case 3b000:        { riscv_clock_action = riscv_clock_action_fall; }
+            case 3b100:        { riscv_clock_action = riscv_clock_action_ifetch; }
+            case 3b101, 3b001: { riscv_clock_action = riscv_clock_action_dwrite; }
+            default:           { riscv_clock_action = riscv_clock_action_dread; } // cannot dmem read and write simultaneously
+            }
+        }
+        case rcp_dwrite_in_progress: {
+            riscv_clock_action = riscv_clock_action_rise;
+            if (imem_access_req.read_enable) {
+                riscv_clock_action = riscv_clock_action_ifetch;
+            }
+        }
+        case rcp_dread_in_progress: {
+            riscv_clock_action = riscv_clock_action_ifetch;
+        }
+        case rcp_ifetch_in_progress: {
+            riscv_clock_action = riscv_clock_action_rise;
+        }
+        case rcp_clock_low: {
+            riscv_clock_action = riscv_clock_action_rise;
+        }
+        }
+
+        riscv_clk_enable = 0;
+        full_switch (riscv_clock_action) {
+        case riscv_clock_action_fall: {
+            riscv_clock_phase <= rcp_clock_low;
+        }
+        case riscv_clock_action_rise: { 
+            riscv_clock_phase <= rcp_clock_high;
+            riscv_clk_enable = 1;
+        }
+        case riscv_clock_action_ifetch: { 
+            riscv_clock_phase <= rcp_ifetch_in_progress;
+        }
+        case riscv_clock_action_dread: { 
+            riscv_clock_phase <= rcp_dread_in_progress;
+        }
+        case riscv_clock_action_dwrite: { 
+            riscv_clock_phase <= rcp_dwrite_in_progress;
+        }
+        }
+        riscv_clk_high <= riscv_clk_enable;
+    }
+
+    /*b Instantiate srams
+     */
+    srams: {
+        mem_access_req = {*=0, address=dmem_access_req.address, byte_enable=dmem_access_req.byte_enable, write_data=dmem_access_req.write_data};
+        part_switch (riscv_clock_action) {
+        case riscv_clock_action_dread: {
+            mem_access_req = {read_enable=1, address=dmem_access_req.address};
+        }
+        case riscv_clock_action_dwrite: {
+            mem_access_req = {write_enable=1, byte_enable=dmem_access_req.byte_enable, address=dmem_access_req.address, write_data=dmem_access_req.write_data};
+        }
+        case riscv_clock_action_ifetch: {
+            mem_access_req = {read_enable=imem_access_req.read_enable, address=imem_access_req.address};
+        }
+        }
+        se_sram_srw_16384x32_we8 mem(sram_clock <- clk,
+                                     select         <= mem_access_req.read_enable || mem_access_req.write_enable,
+                                     read_not_write <= mem_access_req.read_enable,
+                                     write_enable   <= mem_access_req.write_enable ? mem_access_req.byte_enable:4b0,
+                                     address        <= mem_access_req.address,
+                                     write_data     <= mem_access_req.write_data,
+                                     data_out       => mem_read_data );
+        if (riscv_clock_phase==rcp_dread_in_progress) {
+            read_data_reg <= mem_read_data;
+        }
+        imem_access_resp.wait      = 0;
+        dmem_access_resp.wait      = 0;
+        imem_access_resp.read_data  = mem_read_data;
+        dmem_access_resp.read_data  = read_data_reg;
+    }
+
+    /*b Instantiate RISC-V
+     */
+    riscv_instance: {
+        se_test_harness th( clk <- clk, a<=0 );
+        
+        riscv_minimal dut( clk <- riscv_clk,
+                           reset_n <= reset_n,
+                           dmem_access_req => dmem_access_req,
+                           dmem_access_resp <= dmem_access_resp,
+                           imem_access_req => imem_access_req,
+                           imem_access_resp <= imem_access_resp
+                         );
+    }
+}

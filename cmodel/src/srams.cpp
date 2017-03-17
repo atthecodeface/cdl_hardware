@@ -38,7 +38,7 @@
  * A macro to define the wrapper for an SRAM of a defined size and width, with full width write enable
  */
 #define SRAM_WRAPPER(size,width,bpe)                                       \
-static t_sl_error_level se_sram_srw_ ## size ## x ## width ## _instance_fn(c_engine *engine, void *engine_handle) { \
+static t_sl_error_level se_sram_srw_ ## size ## x ## width ## _ ## bpe ## _instance_fn(c_engine *engine, void *engine_handle) { \
     engine->set_option_list( engine_handle, sl_option_list(engine->get_option_list( engine_handle ), "size", size) ); \
     engine->set_option_list( engine_handle, sl_option_list(engine->get_option_list( engine_handle ), "width", width) ); \
     engine->set_option_list( engine_handle, sl_option_list(engine->get_option_list( engine_handle ), "bits_per_enable", bpe) ); \
@@ -62,7 +62,9 @@ static t_sl_error_level se_sram_mrw_2_ ## size ## x ## width ## _instance_fn(c_e
  * 'SRAM_WRAPPER' has been declared
  */
 #define SRAM_REGISTER(size,width,bpe)                                      \
-    se_external_module_register( 1, "se_sram_srw_" #size "x" #width, se_sram_srw_ ## size ## x ## width ##_instance_fn );
+    se_external_module_register( 1, "se_sram_srw_" #size "x" #width, se_sram_srw_ ## size ## x ## width ## _ ## bpe ## _instance_fn );
+#define SRAM_REGISTER_WE(size,width,bpe)                                      \
+    se_external_module_register( 1, "se_sram_srw_" #size "x" #width "_we" #bpe, se_sram_srw_ ## size ## x ## width ## _ ## bpe ## _instance_fn );
 #define SRAM_REGISTER_DP(size,width) \
     se_external_module_register( 1, "se_sram_mrw_2_" #size "x" #width, se_sram_mrw_2_ ## size ## x ## width ##_instance_fn );
 
@@ -72,6 +74,7 @@ static t_sl_error_level se_sram_mrw_2_ ## size ## x ## width ## _instance_fn(c_e
  * can be registered with CDL, for all the required SRAMs.
  */
 SRAM_WRAPPER(8192, 32, 32)
+SRAM_WRAPPER(16384, 32, 32)
 SRAM_WRAPPER(16384, 32, 8)
 SRAM_WRAPPER(16384, 40, 0)
 SRAM_WRAPPER(16384, 8, 8)
@@ -99,6 +102,7 @@ srams__init( void )
     SRAM_REGISTER(8192, 32, 32);
     SRAM_REGISTER(16384, 40, 0);
     SRAM_REGISTER(16384, 32, 32);
+    SRAM_REGISTER_WE(16384, 32, 8);
     SRAM_REGISTER(16384, 8, 8);
     SRAM_REGISTER(65536, 8, 8);
     SRAM_REGISTER(65536, 32, 32);

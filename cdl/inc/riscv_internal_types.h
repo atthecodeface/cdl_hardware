@@ -215,15 +215,35 @@ typedef enum[4] {
  * Non-interrupt MCAUSE reasons, from the spec
  */
 typedef enum[8] {
-    riscv_mcause_mecall = 11,
-    riscv_mcause_illegal = 2,
+    riscv_mcause_instruction_misaligned = 0,
+    riscv_mcause_instruction_fault      = 1,
+    riscv_mcause_illegal_instruction    = 2,
+    riscv_mcause_breakpoint             = 3,
+    riscv_mcause_load_misaligned        = 4,
+    riscv_mcause_load_fault             = 5,
+    riscv_mcause_store_misaligned       = 6,
+    riscv_mcause_store_fault            = 7,
+    riscv_mcause_uecall                 = 8,
+    riscv_mcause_secall                 = 9,
+    riscv_mcause_hecall                 = 10,
+    riscv_mcause_mecall                 = 11,
 } t_riscv_mcause;
 
 /*t t_riscv_trap_cause
  */
-typedef enum[2] {
-    riscv_trap_cause_mecall,
-    riscv_trap_cause_illegal
+typedef enum[4] {
+    riscv_trap_cause_instruction_misaligned = 0,
+    riscv_trap_cause_instruction_fault      = 1,
+    riscv_trap_cause_illegal_instruction    = 2,
+    riscv_trap_cause_breakpoint             = 3,
+    riscv_trap_cause_load_misaligned        = 4,
+    riscv_trap_cause_load_fault             = 5,
+    riscv_trap_cause_store_misaligned       = 6,
+    riscv_trap_cause_store_fault            = 7,
+    riscv_trap_cause_uecall                 = 8,
+    riscv_trap_cause_secall                 = 9,
+    riscv_trap_cause_hecall                 = 10,
+    riscv_trap_cause_mecall                 = 11,
 } t_riscv_trap_cause;
 
 /*a CSR types */

@@ -30,12 +30,27 @@ constant integer INITIAL_PC=0x80000000;
 
 /*a Types
  */
+/*t t_ifetch_state */
+typedef struct {
+    bit enable     "Asserted if execution is enabled; deasserted at reset";
+} t_ifetch_state;
+
+/*t t_ifetch_combs
+ *
+ * Combinatorials of the ifetch_state
+ */
+typedef struct {
+    bit request;
+    bit[32] address;
+} t_ifetch_combs;
+
 /*t t_decexecrfw_state */
 typedef struct {
-    bit ifetch_requested;
-    t_riscv_word instr_data;
-    bit valid;
-    bit[32] pc                   "PC of the decoded instruction";
+    t_riscv_word instr_data      "Fetched instruction, ready for decode, register fetch, execute and writeback";
+    bit valid                    "Asserted if @instr_data is a valid fetched instruction, whether misaligned or not";
+    bit valid_legal              "Asserted if @instr_data is a valid fetched instruction on a valid alignment";
+    bit illegal_pc               "Asserted if a valid @instr_data is a fetched instruction from a badly aligned PC";
+    bit[32] pc                   "PC of the fetched instruction";
 } t_decexecrfw_state;
 
 /*t t_decexecrfw_combs
@@ -55,6 +70,9 @@ typedef struct {
     t_riscv_csr_access csr_access;
     t_riscv_word rfw_write_data;
     t_riscv_word memory_data;
+    bit dmem_misaligned          "Asserted if the dmem address offset in a word does not match the size of the decoded access, whether the instruction is valid or not";
+    bit load_address_misaligned  "Asserted only for valid instructions, for loads not aligned to the alignment of the access";
+    bit store_address_misaligned "Asserted only for valid instructions, for stores not aligned to the alignment of the access";
 } t_decexecrfw_combs;
 
 /*a Module
@@ -98,6 +116,8 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
 
     clocked t_riscv_word[32] registers={*=0} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
 
+    clocked t_ifetch_state    ifetch_state={*=0};
+    comb    t_ifetch_combs    ifetch_combs;
     net     t_riscv_i32_decode decexecrfw_idecode;
     clocked t_decexecrfw_state    decexecrfw_state={*=0, pc=INITIAL_PC};
     comb    t_decexecrfw_combs    decexecrfw_combs;
@@ -111,11 +131,14 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
      */
     instruction_fetch_stage: {
         imem_access_req             = {*=0};
-        imem_access_req.read_enable = 1;
-        imem_access_req.address       = decexecrfw_combs.next_pc[14;2];
-        if (!decexecrfw_state.valid) {
-            imem_access_req.address   = decexecrfw_state.pc[14;2];
+        ifetch_combs.address = decexecrfw_combs.next_pc;
+        if (!decexecrfw_state.valid && ifetch_state.enable) {
+            ifetch_combs.address   = decexecrfw_state.pc;
         }
+        ifetch_combs.request = ifetch_state.enable;
+        imem_access_req.read_enable = ifetch_combs.request;
+        imem_access_req.address     = ifetch_combs.address[14;2];
+        ifetch_state.enable <= 1;
     }
 
     /*b Decode, RFR, execute and RFW stage - single stage execution
@@ -123,10 +146,15 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
     decode_rfr_execute_stage: {
         /*b Instruction register */
         decexecrfw_state.valid <= 0;
-        decexecrfw_state.ifetch_requested <= imem_access_req.read_enable;
-        if (decexecrfw_state.ifetch_requested && !imem_access_resp.wait) {
-            decexecrfw_state.valid <= 1;
+        if (imem_access_req.read_enable && !imem_access_resp.wait) {
             decexecrfw_state.instr_data <= imem_access_resp.read_data;
+            decexecrfw_state.illegal_pc <= 0;
+            decexecrfw_state.valid_legal <= 1;
+            if (ifetch_combs.address[2;0]!=0) {
+                decexecrfw_state.illegal_pc <= 1;
+                decexecrfw_state.valid_legal <= 0;
+            }
+            decexecrfw_state.valid <= 1;
         }
         if (decexecrfw_state.valid) {
             decexecrfw_state.pc <= decexecrfw_combs.next_pc;
@@ -149,11 +177,11 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
 
         /*b Minimal CSRs */
         csr_controls = {*=0};
-        csr_controls.retire      = decexecrfw_state.valid;
+        csr_controls.retire      = decexecrfw_state.valid_legal;
         csr_controls.timer_inc   = 1;
 
         decexecrfw_combs.csr_access = decexecrfw_idecode.csr_access;
-        if (!decexecrfw_state.valid || decexecrfw_idecode.illegal) {
+        if (!decexecrfw_state.valid_legal || decexecrfw_idecode.illegal) {
             decexecrfw_combs.csr_access.access = riscv_csr_access_none;
         }
         riscv_csrs_minimal csrs( clk <- clk,
@@ -167,12 +195,34 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         /*b Memory access handling - must be valid before middle of cycle */
         dmem_access_req.read_enable  = (decexecrfw_idecode.op == riscv_op_load);
         dmem_access_req.write_enable = (decexecrfw_idecode.op == riscv_op_store);
+        if (!decexecrfw_state.valid_legal) {
+            dmem_access_req.read_enable  = 0;
+            dmem_access_req.write_enable = 0;
+        }
         dmem_access_req.address      = decexecrfw_alu_result.arith_result[RISCV_DATA_ADDR_WIDTH;2];
         decexecrfw_combs.word_offset    = decexecrfw_alu_result.arith_result[2;0];
+        decexecrfw_combs.dmem_misaligned = (decexecrfw_combs.word_offset!=0);
         dmem_access_req.byte_enable  = 4hf << decexecrfw_combs.word_offset;
         part_switch (decexecrfw_idecode.memory_width) {
-        case mw_byte: { dmem_access_req.byte_enable  = 4h1 << decexecrfw_combs.word_offset; }
-        case mw_half: { dmem_access_req.byte_enable  = 4h3 << decexecrfw_combs.word_offset; }
+        case mw_byte: {
+            dmem_access_req.byte_enable  = 4h1 << decexecrfw_combs.word_offset;
+            decexecrfw_combs.dmem_misaligned = 0;
+        }
+        case mw_half: {
+            dmem_access_req.byte_enable  = 4h3 << decexecrfw_combs.word_offset;
+            decexecrfw_combs.dmem_misaligned = decexecrfw_combs.word_offset[0];
+        }
+        default: {
+            decexecrfw_combs.dmem_misaligned = (decexecrfw_combs.word_offset!=0);
+        }
+        }
+        decexecrfw_combs.load_address_misaligned = 1;
+        decexecrfw_combs.store_address_misaligned = 1;
+        if (dmem_access_req.read_enable && decexecrfw_combs.dmem_misaligned) {
+            decexecrfw_combs.load_address_misaligned = 1;
+        }
+        if (dmem_access_req.write_enable && decexecrfw_combs.dmem_misaligned) {
+            decexecrfw_combs.store_address_misaligned = 1;
         }
         dmem_access_req.write_data = decexecrfw_combs.rs2 << (bundle(decexecrfw_combs.word_offset,3b0));
 
@@ -198,7 +248,7 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         }
         if (decexecrfw_idecode.illegal) {
             decexecrfw_combs.trap = 1;
-            decexecrfw_combs.trap_cause = riscv_trap_cause_illegal;
+            decexecrfw_combs.trap_cause = riscv_trap_cause_illegal_instruction;
         }
         decexecrfw_combs.next_pc = decexecrfw_state.pc + 4;
         if (decexecrfw_combs.branch_taken) {
@@ -210,7 +260,11 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         csr_controls.trap_cause = decexecrfw_combs.trap_cause;
         csr_controls.trap       = 0;
         if (decexecrfw_combs.trap) {
-            csr_controls.trap       = decexecrfw_state.valid;
+            csr_controls.trap       = decexecrfw_state.valid_legal;
+        }
+        if (decexecrfw_state.illegal_pc) {
+            csr_controls.trap_cause = riscv_trap_cause_instruction_misaligned;
+            csr_controls.trap       = 1;
         }
 
         /*b Memory read handling - way late in the second half of the cycle */
@@ -227,7 +281,7 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         }
 
         decexecrfw_combs.rfw_write_data = dmem_access_req.read_enable ? decexecrfw_combs.memory_data : decexecrfw_alu_result.result;
-        if (decexecrfw_state.valid && decexecrfw_idecode.rd_written) {
+        if (decexecrfw_state.valid_legal && decexecrfw_idecode.rd_written) {
             registers[decexecrfw_idecode.rd] <= decexecrfw_combs.rfw_write_data;
         }
         registers[0] <= 0; // register 0 is always zero...

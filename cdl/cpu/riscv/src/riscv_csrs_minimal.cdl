@@ -163,8 +163,18 @@ MTIME has been removed (as this seems to be the correct thing to do).
         }
         if (csr_controls.trap) {
             full_switch (csr_controls.trap_cause) {
-            case riscv_trap_cause_mecall:  { csrs.mcause <= bundle(24b0,riscv_mcause_mecall);  }
-            case riscv_trap_cause_illegal: { csrs.mcause <= bundle(24b0,riscv_mcause_illegal); }
+            case riscv_trap_cause_instruction_misaligned: { csrs.mcause <= bundle(24b0, riscv_mcause_instruction_misaligned); }
+            case riscv_trap_cause_instruction_fault:      { csrs.mcause <= bundle(24b0, riscv_mcause_instruction_fault); }
+            case riscv_trap_cause_illegal_instruction:    { csrs.mcause <= bundle(24b0, riscv_mcause_illegal_instruction); }
+            case riscv_trap_cause_breakpoint:             { csrs.mcause <= bundle(24b0, riscv_mcause_breakpoint); }
+            case riscv_trap_cause_load_misaligned:        { csrs.mcause <= bundle(24b0, riscv_mcause_load_misaligned); }
+            case riscv_trap_cause_load_fault:             { csrs.mcause <= bundle(24b0, riscv_mcause_load_fault); }
+            case riscv_trap_cause_store_misaligned:       { csrs.mcause <= bundle(24b0, riscv_mcause_store_misaligned); }
+            case riscv_trap_cause_store_fault:            { csrs.mcause <= bundle(24b0, riscv_mcause_store_fault); }
+            case riscv_trap_cause_uecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_uecall); }
+            case riscv_trap_cause_secall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_secall); }
+            case riscv_trap_cause_hecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_hecall); }
+            case riscv_trap_cause_mecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_mecall); }
             }
         }
 
