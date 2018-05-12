@@ -44,7 +44,7 @@ module riscv_i32_decode( input t_riscv_word instruction,
 """
 Instruction decoder for RISC-V I32 instruction set.
 
-This is based on the RISC-V v2.1 specification (hence figure numbers
+This is based on the RISC-V v2.2 specification (hence figure numbers
 are from that specification)
 """
 {
@@ -66,6 +66,9 @@ are from that specification)
     the same place; the remaining fields are funct3 (used in R/I/S
     types), funct7 (used in R type instructions), and various
     immediate fields.
+
+    Spec 2.2 fig 2.3 shows opcode (must_be_ones and opc); rd, rs1, rs2; funct3 and funct7.
+    The other fields in fig 2.3 relate to the immediate value (see immediate_decode)
     """: {
         /*b  Break out the instruction word */
         combs.must_be_ones  = instruction[ 2;riscv_i32_ones]; // 2;0
@@ -89,15 +92,17 @@ are from that specification)
     
     The immediate variants of the RISC-V I32 base instruction (fig 2.4) are:
 
-      I-type (12-bit sign extended using i[20;1]) (register-immediate, load, jalr)
+      I-type (12-bit sign extended using i[31], i[11;20]) (register-immediate, load, jalr)
 
-      S-type (12-bit sign extended using i[31], i[6;25], i[4;8], i[7]) (store)
+      S-type (12-bit sign extended using i[31], i[6;25], i[5;7]) (store)
 
-      B-type ?(13-bit, one zero, sign extended using i[31],i[7], i[6;25], i[4;8], 0) (branch)
+      B-type ?(13-bit, one zero, sign extended using i[31], i[7], i[6;25], i[4;8], 0) (branch)
 
-      U-type ?(32-bit, twelve zeros, sign extended using i[20;12], 12b0 (lui, auipc)
+      U-type ?(32-bit, twelve zeros, sign extended using i[31]; i[19;12], 12b0 (lui, auipc)
 
-      J-type ?(12-bit sign extended using i[31], i[8;12], i[20], i[10;1], 0) (jal)
+      J-type ?(12-bit sign extended using i[31], i[8;12], i[20], i[10;21], 0) (jal)
+
+    Note that all are sign extended, hence i[31] is replicated on the top bits.
     """: {
 
         /*b Defaults for the decode */
@@ -106,7 +111,7 @@ are from that specification)
         idecode.immediate = bundle(combs.imm_signed[20;0], combs.funct7, idecode.rs2);
 
         /*b Decode immediate and whether it is used based on instruction class */
-        part_switch(instruction[5;riscv_i32_opc]) {
+        part_switch(combs.opc) {
         case riscv_opc_op_imm, riscv_opc_load, riscv_opc_jalr: { // i format = uses funct7, rs2
             idecode.immediate_valid=1;
         }
@@ -155,38 +160,48 @@ are from that specification)
         combs.rs1_nonzero = (idecode.rs1 != 0);
         part_switch (combs.opc) {
         case riscv_opc_lui:    { // load upper immediate, uses u format
+            // Spec 2.2 section 2.4 
             idecode.op = riscv_op_lui;
             idecode.rd_written = 1;
             idecode.illegal = 0;
         }
         case riscv_opc_auipc:  { // add upper immediate pc, uses u format
+            // Spec 2.2 section 2.4 
             idecode.op = riscv_op_auipc;
             idecode.rd_written = 1;
             idecode.illegal = 0;
         }
         case riscv_opc_jal:    { // jump-and-link, uses uj format
+            // Spec 2.2 section 2.5
+            // Note that JAL is potentially an unconditional decode-time branch
             idecode.op = riscv_op_jal;
-            idecode.rd_written = 1;
+            idecode.rd_written = 1; // Note rd==0 (J rather than JAL) clears this later
             idecode.illegal = 0;
         }
         case riscv_opc_jalr:   { // jump-and-link register, uses i format
+            // Spec 2.2 section 2.5
+            // Note that JALR is an ALU-time branch
             idecode.op = riscv_op_jalr;
             idecode.rs1_valid = 1;
-            idecode.rd_written = 1;
+            idecode.rd_written = 1; // Note rd==0 (J rather than JAL) clears this later
             idecode.illegal = 0;
         }
         case riscv_opc_load:   { // load rd from rs1+offset, uses i format
+            // Spec 2.2 section 2.6
             idecode.op = riscv_op_load;
             idecode.rs1_valid = 1;
             idecode.rd_written = 1;
             idecode.illegal = 0;
         }
         case riscv_opc_store:  { // store rs2 at rs1+offset, uses s format
+            // Spec 2.2 section 2.6
             idecode.op = riscv_op_store;
             idecode.rs2_valid = 1;
             idecode.illegal = 0;
         }
         case riscv_opc_branch: { // branch if rs1 <=> rs2 to pc+imm, uses sb format, conditional branch to +-4kB
+            // Spec 2.2 section 2.5
+            // Note that Bxx is an ALU-time branch
             idecode.op = riscv_op_branch;            
             idecode.rs1_valid = 1;
             idecode.rs2_valid = 1;
@@ -202,11 +217,12 @@ are from that specification)
             }
         }
         case riscv_opc_op, riscv_opc_op_imm: { // rd = rs1 op rs2/imm, uses r or i format
+            // Spec 2.2 section 2.4 
             idecode.op = riscv_op_alu;
             idecode.rs1_valid = 1;
             idecode.rs2_valid = !combs.is_imm_op;
             idecode.rd_written = 1;
-            idecode.illegal = 0;
+            idecode.illegal = (!combs.is_imm_op) && (combs.funct7!=0);
             full_switch (combs.funct3) {
             case riscv_f3_addsub: { idecode.subop = (!combs.is_imm_op && combs.funct7[5]) ? riscv_subop_sub : riscv_subop_add; }
             case riscv_f3_slt:    { idecode.subop = riscv_subop_slt; }
@@ -215,28 +231,42 @@ are from that specification)
             case riscv_f3_or:     { idecode.subop = riscv_subop_or; }
             case riscv_f3_and:    { idecode.subop = riscv_subop_and; }
             case riscv_f3_sll:    {
-                idecode.illegal = (combs.is_imm_op && (combs.funct7!=0));
+                idecode.illegal = (combs.funct7!=0);
                 idecode.subop   = riscv_subop_sll;
             }
-            case riscv_f3_srlsra: { idecode.subop = combs.funct7[5] ? riscv_subop_sra : riscv_subop_srl; }
+            case riscv_f3_srlsra: {
+                idecode.illegal = (combs.funct7[5;0]!=0) || combs.funct7[6];
+                idecode.subop   = combs.funct7[5] ? riscv_subop_sra : riscv_subop_srl; // SRAI has funct7[5] set, else SRLI
+            }
             default:          {
                 idecode.illegal = 1;
             }
             }
         }
         case riscv_opc_misc_mem: { // uses i format
+            // Spec 2.2 section 2.7
             idecode.illegal = 0;
             idecode.op = riscv_op_misc_mem;
             idecode.subop = combs.funct3[0] ? riscv_subop_fence_i : riscv_subop_fence;
         }
         case riscv_opc_system: { // system access, or csr rw/rs/rc - uses i format
+            // Spec 2.2 section 2.8
             idecode.rs1_valid = 1;
             idecode.rd_written = 1;
             idecode.illegal = 0;
             full_switch (combs.funct3[2;0]) {
-            case riscv_f3_csrrw:      { idecode.csr_access.access = (combs.rs1_nonzero|combs.funct3[2]) ? riscv_csr_access_rw : riscv_csr_access_read; }
-            case riscv_f3_csrrs:      { idecode.csr_access.access = (combs.rs1_nonzero|combs.funct3[2]) ? riscv_csr_access_rs : riscv_csr_access_read; }
-            case riscv_f3_csrrc:      { idecode.csr_access.access = (combs.rs1_nonzero|combs.funct3[2]) ? riscv_csr_access_rc : riscv_csr_access_read; }
+            case riscv_f3_csrrw:      {
+                idecode.csr_access.access = riscv_csr_access_rw;
+                if (idecode.rd==0) { idecode.csr_access.access = riscv_csr_access_write; } // True for CSRRW and CSRRWI
+            }
+            case riscv_f3_csrrs:      {
+                idecode.csr_access.access = riscv_csr_access_rs;
+                if (!combs.rs1_nonzero) { idecode.csr_access.access = riscv_csr_access_read; } // True for CSRRS and CSRRSI
+            }
+            case riscv_f3_csrrc:      {
+                idecode.csr_access.access = riscv_csr_access_rc;
+                if (!combs.rs1_nonzero) { idecode.csr_access.access = riscv_csr_access_read; } // True for CSRRC and CSRRCI
+            }
             case riscv_f3_privileged: {
                 idecode.op = riscv_op_system;
                 full_switch (instruction[12;20]) {

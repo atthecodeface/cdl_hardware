@@ -251,10 +251,11 @@ typedef enum[4] {
  */
 typedef enum[3] {
     riscv_csr_access_none = 0,
-    riscv_csr_access_read = 4,
-    riscv_csr_access_rw   = 5,
-    riscv_csr_access_rs   = 6,
-    riscv_csr_access_rc   = 7,
+    riscv_csr_access_write = 1,
+    riscv_csr_access_read  = 2,
+    riscv_csr_access_rw    = 3,
+    riscv_csr_access_rs    = 6,
+    riscv_csr_access_rc   =  7,
 } t_riscv_csr_access_type;
 
 /*t t_riscv_csr_access

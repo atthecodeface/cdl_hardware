@@ -102,9 +102,10 @@ MTIME has been removed (as this seems to be the correct thing to do).
         csr_write.enable = 0;
         csr_write.data = csr_write_data;
         part_switch (csr_access.access) {
-        case riscv_csr_access_rw: { csr_write.enable=1; }
-        case riscv_csr_access_rs: { csr_write.enable=1; csr_write.data |= csr_data.read_data; }
-        case riscv_csr_access_rc: { csr_write.enable=1; csr_write.data  = csr_data.read_data &~ csr_write_data; }
+        case riscv_csr_access_write: { csr_write.enable=1; }
+        case riscv_csr_access_rw:    { csr_write.enable=1; }
+        case riscv_csr_access_rs:    { csr_write.enable=1; csr_write.data |= csr_data.read_data; }
+        case riscv_csr_access_rc:    { csr_write.enable=1; csr_write.data  = csr_data.read_data &~ csr_write_data; }
         }
 
         /*b All done */

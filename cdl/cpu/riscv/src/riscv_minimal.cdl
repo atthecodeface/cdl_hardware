@@ -16,6 +16,45 @@
  *
  * CDL implementation of minimal RISC-V teaching implementation
  *
+ * This is a two-stage pipeline implementation, with instruction fetch
+ * of the next PC occuring simultaneously with the decode, register
+ * read, ALU, data read/write request, data read memory access, and
+ * register update.
+ *
+ * The instruction memory request, then, becomes valid dependent on
+ * the decode of the registered instruction last fetched. For most
+ * branches this requires only a small amount of logic, but for
+ * jump-and-link-register instructions (which uses the full ALU
+ * result) this may take a considerable amount of gates to determine
+ * the correct branch target and hence next instruction fetch.  Hence
+ * the instruction memory request is valid after a considerable delay
+ * from the start of the cycle.
+ *
+ * The return value from the instruction memory request must be valid
+ * before the end of the cycle.
+ *
+ * Any instruction memory implementation must start its access well
+ * after the CPU clock edge, , as the request is valid after the CPU
+ * clock edge; the resultant read data delay (from the clock edge)
+ * then has to be factored in to determine when the next CPU clock
+ * edge can occur. Hence it may be sensible to use a double speed
+ * clock (e.g. 'fast_clk') to generate CPU clock edges (every other
+ * fast_clk edge) and SRAM access clock edges (for a synchronous
+ * memory) on the intervening fast_clk edges.
+ *
+ * The data memory request becomes valid, again, a fair time after the
+ * CPU clock edge, as it requires instruction decode, register fetch,
+ * and ALU operation to occur prior to the memory address being valid.
+ *
+ * The data memory response must be valid (for read data!) in the same
+ * CPU cycle, as the returning data has to be rotated to the correct
+ * byte lanes and prepared for the register file write.
+ *
+ * Hence a data memory implementation can be similar to that proposed
+ * for the instruction memory - that is, accesses start on a memory
+ * clock edge that is in the middle of a CPU clock edge, by using a
+ * fast_clk.
+ *
  */
 
 /*a Includes

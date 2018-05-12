@@ -76,6 +76,9 @@ test_regress_6502: ${TARGET_DIR}/py_engine.so
 test_6502_adc: ${TARGET_DIR}/py_engine.so
 	./regress_all regression.base6502.Regress6502_Test6502_ALU.test_atc_test_6502_adc
 
+test_regress: ${TARGET_DIR}/py_engine.so
+	./regress_all regression.${SUITE}
+
 #a Operational targets
 .PHONY: roms
 roms:
@@ -104,6 +107,11 @@ help:
 	@echo "Elite is included (as it is freely distributed)"
 	@echo "To convert other disk images to appropriate MIF format (which includes disk track descriptors,"
 	@echo "not just the data - the 'SSD' format is just 40 track, 10 265 byte sectors) use the python/disk_to_mif"
+	@echo ""
+	@echo "To run a regression, use 'make regression'"
+	@echo ""
+	@echo "To run a specific subset of the regression, use 'make SUITE=<suite> test_regress'"
+	@echo "with suite being base6502, riscv_minimal, or any other .py file from the regression directory"
 
 #a Documentation
 include doc/Makefile
