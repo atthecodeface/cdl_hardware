@@ -108,7 +108,8 @@ are from that specification)
         /*b Defaults for the decode */
         combs.imm_signed = combs.funct7[6] ? -1:0;
         idecode.immediate_valid=0;
-        idecode.immediate = bundle(combs.imm_signed[20;0], combs.funct7, idecode.rs2);
+        idecode.immediate_shift = idecode.rs2;
+        idecode.immediate       = bundle(combs.imm_signed[20;0], combs.funct7, idecode.rs2);
 
         /*b Decode immediate and whether it is used based on instruction class */
         part_switch(combs.opc) {

@@ -71,7 +71,8 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
         alu_combs.rshift_operand = bundle(32b0, rs1);
         if ((idecode.subop == riscv_subop_sra) & rs1[31]) {alu_combs.rshift_operand[32;32] = -1;}
 
-        alu_combs.shift_amount = alu_combs.imm_or_rs2[5;0];
+        alu_combs.shift_amount = rs2[5;0];
+        if (idecode.immediate_valid) { alu_combs.shift_amount = idecode.immediate_shift; }
         alu_combs.rshift_result = alu_combs.rshift_operand >> alu_combs.shift_amount;
 
         /*b Arithmetic operation - add with carry of rs1 with rs2+0, ~rs2+1, or imm+0, ~imm+1; used for branches and ALU op */

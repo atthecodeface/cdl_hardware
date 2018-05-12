@@ -406,6 +406,7 @@ typedef struct {
     bit          rd_written            "Asserted if Rd is written to (hence also Rd will be non-zero)";
     t_riscv_csr_access     csr_access  "CSR access if valid and legal";
     bit[32]      immediate             "Immediate value decoded from the instruction";
+    bit[5]       immediate_shift       "Immediate shift value decoded from the instruction";
     bit          immediate_valid       "Asserted if immediate data is valid (generally used instead of source register 2)";
     t_riscv_op     op                  "Operation class of the instruction";
     t_riscv_subop  subop               "Subclass of the operation class";
