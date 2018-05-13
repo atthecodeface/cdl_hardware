@@ -62,3 +62,18 @@ module riscv_minimal( clock clk,
     timing from rising clock clk dmem_access_req, imem_access_req;
     timing to   rising clock clk dmem_access_resp, imem_access_resp;
 }
+
+/*m riscv_i32c_minimal
+ */
+extern
+module riscv_i32c_minimal( clock clk,
+                     input bit reset_n,
+                     output t_riscv_mem_access_req  dmem_access_req,
+                     input  t_riscv_mem_access_resp dmem_access_resp,
+                     output t_riscv_mem_access_req  imem_access_req,
+                     input  t_riscv_mem_access_resp imem_access_resp
+)
+{
+    timing from rising clock clk dmem_access_req, imem_access_req;
+    timing to   rising clock clk dmem_access_resp, imem_access_resp;
+}
