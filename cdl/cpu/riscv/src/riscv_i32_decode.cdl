@@ -144,6 +144,7 @@ are from that specification)
     Decode the instruction
     """: {
         /*b  Defaults */
+        idecode.is_compressed = 0;
         idecode.rs1_valid = 0;
         idecode.rs2_valid = 0;
         idecode.rd_written = 0;

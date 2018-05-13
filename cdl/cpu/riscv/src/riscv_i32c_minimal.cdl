@@ -97,6 +97,8 @@ typedef struct {
  * Combinatorials of the decexecrfw_state
  */
 typedef struct {
+    t_riscv_i32_decode idecode;
+
     t_riscv_word   rs1;
     t_riscv_word   rs2;
     bit[32] next_pc;
@@ -116,12 +118,12 @@ typedef struct {
 
 /*a Module
  */
-module riscv_minimal( clock clk,
-                     input bit reset_n,
-                     output t_riscv_mem_access_req  dmem_access_req,
-                     input  t_riscv_mem_access_resp dmem_access_resp,
-                     output t_riscv_mem_access_req  imem_access_req,
-                     input  t_riscv_mem_access_resp imem_access_resp
+module riscv_i32c_minimal( clock clk,
+                           input bit reset_n,
+                           output t_riscv_mem_access_req  dmem_access_req,
+                           input  t_riscv_mem_access_resp dmem_access_resp,
+                           output t_riscv_mem_access_req  imem_access_req,
+                           input  t_riscv_mem_access_resp imem_access_resp
 )
 """
 This processor tries to keep it as simple as possible, with a 2-stage
@@ -155,11 +157,12 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
 
     clocked t_riscv_word[32] registers={*=0} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
 
-    clocked t_ifetch_state    ifetch_state={*=0};
-    comb    t_ifetch_combs    ifetch_combs;
-    net     t_riscv_i32_decode decexecrfw_idecode;
-    clocked t_decexecrfw_state    decexecrfw_state={*=0, pc=INITIAL_PC};
-    comb    t_decexecrfw_combs    decexecrfw_combs;
+    clocked t_ifetch_state         ifetch_state={*=0};
+    comb    t_ifetch_combs         ifetch_combs;
+    net     t_riscv_i32_decode     decexecrfw_idecode_i32;
+    net     t_riscv_i32_decode     decexecrfw_idecode_i32c;
+    clocked t_decexecrfw_state     decexecrfw_state={*=0, pc=INITIAL_PC};
+    comb    t_decexecrfw_combs     decexecrfw_combs;
     net     t_riscv_i32_alu_result decexecrfw_alu_result;
 
     comb t_riscv_csr_controls csr_controls;
@@ -168,9 +171,22 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
 
     /*b Ifetch stage
      */
-    instruction_fetch_stage: {
+    instruction_fetch_stage
+    """
+    The instruction fetch stage derives a request from the
+    decode/execute stage (the instruction address that is required
+    next) and presents that to the outside world.
+
+    This request may be for any 16-bit aligned address, and two
+    successive 16-bit words from that request must be presented,
+    aligned to bit 0.
+
+    If the decode/execute stage is invalid (i.e. it does not have a
+    valid instruction to decode) then the current PC is requested.
+    """:
+    {
         imem_access_req             = {*=0};
-        ifetch_combs.address = decexecrfw_combs.next_pc;
+        ifetch_combs.address        = decexecrfw_combs.next_pc;
         if (!decexecrfw_state.valid && ifetch_state.enable) {
             ifetch_combs.address   = decexecrfw_state.pc;
         }
@@ -182,17 +198,27 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
 
     /*b Decode, RFR, execute and RFW stage - single stage execution
      */
-    decode_rfr_execute_stage: {
-        /*b Instruction register */
+    decode_rfr_execute_stage """
+    The decode/RFR/execute stage performs all of the hard workin the
+    implementation.
+
+    It first incorporates a program counter (PC) and an instruction
+    register (IR). The instruction in the IR corresponds to that
+    PC. Initially (at reset) the IR will not be valid, as an
+    instruction must first be fetched, so there is a corresponding
+    valid bit too.
+
+    The IR is decoded as both a RV32C (16-bit) and RV32 (32-bit) in
+    parallel; the bottom two bits of the instruction register indicate
+    which is valid for the IR.
+
+    """: {
+        /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
         decexecrfw_state.valid <= 0;
         if (imem_access_req.read_enable && !imem_access_resp.wait) {
             decexecrfw_state.instr_data <= imem_access_resp.read_data;
             decexecrfw_state.illegal_pc <= 0;
             decexecrfw_state.valid_legal <= 1;
-            if (ifetch_combs.address[2;0]!=0) {
-                decexecrfw_state.illegal_pc <= 1;
-                decexecrfw_state.valid_legal <= 0;
-            }
             decexecrfw_state.valid <= 1;
         }
         if (decexecrfw_state.valid) {
@@ -200,15 +226,24 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         }
 
         /*b Decode instruction */
-        riscv_i32_decode decode( instruction <= decexecrfw_state.instr_data,
-                                 idecode => decexecrfw_idecode );
+        riscv_i32_decode decode_i32( instruction <= decexecrfw_state.instr_data,
+                                 idecode      => decexecrfw_idecode_i32 );
+
+        riscv_i32c_decode decode_i32c( instruction <= decexecrfw_state.instr_data,
+                                  idecode      => decexecrfw_idecode_i32c );
+
+        /*b Select decode */
+        decexecrfw_combs.idecode = decexecrfw_idecode_i32c;
+        if (decexecrfw_state.instr_data[2;0]==2b11) {
+            decexecrfw_combs.idecode = decexecrfw_idecode_i32;
+        }
 
         /*b Register read */
-        decexecrfw_combs.rs1 = registers[decexecrfw_idecode.rs1]; // note that register 0 is ALWAYS 0 anyway
-        decexecrfw_combs.rs2 = registers[decexecrfw_idecode.rs2]; // note that register 0 is ALWAYS 0 anyway
+        decexecrfw_combs.rs1 = registers[decexecrfw_combs.idecode.rs1]; // note that register 0 is ALWAYS 0 anyway
+        decexecrfw_combs.rs2 = registers[decexecrfw_combs.idecode.rs2]; // note that register 0 is ALWAYS 0 anyway
 
         /*b Execute ALU stage */
-        riscv_i32_alu alu( idecode <= decexecrfw_idecode,
+        riscv_i32_alu alu( idecode <= decexecrfw_combs.idecode,
                            pc  <= decexecrfw_state.pc,
                            rs1 <= decexecrfw_combs.rs1,
                            rs2 <= decexecrfw_combs.rs2,
@@ -219,21 +254,21 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         csr_controls.retire      = decexecrfw_state.valid_legal;
         csr_controls.timer_inc   = 1;
 
-        decexecrfw_combs.csr_access = decexecrfw_idecode.csr_access;
-        if (!decexecrfw_state.valid_legal || decexecrfw_idecode.illegal) {
+        decexecrfw_combs.csr_access = decexecrfw_combs.idecode.csr_access;
+        if (!decexecrfw_state.valid_legal || decexecrfw_combs.idecode.illegal) {
             decexecrfw_combs.csr_access.access = riscv_csr_access_none;
         }
         riscv_csrs_minimal csrs( clk <- clk,
                                  reset_n <= reset_n,
                                  csr_access     <= decexecrfw_combs.csr_access,
-                                 csr_write_data <= decexecrfw_idecode.illegal ? bundle(27b0, decexecrfw_idecode.rs1) : decexecrfw_combs.rs1,
+                                 csr_write_data <= decexecrfw_combs.idecode.illegal ? bundle(27b0, decexecrfw_combs.idecode.rs1) : decexecrfw_combs.rs1,
                                  csr_data       => csr_data,
                                  csr_controls   <= csr_controls,
                                  csrs => csrs);
 
         /*b Memory access handling - must be valid before middle of cycle */
-        dmem_access_req.read_enable  = (decexecrfw_idecode.op == riscv_op_load);
-        dmem_access_req.write_enable = (decexecrfw_idecode.op == riscv_op_store);
+        dmem_access_req.read_enable  = (decexecrfw_combs.idecode.op == riscv_op_load);
+        dmem_access_req.write_enable = (decexecrfw_combs.idecode.op == riscv_op_store);
         if (!decexecrfw_state.valid_legal) {
             dmem_access_req.read_enable  = 0;
             dmem_access_req.write_enable = 0;
@@ -242,7 +277,7 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         decexecrfw_combs.word_offset    = decexecrfw_alu_result.arith_result[2;0];
         decexecrfw_combs.dmem_misaligned = (decexecrfw_combs.word_offset!=0);
         dmem_access_req.byte_enable  = 4hf << decexecrfw_combs.word_offset;
-        part_switch (decexecrfw_idecode.memory_width) {
+        part_switch (decexecrfw_combs.idecode.memory_width) {
         case mw_byte: {
             dmem_access_req.byte_enable  = 4h1 << decexecrfw_combs.word_offset;
             decexecrfw_combs.dmem_misaligned = 0;
@@ -270,22 +305,22 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         decexecrfw_combs.trap_cause = 0;
         decexecrfw_combs.branch_taken = 0;
         decexecrfw_combs.branch_target = decexecrfw_alu_result.branch_target;
-        part_switch (decexecrfw_idecode.op) {
+        part_switch (decexecrfw_combs.idecode.op) {
         case riscv_op_branch:   { decexecrfw_combs.branch_taken = decexecrfw_alu_result.branch_condition_met; }
         case riscv_op_jal:      { decexecrfw_combs.branch_taken=1; }
         case riscv_op_jalr:     { decexecrfw_combs.branch_taken=1; }
         case riscv_op_system:   {
-            if (decexecrfw_idecode.subop==riscv_subop_mret) {
+            if (decexecrfw_combs.idecode.subop==riscv_subop_mret) {
                 decexecrfw_combs.branch_taken=1;
                 decexecrfw_combs.branch_target = csrs.mepc;
             }
-            if (decexecrfw_idecode.subop==riscv_subop_ecall) {
+            if (decexecrfw_combs.idecode.subop==riscv_subop_ecall) {
                 decexecrfw_combs.trap = 1;
                 decexecrfw_combs.trap_cause = riscv_trap_cause_mecall;
             }
         }
         }
-        if (decexecrfw_idecode.illegal) {
+        if (decexecrfw_combs.idecode.illegal) {
             decexecrfw_combs.trap = 1;
             decexecrfw_combs.trap_cause = riscv_trap_cause_illegal_instruction;
         }
@@ -308,20 +343,20 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
 
         /*b Memory read handling - way late in the second half of the cycle */
         decexecrfw_combs.memory_data = dmem_access_resp.read_data;
-        part_switch (decexecrfw_idecode.memory_width) {
+        part_switch (decexecrfw_combs.idecode.memory_width) {
         case mw_byte: {
             decexecrfw_combs.memory_data = (dmem_access_resp.read_data >> (bundle(decexecrfw_combs.word_offset,3b0))) & 0xff;
-            if (!decexecrfw_idecode.memory_read_unsigned && decexecrfw_combs.memory_data[7]) { decexecrfw_combs.memory_data[24;8] = -1; }
+            if (!decexecrfw_combs.idecode.memory_read_unsigned && decexecrfw_combs.memory_data[7]) { decexecrfw_combs.memory_data[24;8] = -1; }
         }
         case mw_half: {
             decexecrfw_combs.memory_data = (dmem_access_resp.read_data >> (bundle(decexecrfw_combs.word_offset,3b0))) & 0xffff;
-            if (!decexecrfw_idecode.memory_read_unsigned && decexecrfw_combs.memory_data[15]) { decexecrfw_combs.memory_data[16;16] = -1; }
+            if (!decexecrfw_combs.idecode.memory_read_unsigned && decexecrfw_combs.memory_data[15]) { decexecrfw_combs.memory_data[16;16] = -1; }
         }
         }
 
         decexecrfw_combs.rfw_write_data = dmem_access_req.read_enable ? decexecrfw_combs.memory_data : decexecrfw_alu_result.result;
-        if (decexecrfw_state.valid_legal && decexecrfw_idecode.rd_written) {
-            registers[decexecrfw_idecode.rd] <= decexecrfw_combs.rfw_write_data;
+        if (decexecrfw_state.valid_legal && decexecrfw_combs.idecode.rd_written) {
+            registers[decexecrfw_combs.idecode.rd] <= decexecrfw_combs.rfw_write_data;
         }
         registers[0] <= 0; // register 0 is always zero...
     }
@@ -332,7 +367,7 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         riscv_i32_trace trace(clk <- clk,
                               reset_n <= reset_n,
                               clk_enable    <= decexecrfw_state.valid,
-                              idecode       <= decexecrfw_idecode,
+                              idecode       <= decexecrfw_combs.idecode,
                               result        <= decexecrfw_combs.rfw_write_data,
                               pc            <= decexecrfw_state.pc,
                               branch_taken  <= decexecrfw_combs.branch_taken,

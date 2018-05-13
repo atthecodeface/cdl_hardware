@@ -40,6 +40,8 @@ typedef struct {
     bit     arith_unsigned_ge;
     bit     arith_signed_ge;
     t_riscv_word  pc_plus_4;
+    t_riscv_word  pc_plus_2;
+    t_riscv_word  pc_plus_inst;
     t_riscv_word  pc_plus_imm;
 } t_alu_combs;
 
@@ -114,7 +116,9 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
         }
 
         /*b Determine branch condition met */
-        alu_combs.pc_plus_4   = pc + 4;
+        alu_combs.pc_plus_4    = pc + 4;
+        alu_combs.pc_plus_2    = pc + 2;
+        alu_combs.pc_plus_inst = idecode.is_compressed ? alu_combs.pc_plus_2 : alu_combs.pc_plus_4;
         alu_combs.pc_plus_imm = pc + idecode.immediate;
         alu_result.arith_result = alu_combs.arith_result[32;0];
         alu_result.result       = alu_combs.arith_result[32;0];
@@ -133,12 +137,12 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
         part_switch (idecode.op) {
         case riscv_op_lui:      { alu_result.result = idecode.immediate;}
         case riscv_op_auipc:    { alu_result.result = alu_combs.pc_plus_imm;}
-        case riscv_op_jal:      { alu_result.result = alu_combs.pc_plus_4; } // jalr stores pc+4 ready for return in register
-        case riscv_op_jalr:     { alu_result.result = alu_combs.pc_plus_4; } // jalr stores pc+4 ready for return in register
+        case riscv_op_jal:      { alu_result.result = alu_combs.pc_plus_inst; } // jalr stores pc+4 ready for return in register
+        case riscv_op_jalr:     { alu_result.result = alu_combs.pc_plus_inst; } // jalr stores pc+4 ready for return in register
         }
         alu_result.branch_target = alu_combs.pc_plus_imm;
         part_switch (idecode.op) {
-        case riscv_op_jalr:     { alu_result.branch_target = bundle(alu_combs.arith_result[30;2],2b0); }
+        case riscv_op_jalr:     { alu_result.branch_target = bundle(alu_combs.arith_result[31;1],1b0); }
         }
 
         /*b CSR access */

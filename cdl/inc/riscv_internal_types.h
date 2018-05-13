@@ -36,8 +36,15 @@ constant integer riscv_i32_rs2  = 20 "Five bit source register 2 field for r/s/s
 constant integer riscv_i32_f7   = 25 "Seven bit function field for r, imm for i/s/sb/u/uj type";
 constant integer riscv_i32_f12  = 20 "Twelve bit function/immediage field for i type";
 
+/*a RISC-V ABI register names */
+typedef enum[5] {
+    riscv_abi_zero = 0,
+    riscv_abi_link = 1,
+    riscv_abi_sp   = 2
+} t_riscv_abi;
+
 /*a RISC-V instruction decode types */
-/*t t_riscv_opc enumeration
+/*t t_riscv_opc (I32) enumeration
  */
 typedef enum[5] {
     riscv_opc_load     =  0, // rv32i (lb, lh, lw, lbu, lhu); rv64i (lwu, ld)
@@ -69,6 +76,27 @@ typedef enum[5] {
     riscv_opc_resvd_2  = 29,
     riscv_opc_custom_3 = 30
 } t_riscv_opc_rv32;
+
+/*t t_riscv_opcc (I32C) enumeration
+ */
+typedef enum[3] {
+    riscv_opcc0_addi4spn =  0,
+    riscv_opcc0_lw       =  2,
+    riscv_opcc0_sw       =  6,
+    riscv_opcc1_addi     =  0,
+    riscv_opcc1_jal      =  1,
+    riscv_opcc1_li       =  2,
+    riscv_opcc1_lui      =  3,
+    riscv_opcc1_arith    =  4,
+    riscv_opcc1_j        =  5,
+    riscv_opcc1_beqz     =  6,
+    riscv_opcc1_bnez     =  7,
+    riscv_opcc2_slli     =  0,
+    riscv_opcc2_lwsp     =  2,
+    riscv_opcc2_misc_alu =  4,
+    riscv_opcc2_swsp     =  6,
+
+} t_riscv_opc_rv32c;
 
 /*t t_riscv_f12- see RISC-V spec 2.1 table 9.2
  */
@@ -414,6 +442,7 @@ typedef struct {
     bit          memory_read_unsigned  "if a memory read (op is riscv_opc_load), this indicates an unsigned read; otherwise ignored";
     t_riscv_mem_width  memory_width    "ignored unless @a memory_read or @a memory_write; indicates size of memory transfer";
     bit           illegal              "asserted if an illegal opcode";
+    bit           is_compressed        "asserted if from an i32-c decode, clear otherwise (effects link register)";
 } t_riscv_i32_decode;
 
 /*t t_riscv_i32_alu_result
