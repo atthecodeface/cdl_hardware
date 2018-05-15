@@ -46,6 +46,21 @@ typedef struct {
  */
 typedef bit[32] t_riscv_word;
 
+/*t t_riscv_fetch_req
+ */
+typedef struct {
+    bit      valid;
+    bit[32]  address;
+    bit      sequential;
+} t_riscv_fetch_req;
+
+/*t t_riscv_fetch_resp
+ */
+typedef struct {
+    bit      valid;
+    bit      debug;
+    bit[32]  data;
+} t_riscv_fetch_resp;
 
 /*a Implementations */
 /*m riscv_minimal
@@ -76,4 +91,18 @@ module riscv_i32c_minimal( clock clk,
 {
     timing from rising clock clk dmem_access_req, imem_access_req;
     timing to   rising clock clk dmem_access_resp, imem_access_resp;
+}
+/*m riscv_i32c_pipeline
+ */
+extern
+module riscv_i32c_pipeline( clock clk,
+                            input bit reset_n,
+                            output t_riscv_fetch_req       ifetch_req,
+                            input  t_riscv_fetch_resp      ifetch_resp,
+                            output t_riscv_mem_access_req  dmem_access_req,
+                            input  t_riscv_mem_access_resp dmem_access_resp
+)
+{
+    timing from rising clock clk dmem_access_req, ifetch_req;
+    timing to   rising clock clk dmem_access_resp, ifetch_resp;
 }

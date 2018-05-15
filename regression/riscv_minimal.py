@@ -140,8 +140,8 @@ class riscv_minimal_test_hw(simple_tb.cdl_test_hw):
         pass
     pass
 
-#c riscv_minimal_i32c_test_hw
-class riscv_minimal_i32c_test_hw(simple_tb.cdl_test_hw):
+#c riscv_i32c_minimal_test_hw
+class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
@@ -252,6 +252,6 @@ for tc in tests:
         pass
     if tc not in ["fence_i"]:
         setattr(riscv_minimal,               "test_"+tc, test_fn)
-        setattr(riscv_i32c_minimal,          "test_"+tc, test_fn)
+        setattr(riscv_i32c_minimal,          "test_"+tc, test_i32c_fn)
     setattr(riscv_minimal_single_memory, "test_"+tc, test_smem_fn)
     pass
