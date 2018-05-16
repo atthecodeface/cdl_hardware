@@ -106,3 +106,18 @@ module riscv_i32c_pipeline( clock clk,
     timing from rising clock clk dmem_access_req, ifetch_req;
     timing to   rising clock clk dmem_access_resp, ifetch_resp;
 }
+
+/*m riscv_i32c_pipeline3
+ */
+extern
+module riscv_i32c_pipeline3( clock clk,
+                            input bit reset_n,
+                            output t_riscv_fetch_req       ifetch_req,
+                            input  t_riscv_fetch_resp      ifetch_resp,
+                            output t_riscv_mem_access_req  dmem_access_req,
+                            input  t_riscv_mem_access_resp dmem_access_resp
+)
+{
+    timing from rising clock clk dmem_access_req, ifetch_req;
+    timing to   rising clock clk dmem_access_resp, ifetch_resp;
+}

@@ -162,6 +162,28 @@ class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
         pass
     pass
 
+#c riscv_i32c_pipeline3_test_hw
+class riscv_i32c_pipeline3_test_hw(simple_tb.cdl_test_hw):
+    """
+    Simple instantiation of RISCV minimal testbench
+    """
+    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.dut.trace "),},
+               }
+    th_forces = { "th.clock":"clk",
+                  "th.inputs":("a"),
+                  "th.outputs":("b"),
+                  }
+    module_name = "tb_riscv_i32c_pipeline3"
+    #f __init__
+    def __init__(self, test):
+        self.th_forces = self.th_forces.copy()
+        mif_filename = test.get_image()
+        self.th_forces["imem.filename"] = mif_filename
+        self.th_forces["dmem.filename"] = mif_filename
+        simple_tb.cdl_test_hw.__init__(self,test)
+        pass
+    pass
+
 #c riscv_minimal_single_memory_test_hw
 class riscv_minimal_single_memory_test_hw(simple_tb.cdl_test_hw):
     """
@@ -190,6 +212,10 @@ class riscv_minimal(simple_tb.base_test):
 
 #c riscv_i32c_minimal
 class riscv_i32c_minimal(simple_tb.base_test):
+    pass
+
+#c riscv_i32c_pipeline3
+class riscv_i32c_pipeline3(simple_tb.base_test):
     pass
 
 #c riscv_minimal_single_memory
@@ -247,11 +273,15 @@ for tc in tests:
     def test_i32c_fn(c, tf=tf, num_cycles=num_cycles):
         c.do_test_run(riscv_i32c_minimal_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles*3 / 2)
         pass
+    def test_i32c_pipe3_fn(c, tf=tf, num_cycles=num_cycles):
+        c.do_test_run(riscv_i32c_pipeline3_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles*3 / 2)
+        pass
     def test_smem_fn(c, tf=tf, num_cycles=num_cycles):
         c.do_test_run(riscv_minimal_single_memory_test_hw(c_riscv_minimal_test_dump(dump_filename=tf,test_memory="mem")), num_cycles=num_cycles)
         pass
     if tc not in ["fence_i"]:
         setattr(riscv_minimal,               "test_"+tc, test_fn)
         setattr(riscv_i32c_minimal,          "test_"+tc, test_i32c_fn)
+        setattr(riscv_i32c_pipeline3,        "test_"+tc, test_i32c_pipe3_fn)
     setattr(riscv_minimal_single_memory, "test_"+tc, test_smem_fn)
     pass

@@ -1,0 +1,118 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   tb_riscv_minimal.cdl
+ * @brief  Testbench for minimal RISC-V
+ *
+ */
+
+/*a Includes
+ */
+include "srams.h"
+include "riscv.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk, input bit a, output bit b )
+{
+    timing to rising clock clk a;
+}
+
+/*a Module
+ */
+module tb_riscv_i32c_pipeline3( clock clk,
+                                input bit reset_n
+)
+{
+
+    /*b Nets
+     */
+    net  t_riscv_mem_access_req  dmem_access_req;
+    comb t_riscv_mem_access_resp dmem_access_resp;
+
+    net  t_riscv_fetch_req  rv_imem_access_req;
+    comb t_riscv_fetch_req  imem_access_req;
+    comb t_riscv_fetch_resp rv_imem_access_resp;
+
+    /*b State and comb
+     */
+    net bit[32] imem_mem_read_data;
+    net bit[32] main_mem_read_data;
+
+    /*b Clock divider
+     */
+    clocked clock clk reset active_low reset_n bit[2] clk_divider = 0;
+    clocked clock clk reset active_low reset_n bit riscv_clk_cycle_0 = 1;
+    clocked clock clk reset active_low reset_n bit riscv_clk_cycle_1 = 0;
+    clocked clock clk reset active_low reset_n bit riscv_clk_cycle_2 = 0;
+    gated_clock clock clk active_high riscv_clk_cycle_2 riscv_clk;
+    clock_divider """
+    """ : {
+        riscv_clk_cycle_0 <= (clk_divider==2b10);
+        riscv_clk_cycle_1 <= (clk_divider==2b00);
+        riscv_clk_cycle_2 <= (clk_divider==2b01);
+        clk_divider <= clk_divider + 1;
+        if (riscv_clk_cycle_2) { clk_divider <= 0; }
+    }
+
+    /*b Instantiate srams
+     */
+    clocked clock clk reset active_low reset_n bit[32] last_imem_mem_read_data=0;
+    srams: {
+        rv_imem_access_resp.valid      = 1;
+        rv_imem_access_resp.debug      = 0;
+        rv_imem_access_resp.data = imem_mem_read_data;
+        if (!rv_imem_access_req.address[1]) {
+            imem_access_req = rv_imem_access_req;
+            rv_imem_access_resp.data = imem_mem_read_data;
+        } else {
+            if (riscv_clk_cycle_0) {
+                imem_access_req = rv_imem_access_req;
+            } else {
+                imem_access_req = rv_imem_access_req;
+                imem_access_req.address = rv_imem_access_req.address + 4;
+                rv_imem_access_resp.data = bundle(imem_mem_read_data[16;0], last_imem_mem_read_data[16;16]);
+            }
+        }
+        last_imem_mem_read_data <= imem_mem_read_data;
+        se_sram_srw_16384x32 imem(sram_clock <- clk,
+                                  select         <= imem_access_req.valid & (riscv_clk_cycle_0 || riscv_clk_cycle_1),
+                                  read_not_write <= 1,
+                                  write_enable   <= -1,
+                                  address        <= imem_access_req.address[14;2],
+                                  write_data     <= 0,
+                                  data_out       => imem_mem_read_data );
+        se_sram_srw_16384x32_we8 dmem(sram_clock <- clk,
+                                  select         <= (dmem_access_req.read_enable || dmem_access_req.write_enable) & riscv_clk_cycle_1,
+                                  read_not_write <= dmem_access_req.read_enable,
+                                  write_enable <= -1,
+                                  address        <= dmem_access_req.address[14;2],
+                                  write_data     <= dmem_access_req.write_data,
+                                  data_out       => main_mem_read_data );
+        dmem_access_resp.wait       = 0;
+        dmem_access_resp.read_data  = main_mem_read_data;
+    }
+
+    /*b Instantiate RISC-V
+     */
+    riscv_instance: {
+        se_test_harness th( clk <- clk, a<=0 );
+        
+        riscv_i32c_pipeline3 dut( clk <- riscv_clk,
+                                reset_n <= reset_n,
+                                dmem_access_req => dmem_access_req,
+                                dmem_access_resp <= dmem_access_resp,
+                                ifetch_req => rv_imem_access_req,
+                                ifetch_resp <= rv_imem_access_resp
+            );
+    }
+}
