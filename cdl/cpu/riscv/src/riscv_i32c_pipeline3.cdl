@@ -124,6 +124,8 @@ typedef struct {
  */
 typedef struct {
     bit valid_legal              "Asserted if @instr_data is a valid fetched instruction on a valid alignment";
+    bit blocked_by_mem;
+    bit blocked;
     bit flush_pipeline;
     bit[32] next_pc;
     t_riscv_word   rs1;
@@ -136,6 +138,7 @@ typedef struct {
     bit branch_taken;
     bit trap;
     bit mret;
+    bit jalr;
     t_riscv_trap_cause trap_cause;
     t_riscv_csr_access csr_access;
     t_riscv_word result_data;
@@ -147,6 +150,7 @@ typedef struct {
     bit valid                   "Asserted if the state here is valid";
     t_riscv_word alu_result     "Result from the last alu stage; this will be combined with memory result to be stored in RF";
     bit rd_written              "Asserted if Rd is to be written to (with result of memory or ALU)";
+    bit rd_from_mem             "Asserted if Rd is to be written to with result of memory - so a following instruction must wait until this one reaches RFW";
     bit[5] rd                   "Destination register used by the instruction (if valid and rd_written are asserted)";
     bit reading                 "Asserted if the memory is reading and data should be merged with previous mem result";
     bit[4] byte_clear           "Bytes of current rfw_state.mem_result to clear in merging with memory read data for memory result (for unaligned reads)";
@@ -281,7 +285,9 @@ the end
 
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
         dec_state.valid <= 0;
-        if (ifetch_req.valid && ifetch_resp.valid) {
+        if (alu_combs.blocked && dec_state.valid) {
+            dec_state <= dec_state;
+        } elsif (ifetch_req.valid && ifetch_resp.valid) {
             dec_state.valid <= 1;
             dec_state.instr_data <= ifetch_resp.data;
             dec_state.illegal_pc <= 0;
@@ -354,7 +360,13 @@ the end
         /*b Record state */
         alu_state.valid <= 0;
         alu_state.idecode.rd_written <= 0; // Ensure it is cleared if invalid
-        if (dec_state.valid && !alu_combs.flush_pipeline) {
+        if (alu_combs.blocked) {
+            alu_state <= alu_state;
+            alu_state.rs1_from_alu <= 0;
+            alu_state.rs2_from_alu <= 0;
+            alu_state.rs1_from_mem <= alu_state.rs1_from_alu;
+            alu_state.rs2_from_mem <= alu_state.rs2_from_alu;
+        } elsif (dec_state.valid && !alu_combs.flush_pipeline) {
             alu_state.valid               <= 1;
             alu_state.idecode             <= dec_combs.idecode;
             alu_state.pc                  <= dec_state.pc;
@@ -378,11 +390,15 @@ the end
 
         /*b Data forwarding */
         alu_combs.rs1 = alu_state.rs1;
+        alu_combs.blocked_by_mem = 0;
         if (alu_state.rs1_from_mem) {
             alu_combs.rs1 = rfw_state.mem_result;
         }
         if (alu_state.rs1_from_alu) {
             alu_combs.rs1 = mem_state.alu_result;
+            if (mem_state.rd_from_mem) {
+                alu_combs.blocked_by_mem = alu_state.idecode.rs1_valid;
+            }
         }
         alu_combs.rs2 = alu_state.rs2;
         if (alu_state.rs2_from_mem) {
@@ -390,7 +406,11 @@ the end
         }
         if (alu_state.rs2_from_alu) {
             alu_combs.rs2 = mem_state.alu_result;
+            if (mem_state.rd_from_mem) {
+                alu_combs.blocked_by_mem = alu_state.idecode.rs2_valid;
+            }
         }
+        alu_combs.blocked = alu_combs.blocked_by_mem;
 
         /*b Execute ALU stage */
         riscv_i32_alu alu( idecode <= alu_state.idecode,
@@ -463,10 +483,13 @@ the end
         alu_combs.trap_cause = 0;
         alu_combs.branch_taken = 0;
         alu_combs.mret = 0;
+        alu_combs.jalr = 0;
         part_switch (alu_state.idecode.op) {
         case riscv_op_branch:   { alu_combs.branch_taken = alu_result.branch_condition_met; }
         case riscv_op_jal:      { alu_combs.branch_taken=1; }
-        case riscv_op_jalr:     { alu_combs.branch_taken=1; }
+        case riscv_op_jalr:     {
+            alu_combs.jalr = 1;
+        }
         case riscv_op_system:   {
             if (alu_state.idecode.subop==riscv_subop_mret) {
                 alu_combs.mret = 1;
@@ -488,6 +511,10 @@ the end
             alu_combs.flush_pipeline = !alu_state.predicted_branch;
         } else { // branch is NOT to be taken - flush if a branch was predicted
             alu_combs.flush_pipeline = alu_state.predicted_branch;
+        }
+        if (alu_combs.jalr) {
+            alu_combs.flush_pipeline = 1;
+            alu_combs.next_pc = alu_result.arith_result;
         }
         if (alu_combs.mret) {
             alu_combs.flush_pipeline = 1;
@@ -533,6 +560,7 @@ the end
         mem_state.valid        <= 0;
         mem_state.reading      <= 0;
         mem_state.rd_written   <= 0;
+        mem_state.rd_from_mem  <= 0;
         mem_state.rotation     <= 0;
         mem_state.byte_enable  <= 0;
         mem_state.byte_clear   <= 4hf;
@@ -543,10 +571,13 @@ the end
             mem_state.byte_enable  <= alu_combs.read_data_byte_enable;
             mem_state.byte_clear   <= alu_combs.read_data_byte_clear;
             mem_state.rd_written   <= alu_state.idecode.rd_written;
+            if (alu_combs.reading && alu_state.idecode.rd_written) {
+                mem_state.rd_from_mem <= 1;
+            }
             mem_state.rd           <= alu_state.idecode.rd;
             mem_state.alu_result   <= alu_combs.result_data;
-            mem_state.sign_extend_half <= (alu_state.idecode.memory_read_unsigned && (alu_state.idecode.memory_width== mw_half));
-            mem_state.sign_extend_byte <= (alu_state.idecode.memory_read_unsigned && (alu_state.idecode.memory_width== mw_byte));
+            mem_state.sign_extend_half <= ((!alu_state.idecode.memory_read_unsigned) && (alu_state.idecode.memory_width== mw_half));
+            mem_state.sign_extend_byte <= ((!alu_state.idecode.memory_read_unsigned) && (alu_state.idecode.memory_width== mw_byte));
         }
 
         /*b Memory read handling */
@@ -566,12 +597,12 @@ the end
         }
         }
         mem_combs.memory_data = mem_combs.aligned_data;
-        if (mem_state.sign_extend_byte && mem_combs.memory_data[7])  { mem_combs.memory_data[24;8]  = -1; }
-        if (mem_state.sign_extend_half && mem_combs.memory_data[15]) { mem_combs.memory_data[16;16] = -1; }
         for (i; 4) {
             mem_combs.memory_data[8;8*i] = ( (mem_state.byte_clear[i]?8b0:mem_state.alu_result[8;8*i]) |
                                              (mem_state.byte_enable[i]?mem_combs.aligned_data[8;8*i]:8b0) );
         }
+        if (mem_state.sign_extend_byte && mem_combs.memory_data[7])  { mem_combs.memory_data[24;8]  = -1; }
+        if (mem_state.sign_extend_half && mem_combs.memory_data[15]) { mem_combs.memory_data[16;16] = -1; }
 
         /*b Memory result mux */
         mem_combs.result_data = mem_state.alu_result;
