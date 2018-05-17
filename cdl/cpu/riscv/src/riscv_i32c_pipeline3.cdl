@@ -435,9 +435,9 @@ the end
         alu_combs.word_offset     = alu_result.arith_result[2;0];
         alu_combs.dmem_misaligned = (alu_combs.word_offset!=0);
         dmem_access_req.byte_enable  = 4hf << alu_combs.word_offset;
-        alu_combs.read_data_rotation = 2b00;
+        alu_combs.read_data_rotation    = 2b00;
         alu_combs.read_data_byte_enable = 4hf;
-        alu_combs.read_data_byte_clear = 4hf;
+        alu_combs.read_data_byte_clear  = 4hf;
         part_switch (alu_state.idecode.memory_width) {
         case mw_byte: {
             dmem_access_req.byte_enable  = 4h1 << alu_combs.word_offset;
@@ -569,7 +569,7 @@ the end
         if (mem_state.sign_extend_byte && mem_combs.memory_data[7])  { mem_combs.memory_data[24;8]  = -1; }
         if (mem_state.sign_extend_half && mem_combs.memory_data[15]) { mem_combs.memory_data[16;16] = -1; }
         for (i; 4) {
-            mem_combs.memory_data[8;8*i] = ( (mem_state.byte_clear[i]?mem_state.alu_result[8;8*i]:8b0) |
+            mem_combs.memory_data[8;8*i] = ( (mem_state.byte_clear[i]?8b0:mem_state.alu_result[8;8*i]) |
                                              (mem_state.byte_enable[i]?mem_combs.aligned_data[8;8*i]:8b0) );
         }
 
@@ -611,7 +611,7 @@ the end
                               result        <= rfw_state.mem_result,
                               pc            <= alu_state.pc,
                               branch_taken  <= alu_combs.branch_taken,
-                              branch_target <= alu_state.pc_if_mispredicted
+                              branch_target <= alu_combs.next_pc
             );
     }
 

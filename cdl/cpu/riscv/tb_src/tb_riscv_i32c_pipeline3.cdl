@@ -66,7 +66,13 @@ module tb_riscv_i32c_pipeline3( clock clk,
 
     /*b Instantiate srams
      */
-    clocked clock clk reset active_low reset_n bit[32] last_imem_mem_read_data=0;
+    default clock clk;
+    default reset active_low reset_n;
+    clocked bit[32] last_imem_mem_read_data=0;
+    clocked bit dmem_select = 0;
+    clocked bit dmem_read_not_write = 0;
+    clocked bit[14] dmem_address = 0;
+    clocked bit[32] dmem_write_data = 0;
     srams: {
         rv_imem_access_resp.valid      = 1;
         rv_imem_access_resp.debug      = 0;
@@ -91,13 +97,19 @@ module tb_riscv_i32c_pipeline3( clock clk,
                                   address        <= imem_access_req.address[14;2],
                                   write_data     <= 0,
                                   data_out       => imem_mem_read_data );
+        if (riscv_clk_cycle_2) {
+            dmem_select         <= (dmem_access_req.read_enable || dmem_access_req.write_enable);
+            dmem_read_not_write <= !dmem_access_req.write_enable;
+            dmem_address        <= dmem_access_req.address[14;2];
+            dmem_write_data     <= dmem_access_req.write_data;
+            }
         se_sram_srw_16384x32_we8 dmem(sram_clock <- clk,
-                                  select         <= (dmem_access_req.read_enable || dmem_access_req.write_enable) & riscv_clk_cycle_1,
-                                  read_not_write <= dmem_access_req.read_enable,
-                                  write_enable <= -1,
-                                  address        <= dmem_access_req.address[14;2],
-                                  write_data     <= dmem_access_req.write_data,
-                                  data_out       => main_mem_read_data );
+                                      select         <= dmem_select,
+                                      read_not_write <= dmem_read_not_write,
+                                      write_enable   <= -1,
+                                      address        <= dmem_address,
+                                      write_data     <= dmem_write_data,
+                                      data_out       => main_mem_read_data );
         dmem_access_resp.wait       = 0;
         dmem_access_resp.read_data  = main_mem_read_data;
     }
