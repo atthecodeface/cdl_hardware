@@ -287,11 +287,13 @@ the end
         dec_state.valid <= 0;
         if (alu_combs.blocked && dec_state.valid) {
             dec_state <= dec_state;
-        } elsif (ifetch_req.valid && ifetch_resp.valid) {
-            dec_state.valid <= 1;
-            dec_state.instr_data <= ifetch_resp.data;
-            dec_state.illegal_pc <= 0;
-            dec_state.pc <= ifetch_req.address;
+        } elsif (ifetch_req.valid) {
+            if (ifetch_resp.valid) {
+                dec_state.valid <= 1;
+                dec_state.instr_data <= ifetch_resp.data;
+                dec_state.illegal_pc <= 0;
+            }
+            dec_state.pc               <= ifetch_req.address;
             dec_state.fetch_sequential <= ifetch_req.sequential;
         }
 
@@ -524,7 +526,7 @@ the end
             alu_combs.flush_pipeline = 1;
             alu_combs.next_pc = csrs.mtvec;
         }
-        if (!alu_state.valid) {
+        if (!alu_state.valid || alu_combs.blocked) {
             alu_combs.flush_pipeline = 0;
         }
 
