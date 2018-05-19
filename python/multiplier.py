@@ -49,13 +49,27 @@ class multdiv:
         self.multiplier = self.multiplier >> 4
         #print "%d: %d : %d : %016x"%(self.stage, sel0123, sel048c, self.accumulator)
         return (self.multiplier==0)
-    def div_init(self, a, b, signed=False):
+    def div_oldinit(self, a, b, signed=False):
         self.divisor      = b & mask32
         self.stage = 0
         self.accumulator = (a&mask32)<<32
         while self.divisor<(self.accumulator>>32): # or just punt it up to the top bit set - clz
             self.divisor  = self.divisor<<1
             self.stage = self.stage + 1
+            pass
+        print "%08x %08x  %016x %08x %d"%(a&mask32,b&mask32,self.accumulator,self.divisor,self.stage)
+        pass
+    def div_init(self, a, b, signed=False):
+        self.divisor      = b & mask32
+        self.stage = 0
+        self.accumulator = (a&mask32)<<32
+        while (self.divisor & sign_bit)==0:
+            self.divisor  = self.divisor<<1
+            self.stage = self.stage + 1
+            pass
+        while (self.accumulator & (sign_bit<<32))==0:
+            self.accumulator  = self.accumulator<<1
+            self.stage = self.stage - 1
             pass
         print "%08x %08x  %016x %08x %d"%(a&mask32,b&mask32,self.accumulator,self.divisor,self.stage)
         pass
