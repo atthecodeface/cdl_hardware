@@ -10,7 +10,7 @@ class multdiv:
         self.multiplier = 0 # 32 bits
         self.multiplicand = 0 # 32 bits
         self.stage = 0 # 4 bits (maybe 5)
-    def combinatorial(self, mult4, areg, acc, subtract_acc, shift):
+    def combinatorial(self, mult4, areg, subtract_acc, acc, shift):
         sel0123 = mult4 & 3
         sel048c = (mult4>>2) & 3
         stage1_0 = 0
@@ -30,10 +30,10 @@ class multdiv:
         if sel048c==3: mux_048c = stage1_c
         stage2 = mux_0123 + mux_048c # 36-bit adder
         if subtract_acc:
-            acc_result = ((stage2<<shift) - self.accumulator) & mask64
+            acc_result = ((stage2<<shift) - acc) & mask64
             pass
         else:
-            acc_result = ((stage2<<shift) + self.accumulator) & mask64
+            acc_result = ((stage2<<shift) + acc) & mask64
             pass
         return acc_result
     def div_init(self, a, b, signed=False):
@@ -53,31 +53,23 @@ class multdiv:
     def mul_init(self, a, b, sa=False, sb=False):
         self.multiplier   = a & mask32
         self.multiplicand = b & mask32
-        self.accumulator = 0
         self.stage = 0
-        self.subtract_accumulator = True
+        acc_in = 0
+        add_in = 0
         if (sa and not sb):
-            if (a&sign_bit): self.accumulator = (b&mask32)<<32
+            if (a&sign_bit):
+                acc_in = (b&mask32)<<32
         if (sb and not sa):
-            if (b&sign_bit): self.accumulator = (a&mask32)<<32
+            if (b&sign_bit):
+                add_in = a&mask32
         if (sb and sa):
-            self.accumulator = 0
-            if (a&sign_bit): self.accumulator += (b&mask31)<<32
-            if (b&sign_bit): self.accumulator += (a&mask31)<<32
-        self.accumulator = self.accumulator & mask64
+            if (a&sign_bit):
+                acc_in = (b&mask31)<<32
+            if (b&sign_bit):
+                add_in = a&mask31
+        next_acc = self.combinatorial(mult4=1, areg=add_in, subtract_acc=0, acc=acc_in, shift=32)
+        self.accumulator = next_acc & mask64
         pass
-    def mul_step(self):
-        next_acc = self.combinatorial(mult4 = self.multiplier & 15,
-                                      areg = self.multiplicand,
-                                      acc = self.accumulator,
-                                      subtract_acc = self.subtract_accumulator,
-                                      shift = self.stage*4)
-        self.accumulator = next_acc
-        self.subtract_accumulator = False
-        self.stage = self.stage + 1
-        self.multiplier = self.multiplier >> 4
-        #print "%d: %d : %d : %016x"%(self.stage, sel0123, sel048c, self.accumulator)
-        return (self.multiplier==0)
     def div_init(self, a, b, signed=False):
         self.divisor      = b & mask32
         self.stage = 0
@@ -92,15 +84,27 @@ class multdiv:
             pass
         print "%08x %08x  %016x %08x %d"%(a&mask32,b&mask32,self.accumulator,self.divisor,self.stage)
         pass
+    def mul_step(self):
+        next_acc = self.combinatorial(mult4 = self.multiplier & 15,
+                                      areg = self.multiplicand,
+                                      subtract_acc = (self.stage==0),
+                                      acc = self.accumulator,
+                                      shift = self.stage*4)
+        self.accumulator = next_acc
+        self.stage = self.stage + 1
+        self.multiplier = self.multiplier >> 4
+        return (self.multiplier==0)
     def div_step(self): # uses 64-bit accumulator adder
-        if self.stage>=0:
-            # Could subtract dividend if we want to negate the result
-            x = (self.accumulator&(mask32<<32)) - (self.divisor<<32) # 32 bit subtract
-            if x>=0:
-                self.accumulator = (((self.accumulator + (1<<self.stage)) & mask32) | x)&mask64
-                pass
-            self.divisor  = self.divisor >> 1
+        next_acc = self.combinatorial( mult4 = 1,
+                                       shift = 32,
+                                       subtract_acc = True,
+                                       acc = self.accumulator,
+                                       areg = self.divisor )
+        if ((next_acc>=0) and (self.stage>=0)):
+            next_acc = -next_acc + (1<<self.stage)
+            self.accumulator = next_acc
             pass
+        self.divisor  = self.divisor >> 1
         self.stage = self.stage-1
         return self.stage<0
     def div_remainder(self, a, b, signed=False):
