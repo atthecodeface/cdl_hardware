@@ -24,6 +24,9 @@
 include "riscv_internal_types.h"
 include "riscv.h"
 
+/*a Constants - configuration */
+constant integer i32m_enabled=0;
+
 /*a Types
  */
 typedef struct {
@@ -154,7 +157,7 @@ are from that specification)
 
         /*b Decode 'opc' */
         combs.is_imm_op = (combs.opc==riscv_opc_op_imm);
-        idecode.op = riscv_op_illegal;;
+        idecode.op = riscv_op_illegal;
         idecode.illegal = 1;
         idecode.subop = riscv_subop_valid; // so only opc has to be set to 'valid'
         idecode.csr_access.address = instruction[12;20];
@@ -224,25 +227,40 @@ are from that specification)
             idecode.rs1_valid = 1;
             idecode.rs2_valid = !combs.is_imm_op;
             idecode.rd_written = 1;
-            idecode.illegal = (!combs.is_imm_op) && (combs.funct7!=0);
-            full_switch (combs.funct3) {
-            case riscv_f3_addsub: { idecode.subop = (!combs.is_imm_op && combs.funct7[5]) ? riscv_subop_sub : riscv_subop_add; }
-            case riscv_f3_slt:    { idecode.subop = riscv_subop_slt; }
-            case riscv_f3_sltu:   { idecode.subop = riscv_subop_sltu; }
-            case riscv_f3_xor :   { idecode.subop = riscv_subop_xor; }
-            case riscv_f3_or:     { idecode.subop = riscv_subop_or; }
-            case riscv_f3_and:    { idecode.subop = riscv_subop_and; }
-            case riscv_f3_sll:    {
-                idecode.illegal = (combs.funct7!=0);
-                idecode.subop   = riscv_subop_sll;
-            }
-            case riscv_f3_srlsra: {
-                idecode.illegal = (combs.funct7[5;0]!=0) || combs.funct7[6];
-                idecode.subop   = combs.funct7[5] ? riscv_subop_sra : riscv_subop_srl; // SRAI has funct7[5] set, else SRLI
-            }
-            default:          {
-                idecode.illegal = 1;
-            }
+            if (i32m_enabled && (combs.funct7==1)) {
+                idecode.illegal = 0;
+                idecode.op = riscv_op_muldiv;
+                full_switch (combs.funct3) {
+                case riscv_f3_mul:    { idecode.subop = riscv_subop_mull; }
+                case riscv_f3_mulh:   { idecode.subop = riscv_subop_mulhss; }
+                case riscv_f3_mulhsu: { idecode.subop = riscv_subop_mulhsu; }
+                case riscv_f3_mulhu:  { idecode.subop = riscv_subop_mulhus; }
+                case riscv_f3_div:    { idecode.subop = riscv_subop_divs; }
+                case riscv_f3_divu:   { idecode.subop = riscv_subop_divu; }
+                case riscv_f3_rem:    { idecode.subop = riscv_subop_rems; }
+                case riscv_f3_remu:   { idecode.subop = riscv_subop_remu; }
+                }
+            } else {
+                idecode.illegal = (!combs.is_imm_op) && (combs.funct7!=0) && (combs.funct7!=0x20);
+                full_switch (combs.funct3) {
+                case riscv_f3_addsub: { idecode.subop = (!combs.is_imm_op && combs.funct7[5]) ? riscv_subop_sub : riscv_subop_add; }
+                case riscv_f3_slt:    { idecode.subop = riscv_subop_slt; }
+                case riscv_f3_sltu:   { idecode.subop = riscv_subop_sltu; }
+                case riscv_f3_xor :   { idecode.subop = riscv_subop_xor; }
+                case riscv_f3_or:     { idecode.subop = riscv_subop_or; }
+                case riscv_f3_and:    { idecode.subop = riscv_subop_and; }
+                case riscv_f3_sll:    {
+                    idecode.illegal = (combs.funct7!=0);
+                    idecode.subop   = riscv_subop_sll;
+                }
+                case riscv_f3_srlsra: {
+                    idecode.illegal = (combs.funct7[5;0]!=0) || combs.funct7[6];
+                    idecode.subop   = combs.funct7[5] ? riscv_subop_sra : riscv_subop_srl; // SRAI has funct7[5] set, else SRLI
+                }
+                default:          {
+                    idecode.illegal = 1;
+                }
+                }
             }
         }
         case riscv_opc_misc_mem: { // uses i format

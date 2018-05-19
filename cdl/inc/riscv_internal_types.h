@@ -122,6 +122,19 @@ typedef enum[3] {
     riscv_f3_and    = 7,
 } t_riscv_f3_alu;
 
+/*t t_riscv_f3_muldiv
+ */
+typedef enum[3] {
+    riscv_f3_mul    = 0, // sub has f7[5] set, add has it clear
+    riscv_f3_mulh   = 1,
+    riscv_f3_mulhsu = 2,
+    riscv_f3_mulhu  = 3,
+    riscv_f3_div    = 4,
+    riscv_f3_divu   = 5,
+    riscv_f3_rem    = 6,
+    riscv_f3_remu   = 7
+} t_riscv_f3_muldiv;
+
 /*t t_riscv_f3_branch
  */
 typedef enum[3] {
@@ -188,6 +201,7 @@ typedef enum[4] {
     riscv_op_load,
     riscv_op_store,
     riscv_op_alu,
+    riscv_op_muldiv,
     riscv_op_auipc,
     riscv_op_lui,
     riscv_op_illegal
@@ -215,6 +229,15 @@ typedef enum[4] {
     riscv_subop_sra    = 5+8,
     riscv_subop_or     = 6,
     riscv_subop_and    = 7,
+
+    riscv_subop_mull     = 0, // same as riscv_op_f3
+    riscv_subop_mulhss   = 1,
+    riscv_subop_mulhsu   = 2,
+    riscv_subop_mulhus   = 3,
+    riscv_subop_divs     = 4,
+    riscv_subop_divu     = 5,
+    riscv_subop_rems     = 6,
+    riscv_subop_remu     = 7,
 
     riscv_subop_lb  = 0, // same as rvi_f3_load
     riscv_subop_lh  = 1,
