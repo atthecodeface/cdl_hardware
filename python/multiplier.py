@@ -56,17 +56,12 @@ class multdiv:
         self.stage = 0
         acc_in = 0
         add_in = 0
-        if (sa and not sb):
-            if (a&sign_bit):
-                acc_in = (b&mask32)<<32
-        if (sb and not sa):
-            if (b&sign_bit):
-                add_in = a&mask32
-        if (sb and sa):
-            if (a&sign_bit):
-                acc_in = (b&mask31)<<32
-            if (b&sign_bit):
-                add_in = a&mask31
+        if (sa and (a&sign_bit)):
+            acc_in = (b&mask32)<<32
+            if sb: acc_in = acc_in & (mask31<<32)
+        if (sb and (b&sign_bit)):
+            add_in = a&mask32
+            if sa: add_in = add_in & mask31
         next_acc = self.combinatorial(mult4=1, areg=add_in, subtract_acc=0, acc=acc_in, shift=32)
         self.accumulator = next_acc & mask64
         pass
