@@ -19,7 +19,8 @@ import simple_tb
 import dump
 
 #a Globals
-riscv_regression_dir = "../riscv_tests_built/isa/"
+riscv_regression_dir      = "../riscv_tests_built/isa/"
+riscv_atcf_regression_dir = "../riscv-atcf-tests/build/dump/"
 
 #a Test classes
 #c c_riscv_minimal_test_base
@@ -223,7 +224,9 @@ class riscv_minimal_single_memory(simple_tb.base_test):
     pass
 
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
-tests = {"or":("rv32ui-p-or.dump",3*1000),
+riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000),
+}
+riscv_regression_tests = {"or":("rv32ui-p-or.dump",3*1000),
          "simple":("rv32ui-p-simple.dump",3*1000),
          "jalr":("rv32ui-p-jalr.dump",3*1000),
          "jal":("rv32ui-p-jal.dump",3*1000),
@@ -264,24 +267,27 @@ tests = {"or":("rv32ui-p-or.dump",3*1000),
          "sra":("rv32ui-p-sra.dump",3*1000),
          "sltu":("rv32ui-p-sltu.dump",3*1000),
            }
-for tc in tests:
-    (tf,num_cycles) = tests[tc]
-    tf = riscv_regression_dir+tf
-    def test_fn(c, tf=tf, num_cycles=num_cycles):
-        c.do_test_run(riscv_minimal_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles)
+for (test_dir,tests) in [(riscv_regression_dir,riscv_regression_tests),
+                         (riscv_atcf_regression_dir,riscv_atcf_regression_tests)]:
+    for tc in tests:
+        (tf,num_cycles) = tests[tc]
+        tf = test_dir+tf
+        def test_fn(c, tf=tf, num_cycles=num_cycles):
+            c.do_test_run(riscv_minimal_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles)
+            pass
+        def test_i32c_fn(c, tf=tf, num_cycles=num_cycles):
+            c.do_test_run(riscv_i32c_minimal_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles*3 / 2)
+            pass
+        def test_i32c_pipe3_fn(c, tf=tf, num_cycles=num_cycles):
+            c.do_test_run(riscv_i32c_pipeline3_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles*3 / 2)
+            pass
+        def test_smem_fn(c, tf=tf, num_cycles=num_cycles):
+            c.do_test_run(riscv_minimal_single_memory_test_hw(c_riscv_minimal_test_dump(dump_filename=tf,test_memory="mem")), num_cycles=num_cycles)
+            pass
+        if tc not in ["fence_i"]:
+            setattr(riscv_minimal,               "test_"+tc, test_fn)
+            setattr(riscv_i32c_minimal,          "test_"+tc, test_i32c_fn)
+            setattr(riscv_i32c_pipeline3,        "test_"+tc, test_i32c_pipe3_fn)
+        setattr(riscv_minimal_single_memory, "test_"+tc, test_smem_fn)
         pass
-    def test_i32c_fn(c, tf=tf, num_cycles=num_cycles):
-        c.do_test_run(riscv_i32c_minimal_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles*3 / 2)
-        pass
-    def test_i32c_pipe3_fn(c, tf=tf, num_cycles=num_cycles):
-        c.do_test_run(riscv_i32c_pipeline3_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles*3 / 2)
-        pass
-    def test_smem_fn(c, tf=tf, num_cycles=num_cycles):
-        c.do_test_run(riscv_minimal_single_memory_test_hw(c_riscv_minimal_test_dump(dump_filename=tf,test_memory="mem")), num_cycles=num_cycles)
-        pass
-    if tc not in ["fence_i"]:
-        setattr(riscv_minimal,               "test_"+tc, test_fn)
-        setattr(riscv_i32c_minimal,          "test_"+tc, test_i32c_fn)
-        setattr(riscv_i32c_pipeline3,        "test_"+tc, test_i32c_pipe3_fn)
-    setattr(riscv_minimal_single_memory, "test_"+tc, test_smem_fn)
     pass

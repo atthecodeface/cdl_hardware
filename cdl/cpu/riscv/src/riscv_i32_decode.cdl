@@ -271,19 +271,26 @@ are from that specification)
         }
         case riscv_opc_system: { // system access, or csr rw/rs/rc - uses i format
             // Spec 2.2 section 2.8
+            idecode.op = riscv_op_system;
             idecode.rs1_valid = 1;
             idecode.rd_written = 1;
             idecode.illegal = 0;
             full_switch (combs.funct3[2;0]) {
             case riscv_f3_csrrw:      {
+                idecode.op    = riscv_op_csr;
+                idecode.subop = riscv_subop_csrrw;
                 idecode.csr_access.access = riscv_csr_access_rw;
                 if (idecode.rd==0) { idecode.csr_access.access = riscv_csr_access_write; } // True for CSRRW and CSRRWI
             }
             case riscv_f3_csrrs:      {
+                idecode.op    = riscv_op_csr;
+                idecode.subop = riscv_subop_csrrs;
                 idecode.csr_access.access = riscv_csr_access_rs;
                 if (!combs.rs1_nonzero) { idecode.csr_access.access = riscv_csr_access_read; } // True for CSRRS and CSRRSI
             }
             case riscv_f3_csrrc:      {
+                idecode.op    = riscv_op_csr;
+                idecode.subop = riscv_subop_csrrc;
                 idecode.csr_access.access = riscv_csr_access_rc;
                 if (!combs.rs1_nonzero) { idecode.csr_access.access = riscv_csr_access_read; } // True for CSRRC and CSRRCI
             }

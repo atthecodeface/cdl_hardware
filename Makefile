@@ -93,6 +93,13 @@ bbc_run: ${TARGET_DIR}/py_engine.so
 bbc_waves: ${TARGET_DIR}/py_engine.so
 	WAVES=1 BBC=1 ./regress_all
 
+riscv_flows: ${TARGET_DIR}/py_engine.so
+	./regress_all regression.riscv_minimal.riscv_i32c_pipeline3.${TEST}
+	./python/rv_flow.py > min_pipe3_${TEST}.flow
+	./regress_all regression.riscv_minimal.riscv_minimal.${TEST}
+	./python/rv_flow.py > min_min_${TEST}.flow
+	diff min_pipe3_${TEST}.flow min_min_${TEST}.flow
+
 #a Help
 help:
 	@echo "This makefile permits making, testing and running of the BBC micro"

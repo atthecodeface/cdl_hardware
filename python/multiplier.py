@@ -46,6 +46,18 @@ class multdiv:
         self.b_reg = 0
     #f comb_new
     def comb_new(self, a_in, b_in, mult4, shf, ah_0, ah_1, al_1, set_bit, bit_to_set, carry_chain, ar, br):
+        """
+        Using a booth multiply here we can save one adder, at the cost
+        of an additional input bit to 'mult4' and an additional output
+        bit (that is somewhat like the top bit of mult4 + new bit)
+        This is because we can use 0, x, 2x, 3x, 4x, 5x, 6x, -9x, 8x,
+        9x, 10x, -5x, 12x, -3x, -2x, -1x as the multiply (at most two
+        bits set, hence a single 36-bit adder, result may need to be
+        negated) and add on 16x (by passing the output bit as high as
+        an adder for the next mult4)
+
+        The negation can be done as an add of ~shf with carry in
+        """
         mult4 = mult4 & 15
         shf = shf & 7
         sel0123 = mult4 & 3

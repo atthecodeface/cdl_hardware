@@ -39,37 +39,45 @@ typedef struct {
  */
 module riscv_i32_trace( clock clk            "Clock for the CPU",
                         input bit reset_n     "Active low reset",
-                        input bit clk_enable "Active high clock enable for the tracing",
-                        input t_riscv_i32_decode idecode "Decoded instruction being traced",
-                        input t_riscv_word result "Result of ALU/memory operation for the instruction",
-                        input bit[32] pc          "Program counter of the instruction",
-                        input bit branch_taken    "Asserted if a branch is being taken",
-                        input bit[32] branch_target    "Asserted if a branch is being taken"
+                        input t_riscv_i32_trace trace "Trace signals"
 )
 """
 Trace instruction execution
 """
 {
 
-    gated_clock clock clk active_high clk_enable trace_clk "Tracing clock";
-    default clock trace_clk;
+    default clock clk;
     default reset active_low reset_n;
 
     /*b Logging */
     logging """
     """ : {
-        if (idecode.csr_access.access!=riscv_csr_access_none) {
-            log("CSR access",
-                "pc",pc,
-                "access_type",idecode.csr_access.access,
-                "address",    idecode.csr_access.address,
-                "alu_result", result
-                );
+        if (trace.instr_valid) {
+            if (trace.idecode.csr_access.access!=riscv_csr_access_none) {
+                log("CSR access",
+                    "pc",trace.instr_pc,
+                    "access_type",trace.idecode.csr_access.access,
+                    "address",    trace.idecode.csr_access.address,
+                    "alu_result_argh", trace.rfw_data
+                    );
+            }
+            log("PC",
+                "pc",trace.instr_pc,
+                "branch_taken",trace.branch_taken,
+                "branch_target",trace.branch_target,
+                "instr",trace.instr_data,
+                "op",trace.idecode.op,
+                "subop",trace.idecode.subop,
+                "valids",bundle(trace.idecode.rd_written,trace.idecode.immediate_valid,trace.idecode.rs2_valid,trace.idecode.rs1_valid),
+                "rs1",trace.idecode.rs1,
+                "rs2",trace.idecode.rs2,
+                "rd",trace.idecode.rd,
+                "imm",trace.idecode.immediate);
+            log("flow", "branch_taken", trace.branch_taken, "trap", trace.trap);
         }
-        log("PC",
-            "pc",pc,
-            "branch_taken",branch_taken,
-            "branch_target",branch_target);
+        if (trace.rfw_data_valid) {
+            log("rfw", "rd", trace.rfw_rd, "data", trace.rfw_data );
+        }
     }
     /*b All done */
 }

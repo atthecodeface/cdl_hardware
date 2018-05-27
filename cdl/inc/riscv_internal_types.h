@@ -104,9 +104,9 @@ typedef enum[12] {
     riscv_f12_ecall   = 12h0, // originally scall
     riscv_f12_ebreak  = 12h1, // originally sbreak
 
-    riscv_f12_mret  = 12h302, // from clarvi, not RISC-V spec
-    riscv_f12_mwfi  = 12h105, // from clarvi, not RISC-V spec
-    // Clarvi has mret = 12h302 and wfi as 12h105
+    riscv_f12_mret  = 12h302, // from RISC-V privileged spec
+    riscv_f12_mwfi  = 12h105, // from RISC-V privileged spec
+
 } t_riscv_system_f12;
 
 /*t t_riscv_f3_alu
@@ -480,3 +480,18 @@ typedef struct {
     t_riscv_csr_access csr_access;
 } t_riscv_i32_alu_result;
 
+
+/*t t_riscv_i32_trace
+ */
+typedef struct {
+    bit                instr_valid;
+    bit[32]            instr_pc   "Program counter of the instruction";
+    t_riscv_word       instr_data "Instruction word being decoded";
+    t_riscv_i32_decode idecode    "Decoded instruction being traced";
+    bit                rfw_data_valid;
+    bit[5]             rfw_rd;
+    t_riscv_word       rfw_data   "Result of ALU/memory operation for the instruction";
+    bit                branch_taken "Asserted if a branch is being taken";
+    bit[32]            branch_target "Target of branch if being taken";
+    bit                trap;
+} t_riscv_i32_trace;

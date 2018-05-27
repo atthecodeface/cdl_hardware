@@ -56,15 +56,10 @@ module riscv_e32_decode( input t_riscv_word instruction,
 extern
 module riscv_i32_trace( clock clk            "Clock for the CPU",
                         input bit reset_n     "Active low reset",
-                        input bit clk_enable "Active high clock enable for the tracing",
-                        input t_riscv_i32_decode idecode "Decoded instruction being traced",
-                        input t_riscv_word result "Result of ALU/memory operation for the instruction",
-                        input bit[32] pc          "Program counter of the instruction",
-                        input bit branch_taken    "Asserted if a branch is being taken",
-                        input bit[32] branch_target    "Asserted if a branch is being taken"
+                        input t_riscv_i32_trace trace "Trace signals"
 )
 {
-    timing to rising clock clk clk_enable, idecode, result, pc, branch_taken, branch_target;
+    timing to rising clock clk trace;
 }
 
 /*m riscv_i32_alu  */

@@ -355,17 +355,22 @@ the end
     }
 
     /*b Logging */
+    comb t_riscv_i32_trace trace_combs;
     logging """
     """: {
+        trace_combs = {*=0};
+        trace_combs.instr_valid    = decexecrfw_state.valid;
+        trace_combs.instr_pc       = decexecrfw_state.pc;
+        trace_combs.instr_data     = decexecrfw_state.instr_data;
+        trace_combs.idecode        = decexecrfw_combs.idecode;
+        trace_combs.rfw_data_valid = decexecrfw_state.valid;
+        trace_combs.rfw_data       = decexecrfw_combs.rfw_write_data;
+        trace_combs.branch_taken   = decexecrfw_combs.branch_taken;
+        trace_combs.trap           = decexecrfw_combs.trap;
+        trace_combs.branch_target  = decexecrfw_combs.branch_target;
         riscv_i32_trace trace(clk <- clk,
                               reset_n <= reset_n,
-                              clk_enable    <= decexecrfw_state.valid,
-                              idecode       <= decexecrfw_combs.idecode,
-                              result        <= decexecrfw_combs.rfw_write_data,
-                              pc            <= decexecrfw_state.pc,
-                              branch_taken  <= decexecrfw_combs.branch_taken,
-                              branch_target <= decexecrfw_combs.branch_target
-            );
+                              trace <= trace_combs );
     }
 
     /*b All done */
