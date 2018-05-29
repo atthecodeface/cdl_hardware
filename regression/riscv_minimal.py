@@ -225,6 +225,7 @@ class riscv_minimal_single_memory(simple_tb.base_test):
 
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000),
+                               "traps":("traps.dump",10*1000),
 }
 riscv_regression_tests = {"or":("rv32ui-p-or.dump",3*1000),
          "simple":("rv32ui-p-simple.dump",3*1000),

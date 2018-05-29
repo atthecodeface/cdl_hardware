@@ -252,7 +252,7 @@ for row in spamreader:
         imm    = int(row[15],16)
         c = rv_instr.from_binary(pc, instr_data)
         #print "                                                                                %d: %08x : %08x : %s : %d : %08x"%(timestamp,pc,instr_data,riscv_ops[op],branch_taken,branch_nonpredicted)
-        print "%08x : %s:"%(pc,c.disassemble())
+        print "%7d: %08x : %s:"%(timestamp,pc,c.disassemble())
 
 
         

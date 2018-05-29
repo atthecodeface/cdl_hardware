@@ -510,6 +510,10 @@ the end
                 alu_combs.trap = 1;
                 alu_combs.trap_cause = riscv_trap_cause_mecall;
             }
+            if (alu_state.idecode.subop==riscv_subop_ebreak) {
+                alu_combs.trap = 1;
+                alu_combs.trap_cause = riscv_trap_cause_breakpoint;
+            }
         }
         }
         if (alu_state.idecode.illegal) {
@@ -542,6 +546,8 @@ the end
 
         csr_controls.trap_cause = alu_combs.trap_cause;
         csr_controls.trap       = 0;
+        csr_controls.trap_pc = alu_state.pc;
+        csr_controls.trap_value = 0;
         if (alu_combs.trap) {
             csr_controls.trap       = alu_combs.valid_legal;
         }

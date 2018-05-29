@@ -333,6 +333,8 @@ typedef struct {
     bit[64] timer_value;
     bit trap;
     t_riscv_trap_cause trap_cause;
+    bit[32] trap_pc;
+    bit[32] trap_value;
 } t_riscv_csr_controls;
 
 /*t t_riscv_csr_addr
@@ -340,6 +342,8 @@ typedef struct {
  * RISC-V CSR addresses; the top bit indicates readable, next
  * writable; next two are the minimum privilege level to access
  * (00=user, 11=machine)
+ *
+ * From RISCV privileged spec v1.1
  */
 typedef enum[12] {
     CSR_ADDR_READWRITE_MASK  = 12hc00,
@@ -357,42 +361,35 @@ typedef enum[12] {
     CSR_ADDR_USTATUS   = 12h000  "User status register, optional",
     CSR_ADDR_UIE       = 12h004  "User interrupt enable register, optional",
     CSR_ADDR_UTVEC     = 12h005  "User trap handler base register, optional",
+
     CSR_ADDR_USCRATCH  = 12h040  "Scratch register for user trap handlers",
     CSR_ADDR_UEPC      = 12h041  "User exception program counter, optional",
     CSR_ADDR_UCAUSE    = 12h042  "User trap cause register, optional",
-    CSR_ADDR_UBADADDR  = 12h043  "User bad address register, optional",
+    CSR_ADDR_UTVAL     = 12h043  "User trap value register, optional",
     CSR_ADDR_UIP       = 12h044  "User interrupt pending register, optional",
 
     // Read-only registers accessible from user mode
     CSR_ADDR_CYCLE     = 12hC00  "Required register for RV32I, low 32-bits of cycle counter",
     CSR_ADDR_TIME      = 12hC01  "Required register for RV32I, low 32-bits of wall-clock timer",
     CSR_ADDR_INSTRET   = 12hC02  "Required register for RV32I, low 32-bits of instructions retired counter",
+    // c03 to c1f are more high performance counters if required
     CSR_ADDR_CYCLEH    = 12hC80  "Required register for RV32I, high 32-bits of cycle counter - may be implemented in software with a trap",
     CSR_ADDR_TIMEH     = 12hC81  "Required register for RV32I, high 32-bits of wall-clock timer - may be implemented in software with a trap",
     CSR_ADDR_INSTRETH  = 12hC82  "Required register for RV32I, high 32-bits of instructions retired counter - may be implemented in software with a trap",
+    // c83 to c9f are more high performance counters high 32 bits if required
 
     CSR_ADDR_SSTATUS   = 12h100  "Supervisor status register, optional",
     CSR_ADDR_SEDELEG   = 12h102  "Supervisor exception delegation register, optional",
     CSR_ADDR_SIDELEG   = 12h103  "Supervisor interrupt delegation register, optional",
     CSR_ADDR_SIE       = 12h104  "Supervisor interrupt enable register, optional",
     CSR_ADDR_STVEC     = 12h105  "Supervisor trap handler base register, optional",
+    CSR_ADDR_SCOUNTEREN = 12h106  "Supervisor counter enable, optional",
     CSR_ADDR_SSCRATCH  = 12h140  "Scratch register for supervisor trap handlers",
     CSR_ADDR_SEPC      = 12h141  "Supervisor exception program counter, optional",
     CSR_ADDR_SCAUSE    = 12h142  "Supervisor trap cause register, optional",
-    CSR_ADDR_SBADADDR  = 12h143  "Supervisor bad address register, optional",
+    CSR_ADDR_SBADADDR  = 12h143  "Supervisor trap value register, optional",
     CSR_ADDR_SIP       = 12h144  "Supervisor interrupt pending register, optional",
     CSR_ADDR_SPTBR     = 12h180  "Supervisor page-table base register, optional",
-
-    CSR_ADDR_HSTATUS   = 12h100  "Hypervisor status register, optional",
-    CSR_ADDR_HEDELEG   = 12h102  "Hypervisor exception delegation register, optional",
-    CSR_ADDR_HIDELEG   = 12h103  "Hypervisor interrupt delegation register, optional",
-    CSR_ADDR_HIE       = 12h104  "Hypervisor interrupt enable register, optional",
-    CSR_ADDR_HTVEC     = 12h105  "Hypervisor trap handler base register, optional",
-    CSR_ADDR_HSCRATCH  = 12h140  "Scratch register for hypervisor trap handlers",
-    CSR_ADDR_HEPC      = 12h141  "Hypervisor exception program counter, optional",
-    CSR_ADDR_HCAUSE    = 12h142  "Hypervisor trap cause register, optional",
-    CSR_ADDR_HBADADDR  = 12h143  "Hypervisor bad address register, optional",
-    CSR_ADDR_HIP       = 12h144  "Hypervisor interrupt pending register, optional",
 
     CSR_ADDR_MSTATUS   = 12h300  "Machine status register, required",
     CSR_ADDR_MISA      = 12h301  "ISA and extensions, required - but may be hardwire to zero",
@@ -401,9 +398,9 @@ typedef enum[12] {
     CSR_ADDR_MIE       = 12h304  "Machine interrupt enable register, optional - tests require this to not be illegal",
     CSR_ADDR_MTVEC     = 12h305  "Machine trap handler base register, optional - tests require this to not be illegal",
     CSR_ADDR_MSCRATCH  = 12h340  "Scratch register for machine trap handlers",
-    CSR_ADDR_MEPC      = 12h341  "Machine exception program counter, optional",
-    CSR_ADDR_MCAUSE    = 12h342  "Machine trap cause register, optional",
-    CSR_ADDR_MBADADDR  = 12h343  "Machine bad address register, optional",
+    CSR_ADDR_MEPC      = 12h341  "Machine exception program counter",
+    CSR_ADDR_MCAUSE    = 12h342  "Machine trap cause register",
+    CSR_ADDR_MTVAL     = 12h343  "Machine trap value register",
     CSR_ADDR_MIP       = 12h344  "Machine interrupt pending register, optional",
 
     // Read-only registers, accesible from machine mode only
@@ -441,6 +438,7 @@ typedef struct {
     bit[32] mscratch  "Scratch register for exception routines";
     bit[32] mepc      "PC at last exception";
     bit[32] mcause    "Cause of last exception";
+    bit[32] mtval     "Value associated with last exception";
     bit[32] mtvec     "Trap vector, can be hardwired or writable";
 } t_riscv_csrs_minimal;
 
