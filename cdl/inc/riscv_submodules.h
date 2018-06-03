@@ -52,16 +52,6 @@ module riscv_e32_decode( input t_riscv_word instruction,
     timing comb output idecode;
 }
 
-/*m riscv_i32_trace  */
-extern
-module riscv_i32_trace( clock clk            "Clock for the CPU",
-                        input bit reset_n     "Active low reset",
-                        input t_riscv_i32_trace trace "Trace signals"
-)
-{
-    timing to rising clock clk trace;
-}
-
 /*m riscv_i32_alu  */
 extern
 module riscv_i32_alu( input t_riscv_i32_decode      idecode,

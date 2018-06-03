@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from pycdl import c_logs
 import csv
 
 #timestamp,id,dut.dut.trace,1="PC",3,"pc","branch_taken","branch_target"
@@ -229,30 +230,48 @@ rv_instr.add_instr_class(rv_instr_store)
 rv_instr.add_instr_class(rv_instr_load)
 
 #a Toplevel
-csvfile = open("itrace.log", "rb")
-spamreader = csv.reader(csvfile, delimiter=',', quotechar='"')
-for row in spamreader:
-    if (row[3] == '3') and (row[2]=='dut.dut.trace'):
-        rd = int(row[5],16)
-        data = int(row[6],16)
-        print "r%d <= %08x"%(rd, data)
+module_aliases = {}
+itrace = c_logs.c_log_file(module_aliases)
+itrace.open("itrace.log")
+
+retire_filter = c_logs.c_log_filter()
+retire_filter.add_match({"field":"reason", "type":"streq", "string":"retire"})
+itrace.add_filter("retire",retire_filter)
+
+pc_filter = c_logs.c_log_filter()
+pc_filter.add_match({"field":"reason", "type":"streq", "string":"PC"})
+itrace.add_filter("pc",pc_filter)
+
+# print itrace.matching_events(["retire"])
+retire_events = itrace.matching_event_occurrences(module="dut.trace", filter_name_list=["retire"])
+
+pc_events = itrace.matching_event_occurrences(module="dut.trace", filter_name_list=["pc"])
+
+rfw_events = {}
+for (k,o) in retire_events:
+    (timestamp,n,args) = o
+    rfw = args[0]
+    rd = args[1]
+    data = args[2]
+    if rfw:
+        rfw_events[n] = "r%d <= %08x"%(rd, data)
         pass
-    if (row[3] == '1') and (row[2]=='dut.dut.trace'):
-        timestamp = int(row[0])
-        pc = int(row[5],16)
-        branch_taken  = int(row[6])
-        branch_nonpredicted = int(row[7],16)
-        instr_data   = int(row[8],16)
-        op     = int(row[9],16)
-        subop  = int(row[10],16)
-        valids = int(row[11],16)
-        rs1    = int(row[12],16)
-        rs2    = int(row[13],16)
-        rd     = int(row[14],16)
-        imm    = int(row[15],16)
-        c = rv_instr.from_binary(pc, instr_data)
-        #print "                                                                                %d: %08x : %08x : %s : %d : %08x"%(timestamp,pc,instr_data,riscv_ops[op],branch_taken,branch_nonpredicted)
-        print "%7d: %08x : %s:"%(timestamp,pc,c.disassemble())
+    pass
+
+for (k,o) in pc_events:
+    (timestamp,n,args) = o
+    pc = args[0]
+    branch_taken  = args[1]
+    branch_nonpredicted = args[2]
+    instr_data   = args[3]
+    c = rv_instr.from_binary(pc, instr_data)
+    rfw_str = ""
+    if n in rfw_events: rfw_str = rfw_events[n]
+    timestamp_str = ""
+    if False:
+        timestamp_str = "%7d : "%timestamp
+    print "%s%08x : %30s : %15s"%(timestamp_str,pc,c.disassemble(), rfw_str)
+
 
 
         

@@ -124,7 +124,7 @@ class riscv_minimal_test_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
-    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.dut.trace "),},
+    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
                }
     th_forces = { "th.clock":"clk",
                   "th.inputs":("a"),
@@ -146,7 +146,7 @@ class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
-    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.dut.trace "),},
+    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
                }
     th_forces = { "th.clock":"clk",
                   "th.inputs":("a"),
@@ -168,7 +168,7 @@ class riscv_i32c_pipeline3_test_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
-    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.dut.trace "),},
+    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
                }
     th_forces = { "th.clock":"clk",
                   "th.inputs":("a"),
@@ -190,7 +190,7 @@ class riscv_minimal_single_memory_test_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
-    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.dut.trace "),},
+    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
                }
     th_forces = { "th.clock":"clk",
                   "th.inputs":("a"),

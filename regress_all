@@ -34,9 +34,9 @@
 import sys, os, unittest, traceback
 
 #a Find the tests
-sys.path = [ os.path.abspath("python"),
-             os.path.abspath("build/osx"),
+sys.path = [ os.path.abspath("build/osx"),
              os.path.abspath("build/linux"),
+             os.path.abspath("python"),
              os.path.abspath(os.getcwd()),
              os.path.abspath(os.getcwd()+"/../cdl"),
              ] + sys.path[1:]

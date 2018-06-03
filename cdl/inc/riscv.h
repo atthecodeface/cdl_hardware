@@ -62,36 +62,59 @@ typedef struct {
     bit[32]  data;
 } t_riscv_fetch_resp;
 
+/*t t_riscv_i32_trace
+ */
+typedef struct {
+    bit                instr_valid;
+    bit[32]            instr_pc   "Program counter of the instruction";
+    t_riscv_word       instr_data "Instruction word being decoded";
+    bit                rfw_retire "Asserted if an instruction is being retired";
+    bit                rfw_data_valid;
+    bit[5]             rfw_rd;
+    t_riscv_word       rfw_data   "Result of ALU/memory operation for the instruction";
+    bit                branch_taken "Asserted if a branch is being taken";
+    bit[32]            branch_target "Target of branch if being taken";
+    bit                trap;
+} t_riscv_i32_trace;
+
 /*a Implementations */
 /*m riscv_minimal
  */
 extern
 module riscv_minimal( clock clk,
-                     input bit reset_n,
-                     output t_riscv_mem_access_req  dmem_access_req,
-                     input  t_riscv_mem_access_resp dmem_access_resp,
-                     output t_riscv_mem_access_req  imem_access_req,
-                     input  t_riscv_mem_access_resp imem_access_resp
+                      input bit reset_n,
+                      output t_riscv_mem_access_req  dmem_access_req,
+                      input  t_riscv_mem_access_resp dmem_access_resp,
+                      output t_riscv_mem_access_req  imem_access_req,
+                      input  t_riscv_mem_access_resp imem_access_resp,
+                      output t_riscv_i32_trace       trace
 )
 {
-    timing from rising clock clk dmem_access_req, imem_access_req;
+    timing from rising clock clk dmem_access_req, imem_access_req, trace;
     timing to   rising clock clk dmem_access_resp, imem_access_resp;
+    timing comb input dmem_access_resp;
+    timing comb output trace;
 }
 
 /*m riscv_i32c_minimal
  */
 extern
 module riscv_i32c_minimal( clock clk,
-                     input bit reset_n,
-                     output t_riscv_mem_access_req  dmem_access_req,
-                     input  t_riscv_mem_access_resp dmem_access_resp,
-                     output t_riscv_mem_access_req  imem_access_req,
-                     input  t_riscv_mem_access_resp imem_access_resp
+                           input bit reset_n,
+                           output t_riscv_mem_access_req  dmem_access_req,
+                           input  t_riscv_mem_access_resp dmem_access_resp,
+                           output t_riscv_mem_access_req  imem_access_req,
+                           input  t_riscv_mem_access_resp imem_access_resp,
+                           output t_riscv_i32_trace       trace
+
 )
 {
-    timing from rising clock clk dmem_access_req, imem_access_req;
+    timing from rising clock clk dmem_access_req, imem_access_req, trace;
     timing to   rising clock clk dmem_access_resp, imem_access_resp;
+    timing comb input dmem_access_resp;
+    timing comb output trace;
 }
+
 /*m riscv_i32c_pipeline
  */
 extern
@@ -100,24 +123,40 @@ module riscv_i32c_pipeline( clock clk,
                             output t_riscv_fetch_req       ifetch_req,
                             input  t_riscv_fetch_resp      ifetch_resp,
                             output t_riscv_mem_access_req  dmem_access_req,
-                            input  t_riscv_mem_access_resp dmem_access_resp
+                            input  t_riscv_mem_access_resp dmem_access_resp,
+                            output t_riscv_i32_trace       trace
 )
 {
-    timing from rising clock clk dmem_access_req, ifetch_req;
+    timing from rising clock clk dmem_access_req, ifetch_req, trace;
     timing to   rising clock clk dmem_access_resp, ifetch_resp;
+    timing comb input dmem_access_resp;
+    timing comb output trace;
 }
 
 /*m riscv_i32c_pipeline3
  */
 extern
 module riscv_i32c_pipeline3( clock clk,
-                            input bit reset_n,
-                            output t_riscv_fetch_req       ifetch_req,
-                            input  t_riscv_fetch_resp      ifetch_resp,
-                            output t_riscv_mem_access_req  dmem_access_req,
-                            input  t_riscv_mem_access_resp dmem_access_resp
+                             input bit reset_n,
+                             output t_riscv_fetch_req       ifetch_req,
+                             input  t_riscv_fetch_resp      ifetch_resp,
+                             output t_riscv_mem_access_req  dmem_access_req,
+                             input  t_riscv_mem_access_resp dmem_access_resp,
+                             output t_riscv_i32_trace       trace
 )
 {
-    timing from rising clock clk dmem_access_req, ifetch_req;
+    timing from rising clock clk dmem_access_req, ifetch_req, trace;
     timing to   rising clock clk dmem_access_resp, ifetch_resp;
 }
+
+/*a Trace */
+/*m riscv_i32_trace  */
+extern
+module riscv_i32_trace( clock clk            "Clock for the CPU",
+                        input bit reset_n     "Active low reset",
+                        input t_riscv_i32_trace trace "Trace signals"
+)
+{
+    timing to rising clock clk trace;
+}
+

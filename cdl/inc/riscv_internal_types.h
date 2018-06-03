@@ -358,15 +358,17 @@ typedef enum[12] {
     CSR_ADDR_HYPERVISOR_MODE = 12h200,
     CSR_ADDR_MACHINE_MODE    = 12h300,
 
+    // Read-write registers accessible from user mode (if provided)
     CSR_ADDR_USTATUS   = 12h000  "User status register, optional",
+    // 1, 2, 3 are floating point (fflags, frm, fcsr)
     CSR_ADDR_UIE       = 12h004  "User interrupt enable register, optional",
     CSR_ADDR_UTVEC     = 12h005  "User trap handler base register, optional",
 
-    CSR_ADDR_USCRATCH  = 12h040  "Scratch register for user trap handlers",
-    CSR_ADDR_UEPC      = 12h041  "User exception program counter, optional",
-    CSR_ADDR_UCAUSE    = 12h042  "User trap cause register, optional",
-    CSR_ADDR_UTVAL     = 12h043  "User trap value register, optional",
-    CSR_ADDR_UIP       = 12h044  "User interrupt pending register, optional",
+    CSR_ADDR_USCRATCH  = 12h040  "Scratch register for user trap handlers, only if user mode provided",
+    CSR_ADDR_UEPC      = 12h041  "User exception program counter, only if user mode provided",
+    CSR_ADDR_UCAUSE    = 12h042  "User trap cause register, only if user mode provided",
+    CSR_ADDR_UTVAL     = 12h043  "User trap value register, only if user mode provided",
+    CSR_ADDR_UIP       = 12h044  "User interrupt pending register, only if user mode interrupts provided",
 
     // Read-only registers accessible from user mode
     CSR_ADDR_CYCLE     = 12hC00  "Required register for RV32I, low 32-bits of cycle counter",
@@ -378,6 +380,7 @@ typedef enum[12] {
     CSR_ADDR_INSTRETH  = 12hC82  "Required register for RV32I, high 32-bits of instructions retired counter - may be implemented in software with a trap",
     // c83 to c9f are more high performance counters high 32 bits if required
 
+    // Read-write registers accessible from system mode (if provided)
     CSR_ADDR_SSTATUS   = 12h100  "Supervisor status register, optional",
     CSR_ADDR_SEDELEG   = 12h102  "Supervisor exception delegation register, optional",
     CSR_ADDR_SIDELEG   = 12h103  "Supervisor interrupt delegation register, optional",
@@ -391,23 +394,19 @@ typedef enum[12] {
     CSR_ADDR_SIP       = 12h144  "Supervisor interrupt pending register, optional",
     CSR_ADDR_SPTBR     = 12h180  "Supervisor page-table base register, optional",
 
+    // Read-write registers accessible from machine mode (if provided)
     CSR_ADDR_MSTATUS   = 12h300  "Machine status register, required",
     CSR_ADDR_MISA      = 12h301  "ISA and extensions, required - but may be hardwire to zero",
     CSR_ADDR_MEDELEG   = 12h302  "Machine exception delegation register, optional - tests require this to not be illegal",
     CSR_ADDR_MIDELEG   = 12h303  "Machine interrupt delegation register, optional - tests require this to not be illegal",
     CSR_ADDR_MIE       = 12h304  "Machine interrupt enable register, optional - tests require this to not be illegal",
     CSR_ADDR_MTVEC     = 12h305  "Machine trap handler base register, optional - tests require this to not be illegal",
+    CSR_ADDR_MCOUNTEREN = 12h306  "Machine counter enable, optional",
     CSR_ADDR_MSCRATCH  = 12h340  "Scratch register for machine trap handlers",
     CSR_ADDR_MEPC      = 12h341  "Machine exception program counter",
     CSR_ADDR_MCAUSE    = 12h342  "Machine trap cause register",
     CSR_ADDR_MTVAL     = 12h343  "Machine trap value register",
     CSR_ADDR_MIP       = 12h344  "Machine interrupt pending register, optional",
-
-    // Read-only registers, accesible from machine mode only
-    CSR_ADDR_MVENDORID = 12hF11  "Vendor ID, required - but may be hardwired to zero for not implemented or non-commercial",
-    CSR_ADDR_MARCHID   = 12hF12  "Architecture ID, required - but may be hardwired to zero for not implemented",
-    CSR_ADDR_MIMPID    = 12hF13  "Implementation ID, required - but may be hardwired to zero for not implemented",
-    CSR_ADDR_MHARTID   = 12hF14  "Hardware thread ID, required - but may be hardwired to zero (if only one thread in system)",
 
     // Machine-mode only read-write registers that shadow other registers (read-only elsewhere)
     // Clarvi maps the following to Fxx, rather than the specs Bxx - hence the spec has them read/write
@@ -415,6 +414,12 @@ typedef enum[12] {
     CSR_ADDR_MINSTRET  = 12hB02  "Required register for RV32I, low 32-bits of instructions retired counter",
     CSR_ADDR_MCYCLEH   = 12hB80  "Required register for RV32I, high 32-bits of cycle counter - may be implemented in software with a trap",
     CSR_ADDR_MINSTRETH = 12hB82  "Required register for RV32I, high 32-bits of instructions retired counter - may be implemented in software with a trap",
+
+    // Read-only registers, accesible from machine mode only
+    CSR_ADDR_MVENDORID = 12hF11  "Vendor ID, required - but may be hardwired to zero for not implemented or non-commercial",
+    CSR_ADDR_MARCHID   = 12hF12  "Architecture ID, required - but may be hardwired to zero for not implemented",
+    CSR_ADDR_MIMPID    = 12hF13  "Implementation ID, required - but may be hardwired to zero for not implemented",
+    CSR_ADDR_MHARTID   = 12hF14  "Hardware thread ID, required - but may be hardwired to zero (if only one thread in system)",
 
     // CLARVI does not memory-map mtime and mtime_cmp, but the spec says it should - these are clarvi-specific, then
     // Rumor has it that MTIME has now been removed entirely; the spec does not say so. This is a sadness of open source hardware - architecture by github...
@@ -479,17 +484,3 @@ typedef struct {
 } t_riscv_i32_alu_result;
 
 
-/*t t_riscv_i32_trace
- */
-typedef struct {
-    bit                instr_valid;
-    bit[32]            instr_pc   "Program counter of the instruction";
-    t_riscv_word       instr_data "Instruction word being decoded";
-    t_riscv_i32_decode idecode    "Decoded instruction being traced";
-    bit                rfw_data_valid;
-    bit[5]             rfw_rd;
-    t_riscv_word       rfw_data   "Result of ALU/memory operation for the instruction";
-    bit                branch_taken "Asserted if a branch is being taken";
-    bit[32]            branch_target "Target of branch if being taken";
-    bit                trap;
-} t_riscv_i32_trace;

@@ -229,7 +229,7 @@ are from that specification)
             }
             part_switch(combs.opc) {
             case riscv_opcc0_addi4spn: { // add immediate (addi rd', x2, imm)
-                idecode.illegal = 0;
+                idecode.illegal = (instruction[3;2]==0);
                 idecode.op      = riscv_op_alu;
                 idecode.subop   = riscv_subop_add;
                 idecode.rs1     = riscv_abi_sp; // x2

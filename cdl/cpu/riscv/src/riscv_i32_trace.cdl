@@ -53,30 +53,15 @@ Trace instruction execution
     logging """
     """ : {
         if (trace.instr_valid) {
-            if (trace.idecode.csr_access.access!=riscv_csr_access_none) {
-                log("CSR access",
-                    "pc",trace.instr_pc,
-                    "access_type",trace.idecode.csr_access.access,
-                    "address",    trace.idecode.csr_access.address,
-                    "alu_result_argh", trace.rfw_data
-                    );
-            }
             log("PC",
                 "pc",trace.instr_pc,
                 "branch_taken",trace.branch_taken,
                 "branch_target",trace.branch_target,
-                "instr",trace.instr_data,
-                "op",trace.idecode.op,
-                "subop",trace.idecode.subop,
-                "valids",bundle(trace.idecode.rd_written,trace.idecode.immediate_valid,trace.idecode.rs2_valid,trace.idecode.rs1_valid),
-                "rs1",trace.idecode.rs1,
-                "rs2",trace.idecode.rs2,
-                "rd",trace.idecode.rd,
-                "imm",trace.idecode.immediate);
+                "instr",trace.instr_data);
             log("flow", "branch_taken", trace.branch_taken, "trap", trace.trap);
         }
-        if (trace.rfw_data_valid) {
-            log("rfw", "rd", trace.rfw_rd, "data", trace.rfw_data );
+        if (trace.rfw_retire) {
+            log("retire", "rfw", trace.rfw_data_valid, "rd", trace.rfw_rd, "data", trace.rfw_data );
         }
     }
     /*b All done */

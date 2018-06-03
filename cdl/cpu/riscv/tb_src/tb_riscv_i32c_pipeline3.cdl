@@ -116,15 +116,20 @@ module tb_riscv_i32c_pipeline3( clock clk,
 
     /*b Instantiate RISC-V
      */
+    net t_riscv_i32_trace trace;
     riscv_instance: {
         se_test_harness th( clk <- clk, a<=0 );
         
         riscv_i32c_pipeline3 dut( clk <- riscv_clk,
-                                reset_n <= reset_n,
-                                dmem_access_req => dmem_access_req,
-                                dmem_access_resp <= dmem_access_resp,
-                                ifetch_req => rv_imem_access_req,
-                                ifetch_resp <= rv_imem_access_resp
-            );
+                                  reset_n <= reset_n,
+                                  dmem_access_req => dmem_access_req,
+                                  dmem_access_resp <= dmem_access_resp,
+                                  ifetch_req => rv_imem_access_req,
+                                  ifetch_resp <= rv_imem_access_resp,
+                                  trace => trace
+                         );
+        riscv_i32_trace trace(clk <- riscv_clk,
+                              reset_n <= reset_n,
+                              trace <= trace );
     }
 }
