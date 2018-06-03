@@ -362,7 +362,9 @@ the end
         trace.instr_valid    = decexecrfw_state.valid;
         trace.instr_pc       = decexecrfw_state.pc;
         trace.instr_data     = decexecrfw_state.instr_data;
-        trace.rfw_data_valid = decexecrfw_state.valid;
+        trace.rfw_retire     = decexecrfw_state.valid;
+        trace.rfw_data_valid = decexecrfw_state.valid_legal && decexecrfw_combs.idecode.rd_written;
+        trace.rfw_rd         = decexecrfw_combs.idecode.rd;
         trace.rfw_data       = decexecrfw_combs.rfw_write_data;
         trace.branch_taken   = decexecrfw_combs.branch_taken;
         trace.trap           = decexecrfw_combs.trap;
