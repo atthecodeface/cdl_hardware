@@ -39,9 +39,9 @@ module tb_riscv_i32c_minimal( clock clk,
     net  t_riscv_mem_access_req  dmem_access_req;
     comb t_riscv_mem_access_resp dmem_access_resp;
 
-    net  t_riscv_fetch_req  rv_imem_access_req;
-    comb t_riscv_fetch_req  imem_access_req;
-    comb t_riscv_fetch_resp rv_imem_access_resp;
+    net  t_riscv_mem_access_req  rv_imem_access_req;
+    comb t_riscv_mem_access_req  imem_access_req;
+    comb t_riscv_mem_access_resp rv_imem_access_resp;
 
     /*b State and comb
      */
@@ -68,24 +68,23 @@ module tb_riscv_i32c_minimal( clock clk,
      */
     clocked clock clk reset active_low reset_n bit[32] last_imem_mem_read_data=0;
     srams: {
-        rv_imem_access_resp.valid      = 1;
-        rv_imem_access_resp.debug      = 0;
-        rv_imem_access_resp.data = imem_mem_read_data;
+        rv_imem_access_resp.wait = 0;
+        rv_imem_access_resp.read_data = imem_mem_read_data;
         if (!rv_imem_access_req.address[1]) {
             imem_access_req = rv_imem_access_req;
-            rv_imem_access_resp.data = imem_mem_read_data;
+            rv_imem_access_resp.read_data = imem_mem_read_data;
         } else {
             if (riscv_clk_cycle_0) {
                 imem_access_req = rv_imem_access_req;
             } else {
                 imem_access_req = rv_imem_access_req;
                 imem_access_req.address = rv_imem_access_req.address + 4;
-                rv_imem_access_resp.data = bundle(imem_mem_read_data[16;0], last_imem_mem_read_data[16;16]);
+                rv_imem_access_resp.read_data = bundle(imem_mem_read_data[16;0], last_imem_mem_read_data[16;16]);
             }
         }
         last_imem_mem_read_data <= imem_mem_read_data;
         se_sram_srw_16384x32 imem(sram_clock <- clk,
-                                  select         <= imem_access_req.valid & (riscv_clk_cycle_0 || riscv_clk_cycle_1),
+                                  select         <= imem_access_req.read_enable & (riscv_clk_cycle_0 || riscv_clk_cycle_1),
                                   read_not_write <= 1,
                                   write_enable   <= -1,
                                   address        <= imem_access_req.address[14;2],
@@ -104,17 +103,22 @@ module tb_riscv_i32c_minimal( clock clk,
 
     /*b Instantiate RISC-V
      */
+    comb t_riscv_config riscv_config;
     net t_riscv_i32_trace trace;
     riscv_instance: {
         se_test_harness th( clk <- clk, a<=0 );
-        
-        riscv_i32c_pipeline dut( clk <- riscv_clk,
-                                reset_n <= reset_n,
-                                dmem_access_req => dmem_access_req,
-                                dmem_access_resp <= dmem_access_resp,
-                                ifetch_req => rv_imem_access_req,
-                                 ifetch_resp <= rv_imem_access_resp,
-                                  trace => trace
+        riscv_config = {*=0};
+        riscv_config.i32c = 1;
+        riscv_config.e32  = 0;
+        riscv_config.i32m = 0;
+        riscv_minimal dut( clk <- riscv_clk,
+                                 reset_n <= reset_n,
+                                 dmem_access_req => dmem_access_req,
+                                 dmem_access_resp <= dmem_access_resp,
+                                 imem_access_req => rv_imem_access_req,
+                                 imem_access_resp <= rv_imem_access_resp,
+                                 riscv_config <= riscv_config,
+                                 trace => trace
                          );
         riscv_i32_trace trace(clk <- riscv_clk,
                               reset_n <= reset_n,

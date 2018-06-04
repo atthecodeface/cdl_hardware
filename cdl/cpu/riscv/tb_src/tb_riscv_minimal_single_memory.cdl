@@ -68,6 +68,7 @@ module tb_riscv_minimal_single_memory( clock clk,
      */
     net bit[32] mem_read_data;
     comb t_riscv_mem_access_req   mem_access_req;
+    comb t_riscv_config riscv_config;
 
     /*b Clock control
      */
@@ -196,6 +197,10 @@ module tb_riscv_minimal_single_memory( clock clk,
      */
     net t_riscv_i32_trace trace;
     riscv_instance: {
+        riscv_config = {*=0};
+        riscv_config.i32c = 0;
+        riscv_config.e32  = 0;
+        riscv_config.i32m = 0;
         se_test_harness th( clk <- clk, a<=0 );
         
         riscv_minimal dut( clk <- riscv_clk,
@@ -204,6 +209,7 @@ module tb_riscv_minimal_single_memory( clock clk,
                            dmem_access_resp <= dmem_access_resp,
                            imem_access_req => imem_access_req,
                            imem_access_resp <= imem_access_resp,
+                           riscv_config <= riscv_config,
                            trace => trace
                          );
         riscv_i32_trace trace(clk <- riscv_clk,

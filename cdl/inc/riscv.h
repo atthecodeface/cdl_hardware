@@ -62,6 +62,26 @@ typedef struct {
     bit[32]  data;
 } t_riscv_fetch_resp;
 
+/*t t_riscv_config
+ */
+typedef struct {
+    bit      i32c;
+    bit      e32;
+    bit      i32m;
+} t_riscv_config;
+
+/*t t_riscv_debug_mst
+ */
+typedef struct {
+    bit a;
+} t_riscv_debug_mst;
+
+/*t t_riscv_debug_tgt
+ */
+typedef struct {
+    bit a;
+} t_riscv_debug_tgt;
+
 /*t t_riscv_i32_trace
  */
 typedef struct {
@@ -79,6 +99,13 @@ typedef struct {
 
 /*a Implementations */
 /*m riscv_minimal
+
+ riscv_config should be HARDWIRED (not off registers) to force logic to be
+ discarded at synthesis
+
+ alternatively submodules may be built with appropriate force's set to
+ force discard of logic.
+
  */
 extern
 module riscv_minimal( clock clk,
@@ -87,30 +114,16 @@ module riscv_minimal( clock clk,
                       input  t_riscv_mem_access_resp dmem_access_resp,
                       output t_riscv_mem_access_req  imem_access_req,
                       input  t_riscv_mem_access_resp imem_access_resp,
+                      input  t_riscv_config          riscv_config,
                       output t_riscv_i32_trace       trace
 )
 {
-    timing from rising clock clk dmem_access_req, imem_access_req, trace;
+    timing from rising clock clk dmem_access_req, imem_access_req;
     timing to   rising clock clk dmem_access_resp, imem_access_resp;
-    timing comb input dmem_access_resp;
-    timing comb output trace;
-}
-
-/*m riscv_i32c_minimal
- */
-extern
-module riscv_i32c_minimal( clock clk,
-                           input bit reset_n,
-                           output t_riscv_mem_access_req  dmem_access_req,
-                           input  t_riscv_mem_access_resp dmem_access_resp,
-                           output t_riscv_mem_access_req  imem_access_req,
-                           input  t_riscv_mem_access_resp imem_access_resp,
-                           output t_riscv_i32_trace       trace
-
-)
-{
-    timing from rising clock clk dmem_access_req, imem_access_req, trace;
-    timing to   rising clock clk dmem_access_resp, imem_access_resp;
+    timing to   rising clock clk riscv_config;
+    timing from rising clock clk trace;
+    timing comb input riscv_config;
+    timing comb output dmem_access_req, imem_access_req;
     timing comb input dmem_access_resp;
     timing comb output trace;
 }
@@ -124,11 +137,16 @@ module riscv_i32c_pipeline( clock clk,
                             input  t_riscv_fetch_resp      ifetch_resp,
                             output t_riscv_mem_access_req  dmem_access_req,
                             input  t_riscv_mem_access_resp dmem_access_resp,
+                            input  t_riscv_config          riscv_config,
                             output t_riscv_i32_trace       trace
 )
 {
-    timing from rising clock clk dmem_access_req, ifetch_req, trace;
+    timing from rising clock clk dmem_access_req, ifetch_req;
     timing to   rising clock clk dmem_access_resp, ifetch_resp;
+    timing to   rising clock clk riscv_config;
+    timing from rising clock clk trace;
+    timing comb input riscv_config;
+    timing comb output dmem_access_req, ifetch_req;
     timing comb input dmem_access_resp;
     timing comb output trace;
 }
@@ -142,11 +160,16 @@ module riscv_i32c_pipeline3( clock clk,
                              input  t_riscv_fetch_resp      ifetch_resp,
                              output t_riscv_mem_access_req  dmem_access_req,
                              input  t_riscv_mem_access_resp dmem_access_resp,
+                             input  t_riscv_config          riscv_config,
                              output t_riscv_i32_trace       trace
 )
 {
-    timing from rising clock clk dmem_access_req, ifetch_req, trace;
+    timing from rising clock clk dmem_access_req, ifetch_req;
     timing to   rising clock clk dmem_access_resp, ifetch_resp;
+    timing to   rising clock clk riscv_config;
+    timing comb input riscv_config;
+    timing comb output ifetch_req;
+    timing from rising clock clk trace;
 }
 
 /*a Trace */

@@ -35,6 +35,8 @@ typedef struct {
     bit[32] arith_in_0;
     bit[32] arith_in_1;
     bit     arith_carry_in;
+    bit     carry_in_to_31;
+    bit[32] arith_result_32;
     bit[33] arith_result;
     bit     arith_eq;
     bit     arith_unsigned_ge;
@@ -97,12 +99,20 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
             alu_combs.arith_in_1     = idecode.immediate;
             alu_combs.arith_carry_in = 0;
         }
-        alu_combs.arith_result      = ( bundle(1b0,alu_combs.arith_in_0) + 
-                                        bundle(1b0,alu_combs.arith_in_1) + 
-                                        bundle(32b0,alu_combs.arith_carry_in) );
+        //alu_combs.arith_result      = ( bundle(1b0,alu_combs.arith_in_0) + 
+        //                                bundle(1b0,alu_combs.arith_in_1) + 
+        //                                bundle(32b0,alu_combs.arith_carry_in) );
+        alu_combs.arith_result_32  = ( bundle(1b0,alu_combs.arith_in_0[31;0]) + 
+                                        bundle(1b0,alu_combs.arith_in_1[31;0]) + 
+                                        bundle(31b0,alu_combs.arith_carry_in) );
+        alu_combs.carry_in_to_31 = alu_combs.arith_result_32[31];
+        alu_combs.arith_result[31;0] = alu_combs.arith_result_32[31;0];
+        alu_combs.arith_result[2;31] = ( bundle(1b0,alu_combs.arith_in_0[31]) + 
+                                         bundle(1b0,alu_combs.arith_in_1[31]) + 
+                                         bundle(1b0,alu_combs.carry_in_to_31) );
         alu_combs.arith_eq          = (alu_combs.arith_result[32;0] == 0);
         alu_combs.arith_unsigned_ge = alu_combs.arith_result[32];
-        alu_combs.arith_signed_ge   = !alu_combs.arith_result[31]; // wrong...
+        alu_combs.arith_signed_ge   = (alu_combs.carry_in_to_31 ^ alu_combs.arith_result[32])==alu_combs.arith_result[31];
 
         /*b Determine branch condition met */
         alu_result.branch_condition_met = 0;

@@ -24,6 +24,9 @@
 include "riscv_internal_types.h"
 include "riscv.h"
 
+/*a Constants - configuration */
+constant integer e32_force_enable=0;
+
 /*a Types
  */
 typedef struct {
@@ -48,7 +51,8 @@ typedef struct {
 /*a Module
  */
 module riscv_i32c_decode( input t_riscv_word instruction,
-                           output t_riscv_i32_decode idecode
+                          output t_riscv_i32_decode idecode,
+                          input t_riscv_config riscv_config
 )
 """
 Instruction decoder for RISC-V I16 instruction set.
@@ -394,6 +398,17 @@ are from that specification)
             }
             }
         }
+        }
+        if (riscv_config.e32 || e32_force_enable) {
+            if (idecode.rs1_valid && idecode.rs1[4]) {
+                idecode.illegal = 1;
+            }
+            if (idecode.rs2_valid && idecode.rs2[4]) {
+                idecode.illegal = 1;
+            }
+            if (idecode.rd_written && idecode.rd[4]) {
+                idecode.illegal = 1;
+            }
         }
     }
 

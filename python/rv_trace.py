@@ -3,8 +3,15 @@
 from pycdl import c_logs
 import csv
 
-#timestamp,id,dut.dut.trace,1="PC",3,"pc","branch_taken","branch_target"
-#timestamp,id,dut.dut.trace,1="PC",10,"pc","branch_taken","branch_target","op","subop","valids","rs1","rs2","rd","imm"
+import argparse
+
+parser = argparse.ArgumentParser(description='Display execution trace of RV simulation')
+parser.add_argument('--logfile', type=str, nargs=1, default='itrace.log',
+                    help='logfile to parse')
+parser.add_argument('--timestamps', type=int, nargs=1, default=0,
+                    help='display timestamps')
+
+args = parser.parse_args()
 
 #a Rv instructions
 riscv_ops = [
@@ -232,7 +239,7 @@ rv_instr.add_instr_class(rv_instr_load)
 #a Toplevel
 module_aliases = {}
 itrace = c_logs.c_log_file(module_aliases)
-itrace.open("itrace.log")
+itrace.open(args.logfile)
 
 retire_filter = c_logs.c_log_filter()
 retire_filter.add_match({"field":"reason", "type":"streq", "string":"retire"})
@@ -249,26 +256,26 @@ pc_events = itrace.matching_event_occurrences(module="dut.trace", filter_name_li
 
 rfw_events = {}
 for (k,o) in retire_events:
-    (timestamp,n,args) = o
-    rfw = args[0]
-    rd = args[1]
-    data = args[2]
+    (timestamp,n,event_args) = o
+    rfw = event_args[0]
+    rd = event_args[1]
+    data = event_args[2]
     if rfw:
         rfw_events[n] = "r%d <= %08x"%(rd, data)
         pass
     pass
 
 for (k,o) in pc_events:
-    (timestamp,n,args) = o
-    pc = args[0]
-    branch_taken  = args[1]
-    branch_nonpredicted = args[2]
-    instr_data   = args[3]
+    (timestamp,n,event_args) = o
+    pc = event_args[0]
+    branch_taken  = event_args[1]
+    branch_nonpredicted = event_args[2]
+    instr_data   = event_args[3]
     c = rv_instr.from_binary(pc, instr_data)
     rfw_str = ""
     if n in rfw_events: rfw_str = rfw_events[n]
     timestamp_str = ""
-    if False:
+    if args.timestamps:
         timestamp_str = "%7d : "%timestamp
     print "%s%08x : %30s : %15s"%(timestamp_str,pc,c.disassemble(), rfw_str)
 

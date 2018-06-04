@@ -101,7 +101,7 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
 class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
     dump_filename = riscv_regression_dir+"rv32ui-p-or.dump"
     base_address = 0x80000000
-    memory_expectation = { "tohost":(1337,),
+    memory_expectation = { "tohost":(1,),
                            }
     def __init__(self, dump_filename, test_memory="dmem", **kwargs):
         self.dump_filename = dump_filename
@@ -114,7 +114,7 @@ class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
 class c_riscv_minimal_test_one(c_riscv_minimal_test_base):
     dump_filename = riscv_regression_dir+"rv32ui-p-or.dump"
     base_address = 0x80000000
-    memory_expectation = { "tohost":(1337,),
+    memory_expectation = { "tohost":(1,),
                            }
     pass
 

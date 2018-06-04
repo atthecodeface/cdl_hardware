@@ -25,7 +25,8 @@ include "riscv_internal_types.h"
 include "riscv.h"
 
 /*a Constants - configuration */
-constant integer i32m_enabled=0;
+constant integer e32_force_enable=0;
+constant integer i32m_force_disable=0;
 
 /*a Types
  */
@@ -42,13 +43,21 @@ typedef struct {
 /*a Module
  */
 module riscv_i32_decode( input t_riscv_word instruction,
-                         output t_riscv_i32_decode idecode
+                         output t_riscv_i32_decode idecode,
+                         input t_riscv_config riscv_config
 )
 """
 Instruction decoder for RISC-V I32 instruction set.
 
 This is based on the RISC-V v2.2 specification (hence figure numbers
 are from that specification)
+
+It provides for the option of RV32E and RV32M.
+
+RV32E indicates an illegal instruction if a register outside 0-15 is accessed.
+
+RV32M provides decode of multiply and divide; if it is not desired
+then the instructions are decoded as illegal.
 """
 {
 
@@ -227,18 +236,20 @@ are from that specification)
             idecode.rs1_valid = 1;
             idecode.rs2_valid = !combs.is_imm_op;
             idecode.rd_written = 1;
-            if (i32m_enabled && (combs.funct7==1)) {
-                idecode.illegal = 0;
-                idecode.op = riscv_op_muldiv;
-                full_switch (combs.funct3) {
-                case riscv_f3_mul:    { idecode.subop = riscv_subop_mull; }
-                case riscv_f3_mulh:   { idecode.subop = riscv_subop_mulhss; }
-                case riscv_f3_mulhsu: { idecode.subop = riscv_subop_mulhsu; }
-                case riscv_f3_mulhu:  { idecode.subop = riscv_subop_mulhus; }
-                case riscv_f3_div:    { idecode.subop = riscv_subop_divs; }
-                case riscv_f3_divu:   { idecode.subop = riscv_subop_divu; }
-                case riscv_f3_rem:    { idecode.subop = riscv_subop_rems; }
-                case riscv_f3_remu:   { idecode.subop = riscv_subop_remu; }
+            if ((combs.funct7==1) && (!combs.is_imm_op)){
+                if ((i32m_force_disable==0) && riscv_config.i32m) {
+                    idecode.illegal = 0;
+                    idecode.op = riscv_op_muldiv;
+                    full_switch (combs.funct3) {
+                    case riscv_f3_mul:    { idecode.subop = riscv_subop_mull; }
+                    case riscv_f3_mulh:   { idecode.subop = riscv_subop_mulhss; }
+                    case riscv_f3_mulhsu: { idecode.subop = riscv_subop_mulhsu; }
+                    case riscv_f3_mulhu:  { idecode.subop = riscv_subop_mulhus; }
+                    case riscv_f3_div:    { idecode.subop = riscv_subop_divs; }
+                    case riscv_f3_divu:   { idecode.subop = riscv_subop_divu; }
+                    case riscv_f3_rem:    { idecode.subop = riscv_subop_rems; }
+                    case riscv_f3_remu:   { idecode.subop = riscv_subop_remu; }
+                    }
                 }
             } else {
                 idecode.illegal = (!combs.is_imm_op) && (combs.funct7!=0) && (combs.funct7!=0x20);
@@ -321,6 +332,18 @@ are from that specification)
         }
         if (idecode.rd == 0) {
             idecode.rd_written = 0;
+        }
+
+        if (riscv_config.e32 || e32_force_enable) {
+            if (idecode.rs1_valid && idecode.rs1[4]) {
+                idecode.illegal = 1;
+            }
+            if (idecode.rs2_valid && idecode.rs2[4]) {
+                idecode.illegal = 1;
+            }
+            if (idecode.rd_written && idecode.rd[4]) {
+                idecode.illegal = 1;
+            }
         }
     }
 

@@ -53,6 +53,7 @@ include "riscv_submodules.h"
 /*a Constants
  */
 constant integer INITIAL_PC=0x80000000;
+constant integer i32c_force_disable=0;
 
 /*a Types
  */
@@ -190,6 +191,7 @@ module riscv_i32c_pipeline3( clock clk,
                              input  t_riscv_mem_access_resp dmem_access_resp,
                              output t_riscv_fetch_req       ifetch_req,
                              input  t_riscv_fetch_resp      ifetch_resp,
+                             input  t_riscv_config          riscv_config,
                              output t_riscv_i32_trace       trace
 )
 """
@@ -304,15 +306,19 @@ the end
 
         /*b Decode instruction */
         riscv_i32_decode decode_i32( instruction <= dec_state.instr_data,
-                                 idecode      => idecode_i32 );
+                                     idecode     => idecode_i32,
+                                     riscv_config      <= riscv_config );
 
         riscv_i32c_decode decode_i32c( instruction <= dec_state.instr_data,
-                                  idecode      => idecode_i32c );
+                                       idecode      => idecode_i32c,
+                                       riscv_config      <= riscv_config );
 
         /*b Select decode */
-        dec_combs.idecode = idecode_i32c;
-        if (dec_state.instr_data[2;0]==2b11) {
-            dec_combs.idecode = idecode_i32;
+        dec_combs.idecode = idecode_i32;
+        if ((!i32c_force_disable) && riscv_config.i32c) {
+            if (dec_state.instr_data[2;0]!=2b11) {
+                dec_combs.idecode = idecode_i32c;
+            }
         }
 
         /*b Register read */

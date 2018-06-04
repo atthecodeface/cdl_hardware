@@ -59,60 +59,7 @@
 
 /*a Includes
  */
-include "riscv_internal_types.h"
 include "riscv.h"
-include "riscv_submodules.h"
-
-/*a Constants
- */
-constant integer INITIAL_PC=0x80000000;
-
-/*a Types
- */
-/*t t_ifetch_state */
-typedef struct {
-    bit enable     "Asserted if execution is enabled; deasserted at reset";
-} t_ifetch_state;
-
-/*t t_ifetch_combs
- *
- * Combinatorials of the ifetch_state
- */
-typedef struct {
-    bit request;
-    bit[32] address;
-} t_ifetch_combs;
-
-/*t t_decexecrfw_state */
-typedef struct {
-    t_riscv_word instr_data      "Fetched instruction, ready for decode, register fetch, execute and writeback";
-    bit valid                    "Asserted if @instr_data is a valid fetched instruction, whether misaligned or not";
-    bit valid_legal              "Asserted if @instr_data is a valid fetched instruction on a valid alignment";
-    bit illegal_pc               "Asserted if a valid @instr_data is a fetched instruction from a badly aligned PC";
-    bit[32] pc                   "PC of the fetched instruction";
-} t_decexecrfw_state;
-
-/*t t_decexecrfw_combs
- *
- * Combinatorials of the decexecrfw_state
- */
-typedef struct {
-    t_riscv_word   rs1;
-    t_riscv_word   rs2;
-    bit[32] next_pc;
-
-    bit[2]  word_offset;
-    bit[32] branch_target;
-    bit branch_taken;
-    bit trap;
-    t_riscv_trap_cause trap_cause;
-    t_riscv_csr_access csr_access;
-    t_riscv_word rfw_write_data;
-    t_riscv_word memory_data;
-    bit dmem_misaligned          "Asserted if the dmem address offset in a word does not match the size of the decoded access, whether the instruction is valid or not";
-    bit load_address_misaligned  "Asserted only for valid instructions, for loads not aligned to the alignment of the access";
-    bit store_address_misaligned "Asserted only for valid instructions, for stores not aligned to the alignment of the access";
-} t_decexecrfw_combs;
 
 /*a Module
  */
@@ -122,6 +69,7 @@ module riscv_minimal( clock clk,
                       input  t_riscv_mem_access_resp dmem_access_resp,
                       output t_riscv_mem_access_req  imem_access_req,
                       input  t_riscv_mem_access_resp imem_access_resp,
+                      input  t_riscv_config          riscv_config,
                       output t_riscv_i32_trace       trace
 )
 """
@@ -175,6 +123,7 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
                                      ifetch_resp <= ifetch_resp,
                                      dmem_access_req => dmem_access_req,
                                      dmem_access_resp <= dmem_access_resp,
+                                     riscv_config <= riscv_config,
                                      trace => trace );
     }
 
