@@ -178,17 +178,20 @@ module jtag_tap( clock jtag_tck,
 
     jtag_action """
     """ : {
+        if (jtag_state.state==jtag_state_test_logic_reset) {
+            jtag_state.ir <= 1; // Force to IDCODE in reset
+        }
         jtag_combs.next_sr = jtag_state.sr;
         part_switch (jtag_combs.ir_action) {
-        case action_update: {
+        case action_capture: {
             jtag_combs.next_sr = 0;
             jtag_combs.next_sr[ir_length;0] = jtag_state.ir;
         }
         case action_shift: {
             jtag_combs.next_sr = jtag_state.sr >> 1;
-            jtag_combs.next_sr[ir_length] = jtag.tdi;
+            jtag_combs.next_sr[ir_length-1] = jtag.tdi;
         }
-        case action_capture: {
+        case action_update: {
             jtag_state.ir <= jtag_state.sr[ir_length;0];
         }
         }

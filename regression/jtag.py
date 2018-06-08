@@ -18,6 +18,15 @@ import sys, os, unittest, tempfile
 import simple_tb
 import dump
 
+#a Useful functions
+def bits_of_n(nbits, n):
+    bits = []
+    for i in range(nbits):
+        bits.append(n&1)
+        n >>= 1
+        pass
+    return bits
+
 #a Globals
 riscv_regression_dir      = "../riscv_tests_built/isa/"
 riscv_atcf_regression_dir = "../riscv-atcf-tests/build/dump/"
@@ -40,14 +49,89 @@ class c_jtag_apb_time_test_base(simple_tb.base_th):
             self.compare_expected_list(reason+":"+str(a), e, d)
             pass
         pass
+    def jtag_reset(self):
+        self.jtag__tms.drive(1)
+        self.jtag__tdi.drive(0)
+        self.bfm_wait(5)
+        pass
+
+    def jtag_tms(self, tms_values):
+        for tms in tms_values:
+            self.jtag__tms.drive(tms)
+            self.bfm_wait(1)
+            pass
+        pass
+
+    def jtag_scan(self, tdi_values):
+        bits = []
+        self.jtag__tms.drive(0)
+        for tdi in tdi_values[:-1]:
+            self.jtag__tdi.drive(tdi)
+            self.bfm_wait(1)
+            bits.append(self.tdo.value())
+            pass
+        self.jtag__tms.drive(1)
+        self.jtag__tdi.drive(tdi_values[-1])
+        self.bfm_wait(1)
+        bits.append(self.tdo.value())
+        return bits
+
+    def jtag_read_idcodes(self):
+        self.jtag_reset()
+        self.jtag_tms([0,1,0,0]) # Put in to shift-dr
+        idcodes = []
+        while True:
+            bits = []
+            self.bfm_wait(1)
+            bits.append(self.tdo.value())
+            if bits[0]==0: break
+            for i in range(31):
+                self.bfm_wait(1)
+                bits.append(self.tdo.value())
+                pass
+            idcode = 0
+            for b in bits:
+                idcode = (idcode>>1) | (0x80000000*b)
+            idcodes.append(idcode)
+            pass
+        return idcodes
+
+    def jtag_write_irs(self,ir_bits):
+        self.jtag_tms([0,1,1,0,0]) # Put in Shift-IR
+        self.jtag_scan(ir_bits) # Leaves it in Exit1-IR
+        self.jtag_tms([1,0]) # Dump it back in to idle
+        pass
+
+    def jtag_write_drs(self,dr_bits):
+        self.jtag_tms([0,1,0,0]) # Put in Shift-DR
+        data = self.jtag_scan(dr_bits) # Leaves it in Exit1-DR
+        self.jtag_tms([1,0]) # Dump it back in to idle
+        return data
+
     #f run
     def run(self):
         self.sim_msg = self.sim_message()
         self.bfm_wait(10)
         simple_tb.base_th.run_start(self)
+
+        idcodes = self.jtag_read_idcodes()
+        for x in idcodes:
+            print "%08x"%x
+            pass
+        self.jtag_write_irs(ir_bits = bits_of_n(5,0x10)) # Send in 0x10 (apb_control)
+        self.jtag_write_drs(dr_bits = bits_of_n(32,0))   # write apb_control of 0
+        self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x10 (apb_access)
+        data = self.jtag_write_drs(dr_bits = bits_of_n(50,(0x1200<<34)|(0<<2)|(1)))   # write apb_control of 1234.XXXXXXXX.01
+        print data
+        data = self.jtag_write_drs(dr_bits = bits_of_n(50,0))
+        print data
+        data = self.jtag_write_drs(dr_bits = bits_of_n(50,0))
+        print data
+
         self.bfm_wait(self.run_time-10)
         #self.ios.b.drive(1)
         self.check_memory("Check memory after run complete (%d)"%self.global_cycle())
+        self.test_fail()
         self.finishtest(0,"")
         pass
 

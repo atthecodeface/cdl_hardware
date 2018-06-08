@@ -6,8 +6,10 @@ import csv
 import argparse
 
 parser = argparse.ArgumentParser(description='Display execution trace of RV simulation')
-parser.add_argument('--logfile', type=str, nargs=1, default='itrace.log',
+parser.add_argument('--logfile', type=str, default='itrace.log',
                     help='logfile to parse')
+parser.add_argument('--module', type=str, default="dut.trace",
+                    help='module to show trace of')
 parser.add_argument('--timestamps', type=int, nargs=1, default=0,
                     help='display timestamps')
 
@@ -237,6 +239,7 @@ rv_instr.add_instr_class(rv_instr_store)
 rv_instr.add_instr_class(rv_instr_load)
 
 #a Toplevel
+
 module_aliases = {}
 itrace = c_logs.c_log_file(module_aliases)
 itrace.open(args.logfile)
@@ -249,10 +252,9 @@ pc_filter = c_logs.c_log_filter()
 pc_filter.add_match({"field":"reason", "type":"streq", "string":"PC"})
 itrace.add_filter("pc",pc_filter)
 
-# print itrace.matching_events(["retire"])
-retire_events = itrace.matching_event_occurrences(module="dut.trace", filter_name_list=["retire"])
+retire_events = itrace.matching_event_occurrences(module=args.module, filter_name_list=["retire"])
 
-pc_events = itrace.matching_event_occurrences(module="dut.trace", filter_name_list=["pc"])
+pc_events = itrace.matching_event_occurrences(module=args.module, filter_name_list=["pc"])
 
 rfw_events = {}
 for (k,o) in retire_events:

@@ -38,7 +38,8 @@ typedef enum[5] {
     jtag_addr_apb_access  = 0x11,
 } t_jtag_addr;
 
-constant bit[32] jtag_idcode=0;
+// | 20 bits manufacturer unique | 11 bits of manufacturer ID | 1
+constant bit[32] jtag_idcode=0xabcde6e3;
 module jtag_apb( clock jtag_tck,
                  input bit reset_n,
 
@@ -177,7 +178,7 @@ module jtag_apb( clock jtag_tck,
                     apb_state.apb_request.penable <= 0;
                     apb_state.apb_request.psel    <= 0;
                     apb_state.apb_request.pwrite  <= 0;
-                    apb_state.last_read_data      <= jtag_state.last_read_data;
+                    apb_state.last_read_data      <= apb_response.prdata;
                     apb_state.access_in_progress  <= 0;
                 }
             }
