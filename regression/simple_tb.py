@@ -100,12 +100,20 @@ class cdl_test_hw(pycdl.hw):
     module_name = ""
     system_clock_half_period = 1
     loggers = []
+    clocks = { "clk":(0,None,None)}
     #f __init__
     def __init__(self, test):
         self.test = test
         self.wave_file = self.__class__.__module__+".vcd"
 
-        system_clock   = pycdl.clock(0, self.system_clock_half_period, self.system_clock_half_period)
+        self.cdl_clocks = {}
+        for clk_pin in self.clocks:
+            (delay, low, high) = self.clocks[clk_pin]
+            if low  is None: low  = self.system_clock_half_period
+            if high is None: high = self.system_clock_half_period
+            self.cdl_clocks[clk_pin] = pycdl.clock(delay, low, high)
+            pass
+
         reset_n        = pycdl.wire()
 
         self.drivers = [pycdl.timed_assign( signal=reset_n, init_value=0, wait=33, later_value=1),
@@ -114,11 +122,14 @@ class cdl_test_hw(pycdl.hw):
         hw_forces = dict(self.th_forces.items())
         hw_forces["th.object"] = test
         self.dut = pycdl.module( self.module_name,
-                                 clocks = {"clk":system_clock},
+                                 clocks = self.cdl_clocks,
                                  inputs = {"reset_n":reset_n},
                                  forces = hw_forces,
                                  )
-        children = [self.dut, system_clock] + self.drivers
+        children = [self.dut] + self.drivers
+        for clk_pin in self.cdl_clocks:
+            children.append(self.cdl_clocks[clk_pin])
+            pass
         for l in self.loggers:
             log_module = pycdl.module( "se_logger", options=self.loggers[l] )
             children.append(log_module)

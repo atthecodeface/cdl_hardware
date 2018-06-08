@@ -1,0 +1,231 @@
+include "jtag.h"
+include "apb.h"
+
+typedef enum [2] {
+    action_none,
+    action_reset,
+    action_start_read,
+    action_start_write,
+} t_update_action;
+
+typedef bit[3] t_sync;
+typedef struct {
+    bit[16] address;
+    bit[2]  op_status;
+    bit[32] last_read_data;
+    bit[32] write_data;
+    bit write_not_read;
+    bit busy;
+    bit ready;
+    bit complete_ack;
+    t_sync ready_ack_sync;
+    t_sync complete_sync;
+} t_jtag_state;
+
+typedef struct {
+    t_apb_request apb_request;
+    bit[32] last_read_data;
+    bit busy;
+    bit access_in_progress;
+    bit ready_ack;
+    bit complete;
+    t_sync ready_sync;
+    t_sync complete_ack_sync;
+} t_apb_state;
+
+typedef enum[5] {
+    jtag_addr_apb_control = 0x10,
+    jtag_addr_apb_access  = 0x11,
+} t_jtag_addr;
+
+constant bit[32] jtag_idcode=0;
+module jtag_apb( clock jtag_tck,
+                 input bit reset_n,
+
+                 input bit[5]ir,
+                 input t_jtag jtag,
+                 input t_jtag_action dr_action,
+                 input  bit[50]dr_in,
+                 output bit[50]dr_tdi_mask,
+                 output bit[50]dr_out,
+
+                 clock apb_clock,
+                 output t_apb_request apb_request,
+                 input t_apb_response apb_response
+    )
+"""
+"""
+{
+    clocked clock jtag_tck  reset active_low reset_n t_jtag_state jtag_state = {*=0};
+    clocked clock apb_clock reset active_low reset_n t_apb_state  apb_state = {*=0};
+
+    comb t_update_action update_action;
+
+    comb bit sync_ready;
+    comb bit sync_ready_ack;
+    comb bit sync_complete;
+    comb bit sync_complete_ack;
+
+    /*b JTAG clock domain */
+    jtag_clock_domain """
+    Handle the JTAG TAP interface; this provides capture, shift and update actions.
+
+    Capture means set dr_out to the data dependent on ir
+
+    Shift means set dr_out to be dr_in shifted down with tdi inserted
+    at the correct bit point dependent on the register accessed by ir.
+
+    Update means perform an update (or write) of register ir with given data dr_in
+
+    """: {
+        dr_out = dr_in;
+        dr_tdi_mask = 0;
+        update_action = action_none;
+        part_switch (dr_action) {
+        case action_shift: {
+            dr_out = dr_in >> 1;
+            full_switch (ir) {
+            case 1 : { // IDCODE
+                dr_tdi_mask[31] = 1;
+            }
+            case jtag_addr_apb_control : { // control is 32 bits long
+                dr_tdi_mask[31] = 1;
+            }
+            case jtag_addr_apb_access : { // access is 16+32+2 bits long
+                dr_tdi_mask[49] = 1;
+            }
+            default: { // BYPASS if not otherwise handled
+                dr_tdi_mask[0] = 1;
+            }
+            }
+        }
+        case action_capture: {
+            full_switch (ir) {
+            case 1 : { // IDCODE
+                dr_out[32;0] = jtag_idcode;
+            }
+            case jtag_addr_apb_control : { // control
+                dr_out = 0;
+                dr_out[2;10] = jtag_state.op_status;
+                dr_out[6;4]  = 16; // 16 address/select bits
+                dr_out[4;0]  = 1; // magic version number
+            }
+            case jtag_addr_apb_access : { // access
+                dr_out = 0;
+                dr_out[2;0]   = jtag_state.op_status;
+                dr_out[32;2]  = jtag_state.last_read_data;
+                dr_out[16;34] = jtag_state.address;
+            }
+            default: { // BYPASS if not otherwise handled
+                dr_out = 0; // Not sure what value is supposed to go here; only bit 0 is used
+            }
+            }
+        }
+        case action_update: {
+            part_switch (ir) {
+            case jtag_addr_apb_control : { // control - do some resets
+                if (dr_in[2;16]!=0) {
+                    update_action = action_reset;
+                }
+            }
+            case jtag_addr_apb_access : { // access - start read or write, or not
+                if (dr_in[2;0]==1) {
+                    update_action = action_start_read;
+                }
+                if (dr_in[2;0]==2) {
+                    update_action = action_start_write;
+                }
+            }
+            }
+        }
+        }
+
+        if (update_action==action_reset) {
+            jtag_state.op_status <= 0;
+        }
+        if ((update_action==action_start_read) || (update_action==action_start_read)) {
+            if (jtag_state.busy) {
+                jtag_state.op_status <= 3;
+            } else {
+                jtag_state.write_data <= dr_in[32;2];
+                jtag_state.address    <= dr_in[16;34];
+                jtag_state.ready <= 1;
+                jtag_state.busy  <= 1;
+                jtag_state.write_not_read <= (update_action==action_start_write);
+            }
+        }
+        if (jtag_state.busy) {
+            if (sync_ready_ack) {
+                jtag_state.ready <= 0;
+            }
+            if (sync_complete) {
+                jtag_state.complete_ack <= 1;
+            } elsif (jtag_state.complete_ack) { // complete has just gone away
+                jtag_state.complete_ack <= 0;
+                jtag_state.last_read_data <= apb_state.last_read_data;
+                jtag_state.busy <= 0;
+            }
+        }
+    }
+
+    apb_clock_domain """
+    """: {
+        if (apb_state.busy) {
+            if (apb_state.access_in_progress) {
+                apb_state.apb_request.penable <= 1;
+                if (apb_response.pready && apb_state.apb_request.penable) {
+                    apb_state.apb_request.penable <= 0;
+                    apb_state.apb_request.psel    <= 0;
+                    apb_state.apb_request.pwrite  <= 0;
+                    apb_state.last_read_data      <= jtag_state.last_read_data;
+                    apb_state.access_in_progress  <= 0;
+                }
+            }
+            if (apb_state.ready_ack && !sync_ready) {
+                apb_state.ready_ack <= 0;
+            } else {
+                if (!apb_state.access_in_progress) {
+                    apb_state.complete <= 1;
+                    if (sync_complete_ack && apb_state.complete) {
+                        apb_state.complete <= 0;
+                        apb_state.busy <= 0;
+                    }
+                }
+            }
+        } else {
+            if (sync_ready) {
+                apb_state.ready_ack <= 1;
+                apb_state.busy <= 1;
+                apb_state.access_in_progress <= 1;
+                apb_state.apb_request.paddr <= 0;
+                apb_state.apb_request.paddr[8;0]  <= jtag_state.address[8;0];
+                apb_state.apb_request.paddr[8;16] <= jtag_state.address[8;8];
+                apb_state.apb_request.penable <= 0;
+                apb_state.apb_request.psel    <= 1;
+                apb_state.apb_request.pwrite  <= jtag_state.write_not_read;
+                apb_state.apb_request.pwdata  <= jtag_state.write_data;
+            }
+        }
+    }
+
+    synchronizers """
+    """: {
+        jtag_state.ready_ack_sync    <= jtag_state.ready_ack_sync>>1;
+        jtag_state.ready_ack_sync[2] <= apb_state.ready_ack;
+        sync_ready_ack = jtag_state.ready_ack_sync[0];
+
+        jtag_state.complete_sync    <= jtag_state.complete_sync>>1;
+        jtag_state.complete_sync[2] <= apb_state.complete;
+        sync_complete  = jtag_state.complete_sync[0];
+
+        apb_state.ready_sync    <= apb_state.ready_sync>>1;
+        apb_state.ready_sync[2] <= jtag_state.ready;
+        sync_ready = apb_state.ready_sync[0];
+
+        apb_state.complete_ack_sync    <= apb_state.complete_ack_sync>>1;
+        apb_state.complete_ack_sync[2] <= jtag_state.complete_ack;
+        sync_complete_ack  = apb_state.complete_ack_sync[0];
+
+        apb_request = apb_state.apb_request;
+    }
+}

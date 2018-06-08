@@ -1,0 +1,205 @@
+include "jtag.h"
+
+constant integer dr_length=50;
+constant integer ir_length=5;
+constant integer max_length=50;
+
+typedef fsm {
+    jtag_state_test_logic_reset;
+    jtag_state_idle;
+    jtag_state_select_dr_scan;
+    jtag_state_select_ir_scan;
+
+    jtag_state_capture_dr;
+    jtag_state_shift_dr;
+    jtag_state_exit1_dr;
+    jtag_state_pause_dr;
+    jtag_state_exit2_dr;
+    jtag_state_update_dr;
+    
+    jtag_state_capture_ir;
+    jtag_state_shift_ir;
+    jtag_state_exit1_ir;
+    jtag_state_pause_ir;
+    jtag_state_exit2_ir;
+    jtag_state_update_ir;
+    
+} t_jtag_fsm;
+
+typedef struct {
+    t_jtag_fsm state;
+    bit[max_length] sr;
+    bit[ir_length]  ir;
+} t_jtag_state;
+
+typedef struct {
+    t_jtag_fsm    next_state;
+    bit[max_length] next_sr;
+    t_jtag_action ir_action;
+    t_jtag_action dr_action;
+} t_jtag_combs;
+
+module jtag_tap( clock jtag_tck,
+                 input bit reset_n,
+                 input t_jtag jtag,
+                 output bit tdo,
+
+                 output bit[ir_length]ir,
+                 output t_jtag_action dr_action,
+                 output bit[dr_length]dr,
+                 input  bit[dr_length]dr_tdi_mask,
+                 input  bit[dr_length]dr_out
+    )
+"""
+"""
+{
+    clocked clock jtag_tck reset active_low reset_n t_jtag_state jtag_state = {*=0};
+    comb t_jtag_combs jtag_combs;
+
+    /*b Wire things up */
+    wiring """
+    """ : {
+        tdo = jtag_state.sr[0];
+        ir = jtag_state.ir;
+        dr = jtag_state.sr[dr_length; 0];
+        dr_action = jtag_combs.dr_action;
+    }
+
+    /*b JTAG state machine */
+    jtag_state_machine """
+    """: {
+        jtag_combs.next_state = jtag_state.state;
+        jtag_combs.ir_action = action_idle;
+        jtag_combs.dr_action = action_idle;
+        full_switch (jtag_state.state) {
+        case jtag_state_test_logic_reset:{
+            if (!jtag.tms) { // move on if tms low
+                jtag_combs.next_state = jtag_state_idle;
+            }
+        }
+
+        case jtag_state_idle:{
+            if (jtag.tms) { // move on if tms high
+                jtag_combs.next_state = jtag_state_select_dr_scan;
+            }
+        }
+        case jtag_state_select_dr_scan:{ // single cycle
+            jtag_combs.next_state = jtag_state_capture_dr;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_select_ir_scan;
+            }
+        }
+        case jtag_state_select_ir_scan:{
+            jtag_combs.next_state = jtag_state_capture_ir;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_test_logic_reset;
+            }
+        }
+
+        case jtag_state_capture_dr:{ // single cycle
+            jtag_combs.dr_action = action_capture;
+            jtag_combs.next_state = jtag_state_shift_dr;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_exit1_dr;
+            }
+        }
+        case jtag_state_shift_dr:{
+            jtag_combs.dr_action = action_shift;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_exit1_dr;
+            }
+        }
+        case jtag_state_exit1_dr:{ // single cycle
+            jtag_combs.next_state = jtag_state_pause_dr;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_update_dr;
+            }
+        }
+        case jtag_state_pause_dr:{
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_exit2_dr;
+            }
+        }
+        case jtag_state_exit2_dr:{ // single cycle
+            jtag_combs.next_state = jtag_state_shift_dr;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_update_dr;
+            }
+        }
+        case jtag_state_update_dr:{ // single cycle
+            jtag_combs.dr_action = action_update;
+            jtag_combs.next_state = jtag_state_idle;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_select_dr_scan;
+            }
+        }
+    
+        case jtag_state_capture_ir:{ // single cycle
+            jtag_combs.ir_action = action_capture;
+            jtag_combs.next_state = jtag_state_shift_ir;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_exit1_ir;
+            }
+        }
+        case jtag_state_shift_ir:{
+            jtag_combs.ir_action = action_shift;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_exit1_ir;
+            }
+        }
+        case jtag_state_exit1_ir:{ // single cycle
+            jtag_combs.next_state = jtag_state_pause_ir;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_update_ir;
+            }
+        }
+        case jtag_state_pause_ir:{
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_exit2_ir;
+            }
+        }
+        case jtag_state_exit2_ir:{ // single cycle
+            jtag_combs.next_state = jtag_state_shift_ir;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_update_ir;
+            }
+        }
+        case jtag_state_update_ir:{ // single cycle
+            jtag_combs.ir_action = action_update;
+            jtag_combs.next_state = jtag_state_idle;
+            if (jtag.tms) {
+                jtag_combs.next_state = jtag_state_select_dr_scan;
+            }
+        }
+        }
+
+        jtag_state.state <= jtag_combs.next_state;
+    }
+
+    jtag_action """
+    """ : {
+        jtag_combs.next_sr = jtag_state.sr;
+        part_switch (jtag_combs.ir_action) {
+        case action_update: {
+            jtag_combs.next_sr = 0;
+            jtag_combs.next_sr[ir_length;0] = jtag_state.ir;
+        }
+        case action_shift: {
+            jtag_combs.next_sr = jtag_state.sr >> 1;
+            jtag_combs.next_sr[ir_length] = jtag.tdi;
+        }
+        case action_capture: {
+            jtag_state.ir <= jtag_state.sr[ir_length;0];
+        }
+        }
+
+        if (jtag_combs.dr_action != action_idle) {
+            jtag_combs.next_sr = 0;
+            jtag_combs.next_sr[dr_length;0] = dr_out;
+            if (jtag.tdi) {
+                jtag_combs.next_sr[dr_length;0] = dr_out | dr_tdi_mask;
+            }
+        }
+        jtag_state.sr <= jtag_combs.next_sr;
+    }
+}
