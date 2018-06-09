@@ -144,7 +144,7 @@ module jtag_apb( clock jtag_tck,
         if (update_action==action_reset) {
             jtag_state.op_status <= 0;
         }
-        if ((update_action==action_start_read) || (update_action==action_start_read)) {
+        if ((update_action==action_start_read) || (update_action==action_start_write)) {
             if (jtag_state.busy) {
                 jtag_state.op_status <= 3;
             } else {

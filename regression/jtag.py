@@ -43,6 +43,9 @@ riscv_atcf_regression_dir = "../riscv-atcf-tests/build/dump/"
 #a Test classes
 #c c_jtag_apb_time_test_base
 class c_jtag_apb_time_test_base(simple_tb.base_th):
+    """
+    Base methods for JTAG interaction, really
+    """
     #f jtag_reset
     def jtag_reset(self):
         """
@@ -196,6 +199,9 @@ class c_jtag_apb_time_test_base(simple_tb.base_th):
 
 #c c_jtag_apb_time_test_idcode
 class c_jtag_apb_time_test_idcode(c_jtag_apb_time_test_base):
+    """
+    Test the TAP controller and APB master are attached to the JTAG, by reading the IDCODE
+    """
     #f run
     def run(self):
         self.sim_msg = self.sim_message()
@@ -216,15 +222,64 @@ class c_jtag_apb_time_test_idcode(c_jtag_apb_time_test_base):
         pass
     pass
 
-#c c_jtag_apb_time_test_time_slow
-class c_jtag_apb_time_test_time_slow(c_jtag_apb_time_test_base):
+#c c_jtag_apb_time_test_bypass
+class c_jtag_apb_time_test_bypass(c_jtag_apb_time_test_base):
+    """
+    Test the TAP controller with value 11111 in IR is in bypass
+
+    Run data through DR expecting to see a single register bit, once IR is all 1s.
+    """
+    ir_value = 0x1f
     #f run
     def run(self):
         self.sim_msg = self.sim_message()
         self.bfm_wait(10)
         simple_tb.base_th.run_start(self)
 
-        idcodes = self.jtag_reset()
+        self.jtag_reset()
+        self.jtag_write_irs(ir_bits = bits_of_n(5,self.ir_value)) # bypass mode
+
+        for test_data in [0x0,
+                          0x8000000000000000,                          
+                          0xffffffffffffffff,
+                          0x123456789abcdef0,
+                          0xdeadbeefcafefeed,
+                          ]:
+            pattern_bits = bits_of_n(64,test_data) + [0]
+            data = self.jtag_write_drs(dr_bits = pattern_bits)
+            check_value = int_of_bits(data)>>1 # Lose the first bit that is in the Bypass 1-bit shift register
+            if check_value != test_data:
+                self.failtest(0, "Expected bypass to be a 1-bit shift register but got %016x instead of %016x"%(check_value, test_data))
+                pass
+            print "%016x"%check_value
+            pass
+
+        self.finishtest(0,"")
+        pass
+    pass
+
+#c c_jtag_apb_time_test_bypass2
+class c_jtag_apb_time_test_bypass2(c_jtag_apb_time_test_bypass):
+    """
+    Test the TAP controller with value 00000 in IR is in bypass
+
+    Run data through DR expecting to see a single register bit, once IR is all 1s.
+    """
+    ir_value = 0
+    pass
+
+#c c_jtag_apb_time_test_time_slow
+class c_jtag_apb_time_test_time_slow(c_jtag_apb_time_test_base):
+    """
+    Test the TAP controller, APB master, and APB reads work to timer, by reading timer and expecting it to provide repeatable timer reads
+    """
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(10)
+        simple_tb.base_th.run_start(self)
+
+        self.jtag_reset()
         self.jtag_write_irs(ir_bits = bits_of_n(5,0x10)) # Send in 0x10 (apb_control)
         self.jtag_write_drs(dr_bits = bits_of_n(32,0))   # write apb_control of 0
 
@@ -257,13 +312,16 @@ class c_jtag_apb_time_test_time_slow(c_jtag_apb_time_test_base):
 
 #c c_jtag_apb_time_test_time_fast
 class c_jtag_apb_time_test_time_fast(c_jtag_apb_time_test_base):
+    """
+    Test the TAP controller, APB master, and APB reads work to timer, by reading timer and expecting it to provide repeatable timer reads at a higher speed
+    """
     #f run
     def run(self):
         self.sim_msg = self.sim_message()
         self.bfm_wait(10)
         simple_tb.base_th.run_start(self)
 
-        idcodes = self.jtag_reset()
+        self.jtag_reset()
         self.jtag_write_irs(ir_bits = bits_of_n(5,0x10)) # Send in 0x10 (apb_control)
         self.jtag_write_drs(dr_bits = bits_of_n(32,0))   # write apb_control of 0
         self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (apb_access)
@@ -301,13 +359,16 @@ class c_jtag_apb_time_test_time_fast(c_jtag_apb_time_test_base):
 
 #c c_jtag_apb_time_test_time_fast2
 class c_jtag_apb_time_test_time_fast2(c_jtag_apb_time_test_base):
+    """
+    Test the timer with pipelined reads, and determine that the timer is ticking (or constant)
+    """
     #f run
     def run(self):
         self.sim_msg = self.sim_message()
         self.bfm_wait(10)
         simple_tb.base_th.run_start(self)
 
-        idcodes = self.jtag_reset()
+        self.jtag_reset()
         self.jtag_write_irs(ir_bits = bits_of_n(5,0x10)) # Send in 0x10 (apb_control)
         self.jtag_write_drs(dr_bits = bits_of_n(32,0))   # write apb_control of 0
         self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (apb_access)
@@ -344,33 +405,103 @@ class c_jtag_apb_time_test_time_fast2(c_jtag_apb_time_test_base):
         pass
     pass
 
-#c c_jtag_apb_time_test_old
-class c_jtag_apb_time_test_old(c_jtag_apb_time_test_base):
-    def __init__(self, **kwargs):
-        c_jtag_apb_time_test_base.__init__(self, **kwargs)
-        pass
+#c c_jtag_apb_time_test_time_fast3
+    """
+    Test the timer with pipelined reads, and determine that the timer is ticking and at what rate compared to JTAG tck
+    """
+class c_jtag_apb_time_test_time_fast3(c_jtag_apb_time_test_base):
     #f run
     def run(self):
         self.sim_msg = self.sim_message()
         self.bfm_wait(10)
         simple_tb.base_th.run_start(self)
 
-        idcodes = self.jtag_reset()
+        self.jtag_reset()
         self.jtag_write_irs(ir_bits = bits_of_n(5,0x10)) # Send in 0x10 (apb_control)
         self.jtag_write_drs(dr_bits = bits_of_n(32,0))   # write apb_control of 0
-        
-        print "%016x"%(self.apb_read_slow(0x1200, write_ir=True)<<2)
-        print "%016x"%(self.apb_read_slow(0x1200, write_ir=True)<<2)
-        print "%016x"%(self.apb_read_slow(0x1200, write_ir=True)<<2)
-        print "%016x"%(self.apb_read_slow(0x1200, write_ir=True)<<2) # return this data (X)
-        print "%016x"%(self.apb_read_pipelined(0x1200)<<2) # Start read (will give Y), return last read data (X)
-        print "%016x"%(self.apb_read_pipelined(0x1200)<<2) # Start another read, last access has not finished when this starts so returns last-but-one-data (X)
-        print "%016x"%(self.apb_read_pipelined(0x1200)<<2) # Start another read, last access has not finished when this starts so returns last-but-one-data (Y)
-        print "%016x"%(self.apb_read_pipelined(0x1200)<<2)
-        print "%016x"%(self.apb_read_pipelined(0x1200)<<2)
+        self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (apb_access)
 
-        #self.bfm_wait(self.run_time-10)
-        #self.ios.b.drive(1)
+        timer_readings = []
+        for i in range(10):
+            timer_readings.append(self.apb_read_pipelined(0x1200))
+            self.bfm_wait(20 + i*10) # Delay so that the next read captures the result of this request (provide update to capture delay that exceeds APB transaction + sync time)
+            print "APB timer read returned address/data/status of %016x"%(timer_readings[-1]<<2)
+            if (timer_readings[-1]&3)!=0:
+                self.failtest(i,"Expected APB op to have succeeded (got %016x)"%(timer_readings[-1]<<2))
+                pass
+            pass
+
+        timer_readings = timer_readings[1:]
+        timer_diffs = []
+        total_diff = 0
+        for i in range(len(timer_readings)-1):
+            timer_diffs.append( (timer_readings[i+1] - timer_readings[i])>>2 )
+            total_diff += timer_diffs[-1]
+            pass
+
+        print timer_diffs
+
+        timer_readings = timer_diffs
+        timer_diffs = []
+        total_diff = 0
+        for i in range(len(timer_readings)-1):
+            timer_diffs.append( (timer_readings[i+1] - timer_readings[i]) )
+            total_diff += timer_diffs[-1]
+            pass
+
+        avg_diff = total_diff / (0. + len(timer_diffs))
+
+        for t in timer_diffs[1:]:
+            if abs(t-avg_diff)>2:
+                self.failtest(0,"Expected timer diff between reads (%d) to be not far from average of %d"%(t,avg_diff))
+            pass
+        pass
+
+        print "Jtag clock is %4.2f%% of APB clock"%(100.0 / avg_diff * 10)
+        print timer_diffs
+
+        self.finishtest(0,"")
+        pass
+    pass
+
+#c c_jtag_apb_time_test_comparator
+class c_jtag_apb_time_test_comparator(c_jtag_apb_time_test_base):
+    """
+    Test the timer with APB writes, testing TAP/APB write path.
+    Use timer comparator and check that the timer counts past it
+    """
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(10)
+        simple_tb.base_th.run_start(self)
+
+        self.jtag_reset()
+        self.jtag_write_irs(ir_bits = bits_of_n(5,0x10)) # Send in 0x10 (apb_control)
+        self.jtag_write_drs(dr_bits = bits_of_n(32,0))   # write apb_control of 0
+        self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (apb_access)
+
+        self.apb_read_pipelined(0x1200)
+        self.bfm_wait(20)
+        data0 = self.apb_read_pipelined(0x1200)
+        self.bfm_wait(20)
+        data1 = self.apb_read_pipelined(0x1200)
+        self.bfm_wait(20)
+        time0 = (data0>>2)&0x7fffffff
+        time_delta = (data1 - data0)>>2
+
+
+        self.apb_write(0x1204, time0 + time_delta*5)
+        timer_passed = 0
+        for i in range(10):
+            data = (self.apb_read_pipelined(0x1204)>>2) & 0xffffffff
+            print "%08x"%data
+            if (data>>31)&1: timer_passed += 1
+            pass
+
+        if timer_passed!=1:
+            self.failtest(timer_passed, "Expected to see one occurence of 'comparator met'")
+            pass
 
         self.finishtest(0,"")
         pass
@@ -408,9 +539,13 @@ class jtag_apb_timer(simple_tb.base_test):
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
 test_dir = ""
 tests = { "idcode"     : (c_jtag_apb_time_test_idcode,2*1000),
+          "bypass"     : (c_jtag_apb_time_test_bypass,4*1000),
+          "bypass2"    : (c_jtag_apb_time_test_bypass2,4*1000),
           "timer_slow" : (c_jtag_apb_time_test_time_slow,8*1000),
           "timer_fast" : (c_jtag_apb_time_test_time_fast,8*1000),
           "timer_fast2" : (c_jtag_apb_time_test_time_fast2,6*1000),
+          "timer_fast3" : (c_jtag_apb_time_test_time_fast3,10*1000),
+          "comparator" : (c_jtag_apb_time_test_comparator,10*1000),
            }
 for tc in tests:
     (tf,num_cycles) = tests[tc]
