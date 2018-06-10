@@ -33,7 +33,6 @@ extern module jtag_apb( clock jtag_tck,
                  input bit reset_n,
 
                  input bit[5]ir,
-                 input t_jtag jtag,
                  input t_jtag_action dr_action,
                  input  bit[50]dr_in,
                  output bit[50]dr_tdi_mask,
@@ -44,7 +43,7 @@ extern module jtag_apb( clock jtag_tck,
                  input t_apb_response apb_response
     )
 {
-    timing to rising clock jtag_tck ir, jtag, dr_action, dr_in;
+    timing to rising clock jtag_tck ir, dr_action, dr_in;
     timing from rising clock jtag_tck dr_tdi_mask, dr_out;
     timing from rising clock apb_clock apb_request;
     timing to rising clock apb_clock apb_response;

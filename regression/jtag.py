@@ -329,6 +329,8 @@ class c_jtag_apb_time_test_time_fast(c_jtag_apb_time_test_base):
         timer_readings = []
         for i in range(10):
             timer_readings.append(self.apb_read_pipelined(0x1200))
+            self.jtag_tms([0,0,0,0,0,0]) # 6 TMS ticks for JTAG TCK sync
+            self.jtag_tms([0,0]) # 2 TMS ticks for APB clocks
             print "APB timer read returned address/data/status of %016x"%(timer_readings[-1]<<2)
             if (timer_readings[-1]&3)!=0:
                 self.failtest(i,"Expected APB op to have succeeded (got %016x)"%(timer_readings[-1]<<2))
@@ -495,6 +497,7 @@ class c_jtag_apb_time_test_comparator(c_jtag_apb_time_test_base):
         timer_passed = 0
         for i in range(10):
             data = (self.apb_read_pipelined(0x1204)>>2) & 0xffffffff
+            self.bfm_wait(10)
             print "%08x"%data
             if (data>>31)&1: timer_passed += 1
             pass
@@ -521,7 +524,7 @@ class jtag_apb_timer_hw(simple_tb.cdl_test_hw):
                   }
     module_name = "tb_jtag_apb_timer"
     clocks = {"jtag_tck":(0,3,3),
-              "apb_clock":(0,2,2),
+              "apb_clock":(0,1,1),
               }
     #f __init__
     def __init__(self, test):
