@@ -1,9 +1,68 @@
+/** Copyright (C) 2018,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   jtag_tap.cdl
+ * @brief  JTAG tap controller module
+ *
+ * CDL implementation of a module that (with a client) permits an
+ * application specific TAP controller to be built.
+ *
+ * It implements the JTAG state machine, with an IR length provided by
+ * a constant (so a build option), and a maximum data register (DR)
+ * length also by constant.
+ *
+ * The client must use the IR to determine how the DR must be CAPTUREd
+ * and SHIFTed, and also to use the DR when UPDATE occurs.
+ *
+ * The JTAG implementation uses a single shift register between TDI
+ * and TDO whose length is effectively adjusted to be ir_length in
+ * shifting IR and to be client-defined (based on IR) in shifting DR.
+ *
+ */
+/*a Imports */
 include "jtag.h"
 
-constant integer dr_length=50;
+/*a Constants */
+/*v ir_length
+ *
+ * Compile time value that indicates the length of IR
+ *
+ */
 constant integer ir_length=5;
+
+/*v dr_length
+ *
+ * Compile time value that indicates the length of dr_in, dr_out, dr_tdi_mask
+ *
+ * This module should be built with dr_length set to the largest DR require by the client
+ *
+ */
+constant integer dr_length=50;
+
+/*v max_length
+ *
+ * Compile time value that *MUST* be the maximum of ir_length and dr_length
+ *
+ */
 constant integer max_length=50;
 
+/*a Types */
+/*t t_jtag_fsm
+ *
+ * States in the JTAG FSM (see on of thousands of websites)
+ *
+ */
 typedef fsm {
     jtag_state_test_logic_reset;
     jtag_state_idle;
@@ -26,12 +85,22 @@ typedef fsm {
     
 } t_jtag_fsm;
 
+/*t t_jtag_state 
+ *
+ * JTAG clock domain state; FSM, shift registers, and held IR
+ *
+ */
 typedef struct {
     t_jtag_fsm state;
     bit[max_length] sr;
     bit[ir_length]  ir;
 } t_jtag_state;
 
+/*t t_jtag_combs
+ *
+ * Combinatorials - next state, and actions for IR and DR
+ *
+ */
 typedef struct {
     t_jtag_fsm    next_state;
     bit[max_length] next_sr;
@@ -39,35 +108,44 @@ typedef struct {
     t_jtag_action dr_action;
 } t_jtag_combs;
 
-module jtag_tap( clock jtag_tck,
-                 input bit reset_n,
-                 input t_jtag jtag,
-                 output bit tdo,
 
-                 output bit[ir_length]ir,
-                 output t_jtag_action dr_action,
-                 output bit[dr_length]dr,
-                 input  bit[dr_length]dr_tdi_mask,
-                 input  bit[dr_length]dr_out
+/*a Module */
+/*m jtag_tap */
+module jtag_tap( clock jtag_tck                      "JTAG TCK",
+                 input bit reset_n                   "Reste for all the logic",
+                 input t_jtag jtag                   "JTAG inputs",
+                 output bit tdo                      "JTAG TDO pin",
+
+                 output bit[ir_length] ir            "IR register to be used by client",
+                 output t_jtag_action dr_action      "DR action (capture, update, shift, or none)",
+                 output bit[dr_length] dr_in         "DR to be fed to client",
+                 input  bit[dr_length] dr_tdi_mask   "One-hot mask indicating where TDI should be inserted (based on DR length, based on IR)",
+                 input  bit[dr_length] dr_out        "DR from client (from client data if capture, shifted if shift)"
     )
 """
+JTAG TAP controller module that basically implements the JTAG state
+machine, holds an IR, and interacts with a client to capture and update data.
 """
 {
     clocked clock jtag_tck reset active_low reset_n t_jtag_state jtag_state = {*=0};
     comb t_jtag_combs jtag_combs;
 
-    /*b Wire things up */
+    /*b Wire outputs */
     wiring """
+    Wire the outputs to depend on state (dr_action is a state decode)
     """ : {
         tdo = jtag_state.sr[0];
         ir = jtag_state.ir;
-        dr = jtag_state.sr[dr_length; 0];
-        dr_action = jtag_combs.dr_action;
+        dr_in = jtag_state.sr[dr_length; 0]; // dr_in to the client
+        dr_action = jtag_combs.dr_action;    // dr_action to the client
     }
 
     /*b JTAG state machine */
     jtag_state_machine """
+    Implement the JTAG state machine, and decode the FSM
     """: {
+
+        /*b Decode ir_action, dr_action (from state) and next_state (from state and jtag.tms) */
         jtag_combs.next_state = jtag_state.state;
         jtag_combs.ir_action = action_idle;
         jtag_combs.dr_action = action_idle;
@@ -173,11 +251,15 @@ module jtag_tap( clock jtag_tck,
         }
         }
 
+        /*b Update state machine */
         jtag_state.state <= jtag_combs.next_state;
     }
 
+    /*b Handle JTAG actions, updating shift register and IR */
     jtag_action """
+    Handle JTAG action to update shift register and IR
     """ : {
+
         if (jtag_state.state==jtag_state_test_logic_reset) {
             jtag_state.ir <= 1; // Force to IDCODE in reset
         }

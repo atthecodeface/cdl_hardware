@@ -20,13 +20,13 @@ extern module jtag_tap( clock jtag_tck,
 
                  output bit[5]ir,
                  output t_jtag_action dr_action,
-                 output bit[50]dr,
+                 output bit[50]dr_in,
                  input  bit[50]dr_tdi_mask,
                  input  bit[50]dr_out
     )
 {
     timing to rising clock jtag_tck jtag, dr_tdi_mask, dr_out;
-    timing from rising clock jtag_tck tdo, ir, dr_action, dr;
+    timing from rising clock jtag_tck tdo, ir, dr_action, dr_in;
 }
 
 extern module jtag_apb( clock jtag_tck,

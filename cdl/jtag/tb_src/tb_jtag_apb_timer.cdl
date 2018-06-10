@@ -62,7 +62,7 @@ module tb_jtag_apb_timer( clock jtag_tck,
 
                       ir => ir,
                       dr_action => dr_action,
-                      dr => dr_in,
+                      dr_in => dr_in,
                       dr_tdi_mask <= dr_tdi_mask,
                       dr_out <= dr_out );
 

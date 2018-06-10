@@ -161,6 +161,7 @@ typedef struct {
  *
  */
 typedef enum[5] {
+    jtag_addr_idcode      = 1, // REQUIRED TO BE IDCODE (IR resets to 1)
     jtag_addr_apb_control = 0x10,
     jtag_addr_apb_access  = 0x11,
 } t_jtag_addr;
@@ -227,7 +228,7 @@ JTAG client module that presents an APB master interface
         case action_shift: {
             dr_out = dr_in >> 1;
             full_switch (ir) {
-            case 1 : { // IDCODE
+            case jtag_addr_idcode : { // IDCODE
                 dr_tdi_mask[31] = 1;
             }
             case jtag_addr_apb_control : { // control is 32 bits long

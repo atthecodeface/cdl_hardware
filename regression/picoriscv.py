@@ -100,7 +100,7 @@ class c_picoriscv_test_base(simple_tb.base_th):
 class c_picoriscv_test_dump(c_picoriscv_test_base):
     dump_filename = riscv_regression_dir+"rv32ui-p-or.dump"
     base_address = 0x80000000
-    memory_expectation = { "tohost":(1337,),
+    memory_expectation = { "tohost":(1,),
                            }
     def __init__(self, dump_filename, test_memory="dut.mem", **kwargs):
         self.dump_filename = dump_filename
@@ -115,7 +115,7 @@ class picoriscv_test_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of Pico-RISC-V testbench
     """
-    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.dut.riscv.trace "),},
+    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.dut.trace "),},
                }
     th_forces = { "th.clock":"clk",
                   "th.inputs":("apb_response__pready "+
