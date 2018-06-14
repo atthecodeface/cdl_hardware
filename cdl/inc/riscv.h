@@ -58,7 +58,7 @@ typedef struct {
  */
 typedef struct {
     bit      valid;
-    bit      debug;
+    bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
     bit[32]  data;
 } t_riscv_fetch_resp;
 
@@ -70,16 +70,49 @@ typedef struct {
     bit      i32m;
 } t_riscv_config;
 
+/*t t_riscv_debug_op
+ */
+typedef enum[4] {
+    rv_debug_halt   "Request halt; replaces a fetched instruction with a forced hardware breakpoint",
+    rv_debug_read   "Request read of a GPR/CSR",
+    rv_debug_write  "Request write of a GPR/CSR",
+    rv_debug_step   "Request resumption of execution at dpc and in mode dcsr.prv but with break after execution of first instruction",
+    rv_debug_resume  "Request resumption of execution at dpc and in mode dcsr.prv",
+    rv_debug_acknowledge "Acknowledge halt, breakpoint hit, status",
+    rv_debug_execute "Execute instruction provided resumption of execution at dpc and in mode dcsr.prv",
+    rv_debug_execute_progbuf "Execute instruction at 'progbuf' address X (if it is a jump and link it will return)",
+} t_riscv_debug_op;
+
+typedef bit t_riscv_debug_resp;
 /*t t_riscv_debug_mst
+ *
+ * Debug module (DM) communication to (many) pipeline debug modules (PDMs)
+ *
+ * 
+ *
  */
 typedef struct {
-    bit a;
+    bit valid           "Asserted if op is valid; has no effect on mask and attention";
+    bit[6] select       "PDM to select";
+    bit[6] mask         "PDM attention mask (mask && id)==(mask&&select) -> drive attention on next cycle";
+    t_riscv_debug_op op "Operation for selected PDM to perform";
+    bit[8] arg          "Argument for debug op";
+    t_riscv_word data   "Data for writing or instruction execution";
 } t_riscv_debug_mst;
 
 /*t t_riscv_debug_tgt
  */
 typedef struct {
-    bit a;
+    bit valid               "Asserted by a PDM if driving the bus";
+    bit[6] selected         "Number of the PDM driving, or 0 if not driving the bus";
+    bit halted              "Asserted by a PDM if it is selected and halted since last ack; 0 otherwise";
+    bit resumed             "Asserted by a PDM if it is selected and has resumed since last ack; 0 otherwise";
+    bit hit_breakpoint      "Asserted by a PDM if it is selected and has hit breakpoint since lask ack; 0 otherwise";
+    bit op_was_none "Asserted if the response is not valid";
+    t_riscv_debug_resp resp "Response from a requested op - only one op should be requested for each response";
+    t_riscv_word data       "Data from a completed transaction; 0 otherwise";
+
+    bit attention           "Asserted by a PDM if it has unacknowledged halt, breakpoint hit, resumption";
 } t_riscv_debug_tgt;
 
 /*t t_riscv_i32_trace
