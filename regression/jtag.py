@@ -17,6 +17,9 @@ import pycdl
 import sys, os, unittest, tempfile
 import simple_tb
 import dump
+import Queue
+import socket, select
+import threading
 
 #a Useful functions
 def int_of_bits(bits):
@@ -53,6 +56,8 @@ class c_jtag_apb_time_test_base(simple_tb.base_th):
 
         This leaves the JTAG state machine in reset
         """
+        self.tck_enable.drive(1)
+        self.bfm_wait(1)
         self.jtag__tms.drive(1)
         self.jtag__tdi.drive(0)
         self.bfm_wait(5)
@@ -196,6 +201,165 @@ class c_jtag_apb_time_test_base(simple_tb.base_th):
 
         self.finishtest(0,"")
         pass
+
+#c c_jtag_apb_time_test_server
+class c_jtag_apb_time_test_server(c_jtag_apb_time_test_base):
+    """
+    """
+    def __init__(self, **kwargs):
+        self.spawned_threads = {}
+        c_jtag_apb_time_test_base(self, **kwargs)
+        pass
+    #class thread(object):
+    class thread(threading.Thread):
+        name = "<give me a name>"
+        def __init__(self, server):
+            threading.Thread.__init__(self)
+            self.server = server
+            self.start_cycle = None
+            self.end_cycle = None
+            self.thread = None
+            pass
+        def start(self):
+            def spawn_fn(arg_tuple):
+                self.start_cycle = self.server.global_cycle()
+                self.thread      = threading.current_thread()
+                self.run(arg_tuple)
+                self.finish()
+                pass
+            self.server.py.pyspawn(spawn_fn,(self,))
+            pass
+        def start_nonpy(self):
+            self.start_cycle = self.server.global_cycle()
+            self.thread      = threading.current_thread()
+            threading.Thread.start(self)
+            pass
+        def run(self, arg_tuple):
+            pass
+        def finish(self):
+            self.end_cycle = server.global_cycle()
+            pass
+        pass
+    class tcp_server_thread(thread):
+        def __init__(self, server, port):
+            super(c_jtag_apb_time_test_server.tcp_server_thread, self).__init__(server)
+            self.server_skt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_skt.bind(("localhost", port))
+            self.server_skt.listen(1)
+            self.server_skt.setblocking(False)
+            self.client_skt = None
+            self.skt_timeout = 1.0
+            pass
+        def update_data_to_send(self):
+            return ""
+        def did_send_data(self, n):
+            pass
+        def received_data(self, data):
+            pass
+        def run(self, arg_tuple=None):
+            done = False
+            while not done:
+                print "Poll",self.client_skt
+                if self.client_skt is None:
+                    (r,_,_) = select.select([self.server_skt],[],[],self.skt_timeout)
+                    if len(r)!=0:
+                        (self.client_skt, address) = self.server_skt.accept()
+                        print "Accepted connection from",address
+                        pass
+                    pass
+                else:
+                    data_to_send = self.update_data_to_send()
+                    w = []
+                    if data_to_send!="": w=[self.client_skt]
+                    (r,w,_) = select.select([self.client_skt],w,[],self.skt_timeout)
+                    if len(w)>0:
+                        n = self.client_skt.send(data_to_send)
+                        self.did_send_data(n)
+                        pass
+                    if len(r)>0:
+                        data = self.client_skt.recv(1024)
+                        if len(data)>0: self.received_data(data)
+                        pass
+                    pass
+                pass
+            pass
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        # Create threads here
+        self.bfm_wait(10)
+        simple_tb.base_th.run_start(self)
+
+        self.finishtest(0,"")
+        pass
+
+#c c_jtag_apb_time_test_server_openocd
+class c_jtag_apb_time_test_server_openocd(c_jtag_apb_time_test_server):
+    """
+    """
+    class openocd_server(c_jtag_apb_time_test_server.tcp_server_thread):
+        def __init__(self, **kwargs):
+            c_jtag_apb_time_test_server.tcp_server_thread.__init__(self, **kwargs)
+            self.queue_recvd   = Queue.Queue()
+            self.queue_to_send = Queue.Queue()
+            self.data_to_send = ""
+            pass
+        def update_data_to_send(self):
+            while not self.queue_to_send.empty():
+                self.data_to_send += self.queue_to_send.get()
+                pass
+            return self.data_to_send
+        def did_send_data(self, n):
+            self.data_to_send = self.data_to_send[n:]
+            pass
+        def received_data(self, data):
+            self.queue_recvd.put(data)
+            pass
+        pass
+        
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(10)
+        simple_tb.base_th.run_start(self)
+        openocd = self.openocd_server(server=self, port=9999)
+        openocd.start_nonpy()
+        rxq = openocd.queue_recvd
+        txq = openocd.queue_to_send
+
+        while True:
+            self.bfm_wait(1)
+            if not rxq.empty():
+                print "Rxq not empty"
+                reply = ""
+                data = rxq.get()
+                print "Handling",data
+                for c in data:
+                    if c=='B': print "LED ON"
+                    elif c=='b': print "LED OFF"
+                    elif c in "rstu" : print "Do some reset thing '%s'"%c
+                    elif c in "01234567":
+                        c = int(c)
+                        self.jtag__tdi.drive((c>>0)&1)
+                        self.jtag__tms.drive((c>>1)&1)
+                        self.tck_enable.drive((c>>2)&1)
+                        self.bfm_wait(1)
+                        self.tck_enable.drive(0)
+                        pass
+                    elif c=='R':
+                        self.tck_enable.drive(0)
+                        self.bfm_wait(1)
+                        self.tck_enable.drive(0)
+                        reply += "01"[self.tdo.value()]
+                        pass
+                    pass
+                if reply!="": txq.put(reply)
+                pass
+            pass
+
+        self.finishtest(0,"")
+        pass
+    pass
 
 #c c_jtag_apb_time_test_idcode
 class c_jtag_apb_time_test_idcode(c_jtag_apb_time_test_base):
@@ -520,7 +684,7 @@ class jtag_apb_timer_hw(simple_tb.cdl_test_hw):
                }
     th_forces = { "th.clock":"clk",
                   "th.inputs":("tdo"),
-                  "th.outputs":("jtag__ntrst jtag__tms jtag__tdi" ),
+                  "th.outputs":("jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
                   }
     module_name = "tb_jtag_apb_timer"
     clocks = {"jtag_tck":(0,3,3),
@@ -536,8 +700,11 @@ class jtag_apb_timer_hw(simple_tb.cdl_test_hw):
 #a Simulation test classes
 #c jtag_apb_timer
 class jtag_apb_timer(simple_tb.base_test):
+    def openocd(self):
+        test = c_jtag_apb_time_test_server_openocd()
+        hw = jtag_apb_timer_hw(test)
+        self.do_test_run(hw, 1000*1000*1000)
     pass
-
 
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
 test_dir = ""

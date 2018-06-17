@@ -119,6 +119,13 @@ help:
 	@echo ""
 	@echo "To run a specific subset of the regression, use 'make SUITE=<suite> test_regress'"
 	@echo "with suite being base6502, riscv_minimal, or any other .py file from the regression directory"
+	@echo ""
+	@echo "To run the JTAG apb timer with OpenOcd (to demonstrate JTAG running remotely)"
+	@echo "use 'make SUITE=jtag.jtag_apb_timer.openocd test_regress'"
+	@echo "In another termina run 'openocd scripts/bitbang.cfg'"
+	@echo "In a third terminal telnet in to openocd using 'telnet 127.0.0.1 4444"
+	@echo "From the third terminal you should be able to see the JTAG chain in the simulation"
+	@echo "and you can read the timer in the sim with 'apb_read_timer'; try 'help', and 'scan_chain'"
 
 #a Documentation
 include doc/Makefile

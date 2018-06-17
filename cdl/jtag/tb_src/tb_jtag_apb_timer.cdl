@@ -23,9 +23,9 @@ include "apb.h"
 include "apb_peripherals.h"
 
 /*a External modules */
-extern module se_test_harness( clock clk, output t_jtag jtag, input bit tdo )
+extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_enable, input bit tdo )
 {
-    timing from rising clock clk jtag;
+    timing from rising clock clk jtag, tck_enable;
     timing to rising clock clk tdo;
 }
 
@@ -49,13 +49,17 @@ module tb_jtag_apb_timer( clock jtag_tck,
     net t_apb_request apb_request;
     net t_apb_response apb_response;
     net bit[3] timer_equalled;
+    net bit tck_enable;
+    comb bit tck_enable_fix;
+    gated_clock clock jtag_tck active_high tck_enable_fix jtag_tck_gated;
 
     /*b Instantiate APB timer
      */
     dut_instance: {
-        se_test_harness th(clk <- jtag_tck, jtag=>jtag, tdo<=tdo);
+        tck_enable_fix = tck_enable;
+        se_test_harness th(clk <- jtag_tck, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
 
-        jtag_tap tap( jtag_tck <- jtag_tck,
+        jtag_tap tap( jtag_tck <- jtag_tck_gated,
                       reset_n <= reset_n,
                       jtag <= jtag,
                       tdo => tdo,
@@ -75,7 +79,7 @@ module tb_jtag_apb_timer( clock jtag_tck,
                          timer_equalled => timer_equalled
             );
 
-        jtag_apb apb( jtag_tck <- jtag_tck,
+        jtag_apb apb( jtag_tck <- jtag_tck_gated,
                       reset_n <= reset_n,
 
                       ir <= ir,

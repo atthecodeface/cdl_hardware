@@ -29,7 +29,7 @@
  * constant, so a build of this module can override that to provide
  * the desired IDCODE value for the JTAG TAP.
 
- * The CONTROL register (at IR=0x10) returns, on reads, an op_status
+ * The 32-bit CONTROL register (at IR=0x10) returns, on reads, an op_status
  * in bits [2;10], an abits of 16 in [6;4] (i.e. the module supports
  * 16 address bits in its ACCESS register) and a version of 1 in [4;0]
  * The op_status is a sticky status; it is sticky at 2 if an APB
@@ -40,7 +40,7 @@
  * Currently the CONTROL register does not support a hard reset of the
  * DTM; it is not clear that this makes sense in an APB access.
  *
- * The ACCESS register (at IR=0x10) is used to perform APB read and
+ * The 50-bit ACCESS register (at IR=0x11) is used to perform APB read and
  * writes; it is a 50-bit register (16-bit address, 32-bit data, 2-bit
  * access type) register.
  *
