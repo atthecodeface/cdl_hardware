@@ -29,6 +29,15 @@ extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_ena
     timing to rising clock clk tdo;
 }
 
+typedef struct {
+    bit running;
+    bit halting;
+    bit resuming;
+    bit resumed;
+    bit attention;
+    bit[8] counter;
+} t_test_state;
+
 /*a Module
  */
 module tb_riscv_jtag_debug( clock jtag_tck,
@@ -50,7 +59,8 @@ module tb_riscv_jtag_debug( clock jtag_tck,
     comb bit tck_enable_fix;
     gated_clock clock jtag_tck active_high tck_enable_fix jtag_tck_gated;
     net t_riscv_debug_mst debug_mst "Debug master to PDMs";
-    comb t_riscv_debug_tgt debug_tgt "Debug target from PDMs";
+    clocked clock apb_clock reset active_low reset_n t_riscv_debug_tgt debug_tgt={*=0} "Debug target from PDMs";
+    clocked clock apb_clock reset active_low reset_n t_test_state test_state={*=0};
 
     net  t_apb_request  apb_request  "APB request";
     net t_apb_response apb_response "APB response";
@@ -58,6 +68,38 @@ module tb_riscv_jtag_debug( clock jtag_tck,
     /*b Instantiate APB timer
      */
     dut_instance: {
+        debug_tgt <= {*=0};
+        if (debug_mst.valid && (debug_mst.select==0)) {
+            debug_tgt <= {valid=1, selected=0, halted=!test_state.running, resumed=test_state.resumed, op_was_none=1};
+            test_state.attention <= 0;
+        }
+        if (test_state.attention) {
+            debug_tgt.attention <= 1;
+        }
+        if (test_state.counter==0) {
+            if (test_state.halting) {
+                test_state.running <= 0;
+                test_state.halting <= 0;
+                test_state.attention <= 1;
+            }
+            if (test_state.resuming) {
+                test_state.running <= 1;
+                test_state.resuming <= 0;
+                test_state.resumed <= 1;
+                test_state.attention <= 1;
+            }
+        } else {
+            test_state.counter <= test_state.counter-1;
+        }
+        if (debug_mst.valid &&(debug_mst.op==rv_debug_set_requests)) {
+            test_state.halting <= debug_mst.arg[0];
+            test_state.resuming <= debug_mst.arg[1];
+            if (!debug_mst.arg[1]) {
+                test_state.resumed <= 0;
+                test_state.attention <= 1;
+            }
+            test_state.counter <= 8;
+        }
         tck_enable_fix = tck_enable;
         se_test_harness th(clk <- jtag_tck, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
 
@@ -94,7 +136,5 @@ module tb_riscv_jtag_debug( clock jtag_tck,
                             debug_mst  => debug_mst,
                             debug_tgt <= debug_tgt 
             );
-
-        debug_tgt = {*=0};
     }
 }

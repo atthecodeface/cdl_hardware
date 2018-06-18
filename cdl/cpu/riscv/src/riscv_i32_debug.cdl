@@ -358,7 +358,7 @@ include "riscv.h"
 /*a Constants
  */
 constant integer max_hart_minus_one=63;
-constant bit[64] invalid_hart_mask = 64h0;
+constant bit[64] valid_hart_mask = 64hffffffffffffffff;
 
 /*a Types */
 /*t t_write_action */
@@ -470,6 +470,7 @@ typedef struct {
     bit[32] haltsum0;
     bit[32] haltsum1;
     bit[32] dmstatus_data;
+    bit[32] dmcontrol_data;
     bit[64] next_halted         "One bit per hart reflecting its last reported halt state; only bottom N bits are ever non-zero";
     bit[64] next_resumed        "One bit per hart reflecting its last reported resumed state; only bottom N bits are ever non-zero";
     bit[64] next_hit_breakpoint "One bit per hart reflecting its last reported hit breakpoint state; only bottom N bits are ever non-zero";
@@ -524,8 +525,8 @@ revision 0.13.
         debug_combs.dmstatus.resume_ack_any = (debug_state.resumed  & debug_combs.hart_sel_mask)!=0;
         debug_combs.dmstatus.unavail_all = 0;
         debug_combs.dmstatus.unavail_any = 0;
-        debug_combs.dmstatus.nonexistent_all = 0;
-        debug_combs.dmstatus.nonexistent_any = 0;
+        debug_combs.dmstatus.nonexistent_all = ((debug_combs.hart_sel_mask & valid_hart_mask)==0);
+        debug_combs.dmstatus.nonexistent_any = ((debug_combs.hart_sel_mask & valid_hart_mask)==0);
         debug_combs.dmstatus.running_all = ((debug_state.halted  & debug_combs.hart_sel_mask)==0);
         debug_combs.dmstatus.running_any = ((debug_state.halted  & debug_combs.hart_sel_mask)==0);
         debug_combs.dmstatus.halted_all  = ((debug_state.halted  & debug_combs.hart_sel_mask)!=0);
@@ -557,6 +558,8 @@ revision 0.13.
                                debug_combs.dmstatus.dev_tree_valid,
                                debug_combs.dmstatus.version // 4 bits
             );
+        debug_combs.dmcontrol_data = bundle(31b0,
+                                            debug_state.dmactive);
     }
 
     /*b Drive debug master bus */
@@ -600,9 +603,9 @@ revision 0.13.
             }
         }
         if (debug_combs.update_status) {
-            debug_state.halted         <= debug_combs.next_halted         &~ invalid_hart_mask;
-            debug_state.resumed        <= debug_combs.next_resumed        &~ invalid_hart_mask;
-            debug_state.hit_breakpoint <= debug_combs.next_hit_breakpoint &~ invalid_hart_mask;
+            debug_state.halted         <= debug_combs.next_halted         & valid_hart_mask;
+            debug_state.resumed        <= debug_combs.next_resumed        & valid_hart_mask;
+            debug_state.hit_breakpoint <= debug_combs.next_hit_breakpoint & valid_hart_mask;
         }
     }
 
@@ -610,9 +613,10 @@ revision 0.13.
     apb_interface : {
         /*b Decode APB interface to produce (registered) read select and write action */
         part_switch (apb_request.paddr) {
-            case dm_addr_dmcontrol: {  // does all sorts of stuff
-                apb_state.write_action <= write_action_control;
-            }
+        case dm_addr_dmcontrol: {  // does all sorts of stuff
+            apb_state.write_action <= write_action_control;
+            apb_state.read_select <= read_select_dmcontrol;
+        }
         case dm_addr_dmstatus: {
             apb_state.read_select <= read_select_dmstatus;
         }
@@ -655,7 +659,7 @@ revision 0.13.
         apb_response.perr = 0;
         apb_response.pready = 1;
         part_switch (apb_state.read_select) {
-        case read_select_dmcontrol  : { apb_response.prdata = debug_combs.dmstatus_data; }
+        case read_select_dmcontrol  : { apb_response.prdata = debug_combs.dmcontrol_data; }
         case read_select_dmstatus   : { apb_response.prdata = debug_combs.dmstatus_data; }
         case read_select_abstractcs : { apb_response.prdata = debug_combs.dmstatus_data; }
         case read_select_data0      : { apb_response.prdata = debug_state.data0; }

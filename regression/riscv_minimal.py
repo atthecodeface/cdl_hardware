@@ -19,6 +19,24 @@ import simple_tb
 import dump
 import jtag_support
 
+#a Useful functions
+def int_of_bits(bits):
+    l = len(bits)
+    m = 1<<(l-1)
+    v = 0
+    for b in bits:
+        v = (v>>1) | (m*b)
+        pass
+    return v
+
+def bits_of_n(nbits, n):
+    bits = []
+    for i in range(nbits):
+        bits.append(n&1)
+        n >>= 1
+        pass
+    return bits
+
 #a Globals
 riscv_regression_dir      = "../riscv_tests_built/isa/"
 riscv_atcf_regression_dir = "../riscv-atcf-tests/build/dump/"
@@ -180,6 +198,27 @@ class c_riscv_jtag_debug_simple(c_riscv_jtag_debug_base):
     #f run
     def run(self):
         self.run_start()
+        self.jtag_reset()
+        self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (apb_access)
+        print "DM control %08x"%((self.dm_read_slow(0x10)>>2)&0xffffffff)
+        self.dm_write(0x10, 1) # Enable
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM control %08x"%((self.dm_read_slow(0x10)>>2)&0xffffffff)
+        self.dm_write(0x10, 0x80000000) # Halt request
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        self.dm_write(0x10, 0x40000000) # Resume request (halt request removed)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        self.dm_write(0x10, 0x00000000) # Resume request removal
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
         self.finishtest(0,"")
         pass
 
@@ -298,7 +337,7 @@ class riscv_jtag_debug(simple_tb.base_test):
     def test_0(self):
         test = c_riscv_jtag_debug_simple()
         hw = riscv_jtag_debug_hw(test)
-        self.do_test_run(hw, 10*1000)
+        self.do_test_run(hw, 100*1000)
     pass
 
 #c riscv_minimal

@@ -16,6 +16,9 @@
  *
  */
 
+/*a Includes */
+include "jtag.h"
+
 /*a Constants
  *
  * Constants for the RISC-V implementation; can be overridden in CDL
@@ -112,6 +115,24 @@ typedef struct {
 
     bit attention           "Asserted by a PDM if it has unacknowledged halt, breakpoint hit, resumption";
 } t_riscv_debug_tgt;
+
+/*t t_riscv_pipeline_debug_control
+ */
+typedef struct {
+    bit valid;
+    bit kill_fetch;
+    bit halt_request;
+    bit fetch_dret;
+    t_riscv_word data       "Data from a completed transaction; 0 otherwise";
+} t_riscv_pipeline_debug_control;
+
+/*t t_riscv_pipeline_debug_response
+ */
+typedef struct {
+    bit exec_valid;
+    bit exec_halting;
+    bit exec_dret;
+} t_riscv_pipeline_debug_response;
 
 /*t t_riscv_i32_trace
  */
