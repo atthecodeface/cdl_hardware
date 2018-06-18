@@ -1,0 +1,128 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_target_gpio.cdl
+ * @brief  Simple GPIO target for an APB bus
+ *
+ * CDL implementation of a simple GPIO target on an APB bus, derived
+ * from an original GIP version.
+ *
+ */
+/*a Includes
+ */
+include "apb.h"
+
+/*a Types */
+/*t t_arbiter_state
+ *
+ * State of the arbiter; priority, busy.
+ *
+ */
+typedef struct
+{
+    bit busy       "Asserted if an APB transaction is going on out to the targets";
+    bit handling   "If set then a current (or the last) APB transaction was on behalf of master 1, else master 0";
+} t_arbiter_state;
+
+/*a Module
+ */
+module apb_master_mux( clock clk         "System clock",
+                       input bit reset_n "Active low reset",
+
+                       input  t_apb_request  apb_request_0  "APB request to master 0",
+                       output t_apb_response apb_response_0 "APB response to master 0",
+
+                       input  t_apb_request  apb_request_1  "APB request to master 1",
+                       output t_apb_response apb_response_1 "APB response to master 1",
+
+                       output  t_apb_request  apb_request  "APB request to targets",
+                       input   t_apb_response apb_response "APB response from targets"
+    )
+"""
+APB multiplexer (well, arbiter and mux really)
+
+The module takes two requests in, and provides a single master out.
+
+An APB request from each master is registered, and APB transactions
+are performed using simple round-robin arbitration.
+
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b State etc */
+    clocked t_apb_request apb_request={*=0};
+    clocked t_apb_request apb_request_0_r={*=0};
+    clocked t_apb_response apb_response_0={*=0};
+    clocked t_apb_request apb_request_1_r={*=0};
+    clocked t_apb_response apb_response_1={*=0};
+    clocked t_arbiter_state arbiter_state = {*=0};
+
+    /*b APB master interfaces and arbiter */
+    apb_master_interfaces """
+    The APB master interfaces are registered (if psel is asserted)
+
+    A not-ready response is presented unless the request is completing.
+    """ : {
+        /*b Register requests */
+        if (apb_request_0.psel || apb_request_0_r.psel) {
+            apb_request_0_r <= apb_request_0;
+        }
+        if (apb_request_1.psel || apb_request_1_r.psel) {
+            apb_request_1_r <= apb_request_1;
+        }
+
+        /*b Register responses to masters */
+        apb_response_0.pready <= 0;
+        apb_response_1.pready <= 0;
+        if (arbiter_state.busy && apb_request.penable && apb_response.pready) {
+            if (arbiter_state.handling) {
+                apb_response_1 <= apb_response;
+            } else {
+                apb_response_0 <= apb_response;
+            }
+        }
+
+        /*b Arbiter state */
+        if (arbiter_state.busy) {
+            if (apb_request.penable) {
+                if (apb_response.pready) {
+                    arbiter_state.busy <= 0;
+                    apb_request.psel    <= 0;
+                    apb_request.penable <= 0;
+                }
+            } else {
+                apb_request.penable <= 1;
+            }
+        } else {
+            // Take request 0 if it is the only one, or if the last one being handled was request 1
+            // Else take request 1 if it is asking...
+            if (apb_request_0_r.psel && (!apb_request_1_r.psel || arbiter_state.handling)) {
+                arbiter_state.busy <= 1;
+                arbiter_state.handling <= 0;
+                apb_request <= apb_request_0_r;
+                apb_request.penable <= 0;
+            } elsif (apb_request_1_r.psel) {
+                arbiter_state.busy <= 1;
+                arbiter_state.handling <= 1;
+                apb_request <= apb_request_1_r;
+                apb_request.penable <= 0;
+            }
+        }
+    }
+
+    /*b Done
+     */
+}

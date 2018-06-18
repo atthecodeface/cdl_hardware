@@ -1,0 +1,694 @@
+/** @copyright (C) 2018,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_debug.cdl
+ * @brief  RISC-V debug module with APB interface
+ *
+ * CDL implementation of a RISC-V debug module supporting up to 64 HARTs
+ * using PDMs
+ *
+
+Implementation of Minimalist Debug Module
+=========================================
+
+
+Supported features (section 1.4)
+--------------------------------
+
+The specification indicates that "The debug interface described in
+this specification supports the following features", with a bullet
+list of features. It does not state that the list of features are
+required, but perhaps it should, since that would appear to be the
+purpose of a standardized debug interface.
+
+So, assuming that the supported features are required, the
+implementation must provide:
+
+* RV32 support (not RV64 or RV128 if the harts *have* to be RV32...)
+
+* Debug of any individual hart attached to the debugger
+
+* Debug of harts from the first instruction out of reset
+
+* Halt of hart on software breakpoint execution
+
+* Single-step of hart
+
+* EITHER 'a mechanism to execute arbitrary instructions' or 'a system
+  bus master'
+
+Abstract commands (section 3.5.1) can be either 'Access Register
+Command' or 'Quick Access'. The first must be supported; this has to
+copy data from a dataX register (if write=0 and transfer=1); copy data
+in to a dataX register (if write=1 and trasfer=1); execute the program buffer.
+
+It is not quite clear where the data is copied to and from.
+
+Can we add another abstract command that is 'force debug trap to PC
+x'? This would set dpc to be the PC being fetched, and would replace
+the fetch PC with x and the fetch privilege mode to be debug.
+
+Overview of design choices
+--------------------------
+
+Only RV32 and RV32C are supported.
+
+Debug of a single hart at any one time is supported.
+
+Debug of many harts at any one time is not required.
+
+Insertion of a single RV32 or RV32C instruction to the pipeline is
+supported, with result of an instruction execution being available (to
+support reading GPRs, CSRs and memory; to test execution of individual
+instructions). (What PC is used for this instruction? We will run with
+0xffffff00, and if this is a JALR then execution continues until an
+ebreak OR it returns to 0xffffffNN)
+
+A system bus master is not supported.
+
+
+Detailed design choices
+----------------------
+
+No support for multiple hart select
++++++++++++++++++++++++++++++++++++
+
+There is no need for a hart array matrix (sections 3.3.1 and 3.3.2),
+just a single selector. This requires hawindowsel (3.11.4) and
+hawindow (3.11.5) to be read-only of 0.
+
+The other impact is that the 'all' and 'any' variants in dmstatus will
+return the same value.
+
+
+Reset
++++++
+
+ndmreset has to be provided from the DM to the PDM, which presents it
+as an output.
+In many instances this will do *nothing* except reset the pipeline, since it
+does not make sense to have the DM reset a swathe of other system that
+has to keep running. But it may be used in other instances, in which
+case the signal *must* not be fed back to reset any part of the DM or PDM.
+
+
+System bus access
++++++++++++++++++
+
+System bus access is not supported.
+
+Hence sbcs (section 3.11.19) and the sbaddress registers (sections
+3.11.18/20/21/22) and sbdata (section 3.11.23/24/25/26) are zero.
+
+
+Authentication
+++++++++++++++
+
+Authentication is not supported (other means in the system must
+prevent access to the debugger; for many of the known target systems
+there is no necessity of authentication, and for others there have to
+be more secure mechanisms than the DM can provide).
+
+Hence authdata (section 3.11.13) is not supported.
+
+
+Other registers
++++++++++++++++
+
+Device tree (section 3.11.9) is 0.
+
+Next debug module (section 3.11.10) is 0.
+
+
+Haltsum
++++++++
+
+The halt summary registers provide indications as to which sets of
+harts are halted.
+
+The harts are known to be halted when they report their state.
+
+haltsum1 (section 3.11.15) may be required, if the DM is configured
+for >32 harts. It reflects with 'halted[32;0]' or 'halted[32;32]', if
+64 harts are configured.
+
+haltsum2 (section 3.11.16) is not required for systems with fewer than
+1k harts, hence this is not supported.
+
+haltsum3 (section 3.11.17) is not required for systems with fewer than
+32k harts, hence this is not supported.
+
+
+Debug instruction execution
++++++++++++++++++++++++++++
+
+The abstract command 'Access Register Command' requires copying data
+to a CSR or GPR from data0 (note this is only data0, since that is all
+that is supported); it also requires copying of data back from a CSR
+or GPR to data0.
+
+There must therefore be a method of executing a CSR read or write
+*without changing the PC*; there must be a way to read or write a GPR
+*without changing the PC*.
+
+Hence the DM must be able to pass instructions to a halted hart that
+execute in debug mode (with what privilege?), and which provide an
+acknowledgement when the hart has completed the instruction, returning
+the data passed to rfw.
+
+An instruction to read a GPR would be (for example) 'ori rN, rN, 0'.
+
+Two instructions are required to write a GPR: 'lui rN, 0x12345' and
+'ori rN, rN, 0x678'.
+
+Reading the PC can be performed with 'auipc  r0, 0'
+
+Reading a CSR can be performed with 'csrrsi r0, 0, CSR'
+Note that reading the PC can be performed (how?) through reading dpc
+
+Writing a CSR is a pain - it requires a GPR (rN) to be preserved, then
+'CSRRW x0, csr, rN' to be performed, then rN to be
+recovered. Potentially dscratch0 can be used for this; this forces
+dscratch0 to be supported *sigh*. This might also not fit the
+requirement of the debug specification?
+Note that reading the PC can be performed (how?) through writing dpc?
+
+Given the issues here, it seems sensible for the PDM to have a concept
+of a debug instruction, which has a different (but simple) decoder to rv32i/c.
+
+A method must also be supported to provide for an instruction to be executed
+
+
+
+Abstract commands (section 3.5.1) can be either  or 'Quick Access'. The first must be supported; this has to
+copy data from a dataX register (if write=0 and transfer=1); copy data
+in to a dataX register (if write=1 and trasfer=1); execute the program buffer.
+
+
+
+Program buffer (section 3.6)
+++++++++++++++++++++++++++++
+
+Although the program buffer is not required, the implementation
+supports a program buffer size of 1.
+
+From section 3.6 and 3.11.1 the choice of progbufsize of 1 implies impebreak is 1.
+
+From section 3.11.12, progbuf0 must be supported as read/write;
+reading or writing this register during an abstrct command causes cmderr to be
+set. Writing when busy is set does not effect the register.
+
+The instruction in progbuf0 can be executed by a using the 'Access
+Register Abstract Command'.
+The instruction is fed to a pipeline, and executed with a program
+counter of 0xffffff00. If the instruction generates an exception then the exception is NOT taken
+but execution halts and cmderr is set to 3. If the instruction changes the PC then execution must
+continue at that PC, in debug mode, until (if ever) a software breakpoint is hit or it returns to 0xffffffNN.
+
+Debug mode can be exited using a dret in progbuf0.
+
+
+Data access
++++++++++++
+
+A single data register, data0, is supported. Hence datacount will be 1.
+
+From section 3.11.11, data0 must be supported as read/write;
+reading or writing this register during an abstrct command causes cmderr to be
+set. Writing when busy is set does not effect the register.
+
+
+The harts may support dscratch registers, but the architecture does
+not permit the data0 register to map to a dscratch register; hence
+hartinfo (section 3.11.3) must be 0 except for the number of dscratch
+registers; this must be the same (in this implementation) for all the
+harts, and has to be a configuration constant.
+
+
+Abstract commands
++++++++++++++++++
+
+Writing to command (section 3.11.7) can cause an abstract command to
+be performed.
+
+If the abstract command is busy then it sets cmderr and ignores the
+write
+
+If cmderr is already set then it ignores the write (without changing
+cmderr)
+
+This is actually a writable register that, as a side effect of write,
+causes it to be executed.
+
+The abstractauto register (section 3.11.8) has a read/write of bit 0
+of autoexecprobuf and read/write of bit 0 of autoexecdata, so that
+read/writes of data0 or may foce abstract command execution
+Or hardwire to 0?
+
+
+Debug CSRs
+++++++++++
+
+dpc is set to the current pc on an ebreak; it is set to the current pc
+if an instruction is flagged as a 'debug ebreak'; if a halt request is
+received by the PDM then instruction input feed is flagged as a 'debug
+ebreak'.
+
+The PDM can present a 'debug resume' in which case the pipeline will
+set itself to fetch 'dpc'. (This is 'execute a dret'?)
+
+dcsr has 'prv' set to the privilege level any time dpc is set. It may
+be written.
+
+
+Halting execution
++++++++++++++++++
+
+The DM may request that a PDM halt.
+
+This makes the PDM flag an instruction fetch as 'debug ebreak', which
+forces the pipeline to enter debug mode, set dcsr.prv, set dpc, and
+(as it is requesting instructions in debug mode) the PDM kills
+instruction fetching. The PDM can monitor the instruction retirement
+to know that the halt has been achieved.
+
+
+Resuming execution
++++++++++++++++++
+
+The DM may request that a PDM resume, if the pipeline is in debug
+mode. This is handled by the DM issuing an 'execute dret' control.
+
+The DM
+
+
+
+
+Single step
++++++++++++
+
+Single step is performed by the PDM by allowing a single instruction
+fetch to go through, and for a following instruction fetch to be
+passed to the pipeline with 'debug ebreak' - which forces it to be
+interpreted as an ebreak.
+Is this 'execute dret' then 'ebreak after next ifetch'?
+
+
+Step 'n'
+++++++++
+
+The PDM could have a 'count down by N' rather than single step counter.
+
+
+
+Reading CSRs
+
+Reading memory
+
+Trace, software breakpoint
++++++++++++++++++++++++++++
+
+A hart needs to be able to indicate that it has 'status'; such as a
+software breakpoint has occurred or a hardware trace point has forced
+a halt.
+
+
+
+
+Extensions
+==========
+
+In theory a larger progbufsize can be supported.
+
+Then one MIGHT be able to just request progbuf run on a hart
+
+In this case the DM would have to:
+
+* Request quick-access halt of the hart
+  (dpc <= pc of instruction that was stopped from execution)
+
+* Request execution of each instruction individually from progbuf
+
++ request execution of instruction 0 (from PC=0xFFFFFF00)
+  + wait for acknowledgement - if ack and PC not changed (no branch,
+  dret, etc?) then
+  + request execution of instruction 1 etc
+
+
+Perhaps a better approach would be to allow a 'force debug trap',
+which would enter debug mode, set dpc to the next PC, and set PC to a
+known value.
+)
+ */
+/*a Includes
+ */
+include "apb.h"
+include "riscv.h"
+
+/*a Constants
+ */
+constant integer max_hart_minus_one=63;
+constant bit[64] invalid_hart_mask = 64h0;
+
+/*a Types */
+/*t t_write_action */
+typedef enum[3] {
+    write_action_none,
+    write_action_data0,
+    write_action_progbuf0,
+    write_action_control,
+    write_action_abstract_cs,
+    write_action_abstract_cmd,
+} t_write_action;
+
+/*t t_read_select */
+typedef enum[3] {
+    read_select_zero,
+    read_select_dmstatus,
+    read_select_dmcontrol,
+    read_select_abstractcs,
+    read_select_data0,
+    read_select_progbuf0,
+    read_select_haltsum0,
+    read_select_haltsum1,
+} t_read_select;
+
+/*t t_apb_address
+ *
+ * APB address map, used to decode paddr
+ */
+typedef enum [8] {
+    dm_addr_dmcontrol         = 0x10, // RO must be implemented (include hartsel)
+    dm_addr_dmstatus          = 0x11, // RW must be implemented
+    dm_addr_hart_info         = 0x12, // permitted to be zero by section 3.11.3
+    dm_addr_hart_window_sel   = 0x14, // permitted to be zero if mask not supported (section 3.3.2); for 64 harts bit 0 only is read/write if mask is supported
+    dm_addr_hart_window       = 0x15, // permitted to be zero if mask not supported (section 3.3.2)
+    dm_addr_abstract_cs       = 0x16, // RW progbufsize, cmd_busy, cmd_err, data count (clear cmd_err on write of 1)
+    dm_addr_abstract_cmd      = 0x17, // WO write only, read as zero
+    dm_addr_abstract_cmd_autoexec = 0x18, // can be zero (sect 3.11.8) if no autoexec supported
+    dm_addr_dev_tree_addr0    = 0x19, // permitted to be zero by section 3.11.9
+    dm_addr_next_dm           = 0x1a, // permitted to be zero by section 3.11.10
+    dm_addr_data0             = 0x04, // RW set cmd_err if abstract cmd is busy during read or write
+    dm_addr_progbuf0          = 0x20, // RW set cmd_err if abstract cmd is busy during read or write
+    dm_addr_authdata          = 0x30, // permitted to be zero by section 3.11.13
+    dm_addr_haltsum0          = 0x40, // RO Summary of current 32 of 64 harts (by hartsel)
+    dm_addr_haltsum1          = 0x13, // RO Bit 0 set if ANY of harts 0-31 halted; bit 1 set if ANY of harts 32-63 halted
+} t_apb_address;
+
+/*t t_apb_state
+ *
+ * Timer comparator state; a 31-bit comparator with a single bit that
+ * indicates if the timer value has incremented up to the comparator
+ * value.
+ */
+typedef struct
+{
+    t_write_action write_action;
+    t_read_select  read_select;
+} t_apb_state;
+
+/*t t_debug_state
+ *
+ */
+typedef struct
+{
+    bit dmactive          "Officially, if clear then NOTHING else toggles; currently ignored";
+    bit ndmreset          "Non-debug-module reset; supposed to reset everything other than DM";
+    bit[6] hart_sel;
+    bit[6] hart_to_poll   "Next hart to poll for attention";
+    bit must_set_requests "If asserted then must set requests in the selected hart (for halt and resume)";
+    bit halt_req          "If must_set_requests, then value for hart to take as halt_req";
+    bit resume_req        "If must_set_requests, then value for hart to take as resume_req";
+    bit[32] data0;
+    bit[32] progbuf0;
+    bit[64] halted         "One bit per hart reflecting its last reported halt state; only bottom N bits are ever non-zero";
+    bit[64] resumed        "One bit per hart reflecting its last reported resumed state; only bottom N bits are ever non-zero";
+    bit[64] hit_breakpoint "One bit per hart reflecting its last reported hit breakpoint state; only bottom N bits are ever non-zero";
+} t_debug_state;
+
+/*t t_dmstatus
+ *
+ */
+typedef struct {
+    bit impebreak;
+    bit have_reset_all;
+    bit have_reset_any;
+    bit resume_ack_all;
+    bit resume_ack_any;
+    bit nonexistent_all;
+    bit nonexistent_any;
+    bit unavail_all;
+    bit unavail_any;
+    bit running_all;
+    bit running_any;
+    bit halted_all;
+    bit halted_any;
+    bit has_reset_halt_req;
+    bit authenticate;
+    bit auth_busy;
+    bit dev_tree_valid;
+    bit[4] version;
+} t_dmstatus;
+
+/*t t_debug_combs
+ *
+ */
+typedef struct {
+    bit update_status           "If asserted update halted/resumed/hit_breakpoint to the 'next' values (masked by valid harts)";
+    t_dmstatus dmstatus;
+    bit[64] hart_sel_mask        "One-hot mask with hart_sel bit set";
+    bit[32] haltsum0;
+    bit[32] haltsum1;
+    bit[32] dmstatus_data;
+    bit[64] next_halted         "One bit per hart reflecting its last reported halt state; only bottom N bits are ever non-zero";
+    bit[64] next_resumed        "One bit per hart reflecting its last reported resumed state; only bottom N bits are ever non-zero";
+    bit[64] next_hit_breakpoint "One bit per hart reflecting its last reported hit breakpoint state; only bottom N bits are ever non-zero";
+} t_debug_combs;
+
+/*a Module */
+module riscv_i32_debug( clock clk         "System clock",
+                         input bit reset_n "Active low reset",
+
+                         input  t_apb_request  apb_request  "APB request",
+                         output t_apb_response apb_response "APB response",
+
+                        output t_riscv_debug_mst debug_mst "Debug master to PDMs",
+                        input t_riscv_debug_tgt debug_tgt "Debug target from PDMs"
+    )
+"""
+This is a RISC-V debug module designed for the RV32I pipelines in the
+CDL hardware repo.
+
+It provides the registers defined in the RISC-V Debug specificaiton
+revision 0.13.
+
+"""
+{
+    default clock clk;
+    default reset active_low reset_n;
+    clocked t_riscv_debug_mst debug_mst = {*=0};
+    clocked t_debug_state debug_state = {*=0};
+    clocked t_apb_state   apb_state = {*=0};
+    comb t_debug_combs debug_combs;
+
+    /*b Debug status */
+    blah : {
+        /*b Decode hart_sel into a mask */
+        debug_combs.hart_sel_mask = 0;
+        debug_combs.hart_sel_mask[debug_state.hart_sel] = 1;
+
+        /*b Generate haltsum */
+        debug_combs.haltsum0 = debug_state.halted[32;0];
+        if (debug_state.hart_sel[4]) {
+            debug_combs.haltsum0 = debug_state.halted[32;32];
+        }
+        debug_combs.haltsum1 = 0;
+        debug_combs.haltsum1[0] = (debug_state.halted[32; 0] != 0);
+        debug_combs.haltsum1[1] = (debug_state.halted[32;32] != 0);
+
+        /*b Generate dmstatus */
+        debug_combs.dmstatus.impebreak = 1;
+        debug_combs.dmstatus.have_reset_all = 0;
+        debug_combs.dmstatus.have_reset_any = 0;
+        debug_combs.dmstatus.resume_ack_all = (debug_state.resumed  & debug_combs.hart_sel_mask)!=0;
+        debug_combs.dmstatus.resume_ack_any = (debug_state.resumed  & debug_combs.hart_sel_mask)!=0;
+        debug_combs.dmstatus.unavail_all = 0;
+        debug_combs.dmstatus.unavail_any = 0;
+        debug_combs.dmstatus.nonexistent_all = 0;
+        debug_combs.dmstatus.nonexistent_any = 0;
+        debug_combs.dmstatus.running_all = ((debug_state.halted  & debug_combs.hart_sel_mask)==0);
+        debug_combs.dmstatus.running_any = ((debug_state.halted  & debug_combs.hart_sel_mask)==0);
+        debug_combs.dmstatus.halted_all  = ((debug_state.halted  & debug_combs.hart_sel_mask)!=0);
+        debug_combs.dmstatus.halted_any  = ((debug_state.halted  & debug_combs.hart_sel_mask)!=0);
+        debug_combs.dmstatus.authenticate = 0;
+        debug_combs.dmstatus.auth_busy = 0;
+        debug_combs.dmstatus.has_reset_halt_req = 0;
+        debug_combs.dmstatus.dev_tree_valid = 0;
+        debug_combs.dmstatus.version = 1;
+
+        debug_combs.dmstatus_data = bundle(9b0,
+                               debug_combs.dmstatus.impebreak, // must be 1 if prog buffer size is 1
+                               2b0,
+                               debug_combs.dmstatus.have_reset_all,
+                               debug_combs.dmstatus.have_reset_any,
+                               debug_combs.dmstatus.resume_ack_all,
+                               debug_combs.dmstatus.resume_ack_any,
+                               debug_combs.dmstatus.nonexistent_all,
+                               debug_combs.dmstatus.nonexistent_any,
+                               debug_combs.dmstatus.unavail_all,
+                               debug_combs.dmstatus.unavail_any,
+                               debug_combs.dmstatus.running_all,
+                               debug_combs.dmstatus.running_any,
+                               debug_combs.dmstatus.halted_all,
+                               debug_combs.dmstatus.halted_any,
+                               debug_combs.dmstatus.authenticate,
+                               debug_combs.dmstatus.auth_busy,
+                               debug_combs.dmstatus.has_reset_halt_req,
+                               debug_combs.dmstatus.dev_tree_valid,
+                               debug_combs.dmstatus.version // 4 bits
+            );
+    }
+
+    /*b Drive debug master bus */
+    debug_mst_driving """
+    """ : {
+        debug_mst.valid  <= 0;
+        debug_mst.data <= 0;
+        debug_mst.mask <= -1;
+        if (debug_state.must_set_requests) {
+            debug_mst.valid  <= 1;
+            debug_mst.select <= debug_state.hart_sel;
+            
+            debug_mst.op <= rv_debug_set_requests;
+            debug_mst.arg[0] <= debug_state.halt_req;
+            debug_mst.arg[1] <= debug_state.resume_req;
+            
+        } elsif (debug_tgt.attention) {
+            debug_mst.valid  <= 1;
+            debug_mst.select <= debug_state.hart_to_poll;
+            debug_state.hart_to_poll <= debug_state.hart_to_poll-1;
+            if (debug_state.hart_to_poll==0) {
+                debug_state.hart_to_poll <= max_hart_minus_one;
+            }
+            debug_mst.op     <= rv_debug_acknowledge;
+        }
+    }
+
+    /*b Record state back on debug_tgt channel */
+    debug_tgt_state """
+    """ : {
+        debug_combs.update_status = 0;
+        debug_combs.next_halted          = debug_state.halted;
+        debug_combs.next_resumed         = debug_state.resumed;
+        debug_combs.next_hit_breakpoint  = debug_state.hit_breakpoint;
+        if (debug_tgt.valid) {
+            if (debug_tgt.selected <= max_hart_minus_one) {
+                debug_combs.update_status = 1;
+                debug_combs.next_halted[debug_tgt.selected]         = debug_tgt.halted;
+                debug_combs.next_resumed[debug_tgt.selected]        = debug_tgt.resumed;
+                debug_combs.next_hit_breakpoint[debug_tgt.selected] = debug_tgt.hit_breakpoint;
+            }
+        }
+        if (debug_combs.update_status) {
+            debug_state.halted         <= debug_combs.next_halted         &~ invalid_hart_mask;
+            debug_state.resumed        <= debug_combs.next_resumed        &~ invalid_hart_mask;
+            debug_state.hit_breakpoint <= debug_combs.next_hit_breakpoint &~ invalid_hart_mask;
+        }
+    }
+
+    /*b APB interface logic */
+    apb_interface : {
+        /*b Decode APB interface to produce (registered) read select and write action */
+        part_switch (apb_request.paddr) {
+            case dm_addr_dmcontrol: {  // does all sorts of stuff
+                apb_state.write_action <= write_action_control;
+            }
+        case dm_addr_dmstatus: {
+            apb_state.read_select <= read_select_dmstatus;
+        }
+        case dm_addr_abstract_cs: {  // progbufsize, cmd_busy, cmd_err, data count (clear cmd_err on write of 1)
+            apb_state.write_action <= write_action_none;  // clear cmd_err if written with 1, else do nothing
+        }
+        case dm_addr_abstract_cmd: { // cmd type in top 8 bits, control in bottom 24; ignore if cmd_err set
+            apb_state.write_action <= write_action_none;
+        }
+        case dm_addr_data0: {
+            apb_state.read_select <= read_select_data0;
+        }
+        case dm_addr_progbuf0: {  // set cmd_err if abstract cmd is busy
+            apb_state.read_select <= read_select_progbuf0;
+        }
+        case dm_addr_haltsum0: {
+            apb_state.read_select <= read_select_haltsum0;
+        }
+        case dm_addr_haltsum1: {
+            apb_state.read_select <= read_select_haltsum1;
+        }
+        }
+
+        if (!apb_request.pwrite) {
+            apb_state.write_action <= write_action_none;
+        } else {
+            apb_state.read_select <= read_select_zero;
+        }
+        if (!apb_request.psel || apb_request.penable) {
+            apb_state.read_select <= read_select_zero;
+            apb_state.write_action <= write_action_none;
+        }
+        if (!apb_request.psel) {
+            apb_state.read_select  <= apb_state.read_select;
+            apb_state.write_action <= apb_state.write_action;
+        }
+
+        /*b Generate read data */
+        apb_response.prdata = 0;
+        apb_response.perr = 0;
+        apb_response.pready = 1;
+        part_switch (apb_state.read_select) {
+        case read_select_dmcontrol  : { apb_response.prdata = debug_combs.dmstatus_data; }
+        case read_select_dmstatus   : { apb_response.prdata = debug_combs.dmstatus_data; }
+        case read_select_abstractcs : { apb_response.prdata = debug_combs.dmstatus_data; }
+        case read_select_data0      : { apb_response.prdata = debug_state.data0; }
+        case read_select_progbuf0   : { apb_response.prdata = debug_state.progbuf0; }
+        case read_select_haltsum0   : { apb_response.prdata = debug_combs.haltsum0; }
+        case read_select_haltsum1   : { apb_response.prdata = debug_combs.haltsum1; }
+        }
+
+        /*b Handle basic write action */
+        debug_state.must_set_requests <= 0;
+        debug_state.data0 <= 0;
+        debug_state.progbuf0 <= 0;
+        part_switch (apb_state.write_action) {
+        case write_action_control : {
+            debug_state.dmactive <= apb_request.pwdata[0];
+            debug_state.ndmreset <= apb_request.pwdata[1];
+            debug_state.hart_sel <= apb_request.pwdata[6;16];
+            debug_state.must_set_requests <= 1;
+            debug_state.halt_req <= apb_request.pwdata[31];
+            debug_state.resume_req <= apb_request.pwdata[30];
+        // bit 29 is hart reset
+        // bit 3 is set halt-on-reset-request
+        // bit 2 is clear halt-on-reset-request
+        }
+        case write_action_data0 : {
+        }
+        case write_action_progbuf0 : {
+        }
+        case write_action_abstract_cs : {
+        }
+        case write_action_abstract_cmd : {
+        }
+        }
+    }
+
+}

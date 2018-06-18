@@ -1,0 +1,406 @@
+/** Copyright (C) 2018,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   jtag_apb.cdl
+ * @brief  JTAG tap client to APB master module
+ *
+ * CDL implementation of a module that, with jtag_tap, forms an APB
+ * bus master that is driven by a JTAG interface.
+ *
+ * It is based on the RISC-V DTM JTAG interface module, in that it
+ * supports a 5-bit IR (that is specified in the build of jtag_tap)
+ * and an IDCODE register accessed with IR=1; a control/status
+ * register accessed with IR=0x10, and an access register accessed
+ * with IR=0x11.
+ *
+ * The IDCODE register is 32-bits long (as required by the JTAG
+ * standard) and must have the bottom bit set; it is defined as a
+ * constant, so a build of this module can override that to provide
+ * the desired IDCODE value for the JTAG TAP.
+
+ * The 32-bit CONTROL register (at IR=0x10) returns, on reads, an op_status
+ * in bits [2;10], an abits of 16 in [6;4] (i.e. the module supports
+ * 16 address bits in its ACCESS register) and a version of 1 in [4;0]
+ * The op_status is a sticky status; it is sticky at 2 if an APB
+ * access is attempted while a previous access is being
+ * performed. This can be cleared with a write of 0x10000 to the
+ * CONTROL register.
+ *
+ * Currently the CONTROL register does not support a hard reset of the
+ * DTM; it is not clear that this makes sense in an APB access.
+ *
+ * The 50-bit ACCESS register (at IR=0x11) is used to perform APB read and
+ * writes; it is a 50-bit register (16-bit address, 32-bit data, 2-bit
+ * access type) register.
+ *
+ * If the access type is 0 then no access is requested; this is used
+ * when a JTAG readback is to be used to return a previous APB read's
+ * data.
+ *
+ * If the access type is 1 then a read access is requested; the top 16
+ * bits of the JTAG data shifted in are the address to be accessed;
+ * the next 32 bits are ignored; the access is 1. An APB read access
+ * is requested through synchronization registers between the JTAG
+ * clock and the APB clock. The APB transaction completes and the data
+ * returned is captured and stored ready to be returned in future
+ * 'capture's of the ACCESS register.
+ *
+ * If the access type is 2 then a write access is requested; the top 16
+ * bits of the JTAG data shifted in are the address to be accessed;
+ * the next 32 bits are used as the write data; the access is 2. An APB write access
+ * is requested through synchronization registers between the JTAG
+ * clock and the APB clock.
+ *
+ * If the ACCESS register is read then the bottom 2 bits returned are
+ * the op_status - this is 3 if any previous APB access was
+ * interrupted and therefore did not complete (read or write)
+ * successfully, otherwise it is 0; the next 32 bits are the last APB
+ * data read, and the top 16 bits are the last APB address accessed.
+ *
+ * The normal usage for writes is to JTAG-shift in
+ * address(16)/data(32)/2(2) to the ACCESS register. The APB access
+ * will complete before any other JTAG operation can cause problems,
+ * so these writes can be performed back-to-back.
+ *
+ * The normal usage for reads is to JTAG-shift in
+ * address(16)/data(32)/1(2) to the ACCESS register; then a further
+ * JTAG-shift of the ACCESS register permits the APB read data to be
+ * captured and shifted out. The APB access will take time to
+ * complete, and it is possible (with a fast JTAG TCK compared to APB
+ * clock) to JTAG-shift to CAPTURE the ACCESS register complete before
+ * the APB access returns its data; if this happens then the CAPTURE
+ * (read) of the ACCESS register will have an op_status of 3 (and this
+ * is sticky - it needs a write of 0x10000 to CONTROL to clear it).
+ * So the correct modus operandi is to start the APB read, hang in
+ * idle for a few cycles, then capture the APB response. The request
+ * and data have to be cacptured, and there are 2 registers for
+ * synchonization in each direction, and there are three clock
+ * crossings in each direction for an APB read, hence at least 7
+ * cycles are required between Update and Capture, and it is wise to
+ * therefore stay in JTAG IDLE for 7 ticks.
+ *
+ */
+/*a Includes */
+include "jtag.h"
+include "apb.h"
+
+/*a Constants */
+// | 20 bits manufacturer unique | 11 bits of manufacturer ID | 1
+constant bit[32] jtag_idcode=0xabcde6e3 "JTAG idcode; set properly...";
+
+/*a Types */
+/*t t_update_action
+ *
+ * Action to perform on JTAG 'update'
+ *
+ */
+typedef enum [2] {
+    action_none           "No action required",
+    action_reset          "Reset the op_status to 0",
+    action_start_read     "Start an APB read",
+    action_start_write    "Start an APB write",
+} t_update_action;
+
+/*t t_sync
+ *
+ * A shift register that is used to synchronize from one domain to
+ * another; the data is shifted in to the top bit, and the synchronized
+ * output is the bottom bit.
+ *
+ */
+typedef bit[3] t_sync;
+
+/*t t_jtag_state
+ *
+ * State in the JTAG TCK clock domain
+ *
+ */
+typedef struct {
+    bit[2]  op_status        "Status of interaction; value of 3 indicates accessed while busy, else 0";
+    bit[16] address          "APB address to access next";
+    bit[32] last_read_data   "Read data from last APB read data";
+    bit[32] write_data       "APB write data for next APB write";
+    bit write_not_read       "Asserted if next APB access is a write, else deasserted";
+    bit busy                 "Asserted if the JTAG-side machine is busy (waiting for the APB side to complete)";
+    bit ready                "Asserted if the JTAG-side machine has an APB access ready (in address, write_not_read, and write_data) (subset of busy)";
+    bit complete_ack         "Asserted to acknowledge the completion of an APB access (subset of busy)";
+    t_sync ready_ack_sync    "Synchronizer for *ready* from the APB clock domain ";
+    t_sync complete_sync     "Synchronizer for *complete* from the APB clock domain";
+} t_jtag_state;
+
+/*t t_apb_state
+ *
+ * State in the APB clock domain
+ *
+ */
+typedef struct {
+    t_apb_request apb_request  "APB request, driven out to APB bus";
+    bit[32] last_read_data     "Last data returned from an APB read";
+    bit busy                   "Asserted if the APB state machine is busy";
+    bit access_in_progress     "Asserted if an APB access is in progress (subset of busy)";
+    bit ready_ack              "Asserted to acknowledge *ready* from the JTAG side";
+    bit complete               "Asserted when an APB access completes (subset of busy)";
+    t_sync ready_sync          "Synchronizer for *ready* from JTAG clock domain";
+    t_sync complete_ack_sync   "Synchronizer for *complete_ack* from JTAG clock domain";
+} t_apb_state;
+
+/*t t_jtag_addr
+ *
+ * Address decode for the two real IR registers (all the reset are assumed to be BYPASS)
+ *
+ */
+typedef enum[5] {
+    jtag_addr_idcode      = 1, // REQUIRED TO BE IDCODE (IR resets to 1)
+    jtag_addr_apb_control = 0x10,
+    jtag_addr_apb_access  = 0x11,
+} t_jtag_addr;
+
+/*a Module
+ */
+/*m riscv_jtag_apb_dm */
+module riscv_jtag_apb_dm( clock jtag_tck                "JTAG TCK signal, used as a clock",
+                 input bit reset_n             "Reset that drives all the logic",
+
+                 input bit[5] ir               "JTAG IR which is to be matched against t_jtag_addr",
+                 input t_jtag_action dr_action "Action to perform with DR (capture or update, else ignore)",
+                 input  bit[50]dr_in           "Data register in; used in update, replaced by dr_out in capture, shift",
+                 output bit[50]dr_tdi_mask     "One-hot mask indicating which DR bit TDI should replace (depends on IR)",
+                 output bit[50]dr_out          "Data register out; same as data register in, except during capture when it is replaced by correct data dependent on IR, or shift when it goes right by one",
+
+                 clock apb_clock                   "APB clock signal, asynchronous to JTAG TCK",
+                 output t_apb_request apb_request  "APB request out",
+                 input t_apb_response apb_response "APB response"
+    )
+"""
+JTAG client module that presents an APB master interface
+"""
+{
+    /*b Registered state, in both clock domains */
+    clocked clock jtag_tck  reset active_low reset_n t_jtag_state jtag_state = {*=0};
+    clocked clock apb_clock reset active_low reset_n t_apb_state  apb_state = {*=0};
+
+    /*b Combinatorial update_action, dependent on IR and dr_action */
+    comb t_update_action update_action;
+
+    /*b Synchronizer outputs */
+    comb bit sync_ready;
+    comb bit sync_ready_ack;
+    comb bit sync_complete;
+    comb bit sync_complete_ack;
+
+    /*b JTAG clock domain logic */
+    jtag_clock_domain """
+    Handle the JTAG TAP interface; this provides capture, shift and update actions.
+
+    Capture means set dr_out to the data dependent on ir
+
+    Shift means set dr_out to be dr_in shifted down with tdi inserted
+    at the correct bit point dependent on the register accessed by ir.
+
+    Update means perform an update (or write) of register ir with given data dr_in
+
+    A request form the JTAG clock domain to the APB clock domain
+    starts with ready being asserted; in response the APB side
+    indicates ready_ack, which (when synchronized) permits ready to be
+    deasserted. At this point the APB side can indicate complete; when
+    this is seen (synchronized) it is also acknowledged, and when the
+    complete goes away (the APB side will be idle) the JTAG machine
+    can also go idle.
+
+    """: {
+
+        /*b Determine dr_out, dr_tdi_mask, update_action; force op_status to 3 if capture during APB read access */
+        dr_out = dr_in;
+        dr_tdi_mask = 0;
+        update_action = action_none;
+        part_switch (dr_action) {
+        case action_shift: {
+            dr_out = dr_in >> 1;
+            full_switch (ir) {
+            case jtag_addr_idcode : { // IDCODE
+                dr_tdi_mask[31] = 1;
+            }
+            case jtag_addr_apb_control : { // control is 32 bits long
+                dr_tdi_mask[31] = 1;
+            }
+            case jtag_addr_apb_access : { // access is 16+32+2 bits long
+                dr_tdi_mask[49] = 1;
+            }
+            default: { // BYPASS if not otherwise handled
+                dr_tdi_mask[0] = 1;
+            }
+            }
+        }
+        case action_capture: {
+            full_switch (ir) {
+            case 1 : { // IDCODE
+                dr_out[32;0] = jtag_idcode;
+            }
+            case jtag_addr_apb_control : { // control
+                dr_out = 0;
+                dr_out[3;12] = 7; // info - 7 ticks between APB read request and capture response
+                dr_out[2;10] = jtag_state.op_status;
+                dr_out[6;4]  = 16; // 16 address/select bits
+                dr_out[4;0]  = 1; // magic version number
+            }
+            case jtag_addr_apb_access : { // access
+                dr_out = 0;
+                dr_out[2;0]   = jtag_state.op_status;
+                dr_out[32;2]  = jtag_state.last_read_data;
+                dr_out[16;34] = jtag_state.address;
+                if (jtag_state.busy && !jtag_state.write_not_read) {
+                    jtag_state.op_status <= 3;
+                    dr_out[2;0] = 3;
+                }
+            }
+            default: { // BYPASS if not otherwise handled
+                dr_out = 0; // Not sure what value is supposed to go here; only bit 0 is used
+            }
+            }
+        }
+        case action_update: {
+            part_switch (ir) {
+            case jtag_addr_apb_control : { // control - do some resets
+                if (dr_in[2;16]!=0) {
+                    update_action = action_reset;
+                }
+            }
+            case jtag_addr_apb_access : { // access - start read or write, or not
+                if (dr_in[2;0]==1) {
+                    update_action = action_start_read;
+                }
+                if (dr_in[2;0]==2) {
+                    update_action = action_start_write;
+                }
+            }
+            }
+        }
+        }
+
+        /*b Update jtag_state */
+        if (update_action==action_reset) {
+            jtag_state.op_status <= 0;
+        }
+        if ((update_action==action_start_read) || (update_action==action_start_write)) {
+            if (jtag_state.busy || (jtag_state.op_status!=0)) {
+                jtag_state.op_status <= 3;
+            } else {
+                jtag_state.write_data <= dr_in[32;2];
+                jtag_state.address    <= dr_in[16;34];
+                jtag_state.ready <= 1;
+                jtag_state.busy  <= 1;
+                jtag_state.write_not_read <= (update_action==action_start_write);
+            }
+        }
+        if (jtag_state.busy) {
+            if (sync_ready_ack) {
+                jtag_state.ready <= 0;
+            }
+            if (sync_complete) {
+                jtag_state.complete_ack <= 1;
+            } elsif (jtag_state.complete_ack) { // sync_complete must be low
+                jtag_state.complete_ack <= 0;
+                if (!jtag_state.write_not_read) {
+                    jtag_state.last_read_data <= apb_state.last_read_data;
+                }
+                jtag_state.busy <= 0;
+            }
+        }
+
+        /*b All done */
+    }
+
+    /*b APB clock domain logic */
+    apb_clock_domain """
+    APB clock domain logic.
+
+    While a transaction is not in progress monitor sync_ready; when
+    this occurs, start an APB transaction and acknowledge the ready.
+
+    While a transaction is in progress keep going; keep acknowledging
+    ready until its acknowledge is seen.  After a transaction has
+    completed and ready has been taken away, indicate complete; keep
+    indicating complete until the acknowledge is seen, when the APB
+    side can then go back to idle.
+
+    """: {
+        /*b Handle APB state busy - transaction in progress or passing data back to jtag_state */
+        if (apb_state.busy) {
+            if (apb_state.access_in_progress) {
+                apb_state.apb_request.penable <= 1;
+                if (apb_response.pready && apb_state.apb_request.penable) {
+                    apb_state.apb_request.penable <= 0;
+                    apb_state.apb_request.psel    <= 0;
+                    apb_state.apb_request.pwrite  <= 0;
+                    apb_state.last_read_data      <= apb_response.prdata;
+                    apb_state.access_in_progress  <= 0;
+                }
+            }
+            if (apb_state.ready_ack && !sync_ready) {
+                apb_state.ready_ack <= 0;
+            } else {
+                if (!apb_state.access_in_progress) {
+                    apb_state.complete <= 1;
+                    if (sync_complete_ack && apb_state.complete) {
+                        apb_state.complete <= 0;
+                        apb_state.busy <= 0;
+                    }
+                }
+            }
+        /*b ELSE wait for request (sync_ready) and start the APB state machine off */
+        } else {
+            if (sync_ready) {
+                apb_state.ready_ack <= 1;
+                apb_state.busy <= 1;
+                apb_state.access_in_progress <= 1;
+                apb_state.apb_request.paddr <= 0;
+                apb_state.apb_request.paddr[8;0]  <= jtag_state.address[8;0];
+                apb_state.apb_request.paddr[8;16] <= jtag_state.address[8;8];
+                apb_state.apb_request.penable <= 0;
+                apb_state.apb_request.psel    <= 1;
+                apb_state.apb_request.pwrite  <= jtag_state.write_not_read;
+                apb_state.apb_request.pwdata  <= jtag_state.write_data;
+            }
+        }
+
+        /*b All done */
+    }
+
+    /*b Synchronizers */
+    synchronizers """
+    Synchronizers, which are just simple shift registers (three flops each)
+
+    Also, drive out apb_request from the APB state
+    """: {
+        jtag_state.ready_ack_sync    <= jtag_state.ready_ack_sync>>1;
+        jtag_state.ready_ack_sync[2] <= apb_state.ready_ack;
+        sync_ready_ack = jtag_state.ready_ack_sync[0];
+
+        jtag_state.complete_sync    <= jtag_state.complete_sync>>1;
+        jtag_state.complete_sync[2] <= apb_state.complete;
+        sync_complete  = jtag_state.complete_sync[0];
+
+        apb_state.ready_sync    <= apb_state.ready_sync>>1;
+        apb_state.ready_sync[2] <= jtag_state.ready;
+        sync_ready = apb_state.ready_sync[0];
+
+        apb_state.complete_ack_sync    <= apb_state.complete_ack_sync>>1;
+        apb_state.complete_ack_sync[2] <= jtag_state.complete_ack;
+        sync_complete_ack  = apb_state.complete_ack_sync[0];
+
+        apb_request = apb_state.apb_request;
+    }
+
+    /*b All done */
+}

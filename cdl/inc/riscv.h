@@ -73,12 +73,10 @@ typedef struct {
 /*t t_riscv_debug_op
  */
 typedef enum[4] {
-    rv_debug_halt   "Request halt; replaces a fetched instruction with a forced hardware breakpoint",
+    rv_debug_set_requests   "Set request bits for halt, resume, step (args[0..2])",
     rv_debug_read   "Request read of a GPR/CSR",
     rv_debug_write  "Request write of a GPR/CSR",
-    rv_debug_step   "Request resumption of execution at dpc and in mode dcsr.prv but with break after execution of first instruction",
-    rv_debug_resume  "Request resumption of execution at dpc and in mode dcsr.prv",
-    rv_debug_acknowledge "Acknowledge halt, breakpoint hit, status",
+    rv_debug_acknowledge "Acknowledge halt, breakpoint hit, status; removes attention signal",
     rv_debug_execute "Execute instruction provided resumption of execution at dpc and in mode dcsr.prv",
     rv_debug_execute_progbuf "Execute instruction at 'progbuf' address X (if it is a jump and link it will return)",
 } t_riscv_debug_op;
@@ -96,7 +94,7 @@ typedef struct {
     bit[6] select       "PDM to select";
     bit[6] mask         "PDM attention mask (mask && id)==(mask&&select) -> drive attention on next cycle";
     t_riscv_debug_op op "Operation for selected PDM to perform";
-    bit[8] arg          "Argument for debug op";
+    bit[16] arg          "Argument for debug op";
     t_riscv_word data   "Data for writing or instruction execution";
 } t_riscv_debug_mst;
 
@@ -205,7 +203,45 @@ module riscv_i32c_pipeline3( clock clk,
     timing from rising clock clk trace;
 }
 
-/*a Trace */
+/*a Trace, debug */
+/*m riscv_jtag_apb_dm */
+extern module riscv_jtag_apb_dm( clock jtag_tck                "JTAG TCK signal, used as a clock",
+                                 input bit reset_n             "Reset that drives all the logic",
+
+                                 input bit[5] ir               "JTAG IR which is to be matched against t_jtag_addr",
+                                 input t_jtag_action dr_action "Action to perform with DR (capture or update, else ignore)",
+                                 input  bit[50]dr_in           "Data register in; used in update, replaced by dr_out in capture, shift",
+                                 output bit[50]dr_tdi_mask     "One-hot mask indicating which DR bit TDI should replace (depends on IR)",
+                                 output bit[50]dr_out          "Data register out; same as data register in, except during capture when it is replaced by correct data dependent on IR, or shift when it goes right by one",
+
+                                 clock apb_clock                   "APB clock signal, asynchronous to JTAG TCK",
+                                 output t_apb_request apb_request  "APB request out",
+                                 input t_apb_response apb_response "APB response"
+    )
+{
+    timing to rising clock jtag_tck ir, dr_action, dr_in;
+    timing from rising clock jtag_tck dr_tdi_mask, dr_out;
+    timing from rising clock apb_clock apb_request;
+    timing to rising clock apb_clock apb_response;
+    timing comb input dr_in, dr_action, ir;
+    timing comb output dr_out, dr_tdi_mask;
+}
+
+/*m riscv_i32_debug */
+extern module riscv_i32_debug( clock clk         "System clock",
+                         input bit reset_n "Active low reset",
+
+                         input  t_apb_request  apb_request  "APB request",
+                         output t_apb_response apb_response "APB response",
+
+                        output t_riscv_debug_mst debug_mst "Debug master to PDMs",
+                        input t_riscv_debug_tgt debug_tgt "Debug target from PDMs"
+    )
+{
+    timing to   rising clock clk apb_request, debug_tgt;
+    timing from rising clock clk apb_response, debug_mst;
+}
+
 /*m riscv_i32_trace  */
 extern
 module riscv_i32_trace( clock clk            "Clock for the CPU",

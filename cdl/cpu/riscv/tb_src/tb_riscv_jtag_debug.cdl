@@ -11,8 +11,8 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  *
- * @file   tb_riscv_minimal.cdl
- * @brief  Testbench for minimal RISC-V
+ * @file   tb_riscv_jtag_debug.cdl
+ * @brief  Testbench for RISC-V debug over JTAG
  *
  */
 
@@ -20,7 +20,7 @@
  */
 include "jtag.h"
 include "apb.h"
-include "apb_peripherals.h"
+include "riscv.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_enable, input bit tdo )
@@ -31,7 +31,7 @@ extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_ena
 
 /*a Module
  */
-module tb_jtag_apb_timer( clock jtag_tck,
+module tb_riscv_jtag_debug( clock jtag_tck,
                           clock apb_clock,
                           input bit reset_n
 )
@@ -46,12 +46,14 @@ module tb_jtag_apb_timer( clock jtag_tck,
     net bit[50]dr_in;
     net bit[50]dr_tdi_mask;
     net bit[50]dr_out;
-    net t_apb_request apb_request;
-    net t_apb_response apb_response;
-    net bit[3] timer_equalled;
     net bit tck_enable;
     comb bit tck_enable_fix;
     gated_clock clock jtag_tck active_high tck_enable_fix jtag_tck_gated;
+    net t_riscv_debug_mst debug_mst "Debug master to PDMs";
+    comb t_riscv_debug_tgt debug_tgt "Debug target from PDMs";
+
+    net  t_apb_request  apb_request  "APB request";
+    net t_apb_response apb_response "APB response";
 
     /*b Instantiate APB timer
      */
@@ -70,16 +72,7 @@ module tb_jtag_apb_timer( clock jtag_tck,
                       dr_tdi_mask <= dr_tdi_mask,
                       dr_out <= dr_out );
 
-        apb_target_timer timer( clk <- apb_clock,
-                         reset_n <= reset_n,
-
-                         apb_request <= apb_request,
-                         apb_response => apb_response,
-
-                         timer_equalled => timer_equalled
-            );
-
-        jtag_apb apb( jtag_tck <- jtag_tck_gated,
+        riscv_jtag_apb_dm dm_apb( jtag_tck <- jtag_tck_gated,
                       reset_n <= reset_n,
 
                       ir <= ir,
@@ -91,5 +84,17 @@ module tb_jtag_apb_timer( clock jtag_tck,
                       apb_clock <- apb_clock,
                       apb_request => apb_request,
                       apb_response <= apb_response );
+
+        riscv_i32_debug dm( clk <- apb_clock,
+                            reset_n <= reset_n,
+
+                            apb_request <= apb_request,
+                            apb_response => apb_response,
+
+                            debug_mst  => debug_mst,
+                            debug_tgt <= debug_tgt 
+            );
+
+        debug_tgt = {*=0};
     }
 }

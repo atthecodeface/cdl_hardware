@@ -15,10 +15,86 @@
 #a Imports
 import pycdl
 import sys, os, unittest
+import threading
 
 #a Test classes
 #c base_th
 class base_th(pycdl._thfile):
+    #b class thread(object):
+    class thread(threading.Thread):
+        name = "<give me a name>"
+        def __init__(self, server):
+            threading.Thread.__init__(self)
+            self.server = server
+            self.start_cycle = None
+            self.end_cycle = None
+            self.thread = None
+            pass
+        def start(self):
+            def spawn_fn(arg_tuple):
+                self.start_cycle = self.server.global_cycle()
+                self.thread      = threading.current_thread()
+                self.run(arg_tuple)
+                self.finish()
+                pass
+            self.server.py.pyspawn(spawn_fn,(self,))
+            pass
+        def start_nonpy(self):
+            self.start_cycle = self.server.global_cycle()
+            self.thread      = threading.current_thread()
+            threading.Thread.start(self)
+            pass
+        def run(self, arg_tuple):
+            pass
+        def finish(self):
+            self.end_cycle = server.global_cycle()
+            pass
+        pass
+    #b class tcp_server_thread
+    class tcp_server_thread(thread):
+        def __init__(self, server, port):
+            super(c_jtag_apb_time_test_server.tcp_server_thread, self).__init__(server)
+            self.server_skt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_skt.bind(("localhost", port))
+            self.server_skt.listen(1)
+            self.server_skt.setblocking(False)
+            self.client_skt = None
+            self.skt_timeout = 1.0
+            pass
+        def update_data_to_send(self):
+            return ""
+        def did_send_data(self, n):
+            pass
+        def received_data(self, data):
+            pass
+        def run(self, arg_tuple=None):
+            done = False
+            while not done:
+                print "Poll",self.client_skt
+                if self.client_skt is None:
+                    (r,_,_) = select.select([self.server_skt],[],[],self.skt_timeout)
+                    if len(r)!=0:
+                        (self.client_skt, address) = self.server_skt.accept()
+                        print "Accepted connection from",address
+                        pass
+                    pass
+                else:
+                    data_to_send = self.update_data_to_send()
+                    w = []
+                    if data_to_send!="": w=[self.client_skt]
+                    (r,w,_) = select.select([self.client_skt],w,[],self.skt_timeout)
+                    if len(w)>0:
+                        n = self.client_skt.send(data_to_send)
+                        self.did_send_data(n)
+                        pass
+                    if len(r)>0:
+                        data = self.client_skt.recv(1024)
+                        if len(data)>0: self.received_data(data)
+                        pass
+                    pass
+                pass
+            pass
+
     _auto_wire_same_name = False
     #f compare_expected_list
     def compare_expected_list(self, reason, expectation, actual):

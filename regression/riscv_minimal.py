@@ -17,6 +17,7 @@ import pycdl
 import sys, os, unittest, tempfile
 import simple_tb
 import dump
+import jtag_support
 
 #a Globals
 riscv_regression_dir      = "../riscv_tests_built/isa/"
@@ -118,6 +119,70 @@ class c_riscv_minimal_test_one(c_riscv_minimal_test_base):
                            }
     pass
 
+#c c_riscv_jtag_debug_base
+class c_riscv_jtag_debug_base(simple_tb.base_th):
+    """
+    Base methods for JTAG interaction, really
+    """
+    def run_start(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(10)
+        self.jtag_module = jtag_support.jtag_module(self.bfm_wait, self.tck_enable, self.jtag__tms, self.jtag__tdi, self.tdo, self)
+        simple_tb.base_th.run_start(self)
+        pass
+    #f dm_write
+    def dm_write(self, address, data, write_ir=False):
+        """
+        Requires the JTAG state machine to be in reset or idle.
+
+        Writes the IR to be 'access' if required, then does the appropriate write access.
+        """
+        if write_ir:
+            self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (dm_access)
+            pass
+        data = self.jtag_write_drs(dr_bits = bits_of_n(50,((address&0xffff)<<34)|((data&0xffffffff)<<2)|(2)))
+        return data
+
+    #f dm_read_slow
+    def dm_read_slow(self, address, write_ir=False):
+        """
+        Requires the JTAG state machine to be in reset or idle.
+
+        Writes the IR to be 'access' if required, then does the appropriate read access; it then waits and does another operation to get the data back
+        """
+        if write_ir:
+            self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (dm_access)
+            pass
+        data = self.jtag_write_drs(dr_bits = bits_of_n(50,((address&0xffff)<<34)|(0<<2)|(1)))
+        self.bfm_wait(100)
+        data = self.jtag_write_drs(dr_bits = bits_of_n(50,0))
+        return int_of_bits(data)
+
+    #f dm_read_pipelined
+    def dm_read_pipelined(self, address):
+        """
+        Requires the JTAG state machine to be in reset or idle.
+
+        Peforms the appropriate read access and returns the last data
+        """
+        data = self.jtag_write_drs(dr_bits = bits_of_n(50,((address&0xffff)<<34)|(0<<2)|(1)))
+        return int_of_bits(data)
+
+    #f run
+    def run(self):
+        self.run_start()
+        self.finishtest(0,"")
+        pass
+#c c_riscv_jtag_debug_simple
+class c_riscv_jtag_debug_simple(c_riscv_jtag_debug_base):
+    """
+    """
+    #f run
+    def run(self):
+        self.run_start()
+        self.finishtest(0,"")
+        pass
+
 #a Hardware classes
 #c riscv_minimal_test_hw
 class riscv_minimal_test_hw(simple_tb.cdl_test_hw):
@@ -206,7 +271,36 @@ class riscv_minimal_single_memory_test_hw(simple_tb.cdl_test_hw):
         pass
     pass
 
+#c riscv_jtag_debug_hw
+class riscv_jtag_debug_hw(simple_tb.cdl_test_hw):
+    """
+    
+    """
+    loggers = {}
+    th_forces = { "th.clock":"clk",
+                  "th.inputs":("tdo"),
+                  "th.outputs":("jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
+                  }
+    module_name = "tb_riscv_jtag_debug"
+    clocks = {"jtag_tck":(0,3,3),
+              "apb_clock":(0,1,1),
+              }
+    #f __init__
+    def __init__(self, test):
+        self.th_forces = self.th_forces.copy()
+        simple_tb.cdl_test_hw.__init__(self,test)
+        pass
+    pass
+
 #a Simulation test classes
+#c riscv_jtag_debug
+class riscv_jtag_debug(simple_tb.base_test):
+    def test_0(self):
+        test = c_riscv_jtag_debug_simple()
+        hw = riscv_jtag_debug_hw(test)
+        self.do_test_run(hw, 10*1000)
+    pass
+
 #c riscv_minimal
 class riscv_minimal(simple_tb.base_test):
     pass
