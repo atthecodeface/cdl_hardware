@@ -58,49 +58,26 @@ module tb_riscv_jtag_debug( clock jtag_tck,
     net bit tck_enable;
     comb bit tck_enable_fix;
     gated_clock clock jtag_tck active_high tck_enable_fix jtag_tck_gated;
-    net t_riscv_debug_mst debug_mst "Debug master to PDMs";
-    clocked clock apb_clock reset active_low reset_n t_riscv_debug_tgt debug_tgt={*=0} "Debug target from PDMs";
-    clocked clock apb_clock reset active_low reset_n t_test_state test_state={*=0};
 
-    net  t_apb_request  apb_request  "APB request";
-    net t_apb_response apb_response "APB response";
+    net   t_apb_request  apb_request  "APB request";
+    net   t_apb_response apb_response "APB response";
+    net   t_riscv_debug_mst debug_mst;
+    comb  t_riscv_debug_tgt debug_tgt;
+    net   t_riscv_debug_tgt debug_tgt0;
+    net   t_riscv_debug_tgt debug_tgt1;
+    net   t_riscv_pipeline_debug_control debug_control0;
+    net   t_riscv_pipeline_debug_control debug_control1;
+    comb  t_riscv_pipeline_debug_response debug_response0;
+    comb  t_riscv_pipeline_debug_response debug_response1;
 
     /*b Instantiate APB timer
      */
     dut_instance: {
-        debug_tgt <= {*=0};
-        if (debug_mst.valid && (debug_mst.select==0)) {
-            debug_tgt <= {valid=1, selected=0, halted=!test_state.running, resumed=test_state.resumed, op_was_none=1};
-            test_state.attention <= 0;
-        }
-        if (test_state.attention) {
-            debug_tgt.attention <= 1;
-        }
-        if (test_state.counter==0) {
-            if (test_state.halting) {
-                test_state.running <= 0;
-                test_state.halting <= 0;
-                test_state.attention <= 1;
-            }
-            if (test_state.resuming) {
-                test_state.running <= 1;
-                test_state.resuming <= 0;
-                test_state.resumed <= 1;
-                test_state.attention <= 1;
-            }
-        } else {
-            test_state.counter <= test_state.counter-1;
-        }
-        if (debug_mst.valid &&(debug_mst.op==rv_debug_set_requests)) {
-            test_state.halting <= debug_mst.arg[0];
-            test_state.resuming <= debug_mst.arg[1];
-            if (!debug_mst.arg[1]) {
-                test_state.resumed <= 0;
-                test_state.attention <= 1;
-            }
-            test_state.counter <= 8;
-        }
         tck_enable_fix = tck_enable;
+        debug_response0 = {*=0};
+        debug_response1 = {*=0};
+        debug_tgt  = debug_tgt0;
+        debug_tgt |= debug_tgt1;
         se_test_harness th(clk <- jtag_tck, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
 
         jtag_tap tap( jtag_tck <- jtag_tck_gated,
@@ -136,5 +113,22 @@ module tb_riscv_jtag_debug( clock jtag_tck,
                             debug_mst  => debug_mst,
                             debug_tgt <= debug_tgt 
             );
+        riscv_i32_pipeline_debug pd0( clk <- apb_clock,
+                                     reset_n <= reset_n,
+                                     debug_mst <= debug_mst,
+                                     debug_tgt => debug_tgt0,
+                                     debug_control => debug_control0,
+                                     debug_response <= debug_response0,
+
+                                     rv_select <= 0 );
+
+        riscv_i32_pipeline_debug pd1( clk <- apb_clock,
+                                     reset_n <= reset_n,
+                                     debug_mst <= debug_mst,
+                                     debug_tgt => debug_tgt1,
+                                     debug_control => debug_control1,
+                                     debug_response <= debug_response1,
+
+                                     rv_select <= 1 );
     }
 }

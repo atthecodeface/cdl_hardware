@@ -207,16 +207,19 @@ class c_riscv_jtag_debug_simple(c_riscv_jtag_debug_base):
         self.dm_write(0x10, 0x80000000) # Halt request
         print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
         print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
-        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
-        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
         self.dm_write(0x10, 0x40000000) # Resume request (halt request removed)
-        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
-        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
         print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
         print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
         self.dm_write(0x10, 0x00000000) # Resume request removal
         print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
         print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        self.dm_write(0x10, 0x80010000) # Halt request for HART 1
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        self.dm_write(0x10, 0x40010000) # Resume request (halt request removed)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
+        self.dm_write(0x10, 0x00010000) # Resume request removal
         print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
         print "DM status %08x"%((self.dm_read_slow(0x11)>>2)&0xffffffff)
         self.finishtest(0,"")

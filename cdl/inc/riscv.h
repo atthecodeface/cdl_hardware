@@ -55,6 +55,7 @@ typedef struct {
     bit      valid;
     bit[32]  address;
     bit      sequential;
+    // Needs mode
 } t_riscv_fetch_req;
 
 /*t t_riscv_fetch_resp
@@ -63,6 +64,8 @@ typedef struct {
     bit      valid;
     bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
     bit[32]  data;
+    // Needs mode and error
+    // Needs tag
 } t_riscv_fetch_resp;
 
 /*t t_riscv_config
@@ -147,6 +150,7 @@ typedef struct {
     bit                branch_taken "Asserted if a branch is being taken";
     bit[32]            branch_target "Target of branch if being taken";
     bit                trap;
+    // Needs tag
 } t_riscv_i32_trace;
 
 /*a Implementations */
@@ -261,6 +265,37 @@ extern module riscv_i32_debug( clock clk         "System clock",
 {
     timing to   rising clock clk apb_request, debug_tgt;
     timing from rising clock clk apb_response, debug_mst;
+}
+
+/*m riscv_i32_pipeline_debug */
+extern module riscv_i32_pipeline_debug( clock clk,
+                                 input bit reset_n,
+                                 input  t_riscv_debug_mst debug_mst,
+                                 output t_riscv_debug_tgt debug_tgt,
+                                 output t_riscv_pipeline_debug_control debug_control,
+                                 input  t_riscv_pipeline_debug_response debug_response,
+
+                                 input bit[6] rv_select
+)
+{
+    timing to rising clock clk debug_mst, debug_response, rv_select;
+    timing from rising clock clk debug_control, debug_tgt;
+    timing comb input rv_select;
+    timing comb output debug_tgt;
+}
+
+/*m riscv_i32_ifetch_debug */
+extern module riscv_i32_ifetch_debug( input t_riscv_fetch_req pipeline_ifetch_req,
+                                      output t_riscv_fetch_resp pipeline_ifetch_resp,
+                                      input t_riscv_i32_trace pipeline_trace,
+                                      input t_riscv_pipeline_debug_control debug_control,
+                                      output t_riscv_pipeline_debug_response debug_response,
+                                      output t_riscv_fetch_req ifetch_req,
+                                      input t_riscv_fetch_resp ifetch_resp
+)
+{
+    timing comb input pipeline_ifetch_req, pipeline_trace, debug_control, ifetch_resp;
+    timing comb output pipeline_ifetch_resp, debug_response, ifetch_req;
 }
 
 /*m riscv_i32_trace  */

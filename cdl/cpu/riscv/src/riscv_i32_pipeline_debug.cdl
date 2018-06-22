@@ -113,13 +113,16 @@ a RISC-V debug module.
             debug_control.kill_fetch = 0;
         }
         case debug_fsm_halting: {
+            debug_control.valid = 1;
             debug_control.kill_fetch = 1;
             debug_control.halt_request = 1; // forces entry to debug mode
         }
         case debug_fsm_halted: {
+            debug_control.valid = 1;
             debug_control.kill_fetch = 1;
         }
         case debug_fsm_resuming: {
+            debug_control.valid = 1;
             debug_control.fetch_dret = 1; // forces a dret?
         }
         }
