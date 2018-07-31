@@ -56,6 +56,8 @@ typedef struct {
     bit[32]  address;
     bit      sequential;
     // Needs mode
+    // Flush indication
+    // will_take?
 } t_riscv_fetch_req;
 
 /*t t_riscv_fetch_resp

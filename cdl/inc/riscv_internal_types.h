@@ -125,7 +125,7 @@ typedef enum[3] {
 /*t t_riscv_f3_muldiv
  */
 typedef enum[3] {
-    riscv_f3_mul    = 0, // sub has f7[5] set, add has it clear
+    riscv_f3_mul    = 0,
     riscv_f3_mulh   = 1,
     riscv_f3_mulhsu = 2,
     riscv_f3_mulhu  = 3,
@@ -171,7 +171,7 @@ typedef enum[3] {
     riscv_f3_fence_i = 1,
 } t_riscv_f3_misc_mem;
 
-/*t t_riscv_f3_store
+/*t t_riscv_f3_system
  */
 typedef enum[3] {
     riscv_f3_privileged = 0,
@@ -190,7 +190,7 @@ typedef enum[2] {
     mw_word
 } t_riscv_mem_width;
 
-/*t t_riscv_op - RISC-V decoded instruciton operation class */
+/*t t_riscv_op - RISC-V decoded instruction operation class */
 typedef enum[4] {
     riscv_op_branch,
     riscv_op_jal,
@@ -233,7 +233,7 @@ typedef enum[4] {
     riscv_subop_mull     = 0, // same as riscv_op_f3
     riscv_subop_mulhss   = 1,
     riscv_subop_mulhsu   = 2,
-    riscv_subop_mulhus   = 3,
+    riscv_subop_mulhu    = 3,
     riscv_subop_divs     = 4,
     riscv_subop_divu     = 5,
     riscv_subop_rems     = 6,
@@ -483,4 +483,27 @@ typedef struct {
     t_riscv_csr_access csr_access;
 } t_riscv_i32_alu_result;
 
+
+/*t t_riscv_i32_coproc_controls
+ */
+typedef struct {
+    bit                     dec_idecode_valid "Mid-cycle: validates dec_idecode";
+    t_riscv_i32_decode      dec_idecode "Mid-cycle: Idecode for the next cycle";
+    bit                     dec_to_alu_blocked "Late in the cycle: if set, ALU will not take decode; note that ALU flush overpowers this";
+    bit                     alu_idecode_valid "Off a register: validates alu_idecode";
+    t_riscv_i32_decode      alu_idecode "Off a register: Idecode for the current cycle";
+    t_riscv_word            alu_rs1     "Early in cycle (after some muxes)";
+    t_riscv_word            alu_rs2     "Early in cycle (after some muxes)";
+    bit                     alu_flush_pipeline "Late in cycle: If asserted, flush everything prior to alu; will only be asserted during a cycle if first cycle if ALU instruction - or if alu_cannot_start";
+    bit                     alu_cannot_start "Late in cycle: If asserted, alu_idecode may be valid but rs1/rs2 are not; once deasserted it remains deasserted until a new ALU instruction starts";
+    bit                     alu_cannot_complete "Late in cycle: If asserted, alu cannot complete because it is still working on its operation";
+} t_riscv_i32_coproc_controls;
+
+/*t t_riscv_i32_coproc_response
+ */
+typedef struct {
+    bit          cannot_start "If asserted, block start of the ALU stage - the instruction is then tried again in the next cycle, but can be interrupted";
+    t_riscv_word result;
+    bit          cannot_complete "Early in cycle: if deasserted the module is performing a calculation that has not produced a valid result yet (feeds back in to controls alu_cannot_complete)";
+} t_riscv_i32_coproc_response;
 

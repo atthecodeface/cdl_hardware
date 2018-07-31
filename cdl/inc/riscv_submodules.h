@@ -84,3 +84,16 @@ module riscv_csrs_minimal( clock clk                                   "RISC-V c
     timing comb input csr_access;
     timing comb output csr_data;
 }
+
+/*m riscv_i32_muldiv */
+extern module riscv_i32_muldiv( clock clk,
+                         input bit reset_n,
+                         input t_riscv_i32_coproc_controls  coproc_controls,
+                         output t_riscv_i32_coproc_response coproc_response
+)
+{
+    timing to   rising clock clk coproc_controls;
+    timing from rising clock clk coproc_response;
+    //timing comb input  coproc_controls;
+    //timing comb output coproc_response;
+}

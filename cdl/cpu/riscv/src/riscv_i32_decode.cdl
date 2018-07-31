@@ -244,7 +244,7 @@ then the instructions are decoded as illegal.
                     case riscv_f3_mul:    { idecode.subop = riscv_subop_mull; }
                     case riscv_f3_mulh:   { idecode.subop = riscv_subop_mulhss; }
                     case riscv_f3_mulhsu: { idecode.subop = riscv_subop_mulhsu; }
-                    case riscv_f3_mulhu:  { idecode.subop = riscv_subop_mulhus; }
+                    case riscv_f3_mulhu:  { idecode.subop = riscv_subop_mulhu; }
                     case riscv_f3_div:    { idecode.subop = riscv_subop_divs; }
                     case riscv_f3_divu:   { idecode.subop = riscv_subop_divu; }
                     case riscv_f3_rem:    { idecode.subop = riscv_subop_rems; }

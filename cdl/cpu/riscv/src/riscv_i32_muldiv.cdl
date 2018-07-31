@@ -1,0 +1,520 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_alu.cdl
+ * @brief  ALU for i32 RISC-V implementation
+ *
+ * CDL implementation of RISC-V i32 ALU based on the RISC-V
+ * specification v2.1.
+ *
+ */
+
+/*a Includes
+ */
+include "riscv_internal_types.h"
+include "riscv.h"
+
+/*a Types
+ */
+
+/*t t_add_l_0_src
+ */
+typedef enum[2] {
+    add_l_0_src_shf,
+    add_l_0_src_inv_shf
+} t_add_l_0_src;
+
+/*t t_add_l_1_src
+ */
+typedef enum[2] {
+    add_l_1_src_acc,
+    add_l_1_src_zero
+} t_add_l_1_src;
+
+/*t t_add_h_0_src
+ */
+typedef enum[2] {
+    add_h_0_src_zero,
+    add_h_0_src_acc,
+    add_h_0_src_neg_a,
+} t_add_h_0_src;
+
+/*t t_add_h_1_src
+ */
+typedef enum[2] {
+    add_h_1_src_zero,
+    add_h_1_src_shf,
+    add_h_1_src_neg_b,
+} t_add_h_1_src;
+
+/*t t_dp_combs */
+typedef struct {
+
+    bit[32] neg_a "Negated (arithmetically) version of alu_rs1";
+    bit[32] neg_b "Negated (arithmetically) version of alu_rs2";
+
+    bit[2] sel0123 "Select which of state.b*(0/1/2/3) for first adder";
+    bit[2] sel048c "Select which of state.b*(0/4/8/12) for first adder";
+    bit[36] breg_0 "state.b * 0";
+    bit[36] breg_1 "state.b * 1";
+    bit[36] breg_2 "state.b * 2";
+    bit[36] breg_3 "state.b * 3";
+    bit[36] breg_4 "state.b * 4";
+    bit[36] breg_8 "state.b * 8";
+    bit[36] breg_c "state.b * 12";
+    bit[36] mux_0123 "Selected state.b*(0/1/2/3) for first adder";
+    bit[36] mux_048c "Selected state.b*(0/4/8/12) for first adder";
+    bit[36] mult_data "36-bit multiply result: state.b * 0-15";
+
+    bit[3] shift     "Amount to shift multiply result by (in 4-bit quanta)";
+    bit[64] mult_shf "Result of multiply shifted so that it is state.b * (0-15) << (shift*4)";
+
+    t_add_l_0_src add_l_0_src "Adder low input 0 source - mult_shf low or its bitwise negation";
+    bit[32] add_l_in_0;
+
+    t_add_l_1_src add_l_1_src "Adder low input 1 source - accumulator low or zero";
+    bit[32] add_l_in_1;
+
+    t_add_h_0_src add_h_0_src "Adder high input 0 source - -a input, accumulator high or zero"; // could we use NOT of a input and carry in?
+    bit[32] add_h_in_0;
+
+    t_add_h_1_src add_h_1_src "Adder high input 1 source - -b input, mult_shf high or zero"; // canout use NOT of B if we use it before unless we hack carries in
+    bit[32] add_h_in_1;
+
+    bit add_l_carry_in "Carry in to low adder - held low at present";
+    bit[33] add_l "Adder low result including its carry out";
+    bit acc_carry_low_to_high "Is this actuall carry_chain?";
+    bit carry_chain;
+
+    bit add_h_carry_in "Carry in to high adder; asserted if add_l[32] and carry_chain";
+    bit[33] add_h "Adder high result including its carry out";
+    bit add_h_carry "Carry out from high adder - unused at present";
+
+    bit completed;
+} t_dp_combs;
+
+/*t t_dp_state */
+typedef struct {
+    bit[3] stage;
+    bit mul_init;
+    bit mul_step;
+    bit mul_complete;
+    bit div_init;
+    bit div_shift;
+    bit div_step;
+    bit div_complete;
+    bit[32] areg;
+    bit[32] breg;
+    bit[32] acc_low;
+    bit[32] acc_high;
+} t_dp_state;
+
+/*a Module
+ */
+module riscv_i32_muldiv( clock clk,
+                         input bit reset_n,
+                         input t_riscv_i32_coproc_controls  coproc_controls,
+                         output t_riscv_i32_coproc_response coproc_response
+)
+"""
+
+Multiplication:
+
+Consider multiplication of two 3-bit numbers a and b (hence octal)
+
+A straight (unsigned) view of a value X as Xs.Xb  is Xb+4*Xs (Xs is sign bit, Xb remaining bits)
+A signed              view of a value X as Xs.Xb  is Xb-4*Xs
+Hence one can consider Xsigned = Xunsigned - 8*Xs
+
+Consider Runsigned = Xunsigned * Yunsigned
+Then Xsigned * Ysigned = (Xunsigned - 8*Xs) * (Yunsigned - 8*Ys)
+                       = (Xunsigned*Yunsigned) + 64*Xs*Ys -8*(Xs*Yunsigned + Ys*Xunsigned)
+(mod 64)               = Runsigned             -8*(Xs*Yunsigned + Ys*Xunsigned)  
+
+Xunsigned * Yunsigned has the following multiplication table:
+
+    0    1    2    3    4    5    6    7    
+0   0    0    0    0    0    0    0    0
+1   0    1    2    3    4    5    6    7    
+2   0    2    4    6   10   12   14   16
+3   0    3    6   11   14   17   22   25
+4   0    4   10   14   20   24   30   34
+5   0    5   12   17   24   31   36   43
+6   0    6   14   22   30   36   44   52
+7   0    7   16   25   34   43   52   61
+
+If both are signed then we have the following correction to add -8*(Xs*Yunsigned + Ys*Xunsigned) (in decimal...)
+
+    0    1    2    3    4    5    6    7    
+0   0    0    0    0    0    0    0    0
+1   0    0    0    0   -8   -8   -8   -8
+2   0    0    0    0  -16  -16  -16  -16
+3   0    0    0    0  -24  -24  -24  -24
+4   0   -8  -16  -24  -64  -72  -80  -88
+5   0   -8  -16  -24  -72  -80  -88  -96
+6   0   -8  -16  -24  -80  -88  -96 -104
+7   0   -8  -16  -24  -88  -96 -104 -112
+
+And in octal (addition)
+
+    0    1    2    3    4    5    6    7    
+0   0    0    0    0    0    0    0    0
+1   0    0    0    0   70   70   70   70
+2   0    0    0    0   60   60   60   60
+3   0    0    0    0   50   50   50   50
+4   0   70   60   50    0   70   60   50
+5   0   70   60   50   70   60   50   40
+6   0   70   60   50   60   50   40   30
+7   0   70   60   50   50   40   30   20
+
+If they are both signed (7==-1, 6==-2, 5=--3, 4==-4) we have the following multiplication table:
+
+    0    1    2    3    4    5    6    7
+0   0    0    0    0    0    0    0    0
+1   0    1    2    3   74   75   76   77
+2   0    2    4    6   70   72   74   76
+3   0    3    6   11   64   67   72   75
+4   0   74   70   64   20   14   10    4
+5   0   75   72   67   14   11    6    3
+6   0   76   74   72   10    6    4    2
+7   0   77   76   75    4    3    2    1
+
+If the column (X) in unsigned and the row is signed then we have the following correction to add -8*Ys*Xunsigned (in decimal...)
+
+    0    1    2    3    4    5    6    7    
+0   0    0    0    0    0    0    0    0
+1   0    0    0    0    0    0    0    0
+2   0    0    0    0    0    0    0    0
+3   0    0    0    0    0    0    0    0
+4   0   -8  -16  -24  -32  -40  -48  -56
+5   0   -8  -16  -24  -32  -40  -48  -56
+6   0   -8  -16  -24  -32  -40  -48  -56
+7   0   -8  -16  -24  -32  -40  -48  -56
+
+And in octal (addition)
+
+    0    1    2    3    4    5    6    7    
+0   0    0    0    0    0    0    0    0
+1   0    0    0    0    0    0    0    0
+2   0    0    0    0    0    0    0    0
+3   0    0    0    0    0    0    0    0
+4   0   70   60   50   40   30   20   10
+5   0   70   60   50   40   30   20   10
+6   0   70   60   50   40   30   20   10
+7   0   70   60   50   40   30   20   10
+
+
+Hence the multiplication table:
+
+    0    1    2    3    4    5    6    7
+0   0    0    0    0    0    0    0    0
+1   0    1    2    3    4    5    6    7
+2   0    2    4    6   10   12   14   16
+3   0    3    6   11   14   17   22   25
+4   0   74   70   64   60   54   50   44
+5   0   75   72   67   64   61   56   53
+6   0   76   74   72   70   66   64   62
+7   0   77   76   75   74   73   72   71
+
+
+Hence the multiplication of two 32-bit numbers X and Y, using a 64-bit accumulator A, can be performed by setting A initially to:
+
+ 0 for unsigned*unsigned
+ -2^32*(X[31]?Y) for X signed Y unsigned
+ -2^32*(Y[31]?X) for Y signed X unsigned
+ -2^32*(Y[31]?X[31;0] + X[31]?Y[31;0]) for both signed.
+
+The operation of the multiply then requires a 64-bit accumulator
+
++1 +4 provides 0, 1, 4, 5 (single 35-bit adder)
+(stage1_0 = 0; stage1_1 = (3b0,in); stage1_4 = (1b0,in,2b0); stage1_5 = stage1_1 + stage1_4;)
+
++1 +4 with optional double provides 0, 2, 8, 10, 1, 3, 9, 11, 4, 6, 12, 14, 5, 7, 13, 15 (one more 36-bit adders)
+(0 = 0+0; 2=0+stage1_1_dbl; 3=stage1_1+stage1_1_dbl;
+stage2_add_in_0 = mux(stage1_0, stage1_1, stage1_4, stage1_5)
+stage2_add_in_1 = mux(stage1_0, stage1_1, stage1_4, stage1_5)<<1
+
+
+Division
+
+Unsigned division/remainder (column / row)
+
+    0    1    2    3    4    5    6    7
+0  7/0  7/0  7/0  7/0  7/0  7/0  7/0  7/0
+1  0/0  1/0  2/0  3/0  4/0  5/0  6/0  7/0
+2  0/0  0/1  1/0  1/1  2/0  2/1  3/0  3/1
+3  0/0  0/1  0/2  1/0  1/1  1/2  2/0  2/1
+4  0/0  0/1  0/2  0/3  1/0  1/1  1/2  1/3
+5  0/0  0/1  0/2  0/3  0/4  1/0  1/1  1/2
+6  0/0  0/1  0/2  0/3  0/4  0/5  1/0  1/1
+7  0/0  0/1  0/2  0/3  0/4  0/5  0/6  1/0
+
+Signed division/remainder (column / row) (x86 except div by 0)
+Note: x86, C99 - sign of remainder = sign of dividend
+
+    0    1    2    3    4    5    6    7
+0  7/0  7/0  7/0  7/0  7/0  7/0  7/0  7/0
+1  0/0  1/0  2/0  3/0  4/0  5/0  6/0  7/0
+2  0/0  0/1  1/0  1/1  6/0  7/7  7/0  0/7
+3  0/0  0/1  0/2  1/0  7/7  7/0  0/6  0/7
+4  0/0  0/1  0/2  0/3  1/0  0/5  0/6  0/7
+5  0/0  0/1  0/2  7/0  1/7  1/0  0/6  0/7
+6  0/0  0/1  7/0  7/1  2/0  1/7  1/0  0/7
+7  0/0  7/0  6/0  5/0  4/0  3/0  2/0  1/0
+
+For positive/positive one can use unsigned division directly
+For negative/negative one can do -d/-r, and negate the remainder
+For negative/positive one can do -d/r, then negate the result and the remainder
+For positive/negative one can do d/-r, then negate the result
+
+So the first cycle of a divide prepares 'positive' d and r and records the signs (as required)
+
+The multiply requires three adders
+One 34 bit; one 36 bit, one 64 bit.
+Divide requires compare; it could do 3 compares per cycle, or just one to start with
+
+We have a multiplier register that gets shifted; this can be the divisor that gets shifted
+
+Multiply then occurs with the following states:
+
+Init : adder high 0 is zero or abs(a) if signed and a negative; adder high 1 is zero or abs(b) if signed and b negative; a_reg <= rs1, b_reg <= rs2
+Step (until completed) : a_reg = a_reg>>4; mult=a_reg&15; shf=stage; adder is shifter + acc, with carry chain. complete if a_reg&15 will be 0
+Result valid: accumulator has result (present top or bottom half)
+
+Divide occurs with the following states:
+
+Init
+Shift
+Step (until completed)
+Result valid (provides result signing stuff)
+
+Hence the design is for a data pipeline with (for multiply):
+
+a_reg - contains multiplier
+b_reg - contains multiplicand
+accumulator - contains 64-bit result of multiply
+            - initialize with 0 for unsigned*unsigned; -2^32*(X[31]?Y) for X signed Y unsigned; -2^32*(Y[31]?X) for Y signed X unsigned; -2^32*(Y[31]?X[31;0] + X[31]?Y[31;0]) for both signed
+mult_data = b_reg * bottom 4 bits of a_reg
+mult_shf  = b_reg * bottom 4 bits of a_reg shifted to be in correct position for accumulation (i.e. shift left by 4*stage)
+64-bit adder of accumulator plus mult_shf
+
+Result is accumulator - pick top or bottom 32 bits as required
+
+For divide it becomes:
+
+a_reg - contains abs(a) (if signed) else a (dividend)
+b_reg - contains -abs(b) (if signed) else -b (divisor) << N
+b_shift - initial left shift to get top bit of divisor to line up with top bit of dividend
+accumulator - bottom 32 bits contains remainder (initialized to a_reg)
+            - top 32 bits contain quotient (initialized to zero)
+mult_data = b_reg << bottom 2 bits of stage (effectively b_shift)
+mult_shf  = b_reg shifted to be in correct position for subtraction from remainder
+32-bit adder of low accumulator plus mult_shf; if >=0 then must update accumulator low and set bit in accumulator high
+32-bit 'set bit N of' of high accumulator to build quotient if 
+
+Quotient result is accumulator high, or negated accumulator high if signed and signs of two inputs differ
+Remainder result is accumulator low, or negated accumulator low if signed and dividend input was negative
+
+"""
+{
+
+    /*b Signals */
+    default clock clk;
+    default reset active_low reset_n;
+    comb t_dp_combs dp_combs         "Combinatorials used in the module, not exported as the decode";
+    clocked t_dp_state dp_state = {*=0} "State";
+
+    /*b Datapath */
+    datapath """
+    """ : {
+        /*b mult_data: 4-bit multiply of breg by dp_combs.sel0123 and sel048c */
+        dp_combs.breg_0 = 0;
+        dp_combs.breg_1 = bundle(4b0, dp_state.breg);
+        dp_combs.breg_2 = bundle(3b0, dp_state.breg, 1b0);
+        dp_combs.breg_4 = bundle(2b0, dp_state.breg, 2b0);
+        dp_combs.breg_8 = bundle(1b0, dp_state.breg, 3b0);
+        dp_combs.breg_3 = dp_combs.breg_2 + dp_combs.breg_1;    // 34-bit adder
+        dp_combs.breg_c = bundle(dp_combs.breg_3[34;0], 2b0);
+
+        dp_combs.mux_0123 = dp_combs.breg_0;
+        full_switch (dp_combs.sel0123) {
+        case 0: { dp_combs.mux_0123 = dp_combs.breg_0; }
+        case 1: { dp_combs.mux_0123 = dp_combs.breg_1; }
+        case 2: { dp_combs.mux_0123 = dp_combs.breg_2; }
+        case 3: { dp_combs.mux_0123 = dp_combs.breg_3; }
+        }
+
+        dp_combs.mux_048c = dp_combs.breg_0;
+        full_switch (dp_combs.sel048c) {
+        case 0: { dp_combs.mux_048c = dp_combs.breg_0; }
+        case 1: { dp_combs.mux_048c = dp_combs.breg_4; }
+        case 2: { dp_combs.mux_048c = dp_combs.breg_8; }
+        case 3: { dp_combs.mux_048c = dp_combs.breg_c; }
+        }
+        dp_combs.mult_data = dp_combs.mux_0123 + dp_combs.mux_048c; // 36-bit adder
+
+        /*b Shifter, shifting by dp_combs.shift */
+        dp_combs.mult_shf = 0;
+        full_switch (dp_combs.shift[3;0]) {
+        case 0: { dp_combs.mult_shf = bundle(28b0,  dp_combs.mult_data     ); }
+        case 1: { dp_combs.mult_shf = bundle(24b0,  dp_combs.mult_data,  4b0); }
+        case 2: { dp_combs.mult_shf = bundle(20b0,  dp_combs.mult_data,  8b0); }
+        case 3: { dp_combs.mult_shf = bundle(16b0,  dp_combs.mult_data, 12b0); }
+        case 4: { dp_combs.mult_shf = bundle(12b0,  dp_combs.mult_data, 16b0); }
+        case 5: { dp_combs.mult_shf = bundle( 8b0,  dp_combs.mult_data, 20b0); }
+        case 6: { dp_combs.mult_shf = bundle( 4b0,  dp_combs.mult_data, 24b0); }
+        case 7: { dp_combs.mult_shf = bundle(       dp_combs.mult_data, 28b0); }
+        }
+
+        /*b Adder input selectors using dp_combs.add_X_N_src */
+        dp_combs.add_l_in_0 = dp_combs.mult_shf[32;0];
+        if (dp_combs.add_l_0_src == add_l_0_src_inv_shf) {
+            dp_combs.add_l_in_0 = ~dp_combs.mult_shf[32;0];
+        }
+        dp_combs.add_l_in_1 = 0;
+        if (dp_combs.add_l_1_src == add_l_1_src_acc) {
+            dp_combs.add_l_in_1 = dp_state.acc_low;
+        }
+        dp_combs.add_h_in_0 = 0;
+        part_switch (dp_combs.add_h_0_src) {
+        case add_h_0_src_zero:  { dp_combs.add_h_in_0 = 0; }
+        case add_h_0_src_acc:   { dp_combs.add_h_in_0 = dp_state.acc_high; }
+        case add_h_0_src_neg_a: { dp_combs.add_h_in_0 = dp_combs.neg_a; }
+        }
+        dp_combs.add_h_in_1 = 0;
+        part_switch (dp_combs.add_h_1_src) {
+        case add_h_1_src_zero:  { dp_combs.add_h_in_1 = 0; }
+        case add_h_1_src_shf:   { dp_combs.add_h_in_1 = dp_combs.mult_shf[32;32]; }
+        case add_h_1_src_neg_b: { dp_combs.add_h_in_1 = dp_combs.neg_b; }
+        }
+
+        /*b Adder using dp_combs.add_l_carry_in, carry_chain */
+        dp_combs.add_l = bundle(1b0, dp_combs.add_l_in_0) + bundle(1b0, dp_combs.add_l_in_1) + bundle(32b0, dp_combs.add_l_carry_in) ; // 32-bit add with carry out
+        dp_combs.add_h_carry_in = (dp_combs.carry_chain && dp_combs.add_l[32]);
+        dp_combs.add_h = bundle(1b0, dp_combs.add_h_in_0) + bundle(1b0, dp_combs.add_h_in_1) + bundle(32b0, dp_combs.add_h_carry_in) ; // 32-bit add with carry out
+        dp_combs.add_h_carry = dp_combs.add_h[32];
+
+        /*b All done */
+        
+    }
+
+    /*b Control */
+    control """
+    """ : {
+        dp_combs.sel0123 = dp_state.breg[2;0];
+        dp_combs.sel048c = dp_state.breg[2;2];
+        dp_combs.shift   = dp_state.stage;
+        dp_combs.carry_chain = 1;
+        dp_combs.add_l_0_src = add_l_0_src_shf; // or inv_shf
+        dp_combs.add_l_1_src = add_l_1_src_acc; // or zero
+        dp_combs.add_h_0_src = add_h_0_src_acc; // or zero, acc, neg_a
+        dp_combs.add_h_1_src = add_h_1_src_shf; // or zero, shf, neg_b
+        dp_combs.acc_carry_low_to_high = 0;
+        dp_combs.add_l_carry_in = 0; // not used as yet
+        dp_combs.neg_a =  - coproc_controls.alu_rs1;
+        dp_combs.neg_b =  - coproc_controls.alu_rs2;
+        dp_combs.completed = 0;
+
+        if (dp_state.mul_init) {
+            dp_combs.sel0123 = 0; // makes shf be zero
+            dp_combs.sel048c = 0; // makes shf be zero
+            dp_combs.add_l_0_src = add_l_0_src_shf; // shf is zero
+            dp_combs.add_l_1_src = add_l_1_src_zero;
+            dp_combs.add_h_0_src = add_h_0_src_zero; // OR neg_a if B signed and negative
+            dp_combs.add_h_1_src = add_h_1_src_zero; // OR neg_b if A signed and negative
+            dp_state.stage <= 0;
+            dp_state.areg  <= coproc_controls.alu_rs1;
+            dp_state.breg  <= coproc_controls.alu_rs2;
+            dp_state.acc_low  <= dp_combs.add_l[32;0];
+            dp_state.acc_high <= dp_combs.add_h[32;0];
+        }
+        if (dp_state.mul_step) {
+            dp_combs.sel0123 = dp_state.areg[2;0];
+            dp_combs.sel048c = dp_state.areg[2;2];
+            dp_combs.acc_carry_low_to_high = 1;
+            dp_combs.shift = dp_state.stage;
+            dp_combs.completed = (dp_state.areg[28;4]==0);
+            dp_state.stage <= dp_state.stage + 1;
+            dp_state.areg  <= dp_state.areg >> 4;
+            dp_state.acc_low  <= dp_combs.add_l[32;0];
+            dp_state.acc_high <= dp_combs.add_h[32;0];
+        }
+        if (dp_state.div_step) {
+            dp_combs.sel0123 = 1;
+            dp_combs.sel048c = 0; // mult_acc_adder = areg (subtract it, but we can fiddle that later)
+            dp_combs.acc_carry_low_to_high = 0; // two independent 32-bit values in accumulator
+            //dp_combs.adder_for_acc_low = 1<<self.stage;
+            if (!dp_combs.add_h[32]) { // was acc_sum_higher?
+                dp_state.acc_low  <= dp_combs.add_l[32;0];
+                dp_state.acc_high <= dp_combs.add_h[32;0];
+            }
+            dp_state.areg <= dp_state.areg>>1;
+        }
+        /*b All done */
+    }
+
+    /*b Coprocessor <> Mul/Div state machine */
+    state_machine """
+    """ : {
+        dp_state.div_init <= 0;
+        dp_state.div_shift <= 0;
+        dp_state.div_step <= 0;
+        dp_state.div_complete <= 0;
+
+        if (dp_state.mul_init) {
+            if (!coproc_controls.alu_cannot_start) {
+                dp_state.mul_init <= 0;
+                dp_state.mul_step <= 1;
+            }
+        }
+        if (dp_state.mul_step) {
+            if (dp_combs.completed) {
+                dp_state.mul_step <= 0;
+                dp_state.mul_complete <= 1;
+            }
+        }
+        if (dp_state.mul_complete) {
+            if (!coproc_controls.alu_cannot_complete) {
+                dp_state.mul_complete <= 0;
+            }
+        }
+        if ( !coproc_controls.dec_to_alu_blocked &&
+             coproc_controls.dec_idecode_valid &&
+             (coproc_controls.dec_idecode.op == riscv_op_muldiv) ) {
+            dp_state.mul_init <= 1;
+        }
+        if (coproc_controls.alu_flush_pipeline) {
+            dp_state.mul_init <= 0;
+            dp_state.div_init <= 0;
+            // the following are not necessary as flush can only occur in first cycle
+            // dp_state.mul_step <= 0;
+            // dp_state.mul_complete <= 0;
+            // dp_state.div_shift <= 0;
+            // dp_state.div_step <= 0;
+            // dp_state.div_complete <= 0;
+        }
+    }
+
+
+    /*b Outputs */
+    outputs """
+    """ : {
+        coproc_response.cannot_complete = (dp_state.mul_init || dp_state.mul_step ||
+                                           dp_state.div_init || dp_state.div_step || dp_state.div_shift
+            );
+        coproc_response.result       = dp_state.acc_low;
+        coproc_response.cannot_start = 0;
+    }
+
+    /*b All done */
+}
