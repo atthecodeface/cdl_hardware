@@ -182,17 +182,36 @@ class c_riscv_coproc_test_divide(c_riscv_coproc_test_simple):
         (5, "valid", riscv_internal.remu(1,2,3), 17, 4, 17%4),
         (5, "valid", riscv_internal.remu(1,2,3), 16, 4, 16%4),
         (5, "valid", riscv_internal.remu(4,5,6), 0x6789a, 0x123, 0x6789a % 0x123 ),
-        (5, "valid", riscv_internal.div(1,2,3), 17, (-4)&0xffffffff, (-(17/4)) & 0xffffffff),
-        (5, "valid", riscv_internal.rem(1,2,3), 17, (-4)&0xffffffff, (17 - (-4)*(-(17/4)))&0xffffffff),
-        (5, "valid", riscv_internal.divu(1,2,3), 17, (-4)&0xffffffff, (17/((-4) & 0xffffffff))),
-        (5, "valid", riscv_internal.remu(1,2,3), 17, (-4)&0xffffffff, (17%((-4) & 0xffffffff))),
-
-        (5, "valid", riscv_internal.div(1,2,3),  (-17)&0xffffffff, 4, (-(17/4)) & 0xffffffff),
-        (5, "valid", riscv_internal.rem(1,2,3),  (-17)&0xffffffff, 4, ((-17) - 4*(-(17/4)) & 0xffffffff)),
-        (5, "valid", riscv_internal.divu(1,2,3), (-17)&0xffffffff, 4, (((-17) & 0xffffffff)/4)),
-        (5, "valid", riscv_internal.remu(1,2,3), (-17)&0xffffffff, 4, (((-17) & 0xffffffff)%4)),
-
         ]
+    for (x,y) in [(17,4),
+                  (16,4),
+                  (0x6789a, 0x123),
+                  (0xdeadbeef, 0xf00cafe),
+                  (0xf00dcafe, 0xdeadbeef),
+                  ]:
+        if x&0x80000000: x = (-x) & 0xffffffff
+        if y&0x80000000: y = (-y) & 0xffffffff
+        instruction_list.append( (5, "valid", riscv_internal.div(1,2,3), x, y, x/y ) )
+        instruction_list.append( (5, "valid", riscv_internal.rem(1,2,3), x, y, x%y ) )
+        instruction_list.append( (5, "valid", riscv_internal.divu(1,2,3), x, y, x/y ) )
+        instruction_list.append( (5, "valid", riscv_internal.remu(1,2,3), x, y, x%y ) )
+
+        instruction_list.append( (5, "valid", riscv_internal.div(4,5,6), (-x)&0xffffffff, y, (-(x/y))&0xffffffff ) )
+        instruction_list.append( (5, "valid", riscv_internal.rem(4,5,6), (-x)&0xffffffff, y, (-x) - y*(-(x/y))&0xffffffff ) )
+        instruction_list.append( (5, "valid", riscv_internal.divu(4,5,6), (-x)&0xffffffff, y, ((-x)&0xffffffff)/y ) )
+        instruction_list.append( (5, "valid", riscv_internal.remu(4,5,6), (-x)&0xffffffff, y, ((-x)&0xffffffff)%y ) )
+
+        instruction_list.append( (5, "valid", riscv_internal.div(4,5,6),  (-x)&0xffffffff, (-y) & 0xffffffff, ((x/y))&0xffffffff ) )
+        instruction_list.append( (5, "valid", riscv_internal.rem(4,5,6),  (-x)&0xffffffff, (-y) & 0xffffffff, (-x) - (-y)*((x/y))&0xffffffff ) )
+        instruction_list.append( (5, "valid", riscv_internal.divu(4,5,6), (-x)&0xffffffff, (-y) & 0xffffffff, ((-x)&0xffffffff)/((-y) & 0xffffffff) ) )
+        instruction_list.append( (5, "valid", riscv_internal.remu(4,5,6), (-x)&0xffffffff, (-y) & 0xffffffff, ((-x)&0xffffffff)%((-y) & 0xffffffff) ) )
+
+        instruction_list.append( (5, "valid", riscv_internal.div(4,5,6),  x, (-y) & 0xffffffff, ((-(x/y))&0xffffffff) ) )
+        instruction_list.append( (5, "valid", riscv_internal.rem(4,5,6),  x, (-y) & 0xffffffff, (x - (-y)*((-(x/y))&0xffffffff)) & 0xffffffff ) )
+        instruction_list.append( (5, "valid", riscv_internal.divu(4,5,6), x, (-y) & 0xffffffff, x/((-y) & 0xffffffff) ) )
+        instruction_list.append( (5, "valid", riscv_internal.remu(4,5,6), x, (-y) & 0xffffffff, x%((-y) & 0xffffffff) ) )
+
+        pass
 
 #a Hardware classes
 #c riscv_coproc_test_hw
