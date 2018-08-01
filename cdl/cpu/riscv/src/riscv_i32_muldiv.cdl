@@ -516,24 +516,27 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             dp_state.negate_remainder <= 0;
             dp_state.areg  <= dp_combs.sel_rs1;
             dp_state.breg  <= dp_combs.sel_rs2;
-            if (dp_state.op_signed[0]) {
-                if (coproc_controls.alu_rs1[31]) {
+            if (dp_state.op_signed[0]) { // truncated signed division
+                if (coproc_controls.alu_rs1[31]) { // negative remainder if dividend is negative
                     dp_combs.sel_neg_rs1 = 1;
                     dp_state.negate_remainder <= 1;
                 }
-                if (coproc_controls.alu_rs2[31]) {
+                if (coproc_controls.alu_rs2[31]) { // use abs of dividsor to find its top bit set
                     dp_combs.sel_neg_rs2 = 1;
                 }
                 if (coproc_controls.alu_rs1[31] != coproc_controls.alu_rs2[31]) {
-                    dp_state.negate_result <= 1;
+                    dp_state.negate_result <= 1; // negative result if signs differ
                 }
             }
 
             dp_state.b_shift <= dp_combs.sel_rs1_top_bit_set - dp_combs.sel_rs2_top_bit_set;
+            if (dp_combs.sel_rs1_top_bit_set < dp_combs.sel_rs2_top_bit_set) { // dividend < divisor - short-cut to end
+                dp_state.b_shift <= 0;
+            }
         }
         if (dp_state.div_shift) {
             dp_combs.sel_neg_rs2 = 1; // Get -(abs(b)) in breg
-            if (dp_state.op_signed && coproc_controls.alu_rs2[31]) {
+            if (dp_state.op_signed[0] && coproc_controls.alu_rs2[31]) {
                 dp_combs.sel_neg_rs2 = 0; // Use actual rs2 if it is already negative and signed
             }
             dp_state.breg     <= dp_combs.sel_rs2;
@@ -622,9 +625,9 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             case riscv_subop_mulhss: { dp_state.mul_init <= 1; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b11;}
             case riscv_subop_mulhsu: { dp_state.mul_init <= 1; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b01;}
             case riscv_subop_mulhu:  { dp_state.mul_init <= 1; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b00;}
-            case riscv_subop_divs:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_high; }
+            case riscv_subop_divs:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b11;}
             case riscv_subop_divu:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_high; }
-            case riscv_subop_rems:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_low; }
+            case riscv_subop_rems:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_low; dp_state.op_signed <= 2b11;}
             case riscv_subop_remu:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_low; }
             default: { dp_state.result_type <= result_type_high; }
             }

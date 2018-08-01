@@ -182,6 +182,16 @@ class c_riscv_coproc_test_divide(c_riscv_coproc_test_simple):
         (5, "valid", riscv_internal.remu(1,2,3), 17, 4, 17%4),
         (5, "valid", riscv_internal.remu(1,2,3), 16, 4, 16%4),
         (5, "valid", riscv_internal.remu(4,5,6), 0x6789a, 0x123, 0x6789a % 0x123 ),
+        (5, "valid", riscv_internal.div(1,2,3), 17, (-4)&0xffffffff, (-(17/4)) & 0xffffffff),
+        (5, "valid", riscv_internal.rem(1,2,3), 17, (-4)&0xffffffff, (17 - (-4)*(-(17/4)))&0xffffffff),
+        (5, "valid", riscv_internal.divu(1,2,3), 17, (-4)&0xffffffff, (17/((-4) & 0xffffffff))),
+        (5, "valid", riscv_internal.remu(1,2,3), 17, (-4)&0xffffffff, (17%((-4) & 0xffffffff))),
+
+        (5, "valid", riscv_internal.div(1,2,3),  (-17)&0xffffffff, 4, (-(17/4)) & 0xffffffff),
+        (5, "valid", riscv_internal.rem(1,2,3),  (-17)&0xffffffff, 4, ((-17) - 4*(-(17/4)) & 0xffffffff)),
+        (5, "valid", riscv_internal.divu(1,2,3), (-17)&0xffffffff, 4, (((-17) & 0xffffffff)/4)),
+        (5, "valid", riscv_internal.remu(1,2,3), (-17)&0xffffffff, 4, (((-17) & 0xffffffff)%4)),
+
         ]
 
 #a Hardware classes
