@@ -265,26 +265,26 @@ class mul(instruction):
     op = "riscv_op_muldiv"
     subop = "riscv_subop_mull"
     f3_of_subop = {"riscv_subop_mull"  :rv32_f3["riscv_f3_mul"],
-                   "riscv_subop_mulhs" :rv32_f3["riscv_f3_mulh"],
+                   "riscv_subop_mulhss":rv32_f3["riscv_f3_mulh"],
                    "riscv_subop_mulhsu":rv32_f3["riscv_f3_mulhsu"],
                    "riscv_subop_mulhu" :rv32_f3["riscv_f3_mulhu"],
                    }
-    def __init__(self, rs1, rs2, rd, high=False, unsigned=None, signed_unsigned=None ):
+    def __init__(self, rs1, rs2, rd):
         """rs1 is the multiplicand, rs2 the multiplier"""
         self.rs1 = rs1
         self.rs2 = rs2
         self.rd = rd
-        if not high:
+        if not self.high:
             self.subop = "riscv_subop_mull"
             pass
-        elif unsigned:
+        elif self.unsigned:
             self.subop = "riscv_subop_mulhu"
             pass
-        elif signed_unsigned:
+        elif self.signed_unsigned:
             self.subop = "riscv_subop_mulhsu"
             pass
         else:
-            self.subop = "riscv_subop_mulhs"
+            self.subop = "riscv_subop_mulhss"
             pass
         self.rv32_encode = 3 | (rv32_opc["riscv_opc_op"]<<2) | (self.rd<<7) | (self.f3_of_subop[self.subop]<<12) | (self.rs1<<15) | (self.rs2<<20) | (1<<25) # muldiv in top 7 is 0000001
         self.disassembly = ["MUL?", self.rs1, self.rs2, self.rd]
@@ -293,13 +293,20 @@ class mul(instruction):
 
 #c mull, mulh, mulhu, mulhsu RV32M instructions
 class mull(mul):
+    high = False
     pass
 class mulh(mul):
-    subop = "riscv_subop_mulhs"
+    high = True
+    unsigned = False
+    signed_unsigned = False
     pass
 class mulhu(mul):
-    subop = "riscv_subop_mulhu"
+    high = True
+    unsigned = True
+    signed_unsigned = False
     pass
 class mulhsu(mul):
-    subop = "riscv_subop_mulhsu"
+    high = True
+    unsigned = False
+    signed_unsigned = True
     pass

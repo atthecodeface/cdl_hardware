@@ -36,6 +36,12 @@ def bits_of_n(nbits, n):
         pass
     return bits
 
+def signed32(n):
+    if (n>>31)&1:
+        n = (((-1) &~ 0x7fffffff) | n)
+        pass
+    return n
+
 #a Globals
 riscv_regression_dir      = "../riscv_tests_built/isa/"
 riscv_atcf_regression_dir = "../riscv-atcf-tests/build/dump/"
@@ -62,7 +68,26 @@ class c_riscv_coproc_test_simple(c_riscv_coproc_test_base):
     instruction_list = [
         (5, "valid", riscv_internal.mull(1,2,3), 17, 19, 17*19),
         (5, "valid", riscv_internal.mull(4,5,6), 0x12345, 0x6789a, (0x12345 * 0x6789a) & 0xffffffff),
-    ]
+        ]
+    for (rs1,rs2) in [(0xfedcba98, 0x76543210),
+                      (0x76543210, 0xfedcba98),
+                      (0x210, (-0x210)&0xffffffff),
+                      ((-0x210)&0xffffffff, 0x210),
+                      ]:
+        result = rs1 * rs2
+        instruction_list.append( (5, "valid", riscv_internal.mulhu(4,5,6), rs1, rs2, (result>>32) & 0xffffffff) )
+        instruction_list.append( (5, "valid", riscv_internal.mull(4,5,6),  rs1, rs2, (result>> 0) & 0xffffffff) )
+
+        result = signed32(rs1) * signed32(rs2)
+        instruction_list.append( (5, "valid", riscv_internal.mulh(4,5,6), rs1, rs2, (result>>32) & 0xffffffff) )
+        instruction_list.append( (5, "valid", riscv_internal.mull(4,5,6), rs1, rs2, (result>> 0) & 0xffffffff) )
+
+        result = signed32(rs1) * rs2
+        instruction_list.append( (5, "valid", riscv_internal.mulhsu(4,5,6), rs1, rs2, (result>>32) & 0xffffffff) )
+        instruction_list.append( (5, "valid", riscv_internal.mull(4,5,6),   rs1, rs2, (result>>0) & 0xffffffff) )
+
+        pass
+
     illegal_inst = riscv_internal.instruction()
     #f run
     def run(self):
@@ -82,7 +107,7 @@ class c_riscv_coproc_test_simple(c_riscv_coproc_test_base):
                 result = self.coproc_response__result.value()
                 print "Result %08x : %d : %s" % (result, result, alu_stage)
                 if result != alu_stage[5]:
-                    self.failtest(inst_index, "Mismatch in results : %08x * %08x = %08x got %08x" % (alu_stage[3], alu_stage[4], alu_stage[5], result))
+                    self.failtest(inst_index, "Mismatch in results : 0x%08x * 0x%08x = 0x%08x got 0x%08x" % (alu_stage[3], alu_stage[4], alu_stage[5], result))
                     pass
                 alu_stage = None # Should check for other completion mechanism!
             if alu_stage is None and decode_stage is not None:

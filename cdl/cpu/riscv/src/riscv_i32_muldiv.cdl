@@ -57,6 +57,13 @@ typedef enum[2] {
     add_h_1_src_neg_b,
 } t_add_h_1_src;
 
+/*t t_result_type
+ */
+typedef enum[2] {
+    result_type_low,
+    result_type_high,
+} t_result_type;
+
 /*t t_dp_combs */
 typedef struct {
 
@@ -117,6 +124,8 @@ typedef struct {
     bit[32] breg;
     bit[32] acc_low;
     bit[32] acc_high;
+    bit[2] op_signed;
+    t_result_type result_type;
 } t_dp_state;
 
 /*a Module
@@ -432,6 +441,12 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             dp_combs.add_l_1_src = add_l_1_src_zero;
             dp_combs.add_h_0_src = add_h_0_src_zero; // OR neg_a if B signed and negative
             dp_combs.add_h_1_src = add_h_1_src_zero; // OR neg_b if A signed and negative
+            if (dp_state.op_signed[0] && coproc_controls.alu_rs1[31]) {
+                dp_combs.add_h_1_src = add_h_1_src_neg_b;
+            }
+            if (dp_state.op_signed[1] && coproc_controls.alu_rs2[31]) {
+                dp_combs.add_h_0_src = add_h_0_src_neg_a;
+            }
             dp_state.stage <= 0;
             dp_state.areg  <= coproc_controls.alu_rs1;
             dp_state.breg  <= coproc_controls.alu_rs2;
@@ -492,6 +507,19 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
              coproc_controls.dec_idecode_valid &&
              (coproc_controls.dec_idecode.op == riscv_op_muldiv) ) {
             dp_state.mul_init <= 1;
+            dp_state.op_signed <= 0;
+            dp_state.result_type <= result_type_low;
+            full_switch (coproc_controls.dec_idecode.subop) {
+            case riscv_subop_mull: { dp_state.result_type <= result_type_low; }
+            case riscv_subop_mulhss: { dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b11;}
+            case riscv_subop_mulhsu: { dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b01;}
+            case riscv_subop_mulhu:  { dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b00;}
+            case riscv_subop_divs: { dp_state.result_type <= result_type_high; }
+            case riscv_subop_divu: { dp_state.result_type <= result_type_high; }
+            case riscv_subop_rems: { dp_state.result_type <= result_type_high; }
+            case riscv_subop_remu: { dp_state.result_type <= result_type_high; }
+            default: { dp_state.result_type <= result_type_high; }
+            }
         }
         if (coproc_controls.alu_flush_pipeline) {
             dp_state.mul_init <= 0;
@@ -513,6 +541,9 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
                                            dp_state.div_init || dp_state.div_step || dp_state.div_shift
             );
         coproc_response.result       = dp_state.acc_low;
+        if (dp_state.result_type == result_type_high) {
+            coproc_response.result       = dp_state.acc_high;
+        }
         coproc_response.cannot_start = 0;
     }
 
