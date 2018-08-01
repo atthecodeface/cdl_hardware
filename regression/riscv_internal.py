@@ -310,3 +310,50 @@ class mulhsu(mul):
     unsigned = False
     signed_unsigned = True
     pass
+
+#c div base class (subclass of instruction)
+class div(instruction):
+    op = "riscv_op_muldiv"
+    subop = "riscv_subop_divs"
+    f3_of_subop = {"riscv_subop_divs" :rv32_f3["riscv_f3_div"],
+                   "riscv_subop_divu" :rv32_f3["riscv_f3_divu"],
+                   "riscv_subop_rems" :rv32_f3["riscv_f3_rem"],
+                   "riscv_subop_remu" :rv32_f3["riscv_f3_remu"],
+                   }
+    signed = True
+    remainder = False
+    def __init__(self, rs1, rs2, rd):
+        """rs1 is the dividend, rs2 the divisor"""
+        self.rs1 = rs1
+        self.rs2 = rs2
+        self.rd = rd
+        if self.remainder:
+            if self.signed:
+                self.subop = "riscv_subop_rems"
+            else:
+                self.subop = "riscv_subop_remu"
+            pass
+        else:
+            if self.signed:
+                self.subop = "riscv_subop_divs"
+            else:
+                self.subop = "riscv_subop_divu"
+            pass
+        self.rv32_encode = 3 | (rv32_opc["riscv_opc_op"]<<2) | (self.rd<<7) | (self.f3_of_subop[self.subop]<<12) | (self.rs1<<15) | (self.rs2<<20) | (1<<25) # muldiv in top 7 is 0000001
+        self.disassembly = ["DIV?", self.rs1, self.rs2, self.rd]
+        pass
+    pass
+
+#c divu, rem, remu RV32M instructions
+class divu(div):
+    signed = False
+    remainder = False
+    pass
+class rem(div):
+    signed = True
+    remainder = True
+    pass
+class remu(div):
+    signed = False
+    remainder = True
+    pass

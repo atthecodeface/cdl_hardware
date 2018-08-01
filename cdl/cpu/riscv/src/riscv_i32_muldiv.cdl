@@ -19,6 +19,13 @@
  *
  */
 
+/*a To do
+Swap areg and breg? multiply by areg rather than breg? Probably slower if we do that in the real world, as rs2 is going to usually be the smaller number?
+
+Do nega in accumulator adder?
+
+ */
+
 /*a Includes
  */
 include "riscv_internal_types.h"
@@ -46,7 +53,7 @@ typedef enum[2] {
 typedef enum[2] {
     add_h_0_src_zero,
     add_h_0_src_acc,
-    add_h_0_src_neg_a,
+    add_h_0_src_neg_rs1,
 } t_add_h_0_src;
 
 /*t t_add_h_1_src
@@ -54,7 +61,7 @@ typedef enum[2] {
 typedef enum[2] {
     add_h_1_src_zero,
     add_h_1_src_shf,
-    add_h_1_src_neg_b,
+    add_h_1_src_neg_rs2,
 } t_add_h_1_src;
 
 /*t t_result_type
@@ -66,9 +73,17 @@ typedef enum[2] {
 
 /*t t_dp_combs */
 typedef struct {
+    bit[32] neg_rs1 "Negated (arithmetically) version of alu_rs1";
+    bit[32] neg_rs2 "Negated (arithmetically) version of alu_rs2";
 
-    bit[32] neg_a "Negated (arithmetically) version of alu_rs1";
-    bit[32] neg_b "Negated (arithmetically) version of alu_rs2";
+    bit sel_neg_rs1 "If asserted select neg_rs1 rather than rs1";
+    bit sel_neg_rs2 "If asserted select neg_rs2 rather than rs2";
+
+    bit[32] sel_rs1 "Optionally negated (arithmetically) version of alu_rs1";
+    bit[32] sel_rs2 "Optionally negated (arithmetically) version of alu_rs2";
+
+    bit[5]  sel_rs1_top_bit_set;
+    bit[5]  sel_rs2_top_bit_set;
 
     bit[2] sel0123 "Select which of state.b*(0/1/2/3) for first adder";
     bit[2] sel048c "Select which of state.b*(0/4/8/12) for first adder";
@@ -100,19 +115,20 @@ typedef struct {
 
     bit add_l_carry_in "Carry in to low adder - held low at present";
     bit[33] add_l "Adder low result including its carry out";
-    bit acc_carry_low_to_high "Is this actuall carry_chain?";
-    bit carry_chain;
+    bit add_l_carry "Carry out from low adder";
+    bit acc_carry_low_to_high "If asserted then carry from low 32 bit result to high 32 bit result";
 
-    bit add_h_carry_in "Carry in to high adder; asserted if add_l[32] and carry_chain";
+    bit add_h_carry_in "Carry in to high adder; asserted if add_l[32] and acc_carry_low_to_high";
     bit[33] add_h "Adder high result including its carry out";
-    bit add_h_carry "Carry out from high adder - unused at present";
+    bit add_h_carry "Carry out from high adder";
 
     bit completed;
 } t_dp_combs;
 
 /*t t_dp_state */
 typedef struct {
-    bit[3] stage;
+    bit[5] b_shift;
+    bit[5] stage;
     bit mul_init;
     bit mul_step;
     bit mul_complete;
@@ -125,6 +141,8 @@ typedef struct {
     bit[32] acc_low;
     bit[32] acc_high;
     bit[2] op_signed;
+    bit    negate_remainder;
+    bit    negate_result;
     t_result_type result_type;
 } t_dp_state;
 
@@ -343,7 +361,28 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
     comb t_dp_combs dp_combs         "Combinatorials used in the module, not exported as the decode";
     clocked t_dp_state dp_state = {*=0} "State";
 
-    /*b Datapath */
+    /*b RS1/RS2 datapath */
+    rs1_rs2_datapath """
+    """ : {
+        dp_combs.neg_rs1 =  - coproc_controls.alu_rs1;
+        dp_combs.neg_rs2 =  - coproc_controls.alu_rs2;
+        dp_combs.sel_rs1 = coproc_controls.alu_rs1;
+        dp_combs.sel_rs2 = coproc_controls.alu_rs2;
+        if (dp_combs.sel_neg_rs1) {
+            dp_combs.sel_rs1 = dp_combs.neg_rs1;
+        }
+        if (dp_combs.sel_neg_rs2) {
+            dp_combs.sel_rs2 = dp_combs.neg_rs2;
+        }
+        dp_combs.sel_rs1_top_bit_set = 0;
+        dp_combs.sel_rs2_top_bit_set = 0;
+        for (i; 32) {
+            if (dp_combs.sel_rs1[i]) { dp_combs.sel_rs1_top_bit_set = i; }
+            if (dp_combs.sel_rs2[i]) { dp_combs.sel_rs2_top_bit_set = i; }
+        }
+    }
+
+    /*b Multiply/divide datapath */
     datapath """
     """ : {
         /*b mult_data: 4-bit multiply of breg by dp_combs.sel0123 and sel048c */
@@ -396,20 +435,21 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
         }
         dp_combs.add_h_in_0 = 0;
         part_switch (dp_combs.add_h_0_src) {
-        case add_h_0_src_zero:  { dp_combs.add_h_in_0 = 0; }
-        case add_h_0_src_acc:   { dp_combs.add_h_in_0 = dp_state.acc_high; }
-        case add_h_0_src_neg_a: { dp_combs.add_h_in_0 = dp_combs.neg_a; }
+        case add_h_0_src_zero:    { dp_combs.add_h_in_0 = 0; }
+        case add_h_0_src_acc:     { dp_combs.add_h_in_0 = dp_state.acc_high; }
+        case add_h_0_src_neg_rs1: { dp_combs.add_h_in_0 = dp_combs.neg_rs1; }
         }
         dp_combs.add_h_in_1 = 0;
         part_switch (dp_combs.add_h_1_src) {
-        case add_h_1_src_zero:  { dp_combs.add_h_in_1 = 0; }
-        case add_h_1_src_shf:   { dp_combs.add_h_in_1 = dp_combs.mult_shf[32;32]; }
-        case add_h_1_src_neg_b: { dp_combs.add_h_in_1 = dp_combs.neg_b; }
+        case add_h_1_src_zero:    { dp_combs.add_h_in_1 = 0; }
+        case add_h_1_src_shf:     { dp_combs.add_h_in_1 = dp_combs.mult_shf[32;32]; }
+        case add_h_1_src_neg_rs2: { dp_combs.add_h_in_1 = dp_combs.neg_rs2; }
         }
 
-        /*b Adder using dp_combs.add_l_carry_in, carry_chain */
+        /*b Adder using dp_combs.add_l_carry_in, acc_carry_low_to_high */
         dp_combs.add_l = bundle(1b0, dp_combs.add_l_in_0) + bundle(1b0, dp_combs.add_l_in_1) + bundle(32b0, dp_combs.add_l_carry_in) ; // 32-bit add with carry out
-        dp_combs.add_h_carry_in = (dp_combs.carry_chain && dp_combs.add_l[32]);
+        dp_combs.add_l_carry = dp_combs.add_l[32];
+        dp_combs.add_h_carry_in = dp_combs.acc_carry_low_to_high && dp_combs.add_l_carry;
         dp_combs.add_h = bundle(1b0, dp_combs.add_h_in_0) + bundle(1b0, dp_combs.add_h_in_1) + bundle(32b0, dp_combs.add_h_carry_in) ; // 32-bit add with carry out
         dp_combs.add_h_carry = dp_combs.add_h[32];
 
@@ -422,16 +462,15 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
     """ : {
         dp_combs.sel0123 = dp_state.breg[2;0];
         dp_combs.sel048c = dp_state.breg[2;2];
-        dp_combs.shift   = dp_state.stage;
-        dp_combs.carry_chain = 1;
+        dp_combs.shift = dp_state.stage[3;0];
         dp_combs.add_l_0_src = add_l_0_src_shf; // or inv_shf
         dp_combs.add_l_1_src = add_l_1_src_acc; // or zero
         dp_combs.add_h_0_src = add_h_0_src_acc; // or zero, acc, neg_a
         dp_combs.add_h_1_src = add_h_1_src_shf; // or zero, shf, neg_b
         dp_combs.acc_carry_low_to_high = 0;
         dp_combs.add_l_carry_in = 0; // not used as yet
-        dp_combs.neg_a =  - coproc_controls.alu_rs1;
-        dp_combs.neg_b =  - coproc_controls.alu_rs2;
+        dp_combs.sel_neg_rs1 = 0;
+        dp_combs.sel_neg_rs2 = 0;
         dp_combs.completed = 0;
 
         if (dp_state.mul_init) {
@@ -442,10 +481,10 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             dp_combs.add_h_0_src = add_h_0_src_zero; // OR neg_a if B signed and negative
             dp_combs.add_h_1_src = add_h_1_src_zero; // OR neg_b if A signed and negative
             if (dp_state.op_signed[0] && coproc_controls.alu_rs1[31]) {
-                dp_combs.add_h_1_src = add_h_1_src_neg_b;
+                dp_combs.add_h_1_src = add_h_1_src_neg_rs2;
             }
             if (dp_state.op_signed[1] && coproc_controls.alu_rs2[31]) {
-                dp_combs.add_h_0_src = add_h_0_src_neg_a;
+                dp_combs.add_h_0_src = add_h_0_src_neg_rs1;
             }
             dp_state.stage <= 0;
             dp_state.areg  <= coproc_controls.alu_rs1;
@@ -457,35 +496,84 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             dp_combs.sel0123 = dp_state.areg[2;0];
             dp_combs.sel048c = dp_state.areg[2;2];
             dp_combs.acc_carry_low_to_high = 1;
-            dp_combs.shift = dp_state.stage;
+            dp_combs.shift = dp_state.stage[3;0];
             dp_combs.completed = (dp_state.areg[28;4]==0);
             dp_state.stage <= dp_state.stage + 1;
             dp_state.areg  <= dp_state.areg >> 4;
             dp_state.acc_low  <= dp_combs.add_l[32;0];
             dp_state.acc_high <= dp_combs.add_h[32;0];
         }
-        if (dp_state.div_step) {
-            dp_combs.sel0123 = 1;
-            dp_combs.sel048c = 0; // mult_acc_adder = areg (subtract it, but we can fiddle that later)
-            dp_combs.acc_carry_low_to_high = 0; // two independent 32-bit values in accumulator
-            //dp_combs.adder_for_acc_low = 1<<self.stage;
-            if (!dp_combs.add_h[32]) { // was acc_sum_higher?
-                dp_state.acc_low  <= dp_combs.add_l[32;0];
-                dp_state.acc_high <= dp_combs.add_h[32;0];
+        if (dp_state.div_init) {
+            dp_combs.sel0123 = 0; // makes shf be zero
+            dp_combs.sel048c = 0; // makes shf be zero
+
+            dp_combs.add_l_0_src = add_l_0_src_shf; // shf is zero
+            dp_combs.add_l_1_src = add_l_1_src_zero;
+            dp_combs.add_h_0_src = add_h_0_src_zero; // OR neg_a if B signed and negative
+            dp_combs.add_h_1_src = add_h_1_src_zero; // OR neg_b if A signed and negative
+
+            dp_state.negate_result    <= 0;
+            dp_state.negate_remainder <= 0;
+            dp_state.areg  <= dp_combs.sel_rs1;
+            dp_state.breg  <= dp_combs.sel_rs2;
+            if (dp_state.op_signed[0]) {
+                if (coproc_controls.alu_rs1[31]) {
+                    dp_combs.sel_neg_rs1 = 1;
+                    dp_state.negate_remainder <= 1;
+                }
+                if (coproc_controls.alu_rs2[31]) {
+                    dp_combs.sel_neg_rs2 = 1;
+                }
+                if (coproc_controls.alu_rs1[31] != coproc_controls.alu_rs2[31]) {
+                    dp_state.negate_result <= 1;
+                }
             }
-            dp_state.areg <= dp_state.areg>>1;
+
+            dp_state.b_shift <= dp_combs.sel_rs1_top_bit_set - dp_combs.sel_rs2_top_bit_set;
+        }
+        if (dp_state.div_shift) {
+            dp_combs.sel_neg_rs2 = 1; // Get -(abs(b)) in breg
+            if (dp_state.op_signed && coproc_controls.alu_rs2[31]) {
+                dp_combs.sel_neg_rs2 = 0; // Use actual rs2 if it is already negative and signed
+            }
+            dp_state.breg     <= dp_combs.sel_rs2;
+            dp_state.acc_low  <= dp_state.areg;
+            dp_state.acc_high <= 0;
+            dp_state.stage    <= dp_state.b_shift; // Complete with div_zero or b>a if b_shift negative
+        }
+        if (dp_state.div_step) {
+            dp_combs.sel0123 = 0;
+            dp_combs.sel048c = 0;
+            if (dp_state.stage[2;0]==0) {dp_combs.sel0123[0] = 1;}
+            if (dp_state.stage[2;0]==1) {dp_combs.sel0123[1] = 1;}
+            if (dp_state.stage[2;0]==2) {dp_combs.sel048c[0] = 1;}
+            if (dp_state.stage[2;0]==3) {dp_combs.sel048c[1] = 1;}
+            dp_combs.shift = dp_state.stage[3;2];
+
+            dp_combs.add_l_0_src = add_l_0_src_shf; // shf is breg << b_shift
+            dp_combs.add_l_1_src = add_l_1_src_acc; // bottom half is acc_l + (breg<<shift)
+            dp_combs.add_h_0_src = add_h_0_src_acc; // top half is acc top unchanged
+            dp_combs.add_h_1_src = add_h_1_src_zero;
+            dp_combs.acc_carry_low_to_high = 0; // two independent 32-bit values in accumulator
+
+            if (dp_combs.add_l_carry) { // was acc_sum_higher?
+                dp_state.acc_low  <= dp_combs.add_l[32;0];
+                dp_state.acc_high[dp_state.stage] <= 1;
+            }
+            dp_state.stage <= dp_state.stage - 1;
+            if (dp_state.stage==0) {
+                dp_combs.completed = 1;
+            }
         }
         /*b All done */
     }
 
     /*b Coprocessor <> Mul/Div state machine */
     state_machine """
-    """ : {
-        dp_state.div_init <= 0;
-        dp_state.div_shift <= 0;
-        dp_state.div_step <= 0;
-        dp_state.div_complete <= 0;
+    The state machine is implemented as one-hot control signals,
+    except for idle which has no signals asserted.
 
+    """ : {
         if (dp_state.mul_init) {
             if (!coproc_controls.alu_cannot_start) {
                 dp_state.mul_init <= 0;
@@ -503,21 +591,41 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
                 dp_state.mul_complete <= 0;
             }
         }
+        if (dp_state.div_init) {
+            if (!coproc_controls.alu_cannot_start) {
+                dp_state.div_init <= 0;
+                dp_state.div_shift <= 1;
+            }
+        }
+        if (dp_state.div_shift) {
+            dp_state.div_shift <= 0;
+            dp_state.div_step <= 1;
+        }
+        if (dp_state.div_step) {
+            if (dp_combs.completed) {
+                dp_state.div_step <= 0;
+                dp_state.div_complete <= 1;
+            }
+        }
+        if (dp_state.div_complete) {
+            if (!coproc_controls.alu_cannot_complete) {
+                dp_state.div_complete <= 0;
+            }
+        }
         if ( !coproc_controls.dec_to_alu_blocked &&
              coproc_controls.dec_idecode_valid &&
              (coproc_controls.dec_idecode.op == riscv_op_muldiv) ) {
-            dp_state.mul_init <= 1;
             dp_state.op_signed <= 0;
             dp_state.result_type <= result_type_low;
             full_switch (coproc_controls.dec_idecode.subop) {
-            case riscv_subop_mull: { dp_state.result_type <= result_type_low; }
-            case riscv_subop_mulhss: { dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b11;}
-            case riscv_subop_mulhsu: { dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b01;}
-            case riscv_subop_mulhu:  { dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b00;}
-            case riscv_subop_divs: { dp_state.result_type <= result_type_high; }
-            case riscv_subop_divu: { dp_state.result_type <= result_type_high; }
-            case riscv_subop_rems: { dp_state.result_type <= result_type_high; }
-            case riscv_subop_remu: { dp_state.result_type <= result_type_high; }
+            case riscv_subop_mull:   { dp_state.mul_init <= 1; dp_state.result_type <= result_type_low; }
+            case riscv_subop_mulhss: { dp_state.mul_init <= 1; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b11;}
+            case riscv_subop_mulhsu: { dp_state.mul_init <= 1; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b01;}
+            case riscv_subop_mulhu:  { dp_state.mul_init <= 1; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b00;}
+            case riscv_subop_divs:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_high; }
+            case riscv_subop_divu:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_high; }
+            case riscv_subop_rems:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_low; }
+            case riscv_subop_remu:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_low; }
             default: { dp_state.result_type <= result_type_high; }
             }
         }
@@ -541,8 +649,17 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
                                            dp_state.div_init || dp_state.div_step || dp_state.div_shift
             );
         coproc_response.result       = dp_state.acc_low;
+        if (dp_state.negate_remainder) {
+            coproc_response.result   = -dp_state.acc_low;
+        }
         if (dp_state.result_type == result_type_high) {
             coproc_response.result       = dp_state.acc_high;
+            if (dp_state.negate_result) {
+                coproc_response.result   = -dp_state.acc_high;
+            }
+        }
+        if (!(dp_state.mul_complete || dp_state.div_complete)) {
+            coproc_response.result       = 0;
         }
         coproc_response.cannot_start = 0;
     }
