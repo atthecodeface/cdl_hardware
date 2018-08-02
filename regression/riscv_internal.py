@@ -158,6 +158,7 @@ riscv_config = {"i32c":1,
                 "e32":1,
                 "i32m":1,
                 "i32m_fuse":1,
+                "coproc_disable":1,
 }
 
 #v i32_csr_access - signal widths for pycdl.wirebundle - must match implementation
@@ -191,8 +192,6 @@ i32_coproc_response = {"result":32,
 i32_coproc_controls = {"dec_idecode_valid":1,
                        "dec_idecode":i32_decode,
                        "dec_to_alu_blocked":1,
-                       "alu_idecode_valid":1,
-                       "alu_idecode":i32_decode,
                        "alu_cannot_complete":1,
                        "alu_flush_pipeline":1,
                        "alu_cannot_start":1,

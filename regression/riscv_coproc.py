@@ -81,7 +81,6 @@ class c_riscv_coproc_test_simple(c_riscv_coproc_test_base):
             self.riscv_config__i32m_fuse.drive(1)
             pass
         dec_idecode = riscv_internal.i32_drivers(self, "coproc_controls__dec_idecode__")
-        alu_idecode = riscv_internal.i32_drivers(self, "coproc_controls__alu_idecode__")
         simple_tb.base_th.run_start(self)
         self.bfm_wait(10)
         decode_stage = None
@@ -126,13 +125,13 @@ class c_riscv_coproc_test_simple(c_riscv_coproc_test_base):
                 pass
             decode_cycle = decode_cycle + 1
             if alu_stage is None:
-                alu_idecode.drive(self.illegal_inst)
-                self.coproc_controls__alu_idecode_valid.drive(0)
+                #alu_idecode.drive(self.illegal_inst)
+                #self.coproc_controls__alu_idecode_valid.drive(0)
                 pass
             else:
                 (delay, t, inst, rs1, rs2, result) = alu_stage
-                alu_idecode.drive(inst)
-                self.coproc_controls__alu_idecode_valid.drive(1)
+                #alu_idecode.drive(inst)
+                #self.coproc_controls__alu_idecode_valid.drive(1)
                 self.coproc_controls__alu_rs1.drive(rs1)
                 self.coproc_controls__alu_rs2.drive(rs2)
                 pass

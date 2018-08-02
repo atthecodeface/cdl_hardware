@@ -490,8 +490,6 @@ typedef struct {
     bit                     dec_idecode_valid "Mid-cycle: validates dec_idecode";
     t_riscv_i32_decode      dec_idecode "Mid-cycle: Idecode for the next cycle";
     bit                     dec_to_alu_blocked "Late in the cycle: if set, ALU will not take decode; note that ALU flush overpowers this";
-    bit                     alu_idecode_valid "Off a register: validates alu_idecode";
-    t_riscv_i32_decode      alu_idecode "Off a register: Idecode for the current cycle";
     t_riscv_word            alu_rs1     "Early in cycle (after some muxes)";
     t_riscv_word            alu_rs2     "Early in cycle (after some muxes)";
     bit                     alu_flush_pipeline "Late in cycle: If asserted, flush everything prior to alu; will only be asserted during a cycle if first cycle if ALU instruction - or if alu_cannot_start";

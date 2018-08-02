@@ -67,6 +67,7 @@ include "riscv_submodules.h"
  */
 constant integer INITIAL_PC=0x80000000;
 constant integer i32c_force_disable=0;
+constant integer coproc_force_disable=0;
 
 /*a Types
  */
@@ -123,6 +124,8 @@ module riscv_i32c_pipeline( clock clk,
                             input  t_riscv_mem_access_resp dmem_access_resp,
                             output t_riscv_fetch_req       ifetch_req,
                             input  t_riscv_fetch_resp      ifetch_resp,
+                            output t_riscv_i32_coproc_controls  coproc_controls,
+                            input t_riscv_i32_coproc_response   coproc_response,
                             input  t_riscv_config          riscv_config,
                             output t_riscv_i32_trace       trace
 )
@@ -139,6 +142,12 @@ instruction, decodes, fetches register values, and executes the ALU
 stage; determining in half a cycle the next instruction fetch, and in
 the whole cycle the data memory request, which is valid just before
 the end
+
+A coprocessor is supported; this may be configured to be disabled, in
+which case the outputs are driven low and the inputs are coprocessor
+response is ignored.
+
+A coprocessor can implement, for example, the multiply for i32m (using riscv_i32_muldiv).
 
 """
 {
@@ -365,7 +374,14 @@ the end
         }
         }
 
-        decexecrfw_combs.rfw_write_data = dmem_access_req.read_enable ? decexecrfw_combs.memory_data : decexecrfw_alu_result.result;
+        decexecrfw_combs.rfw_write_data = decexecrfw_alu_result.result | coproc_response.result;
+        if (coproc_force_disable || riscv_config.coproc_disable) {
+            decexecrfw_combs.rfw_write_data = decexecrfw_alu_result.result;
+        }
+
+        if (dmem_access_req.read_enable) {
+            decexecrfw_combs.rfw_write_data =  decexecrfw_combs.memory_data;
+        }
         if (decexecrfw_combs.idecode.csr_access.access != riscv_csr_access_none) {
             decexecrfw_combs.rfw_write_data = csr_data.read_data;
         }
@@ -373,6 +389,24 @@ the end
             registers[decexecrfw_combs.idecode.rd] <= decexecrfw_combs.rfw_write_data;
         }
         registers[0] <= 0; // register 0 is always zero...
+    }
+
+    /*b Coprocessor interface */
+    coprocessor_interface """
+    Drive the coprocessor controls unless disabled; mirror the pipeline combs
+    """: {
+        coproc_controls = {*=0};
+        coproc_controls.dec_idecode_valid  = decexecrfw_state.valid;
+        coproc_controls.dec_idecode        = decexecrfw_combs.idecode;
+        coproc_controls.dec_to_alu_blocked = coproc_response.cannot_complete; // If ALU can complete...
+        coproc_controls.alu_rs1 = decexecrfw_combs.rs1;
+        coproc_controls.alu_rs2 = decexecrfw_combs.rs2;
+        coproc_controls.alu_flush_pipeline = 0; // No pipeline to flush
+        coproc_controls.alu_cannot_start = coproc_response.cannot_start;       // ALU can always start itself; coprocessor can block it
+        coproc_controls.alu_cannot_complete = coproc_response.cannot_complete; // ALU can always complete (no unaligned transactions yet); coprocessor can block it
+        if (coproc_force_disable || riscv_config.coproc_disable) {
+            coproc_controls = {*=0};
+        }
     }
 
     /*b Logging */

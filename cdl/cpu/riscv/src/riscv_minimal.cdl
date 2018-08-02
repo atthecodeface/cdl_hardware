@@ -60,6 +60,7 @@
 /*a Includes
  */
 include "riscv.h"
+include "riscv_modules.h"
 
 /*a Module
  */
@@ -103,6 +104,8 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
     comb  t_riscv_fetch_resp    ifetch_resp;
     net t_riscv_mem_access_req  dmem_access_req;
     net t_riscv_i32_trace       trace;
+    net t_riscv_i32_coproc_controls  coproc_controls;
+    comb t_riscv_i32_coproc_response   coproc_response;
 
     /*b Ifetch stage
      */
@@ -117,12 +120,15 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
 
     /*b Pipeline */
     pipeline: {
+        coproc_response = {*=0};
         riscv_i32c_pipeline pipeline(clk <- clk,
                                      reset_n <= reset_n,
                                      ifetch_req => ifetch_req,
                                      ifetch_resp <= ifetch_resp,
                                      dmem_access_req => dmem_access_req,
                                      dmem_access_resp <= dmem_access_resp,
+                                     coproc_controls => coproc_controls,
+                                     coproc_response <= coproc_response,
                                      riscv_config <= riscv_config,
                                      trace => trace );
     }

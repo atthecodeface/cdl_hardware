@@ -23,6 +23,7 @@
 /*a Includes
  */
 include "picoriscv_types.h"
+include "riscv_modules.h"
 include "picoriscv_submodules.h"
 include "framebuffer.h"
 include "srams.h"

@@ -54,6 +54,7 @@ include "riscv_submodules.h"
  */
 constant integer INITIAL_PC=0x80000000;
 constant integer i32c_force_disable=0;
+constant integer coproc_force_disable=0;
 
 /*a Types
  */
@@ -191,22 +192,27 @@ module riscv_i32c_pipeline3( clock clk,
                              input  t_riscv_mem_access_resp dmem_access_resp,
                              output t_riscv_fetch_req       ifetch_req,
                              input  t_riscv_fetch_resp      ifetch_resp,
+                             output t_riscv_i32_coproc_controls  coproc_controls,
+                             input t_riscv_i32_coproc_response   coproc_response,
                              input  t_riscv_config          riscv_config,
                              output t_riscv_i32_trace       trace
 )
 """
-This is just the processor pipeline, using a single stage for execution.
+This is just the processor pipeline, using thress stages for execution.
+
+The decode and RFR is performed in the first stage
+
+The ALU execution (and coprocessor execution) is performed in the second stage
+
+Memory operations are performed in the third stage
+
+Register file is written at the end of the third stage; there is a RFW stage to
+forward data from RFW back to execution.
 
 The instruction fetch request for the next cycle is put out just after
 the ALU stage logic, which may be a long time into the cycle; the
 fetch data response presents the instruction fetched at the end of the
 cycle, where it is registered for execution.
-
-The pipeline is then a single stage that takes the fetched
-instruction, decodes, fetches register values, and executes the ALU
-stage; determining in half a cycle the next instruction fetch, and in
-the whole cycle the data memory request, which is valid just before
-the end
 
 """
 {
@@ -432,7 +438,10 @@ the end
                 alu_combs.blocked_by_mem = alu_state.idecode.rs2_valid;
             }
         }
-        alu_combs.blocked = alu_combs.blocked_by_mem;
+        alu_combs.blocked = alu_combs.blocked_by_mem || coproc_response.cannot_start;
+        if (coproc_force_disable || riscv_config.coproc_disable) {
+            alu_combs.blocked = alu_combs.blocked_by_mem;
+        }
 
         /*b Execute ALU stage */
         riscv_i32_alu alu( idecode <= alu_state.idecode,
@@ -459,7 +468,10 @@ the end
                                  csrs => csrs);
 
         /*b ALU stage result */
-        alu_combs.result_data = alu_result.result;
+        alu_combs.result_data = alu_result.result | coproc_response.result;
+        if (coproc_force_disable || riscv_config.coproc_disable) {
+            alu_combs.result_data = alu_result.result;
+        }
         if (alu_state.idecode.csr_access.access != riscv_csr_access_none) {
             alu_combs.result_data = csr_data.read_data;
         }
@@ -662,6 +674,24 @@ the end
             }
         }
         registers[0] <= 0; // register 0 is always zero...
+    }
+
+    /*b Coprocessor interface */
+    coprocessor_interface """
+    Drive the coprocessor controls unless disabled; mirror the pipeline combs
+    """: {
+        coproc_controls = {*=0};
+        coproc_controls.dec_idecode_valid  = dec_state.valid;
+        coproc_controls.dec_idecode        = dec_combs.idecode;
+        coproc_controls.dec_to_alu_blocked = alu_combs.blocked;
+        coproc_controls.alu_rs1 = alu_combs.rs1;
+        coproc_controls.alu_rs2 = alu_combs.rs2;
+        coproc_controls.alu_flush_pipeline = alu_combs.flush_pipeline;
+        coproc_controls.alu_cannot_start = alu_combs.blocked;       // ALU can always start itself; coprocessor can block it
+        coproc_controls.alu_cannot_complete = coproc_response.cannot_complete; // ALU can always complete (no unaligned transactions yet); coprocessor can block it
+        if (coproc_force_disable || riscv_config.coproc_disable) {
+            coproc_controls = {*=0};
+        }
     }
 
     /*b Tracing */
