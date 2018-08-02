@@ -84,11 +84,13 @@ class c_riscv_coproc_test_simple(c_riscv_coproc_test_base):
         inst_index = 0
         decode_cycle = 0
         alu_cycle = 0
+        failures = 0
         while (decode_stage is not None) or (alu_stage is not None) or (inst_index < len(self.instruction_list)):
             if (not self.coproc_response__cannot_complete.value()) and (alu_stage is not None):
                 result = self.coproc_response__result.value()
                 print "Result %08x : %d : %s" % (result, result, alu_stage)
                 if result != alu_stage[5]:
+                    failures = failures + 1
                     self.failtest(inst_index, "Mismatch in results : 0x%08x %s 0x%08x = 0x%08x got 0x%08x" % (alu_stage[3], self.op_string, alu_stage[4], alu_stage[5], result))
                     pass
                 alu_stage = None # Should check for other completion mechanism!
@@ -131,7 +133,9 @@ class c_riscv_coproc_test_simple(c_riscv_coproc_test_base):
             self.bfm_wait(1)
             pass
         self.bfm_wait(10)
-        self.passtest(inst_index,"Ran all coprocessor instructions")
+        if failures==0:
+            self.passtest(inst_index,"Ran all coprocessor instructions")
+            pass
         self.finishtest(0,"")
         pass
 
