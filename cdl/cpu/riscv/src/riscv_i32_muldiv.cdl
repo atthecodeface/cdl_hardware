@@ -34,6 +34,17 @@ include "riscv.h"
 /*a Types
  */
 
+/*t t_muldiv_fsm */
+typedef fsm {
+    muldiv_idle;
+    muldiv_mul_init;
+    muldiv_mul_step;
+    muldiv_div_init;
+    muldiv_div_shift;
+    muldiv_div_step;
+    muldiv_complete;
+} t_muldiv_fsm;
+
 /*t t_add_h_0_src
  */
 typedef enum[2] {
@@ -114,13 +125,7 @@ typedef struct {
 typedef struct {
     bit[5] b_shift;
     bit[5] stage;
-    bit mul_init;
-    bit mul_step;
-    bit mul_complete;
-    bit div_init;
-    bit div_shift;
-    bit div_step;
-    bit div_complete;
+    t_muldiv_fsm fsm_state;
     bit[32] areg;
     bit[32] breg;
     bit[32] acc_low;
@@ -479,7 +484,8 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
         dp_combs.sel_neg_rs2 = 0;
         dp_combs.completed = 0;
 
-        if (dp_state.mul_init) { // use adder/shifter to generate initial accumulation (if signed)
+        part_switch (dp_state.fsm_state) {
+        case muldiv_mul_init: { // use adder/shifter to generate initial accumulation (if signed)
             dp_combs.sel0123 = 0; // makes shf be zero
             dp_combs.sel048c = 0; // makes shf be zero
             dp_combs.add_h_0_src = add_h_0_src_zero; // OR neg_a if B signed and negative
@@ -496,7 +502,7 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             dp_state.acc_low  <= 0;
             dp_state.acc_high <= dp_combs.add_h[32;0];
         }
-        if (dp_state.mul_step) { // use adder/shifter to accumulate result
+        case muldiv_mul_step: {  // use adder/shifter to accumulate result
             dp_combs.sel0123 = dp_state.areg[2;0];
             dp_combs.sel048c = dp_state.areg[2;2];
             dp_combs.shift = dp_state.stage[3;0];
@@ -509,7 +515,7 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             dp_state.acc_low  <= dp_combs.add_l[32;0];
             dp_state.acc_high <= dp_combs.add_h[32;0];
         }
-        if (dp_state.div_init) { // does not use adder / shifter
+        case muldiv_div_init: {  // does not use adder / shifter
             dp_state.negate_result    <= 0;
             dp_state.negate_remainder <= 0;
             dp_state.areg  <= dp_combs.sel_rs1;
@@ -532,7 +538,7 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
                 dp_state.b_shift <= 0;
             }
         }
-        if (dp_state.div_shift) { // Does nothing really - should suck in top_bit_set from div_init
+        case muldiv_div_shift: {  // Does nothing really - should suck in top_bit_set from div_init
             dp_combs.sel_neg_rs2 = 1; // Get -(abs(b)) in breg
             if (dp_state.op_signed[0] && dp_combs.rs2_is_negative) {
                 dp_combs.sel_neg_rs2 = 0; // Use actual rs2 if it is already negative and signed
@@ -546,7 +552,7 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             }
             dp_state.stage    <= dp_state.b_shift; // Complete with div_zero or b>a if b_shift negative
         }
-        if (dp_state.div_step) { // remainder += (-divisor)<<stage (if positive or zero); quotient |= (1<<stage) (if necessary)
+        case muldiv_div_step: {  // remainder += (-divisor)<<stage (if positive or zero); quotient |= (1<<stage) (if necessary)
             dp_combs.sel0123 = 0;
             dp_combs.sel048c = 0;
             if (dp_state.stage[2;0]==0) {dp_combs.sel0123[0] = 1;}
@@ -568,6 +574,7 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
                 dp_combs.completed = 1;
             }
         }
+        }
         /*b All done */
     }
 
@@ -577,43 +584,38 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
     except for idle which has no signals asserted.
 
     """ : {
-        if (dp_state.mul_init) {
+        full_switch (dp_state.fsm_state) {
+        case muldiv_idle: {
+            dp_state.fsm_state <= dp_state.fsm_state;
+        }
+        case muldiv_mul_init: {
             if (!coproc_controls.alu_cannot_start) {
-                dp_state.mul_init <= 0;
-                dp_state.mul_step <= 1;
+                dp_state.fsm_state <= muldiv_mul_step;
             }
         }
-        if (dp_state.mul_step) {
+        case muldiv_mul_step: {
             if (dp_combs.completed) {
-                dp_state.mul_step <= 0;
-                dp_state.mul_complete <= 1;
+                dp_state.fsm_state <= muldiv_complete;
             }
         }
-        if (dp_state.mul_complete) {
-            if (!coproc_controls.alu_cannot_complete) {
-                dp_state.mul_complete <= 0;
-            }
-        }
-        if (dp_state.div_init) {
+        case muldiv_div_init: {
             if (!coproc_controls.alu_cannot_start) {
-                dp_state.div_init <= 0;
-                dp_state.div_shift <= 1;
+                dp_state.fsm_state <= muldiv_div_shift;
             }
         }
-        if (dp_state.div_shift) {
-            dp_state.div_shift <= 0;
-            dp_state.div_step <= 1;
+        case muldiv_div_shift: {
+            dp_state.fsm_state <= muldiv_div_step;
         }
-        if (dp_state.div_step) {
+        case muldiv_div_step: {
             if (dp_combs.completed) {
-                dp_state.div_step <= 0;
-                dp_state.div_complete <= 1;
+                dp_state.fsm_state <= muldiv_complete;
             }
         }
-        if (dp_state.div_complete) {
+        case muldiv_complete: {
             if (!coproc_controls.alu_cannot_complete) {
-                dp_state.div_complete <= 0;
+                dp_state.fsm_state <= muldiv_idle;
             }
+        }
         }
         if ( !coproc_controls.dec_to_alu_blocked &&
              coproc_controls.dec_idecode_valid &&
@@ -621,26 +623,19 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             dp_state.op_signed <= 0;
             dp_state.result_type <= result_type_low;
             full_switch (coproc_controls.dec_idecode.subop) {
-            case riscv_subop_mull:   { dp_state.mul_init <= 1; dp_state.result_type <= result_type_low; }
-            case riscv_subop_mulhss: { dp_state.mul_init <= 1; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b11;}
-            case riscv_subop_mulhsu: { dp_state.mul_init <= 1; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b01;}
-            case riscv_subop_mulhu:  { dp_state.mul_init <= 1; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b00;}
-            case riscv_subop_divs:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b11;}
-            case riscv_subop_divu:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_high; }
-            case riscv_subop_rems:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_low; dp_state.op_signed <= 2b11;}
-            case riscv_subop_remu:   { dp_state.div_init <= 1; dp_state.result_type <= result_type_low; }
+            case riscv_subop_mull:   { dp_state.fsm_state <= muldiv_mul_init; dp_state.result_type <= result_type_low; }
+            case riscv_subop_mulhss: { dp_state.fsm_state <= muldiv_mul_init; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b11;}
+            case riscv_subop_mulhsu: { dp_state.fsm_state <= muldiv_mul_init; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b01;}
+            case riscv_subop_mulhu:  { dp_state.fsm_state <= muldiv_mul_init; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b00;}
+            case riscv_subop_divs:   { dp_state.fsm_state <= muldiv_div_init; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b11;}
+            case riscv_subop_divu:   { dp_state.fsm_state <= muldiv_div_init; dp_state.result_type <= result_type_high; }
+            case riscv_subop_rems:   { dp_state.fsm_state <= muldiv_div_init; dp_state.result_type <= result_type_low; dp_state.op_signed <= 2b11;}
+            case riscv_subop_remu:   { dp_state.fsm_state <= muldiv_div_init; dp_state.result_type <= result_type_low; }
             default: { dp_state.result_type <= result_type_high; }
             }
         }
         if (coproc_controls.alu_flush_pipeline) {
-            dp_state.mul_init <= 0;
-            dp_state.div_init <= 0;
-            // the following are not necessary as flush can only occur in first cycle
-            // dp_state.mul_step <= 0;
-            // dp_state.mul_complete <= 0;
-            // dp_state.div_shift <= 0;
-            // dp_state.div_step <= 0;
-            // dp_state.div_complete <= 0;
+            dp_state.fsm_state <= muldiv_idle;
         }
     }
 
@@ -648,9 +643,6 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
     /*b Outputs */
     outputs """
     """ : {
-        coproc_response.cannot_complete = (dp_state.mul_init || dp_state.mul_step ||
-                                           dp_state.div_init || dp_state.div_step || dp_state.div_shift
-            );
         coproc_response.result       = dp_state.acc_low;
         if (dp_state.negate_remainder) {
             coproc_response.result   = -dp_state.acc_low;
@@ -661,8 +653,10 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
                 coproc_response.result   = -dp_state.acc_high;
             }
         }
-        if (!(dp_state.mul_complete || dp_state.div_complete)) {
+        coproc_response.cannot_complete = 0;
+        if ((dp_state.fsm_state!=muldiv_complete) && (dp_state.fsm_state!=muldiv_idle)) {
             coproc_response.result       = 0;
+            coproc_response.cannot_complete = 1;
         }
         coproc_response.cannot_start = 0;
     }
