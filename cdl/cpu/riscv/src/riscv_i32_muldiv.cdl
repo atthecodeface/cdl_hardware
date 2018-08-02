@@ -34,20 +34,6 @@ include "riscv.h"
 /*a Types
  */
 
-/*t t_add_l_0_src
- */
-typedef enum[2] {
-    add_l_0_src_shf,
-    add_l_0_src_inv_shf
-} t_add_l_0_src;
-
-/*t t_add_l_1_src
- */
-typedef enum[2] {
-    add_l_1_src_zero,
-    add_l_1_src_acc
-} t_add_l_1_src;
-
 /*t t_add_h_0_src
  */
 typedef enum[2] {
@@ -104,10 +90,7 @@ typedef struct {
     bit[3] shift     "Amount to shift multiply result by (in 4-bit quanta)";
     bit[64] mult_shf "Result of multiply shifted so that it is state.b * (0-15) << (shift*4)";
 
-    t_add_l_0_src add_l_0_src "Adder low input 0 source - mult_shf low or its bitwise negation";
     bit[32] add_l_in_0;
-
-    t_add_l_1_src add_l_1_src "Adder low input 1 source - accumulator low or zero";
     bit[32] add_l_in_1;
 
     t_add_h_0_src add_h_0_src "Adder high input 0 source - -a input, accumulator high or zero"; // could we use NOT of a input and carry in?
@@ -489,8 +472,6 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
         dp_combs.sel0123 = dp_state.breg[2;0];
         dp_combs.sel048c = dp_state.breg[2;2];
         dp_combs.shift = dp_state.stage[3;0];
-        dp_combs.add_l_0_src = add_l_0_src_shf; // or inv_shf
-        dp_combs.add_l_1_src = add_l_1_src_acc; // or zero
         dp_combs.add_h_0_src = add_h_0_src_acc; // or zero, acc, neg_a
         dp_combs.add_h_1_src = add_h_1_src_shf; // or zero, shf, neg_b
         dp_combs.acc_carry_low_to_high = 0;
@@ -498,7 +479,7 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
         dp_combs.sel_neg_rs2 = 0;
         dp_combs.completed = 0;
 
-        if (dp_state.mul_init) {
+        if (dp_state.mul_init) { // use adder/shifter to generate initial accumulation (if signed)
             dp_combs.sel0123 = 0; // makes shf be zero
             dp_combs.sel048c = 0; // makes shf be zero
             dp_combs.add_h_0_src = add_h_0_src_zero; // OR neg_a if B signed and negative
@@ -515,24 +496,20 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             dp_state.acc_low  <= 0;
             dp_state.acc_high <= dp_combs.add_h[32;0];
         }
-        if (dp_state.mul_step) {
+        if (dp_state.mul_step) { // use adder/shifter to accumulate result
             dp_combs.sel0123 = dp_state.areg[2;0];
             dp_combs.sel048c = dp_state.areg[2;2];
-            dp_combs.acc_carry_low_to_high = 1;
             dp_combs.shift = dp_state.stage[3;0];
+            dp_combs.acc_carry_low_to_high = 1;
+            dp_combs.add_h_0_src = add_h_0_src_acc;
+            dp_combs.add_h_1_src = add_h_1_src_shf;
             dp_combs.completed = (dp_state.areg[28;4]==0);
             dp_state.stage <= dp_state.stage + 1;
             dp_state.areg  <= dp_state.areg >> 4;
             dp_state.acc_low  <= dp_combs.add_l[32;0];
             dp_state.acc_high <= dp_combs.add_h[32;0];
         }
-        if (dp_state.div_init) {
-            dp_combs.sel0123 = 0; // makes shf be zero
-            dp_combs.sel048c = 0; // makes shf be zero
-
-            dp_combs.add_h_0_src = add_h_0_src_zero; // OR neg_a if B signed and negative
-            dp_combs.add_h_1_src = add_h_1_src_zero; // OR neg_b if A signed and negative
-
+        if (dp_state.div_init) { // does not use adder / shifter
             dp_state.negate_result    <= 0;
             dp_state.negate_remainder <= 0;
             dp_state.areg  <= dp_combs.sel_rs1;
@@ -551,11 +528,11 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             }
 
             dp_state.b_shift <= dp_combs.sel_rs1_top_bit_set - dp_combs.sel_rs2_top_bit_set;
-            if (dp_combs.sel_rs1_top_bit_set < dp_combs.sel_rs2_top_bit_set) { // dividend < divisor - short-cut to end
+            if (dp_combs.sel_rs2_top_bit_set > dp_combs.sel_rs1_top_bit_set) { // dividend less than divisor - short-cut to end
                 dp_state.b_shift <= 0;
             }
         }
-        if (dp_state.div_shift) {
+        if (dp_state.div_shift) { // Does nothing really - should suck in top_bit_set from div_init
             dp_combs.sel_neg_rs2 = 1; // Get -(abs(b)) in breg
             if (dp_state.op_signed[0] && dp_combs.rs2_is_negative) {
                 dp_combs.sel_neg_rs2 = 0; // Use actual rs2 if it is already negative and signed
@@ -569,7 +546,7 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             }
             dp_state.stage    <= dp_state.b_shift; // Complete with div_zero or b>a if b_shift negative
         }
-        if (dp_state.div_step) {
+        if (dp_state.div_step) { // remainder += (-divisor)<<stage (if positive or zero); quotient |= (1<<stage) (if necessary)
             dp_combs.sel0123 = 0;
             dp_combs.sel048c = 0;
             if (dp_state.stage[2;0]==0) {dp_combs.sel0123[0] = 1;}
@@ -578,8 +555,6 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             if (dp_state.stage[2;0]==3) {dp_combs.sel048c[1] = 1;}
             dp_combs.shift = dp_state.stage[3;2];
 
-            dp_combs.add_l_0_src = add_l_0_src_shf; // shf is breg << b_shift
-            dp_combs.add_l_1_src = add_l_1_src_acc; // bottom half is acc_l + (breg<<shift)
             dp_combs.add_h_0_src = add_h_0_src_acc; // top half is acc top unchanged
             dp_combs.add_h_1_src = add_h_1_src_zero;
             dp_combs.acc_carry_low_to_high = 0; // two independent 32-bit values in accumulator
