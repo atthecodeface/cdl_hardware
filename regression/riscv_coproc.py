@@ -182,6 +182,25 @@ class c_riscv_coproc_test_divide(c_riscv_coproc_test_simple):
         (5, "valid", riscv_internal.remu(1,2,3), 17, 4, 17%4),
         (5, "valid", riscv_internal.remu(1,2,3), 16, 4, 16%4),
         (5, "valid", riscv_internal.remu(4,5,6), 0x6789a, 0x123, 0x6789a % 0x123 ),
+
+        (5, "valid", riscv_internal.div(1,2,3), 17, 0, 0xffffffff), # Signed x / 0 returns -1 rem x
+        (5, "valid", riscv_internal.rem(1,2,3), 17, 0, 17),
+        (5, "valid", riscv_internal.div(1,2,3), (-17)&0xffffffff, 0, 0xffffffff),
+        (5, "valid", riscv_internal.rem(1,2,3), (-17)&0xffffffff, 0, (-17)&0xffffffff),
+        (5, "valid", riscv_internal.div(1,2,3), 0, 0, 0xffffffff),
+        (5, "valid", riscv_internal.rem(1,2,3), 0, 0, 0),
+
+        (5, "valid", riscv_internal.divu(1,2,3), 17, 0, 0xffffffff), # unsigned x / 0 returns 0xffffffff rem x
+        (5, "valid", riscv_internal.remu(1,2,3), 17, 0, 17),
+        (5, "valid", riscv_internal.divu(1,2,3), (-17)&0xffffffff, 0, 0xffffffff),
+        (5, "valid", riscv_internal.remu(1,2,3), (-17)&0xffffffff, 0, (-17)&0xffffffff),
+        (5, "valid", riscv_internal.divu(1,2,3), 0, 0, 0xffffffff),
+        (5, "valid", riscv_internal.remu(1,2,3), 0, 0, 0),
+
+        (5, "valid", riscv_internal.div(1,2,3), 0x80000000, 0xffffffff, 0x80000000), # signed overflow
+        (5, "valid", riscv_internal.rem(1,2,3), 0x80000000, 0xffffffff, 0), # signed overflow
+        (5, "valid", riscv_internal.divu(1,2,3), 0x80000000, 0xffffffff, 0), # unsigned cannot overflow
+        (5, "valid", riscv_internal.remu(1,2,3), 0x80000000, 0xffffffff, 0x80000000), # unsigned cannot overflow
         ]
     for (x,y) in [(17,4),
                   (16,4),

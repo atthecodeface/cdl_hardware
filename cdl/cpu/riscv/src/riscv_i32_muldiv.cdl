@@ -542,6 +542,10 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             dp_state.breg     <= dp_combs.sel_rs2;
             dp_state.acc_low  <= dp_state.areg;
             dp_state.acc_high <= 0;
+            if (dp_state.breg==0) {
+                dp_state.acc_high <= -1;
+                dp_state.negate_result <= 0;
+            }
             dp_state.stage    <= dp_state.b_shift; // Complete with div_zero or b>a if b_shift negative
         }
         if (dp_state.div_step) {
