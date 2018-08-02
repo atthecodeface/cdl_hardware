@@ -152,6 +152,14 @@ rv32_f3 = {
     "riscv_f3_csrrci":  7,#
 }
 
+#a Dictionaries for wirebundles
+#v riscv_config - signal widths for pycdl.wirebundle - must match implementation
+riscv_config = {"i32c":1,
+                "e32":1,
+                "i32m":1,
+                "i32m_fuse":1,
+}
+
 #v i32_csr_access - signal widths for pycdl.wirebundle - must match implementation
 i32_csr_access = {"access":3, "address":12}
 

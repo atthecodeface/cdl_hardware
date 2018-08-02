@@ -1,4 +1,4 @@
-/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+/** @copyright (C) 2016-2018,  Gavin J Stark.  All rights reserved.
  *
  * @copyright
  *    Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,17 +19,13 @@
  *
  */
 
-/*a To do
-Swap areg and breg? multiply by areg rather than breg? Probably slower if we do that in the real world, as rs2 is going to usually be the smaller number?
-
-Do nega in accumulator adder?
-
- */
-
 /*a Includes
  */
 include "riscv_internal_types.h"
 include "riscv.h"
+
+/*a Constants - configuration */
+constant integer i32m_fuse_force_disable=0;
 
 /*a Types
  */
@@ -138,12 +134,29 @@ typedef struct {
     t_result_type result_type;
 } t_dp_state;
 
+/*t t_dec_fuse_combs
+ */
+typedef struct {
+    bit match "Asserted if the current decode registers match the last op";
+} t_dec_fuse_combs;
+
+/*t t_dec_fuse
+ */
+typedef struct {
+    bit[5] rs1;
+    bit[5] rs2;
+    bit was_mulh;
+    bit was_divu;
+    bit was_divs;
+} t_dec_fuse;
+
 /*a Module
  */
 module riscv_i32_muldiv( clock clk,
                          input bit reset_n,
                          input t_riscv_i32_coproc_controls  coproc_controls,
-                         output t_riscv_i32_coproc_response coproc_response
+                         output t_riscv_i32_coproc_response coproc_response,
+                         input t_riscv_config riscv_config
 )
 """
 
@@ -350,7 +363,9 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
     default clock clk;
     default reset active_low reset_n;
     comb t_dp_combs dp_combs         "Combinatorials used in the module, not exported as the decode";
-    clocked t_dp_state dp_state = {*=0} "State";
+    clocked t_dp_state dp_state = {*=0} "State for the datapath and state machine";
+    comb t_dec_fuse_combs dec_fuse_combs "Combinatorials used to determine fusing";
+    clocked t_dec_fuse dec_fuse  = {*=0} "State for fusing operations, if supported";
 
     /*b RS1/RS2 datapath */
     rs1_rs2_datapath """
@@ -635,28 +650,91 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
             }
         }
         }
+        dec_fuse_combs.match = (dec_fuse.rs1==coproc_controls.dec_idecode.rs1) && (dec_fuse.rs2 == coproc_controls.dec_idecode.rs2);
         if ( !coproc_controls.dec_to_alu_blocked &&
-             coproc_controls.dec_idecode_valid &&
-             (coproc_controls.dec_idecode.op == riscv_op_muldiv) ) {
-            dp_state.op_signed <= 0;
-            dp_state.result_type <= result_type_low;
-            full_switch (coproc_controls.dec_idecode.subop) {
-            case riscv_subop_mull:   { dp_state.fsm_state <= muldiv_mul_init; dp_state.result_type <= result_type_low; }
-            case riscv_subop_mulhss: { dp_state.fsm_state <= muldiv_mul_init; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b11;}
-            case riscv_subop_mulhsu: { dp_state.fsm_state <= muldiv_mul_init; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b01;}
-            case riscv_subop_mulhu:  { dp_state.fsm_state <= muldiv_mul_init; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b00;}
-            case riscv_subop_divs:   { dp_state.fsm_state <= muldiv_div_init; dp_state.result_type <= result_type_high; dp_state.op_signed <= 2b11;}
-            case riscv_subop_divu:   { dp_state.fsm_state <= muldiv_div_init; dp_state.result_type <= result_type_high; }
-            case riscv_subop_rems:   { dp_state.fsm_state <= muldiv_div_init; dp_state.result_type <= result_type_low; dp_state.op_signed <= 2b11;}
-            case riscv_subop_remu:   { dp_state.fsm_state <= muldiv_div_init; dp_state.result_type <= result_type_low; }
-            default: { dp_state.result_type <= result_type_high; }
+             coproc_controls.dec_idecode_valid) {
+            dec_fuse.was_mulh <= 0;
+            dec_fuse.was_divu <= 0;
+            dec_fuse.was_divs <= 0;
+            if (coproc_controls.dec_idecode.op == riscv_op_muldiv)  {
+                dec_fuse.rs1 <= coproc_controls.dec_idecode.rs1;
+                dec_fuse.rs2 <= coproc_controls.dec_idecode.rs2;
+                dp_state.op_signed <= 0;
+                dp_state.result_type <= result_type_low;
+                full_switch (coproc_controls.dec_idecode.subop) {
+                case riscv_subop_mull:   {
+                    dp_state.fsm_state <= muldiv_mul_init;
+                    dp_state.result_type <= result_type_low;
+                    if (dec_fuse.was_mulh && dec_fuse_combs.match) {
+                        dp_state.fsm_state <= muldiv_complete;
+                    }
+                }
+                case riscv_subop_mulhss: {
+                    dp_state.fsm_state <= muldiv_mul_init;
+                    dp_state.result_type <= result_type_high;
+                    dp_state.op_signed <= 2b11;
+                    dec_fuse.was_mulh <= 1;
+                }
+                case riscv_subop_mulhsu: {
+                    dp_state.fsm_state <= muldiv_mul_init;
+                    dp_state.result_type <= result_type_high;
+                    dp_state.op_signed <= 2b01;
+                    dec_fuse.was_mulh <= 1;
+                }
+                case riscv_subop_mulhu:  {
+                    dp_state.fsm_state <= muldiv_mul_init;
+                    dp_state.result_type <= result_type_high;
+                    dp_state.op_signed <= 2b00;
+                    dec_fuse.was_mulh <= 1;
+                }
+                case riscv_subop_divs:   {
+                    dp_state.fsm_state <= muldiv_div_init;
+                    dp_state.result_type <= result_type_high;
+                    dp_state.op_signed <= 2b11;
+                    dec_fuse.was_divs <= 1;
+                }
+                case riscv_subop_divu:   {
+                    dp_state.fsm_state <= muldiv_div_init;
+                    dp_state.result_type <= result_type_high;
+                    dec_fuse.was_divu <= 1;
+                }
+                case riscv_subop_rems:   {
+                    dp_state.fsm_state <= muldiv_div_init;
+                    dp_state.result_type <= result_type_low;
+                    dp_state.op_signed <= 2b11;
+                    if (dec_fuse.was_divs && dec_fuse_combs.match) {
+                        dp_state.fsm_state <= muldiv_complete;
+                    }
+                }
+                case riscv_subop_remu:   {
+                    dp_state.fsm_state <= muldiv_div_init;
+                    dp_state.result_type <= result_type_low;
+                    if (dec_fuse.was_divu && dec_fuse_combs.match) {
+                        dp_state.fsm_state <= muldiv_complete;
+                    }
+                }
+                default: {
+                    dp_state.result_type <= result_type_high;
+                }
+                }
+                if ( (coproc_controls.dec_idecode.rs1 == coproc_controls.dec_idecode.rd) ||
+                     (coproc_controls.dec_idecode.rs2 == coproc_controls.dec_idecode.rd) ) {
+                    dec_fuse.was_mulh <= 0;
+                    dec_fuse.was_divu <= 0;
+                    dec_fuse.was_divs <= 0;
+                }
             }
         }
         if (coproc_controls.alu_flush_pipeline) {
             dp_state.fsm_state <= muldiv_idle;
+            dec_fuse.was_mulh <= 0;
+            dec_fuse.was_divu <= 0;
+            dec_fuse.was_divs <= 0;
+        }
+        if (i32m_fuse_force_disable || !riscv_config.i32m_fuse) {
+            dec_fuse <= {*=0};
         }
     }
-
 
     /*b Outputs */
     outputs """

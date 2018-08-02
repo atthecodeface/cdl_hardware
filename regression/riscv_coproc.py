@@ -71,10 +71,15 @@ class c_riscv_coproc_test_simple(c_riscv_coproc_test_base):
         ]
     illegal_inst = riscv_internal.instruction()
     op_string = "*"
+    do_fuse = False
+    verbose = False
     #f run
     def run(self):
         self.sim_msg = self.sim_message()
         self.bfm_wait(10)
+        if self.do_fuse:
+            self.riscv_config__i32m_fuse.drive(1)
+            pass
         dec_idecode = riscv_internal.i32_drivers(self, "coproc_controls__dec_idecode__")
         alu_idecode = riscv_internal.i32_drivers(self, "coproc_controls__alu_idecode__")
         simple_tb.base_th.run_start(self)
@@ -88,7 +93,9 @@ class c_riscv_coproc_test_simple(c_riscv_coproc_test_base):
         while (decode_stage is not None) or (alu_stage is not None) or (inst_index < len(self.instruction_list)):
             if (not self.coproc_response__cannot_complete.value()) and (alu_stage is not None):
                 result = self.coproc_response__result.value()
-                print "Result %08x : %d : %s" % (result, result, alu_stage)
+                if self.verbose:
+                    print "%6d: Result %08x : %d : %s" % (self.global_cycle(), result, result, alu_stage)
+                    pass
                 if result != alu_stage[5]:
                     failures = failures + 1
                     self.failtest(inst_index, "Mismatch in results : 0x%08x %s 0x%08x = 0x%08x got 0x%08x" % (alu_stage[3], self.op_string, alu_stage[4], alu_stage[5], result))
@@ -134,7 +141,7 @@ class c_riscv_coproc_test_simple(c_riscv_coproc_test_base):
             pass
         self.bfm_wait(10)
         if failures==0:
-            self.passtest(inst_index,"Ran all coprocessor instructions")
+            self.passtest(self.global_cycle(),"Ran all coprocessor instructions")
             pass
         self.finishtest(0,"")
         pass
@@ -236,6 +243,12 @@ class c_riscv_coproc_test_divide(c_riscv_coproc_test_simple):
 
         pass
 
+#c c_riscv_coproc_test_multiply_fuse
+class c_riscv_coproc_test_multiply_fuse(c_riscv_coproc_test_multiply):
+    do_fuse = True
+#c c_riscv_coproc_test_divide_fuse
+class c_riscv_coproc_test_divide_fuse(c_riscv_coproc_test_divide):
+    do_fuse = True
 #a Hardware classes
 #c riscv_coproc_test_hw
 class riscv_coproc_test_hw(simple_tb.cdl_test_hw):
@@ -246,9 +259,13 @@ class riscv_coproc_test_hw(simple_tb.cdl_test_hw):
                }
     coproc_response = pycdl.wirebundle(riscv_internal.i32_coproc_response)
     coproc_controls = pycdl.wirebundle(riscv_internal.i32_coproc_controls)
+    riscv_config    = pycdl.wirebundle(riscv_internal.riscv_config)
     th_forces = { "th.clock":"clk",
-                  "th.inputs":" ".join(coproc_response._name_list("coproc_response")),
-                  "th.outputs":" ".join(coproc_controls._name_list("coproc_controls")),
+                  "th.inputs":(" ".join(coproc_response._name_list("coproc_response")) + " " +
+                               " "),
+                  "th.outputs":(" ".join(coproc_controls._name_list("coproc_controls")) + " " +
+                                " ".join(riscv_config._name_list("riscv_config")) + " " +
+                                " "),
                   }
     module_name = "tb_riscv_i32_muldiv"
     #f __init__
@@ -269,6 +286,12 @@ class riscv_coproc(simple_tb.base_test):
         pass
     def test_divide(self):
         self.do_test_run(riscv_coproc_test_hw(c_riscv_coproc_test_divide()), num_cycles=5000)
+        pass
+    def test_multiply_fuse(self):
+        self.do_test_run(riscv_coproc_test_hw(c_riscv_coproc_test_multiply_fuse()), num_cycles=5000)
+        pass
+    def test_divide_fuse(self):
+        self.do_test_run(riscv_coproc_test_hw(c_riscv_coproc_test_divide_fuse()), num_cycles=5000)
         pass
     pass
 

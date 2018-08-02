@@ -76,6 +76,7 @@ typedef struct {
     bit      i32c;
     bit      e32;
     bit      i32m;
+    bit      i32m_fuse;
 } t_riscv_config;
 
 /*t t_riscv_debug_op
