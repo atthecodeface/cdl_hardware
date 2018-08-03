@@ -83,6 +83,7 @@ cdl cdl/cpu/riscv/src    riscv_i32c_pipeline3 inc:cdl/inc
 cdl cdl/cpu/riscv/tb_src tb_riscv_minimal               inc:cdl/inc
 cdl cdl/cpu/riscv/tb_src tb_riscv_i32c_minimal          inc:cdl/inc
 cdl cdl/cpu/riscv/tb_src tb_riscv_i32c_pipeline3        inc:cdl/inc
+cdl cdl/cpu/riscv/tb_src tb_riscv_i32mc_pipeline3       inc:cdl/inc
 cdl cdl/cpu/riscv/tb_src tb_riscv_minimal_single_memory inc:cdl/inc
 
 #cdl cdl/cpu/clarvi/src    clarvi        inc:cdl/inc

@@ -751,8 +751,12 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
         }
 
         coproc_response.cannot_complete = 0;
-        if ((dp_state.fsm_state!=muldiv_complete) && (dp_state.fsm_state!=muldiv_idle)) {
+        coproc_response.result_valid = 1;
+        if (dp_state.fsm_state != muldiv_complete) {
+            coproc_response.result_valid = 0;
             coproc_response.result       = 0;
+        }
+        if ((dp_state.fsm_state!=muldiv_complete) && (dp_state.fsm_state!=muldiv_idle)) {
             coproc_response.cannot_complete = 1;
         }
         coproc_response.cannot_start = 0;

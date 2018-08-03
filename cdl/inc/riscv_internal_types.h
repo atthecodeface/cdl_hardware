@@ -502,6 +502,7 @@ typedef struct {
 typedef struct {
     bit          cannot_start "If asserted, block start of the ALU stage - the instruction is then tried again in the next cycle, but can be interrupted";
     t_riscv_word result;
+    bit          result_valid "Early in cycle, if asserted then coproc overcomes the ALU result";
     bit          cannot_complete "Early in cycle: if deasserted the module is performing a calculation that has not produced a valid result yet (feeds back in to controls alu_cannot_complete)";
 } t_riscv_i32_coproc_response;
 

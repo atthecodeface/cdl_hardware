@@ -438,7 +438,7 @@ cycle, where it is registered for execution.
                 alu_combs.blocked_by_mem = alu_state.idecode.rs2_valid;
             }
         }
-        alu_combs.blocked = alu_combs.blocked_by_mem || coproc_response.cannot_start;
+        alu_combs.blocked = alu_combs.blocked_by_mem || coproc_response.cannot_complete;
         if (coproc_force_disable || riscv_config.coproc_disable) {
             alu_combs.blocked = alu_combs.blocked_by_mem;
         }
@@ -469,6 +469,9 @@ cycle, where it is registered for execution.
 
         /*b ALU stage result */
         alu_combs.result_data = alu_result.result | coproc_response.result;
+        if (coproc_response.result_valid) {
+            alu_combs.result_data = coproc_response.result;
+        }
         if (coproc_force_disable || riscv_config.coproc_disable) {
             alu_combs.result_data = alu_result.result;
         }
@@ -687,7 +690,7 @@ cycle, where it is registered for execution.
         coproc_controls.alu_rs1 = alu_combs.rs1;
         coproc_controls.alu_rs2 = alu_combs.rs2;
         coproc_controls.alu_flush_pipeline = alu_combs.flush_pipeline;
-        coproc_controls.alu_cannot_start = alu_combs.blocked;       // ALU can always start itself; coprocessor can block it
+        coproc_controls.alu_cannot_start = alu_combs.blocked_by_mem;  // ALU can always start itself; coprocessor can block it
         coproc_controls.alu_cannot_complete = coproc_response.cannot_complete; // ALU can always complete (no unaligned transactions yet); coprocessor can block it
         if (coproc_force_disable || riscv_config.coproc_disable) {
             coproc_controls = {*=0};

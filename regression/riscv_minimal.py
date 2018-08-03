@@ -292,6 +292,28 @@ class riscv_i32c_pipeline3_test_hw(simple_tb.cdl_test_hw):
         pass
     pass
 
+#c riscv_i32mc_pipeline3_test_hw
+class riscv_i32mc_pipeline3_test_hw(simple_tb.cdl_test_hw):
+    """
+    Simple instantiation of RISCV minimal testbench for i32mc pipeline3
+    """
+    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
+               }
+    th_forces = { "th.clock":"clk",
+                  "th.inputs":("a"),
+                  "th.outputs":("b"),
+                  }
+    module_name = "tb_riscv_i32mc_pipeline3"
+    #f __init__
+    def __init__(self, test):
+        self.th_forces = self.th_forces.copy()
+        mif_filename = test.get_image()
+        self.th_forces["imem.filename"] = mif_filename
+        self.th_forces["dmem.filename"] = mif_filename
+        simple_tb.cdl_test_hw.__init__(self,test)
+        pass
+    pass
+
 #c riscv_minimal_single_memory_test_hw
 class riscv_minimal_single_memory_test_hw(simple_tb.cdl_test_hw):
     """
@@ -355,59 +377,72 @@ class riscv_i32c_minimal(simple_tb.base_test):
 class riscv_i32c_pipeline3(simple_tb.base_test):
     pass
 
+#c riscv_i32mc_pipeline3
+class riscv_i32mc_pipeline3(simple_tb.base_test):
+    pass
+
 #c riscv_minimal_single_memory
 class riscv_minimal_single_memory(simple_tb.base_test):
     pass
 
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
-riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000),
-                               "traps":("traps.dump",10*1000),
+riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[]),
+                               "traps":("traps.dump",10*1000,[]),
 }
-riscv_regression_tests = {"or":("rv32ui-p-or.dump",3*1000),
-         "simple":("rv32ui-p-simple.dump",3*1000),
-         "jalr":("rv32ui-p-jalr.dump",3*1000),
-         "jal":("rv32ui-p-jal.dump",3*1000),
-         "fence_i":("rv32ui-p-fence_i.dump",3*1000), #Note that Fence does not work on the riscv_minimal as that does not have writable instruction memory
-         "bne":("rv32ui-p-bne.dump",3*1000),
-         "bltu":("rv32ui-p-bltu.dump",3*1000),
-         "blt":("rv32ui-p-blt.dump",3*1000),
-         "bgeu":("rv32ui-p-bgeu.dump",3*1000),
-         "bge":("rv32ui-p-bge.dump",3*1000),
-         "beq":("rv32ui-p-beq.dump",3*1000),
-         "auipc":("rv32ui-p-auipc.dump",3*1000),
-         "andi":("rv32ui-p-andi.dump",3*1000),
-         "and":("rv32ui-p-and.dump",3*1000),
-         "addi":("rv32ui-p-addi.dump",3*1000),
-         "add":("rv32ui-p-add.dump",3*1000),
-         "sw":("rv32ui-p-sw.dump",3*1000),
-         "sltiu":("rv32ui-p-sltiu.dump",3*1000),
-         "slti":("rv32ui-p-slti.dump",3*1000),
-         "slt":("rv32ui-p-slt.dump",3*1000),
-         "slli":("rv32ui-p-slli.dump",3*1000),
-         "sll":("rv32ui-p-sll.dump",3*1000),
-         "sh":("rv32ui-p-sh.dump",3*1000),
-         "sb":("rv32ui-p-sb.dump",3*1000),
-         "ori":("rv32ui-p-ori.dump",3*1000),
-         "or":("rv32ui-p-or.dump",3*1000),
-         "lw":("rv32ui-p-lw.dump",3*1000),
-         "lui":("rv32ui-p-lui.dump",3*1000),
-         "lhu":("rv32ui-p-lhu.dump",3*1000),
-         "lh":("rv32ui-p-lh.dump",3*1000),
-         "lbu":("rv32ui-p-lbu.dump",3*1000),
-         "lb":("rv32ui-p-lb.dump",3*1000),
-         "xori":("rv32ui-p-xori.dump",3*1000),
-         "xor":("rv32ui-p-xor.dump",3*1000),
-         "sub":("rv32ui-p-sub.dump",3*1000),
-         "srli":("rv32ui-p-srli.dump",3*1000),
-         "srl":("rv32ui-p-srl.dump",3*1000),
-         "srai":("rv32ui-p-srai.dump",3*1000),
-         "sra":("rv32ui-p-sra.dump",3*1000),
-         "sltu":("rv32ui-p-sltu.dump",3*1000),
+riscv_regression_tests = {"or":("rv32ui-p-or.dump",3*1000,[]),
+         "simple":("rv32ui-p-simple.dump",3*1000,[]),
+         "jalr":("rv32ui-p-jalr.dump",3*1000,[]),
+         "jal":("rv32ui-p-jal.dump",3*1000,[]),
+         "fence_i":("rv32ui-p-fence_i.dump",3*1000,["ifence"]), #Note that Fence does not work on the riscv_minimal as that does not have writable instruction memory
+         "bne":("rv32ui-p-bne.dump",3*1000,[]),
+         "bltu":("rv32ui-p-bltu.dump",3*1000,[]),
+         "blt":("rv32ui-p-blt.dump",3*1000,[]),
+         "bgeu":("rv32ui-p-bgeu.dump",3*1000,[]),
+         "bge":("rv32ui-p-bge.dump",3*1000,[]),
+         "beq":("rv32ui-p-beq.dump",3*1000,[]),
+         "auipc":("rv32ui-p-auipc.dump",3*1000,[]),
+         "andi":("rv32ui-p-andi.dump",3*1000,[]),
+         "and":("rv32ui-p-and.dump",3*1000,[]),
+         "addi":("rv32ui-p-addi.dump",3*1000,[]),
+         "add":("rv32ui-p-add.dump",3*1000,[]),
+         "sw":("rv32ui-p-sw.dump",3*1000,[]),
+         "sltiu":("rv32ui-p-sltiu.dump",3*1000,[]),
+         "slti":("rv32ui-p-slti.dump",3*1000,[]),
+         "slt":("rv32ui-p-slt.dump",3*1000,[]),
+         "slli":("rv32ui-p-slli.dump",3*1000,[]),
+         "sll":("rv32ui-p-sll.dump",3*1000,[]),
+         "sh":("rv32ui-p-sh.dump",3*1000,[]),
+         "sb":("rv32ui-p-sb.dump",3*1000,[]),
+         "ori":("rv32ui-p-ori.dump",3*1000,[]),
+         "or":("rv32ui-p-or.dump",3*1000,[]),
+         "lw":("rv32ui-p-lw.dump",3*1000,[]),
+         "lui":("rv32ui-p-lui.dump",3*1000,[]),
+         "lhu":("rv32ui-p-lhu.dump",3*1000,[]),
+         "lh":("rv32ui-p-lh.dump",3*1000,[]),
+         "lbu":("rv32ui-p-lbu.dump",3*1000,[]),
+         "lb":("rv32ui-p-lb.dump",3*1000,[]),
+         "xori":("rv32ui-p-xori.dump",3*1000,[]),
+         "xor":("rv32ui-p-xor.dump",3*1000,[]),
+         "sub":("rv32ui-p-sub.dump",3*1000,[]),
+         "srli":("rv32ui-p-srli.dump",3*1000,[]),
+         "srl":("rv32ui-p-srl.dump",3*1000,[]),
+         "srai":("rv32ui-p-srai.dump",3*1000,[]),
+         "sra":("rv32ui-p-sra.dump",3*1000,[]),
+         "sltu":("rv32ui-p-sltu.dump",3*1000,[]),
+
+         "div":("rv32um-p-div.dump",3*1000,["muldiv"]),
+         "divu":("rv32um-p-divu.dump",3*1000,["muldiv"]),
+         "rem":("rv32um-p-rem.dump",3*1000,["muldiv"]),
+         "remu":("rv32um-p-remu.dump",3*1000,["muldiv"]),
+         "mul":("rv32um-p-mul.dump",3*1000,["muldiv"]),
+         "mulh":("rv32um-p-mulh.dump",3*3000,["muldiv"]),
+         "mulhu":("rv32um-p-mulhu.dump",3*3000,["muldiv"]),
+         "mulhsu":("rv32um-p-mulhsu.dump",3*3000,["muldiv"]),
            }
 for (test_dir,tests) in [(riscv_regression_dir,riscv_regression_tests),
                          (riscv_atcf_regression_dir,riscv_atcf_regression_tests)]:
     for tc in tests:
-        (tf,num_cycles) = tests[tc]
+        (tf,num_cycles,tags) = tests[tc]
         tf = test_dir+tf
         def test_fn(c, tf=tf, num_cycles=num_cycles):
             c.do_test_run(riscv_minimal_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles)
@@ -418,13 +453,19 @@ for (test_dir,tests) in [(riscv_regression_dir,riscv_regression_tests),
         def test_i32c_pipe3_fn(c, tf=tf, num_cycles=num_cycles):
             c.do_test_run(riscv_i32c_pipeline3_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles*3 / 2)
             pass
+        def test_i32mc_pipe3_fn(c, tf=tf, num_cycles=num_cycles):
+            c.do_test_run(riscv_i32mc_pipeline3_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles*3 / 2)
+            pass
         def test_smem_fn(c, tf=tf, num_cycles=num_cycles):
             c.do_test_run(riscv_minimal_single_memory_test_hw(c_riscv_minimal_test_dump(dump_filename=tf,test_memory="mem")), num_cycles=num_cycles)
             pass
-        if tc not in ["fence_i"]:
+        if ("ifence" not in tags) and ("muldiv" not in tags):
             setattr(riscv_minimal,               "test_"+tc, test_fn)
             setattr(riscv_i32c_minimal,          "test_"+tc, test_i32c_fn)
             setattr(riscv_i32c_pipeline3,        "test_"+tc, test_i32c_pipe3_fn)
-        setattr(riscv_minimal_single_memory, "test_"+tc, test_smem_fn)
+        if ("ifence" not in tags):
+            setattr(riscv_i32mc_pipeline3,       "test_"+tc, test_i32mc_pipe3_fn)
+        if ("muldiv" not in tags):
+            setattr(riscv_minimal_single_memory, "test_"+tc, test_smem_fn)
         pass
     pass
