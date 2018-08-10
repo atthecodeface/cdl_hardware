@@ -147,8 +147,8 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
         part_switch (idecode.op) {
         case riscv_op_lui:      { alu_result.result = idecode.immediate;}
         case riscv_op_auipc:    { alu_result.result = alu_combs.pc_plus_imm;}
-        case riscv_op_jal:      { alu_result.result = alu_combs.pc_plus_inst; } // jalr stores pc+4 ready for return in register
-        case riscv_op_jalr:     { alu_result.result = alu_combs.pc_plus_inst; } // jalr stores pc+4 ready for return in register
+        case riscv_op_jal:      { alu_result.result = alu_combs.pc_plus_inst; } // jal  stores pc+2/4 ready for return in register
+        case riscv_op_jalr:     { alu_result.result = alu_combs.pc_plus_inst; } // jalr stores pc+2/4 ready for return in register
         }
         alu_result.branch_target = alu_combs.pc_plus_imm;
         part_switch (idecode.op) {

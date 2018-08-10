@@ -176,6 +176,9 @@ are from that specification)
         case 2b10: {
             idecode.immediate = combs.imm_ci_v2;
             part_switch(combs.opc) {
+            case riscv_opcc2_misc_alu: { // uses zero
+                idecode.immediate_valid = 0;
+            }
             case riscv_opcc2_slli: {
                 idecode.immediate = combs.imm_ci_v2; // NOT USED
             }
@@ -201,7 +204,7 @@ are from that specification)
     These are known as the prime register decodes (rs1', rs2', rd').
 
     """: {
-        /*b  Defaults */
+        /*b Defaults */
         idecode.is_compressed = 1;
         idecode.rd  = combs.rd_q0;
         idecode.rs1 = combs.rs1;
@@ -220,7 +223,8 @@ are from that specification)
 
         /*b Decode by quadrant (bottom 2 bits of instruction, 11 -> not 16-bit ) */
         part_switch(combs.quadrant) {
-        case 2b00: { // addi4spn, x, lw, x, x, x, sw, x
+        /*b Quadrant 00 - addi4spn, x, lw, x, x, x, sw, x */
+        case 2b00: { 
             idecode.rd  = combs.rd_q0; // rd'
             idecode.rs1 = bundle(2b01, combs.rs1[3;0]); // rs1' - replace with x2 for addi4spn
             idecode.rs2 = bundle(2b01, combs.rs2[3;0]); // rs2'
@@ -254,7 +258,8 @@ are from that specification)
             }
             }
         }
-        case 2b01: { // addi, jal, li, lui/addi16sp, misc-alu, j, beqz, bnez
+        /*b Quadrant 01 - addi, jal, li, lui/addi16sp, misc-alu, j, beqz, bnez */
+        case 2b01: {
             idecode.rd  = combs.rd_q12; // rd
             idecode.rs1 = combs.rs1;    // rs1
             idecode.rs2 = bundle(2b01, combs.rs2[3;0]); // rs2'
@@ -266,7 +271,7 @@ are from that specification)
             idecode.rs2_valid = 0;  // except for half of misc-alu (sub, xor, or, and)
             idecode.rd_written = 0; // except for jal, j, beqz, bnez
             part_switch(combs.opc) {
-            case riscv_opcc1_addi: { // addi rd, rd, imm
+            case riscv_opcc1_addi: { // addi rd, rd, imm (imm==0 reserved)
                 idecode.illegal    = 0;
                 idecode.op         = riscv_op_alu;
                 idecode.subop      = riscv_subop_add;
@@ -287,7 +292,7 @@ are from that specification)
                 idecode.rd_written = 1;
                 idecode.rs1        = riscv_abi_zero; // x0
             }
-            case riscv_opcc1_lui: { // lui rd, imm
+            case riscv_opcc1_lui: { // lui rd, imm (imm==0 reserved)
                 idecode.illegal    = 0;
                 idecode.op         = riscv_op_lui;
                 idecode.rd_written = 1;
@@ -363,25 +368,55 @@ are from that specification)
             }
             }
         }
-        case 2b10: { // slli, x, lwsp, x, jr/mv/ebreak/jalr/add, x, swsp, x
+        /*b Quadrant 10 - slli, x, lwsp, x, j[al]r/mv/add (ebreak), x, swsp, x */
+        case 2b10: {
             idecode.rd  = combs.rd_q12; // rd
             idecode.rs1 = combs.rs1;    // rs1
             idecode.rs2 = combs.rs2;    // rs2
-            idecode.rs1_valid = 1;  // except for mv, ebreak
+            idecode.rs1_valid = 1;  // except for ebreak
             idecode.rs2_valid = 0;  // except for mv, add, swsp
-            idecode.rd_written = 0; // except for jr, ebreak, jalr, lwsp
-            if (combs.opc[2;0]!=0) {
+            idecode.rd_written = 0; // except for mv, add, jr, ebreak, jalr, lwsp
+            if (combs.opc[2;0]!=0) { // lwsp, swsp
                 idecode.rs1 = riscv_abi_sp; // x2
             }
             part_switch(combs.opc) {
+            case riscv_opcc2_misc_alu: { // j[al]r/mv/add (ebreak)
+                idecode.illegal = 0;
+                if (combs.rs2==0) {
+                    idecode.op = riscv_op_jalr;
+                    idecode.rs1_valid = 1;
+                    idecode.rs2_valid = 0; // actually kills forwarding, but rs2==0 => it will use zero anyway
+                    idecode.rd_written = 1;
+                    if (instruction[12]) { // ebreak (if rs1==0) / jalr = jalr x1, rs1, x0
+                        idecode.rd  = 1;
+                        if (combs.rs1==0) { // == combs.rd_q12
+                            idecode.op = riscv_op_system;
+                            idecode.subop = riscv_subop_ebreak;
+                            idecode.rd_written = 0;
+                        }
+                    } else { // jr (rs1==0 reserved) = jalr x0, rs1, x0
+                        idecode.rd = 0; // will kill the rd_written automatically, hence is really jr
+                    }
+                } else { // mv rd, rs2 or add rd, rs1, rs2
+                    idecode.op     = riscv_op_alu;
+                    idecode.subop  = riscv_subop_add;
+                    idecode.rs1_valid = 1;
+                    idecode.rs2_valid = 1;
+                    idecode.rd_written = 1;
+                    if (instruction[12]) { // mv rd, rs2 == add rd, x0, rs2
+                        idecode.rs1 = 0;
+                    }
+                }
+            }
             case riscv_opcc2_slli: { // slli rd, rd, amt
+                idecode.illegal = 0;
                 idecode.op     = riscv_op_alu;
                 idecode.subop  = riscv_subop_sll;
                 idecode.rs1_valid = 1;
                 idecode.rs2_valid = 0;
                 idecode.rd_written = 1;
             }
-            case riscv_opcc2_lwsp: { // lw rd, ofs(x2)
+            case riscv_opcc2_lwsp: { // lw rd, ofs(x2) (rd==0 reserved)
                 idecode.illegal = 0;
                 idecode.op = riscv_op_load;
                 idecode.rs1 = riscv_abi_sp; // x2
