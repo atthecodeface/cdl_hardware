@@ -446,6 +446,15 @@ are from that specification)
                 idecode.illegal = 1;
             }
         }
+        if (idecode.rs1 == 0) {
+            idecode.rs1_valid = 0;
+        }
+        if (idecode.rs2 == 0) {
+            idecode.rs2_valid = 0;
+        }
+        if (idecode.rd == 0) {
+            idecode.rd_written = 0;
+        }
         if (instruction[16;0]==0) {
             idecode.illegal = 1;
         }

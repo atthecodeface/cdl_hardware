@@ -222,7 +222,7 @@ cycle, where it is registered for execution.
     default clock clk;
     default reset active_low reset_n;
 
-    clocked t_riscv_word[32] registers={*=0} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
+    clocked t_riscv_word[32] registers={*=-1} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
 
     comb    t_ifetch_combs         ifetch_combs;
     net     t_riscv_i32_decode     idecode_i32;
