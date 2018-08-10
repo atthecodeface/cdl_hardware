@@ -365,29 +365,61 @@ class riscv_jtag_debug(simple_tb.base_test):
         self.do_test_run(hw, 100*1000)
     pass
 
-#c riscv_minimal
-class riscv_minimal(simple_tb.base_test):
+#c riscv_base
+class riscv_base(simple_tb.base_test):
     supports = []
+    hw = None
+    cycles_scale = 1.0
+    test_memory = None
+    @classmethod
+    def add_test_fn(cls, name, tf, num_cycles):
+        num_cycles = int(num_cycles * cls.cycles_scale)
+        def test_fn(c):
+            c.do_test_run(cls.hw(c_riscv_minimal_test_dump(dump_filename=tf,
+                                                       test_memory = cls.test_memory,
+                                                       )), num_cycles=num_cycles)
+            pass
+        setattr(cls, "test_"+name, test_fn)
+        pass
+
+#c riscv_minimal
+class riscv_minimal(riscv_base):
+    supports = []
+    hw = riscv_minimal_test_hw
+    test_memory = "dmem"
+    cycles_scale = 1.0
     pass
 
 #c riscv_i32c_minimal
-class riscv_i32c_minimal(simple_tb.base_test):
+class riscv_i32c_minimal(riscv_base):
     supports = ["compressed"]
+    hw = riscv_i32c_minimal_test_hw
+    cycles_scale = 1.3
+    test_memory = "dmem"
     pass
 
 #c riscv_i32c_pipeline3
-class riscv_i32c_pipeline3(simple_tb.base_test):
+class riscv_i32c_pipeline3(riscv_base):
     supports = ["compressed"]
+    hw = riscv_i32c_pipeline3_test_hw
+    test_memory = "dmem"
+    cycles_scale = 1.5
     pass
 
 #c riscv_i32mc_pipeline3
-class riscv_i32mc_pipeline3(simple_tb.base_test):
+class riscv_i32mc_pipeline3(riscv_base):
     supports = ["compressed", "muldiv"]
+    hw = riscv_i32mc_pipeline3_test_hw
+    test_memory = "dmem"
+    cycles_scale = 1.5
     pass
 
 #c riscv_minimal_single_memory
-class riscv_minimal_single_memory(simple_tb.base_test):
+class riscv_minimal_single_memory(riscv_base):
     supports = ["ifence"]
+    hw = riscv_minimal_single_memory_test_hw
+    test_memory = "mem"
+    cycles_scale = 1.5
     pass
 
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
@@ -450,33 +482,18 @@ for (test_dir,tests) in [(riscv_regression_dir,riscv_regression_tests),
     for tc in tests:
         (tf,num_cycles,tags) = tests[tc]
         tf = test_dir+tf
-        def test_fn(c, tf=tf, num_cycles=num_cycles):
-            c.do_test_run(riscv_minimal_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles)
-            pass
-        def test_i32c_fn(c, tf=tf, num_cycles=num_cycles):
-            c.do_test_run(riscv_i32c_minimal_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles*3 / 2)
-            pass
-        def test_i32c_pipe3_fn(c, tf=tf, num_cycles=num_cycles):
-            c.do_test_run(riscv_i32c_pipeline3_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles*3 / 2)
-            pass
-        def test_i32mc_pipe3_fn(c, tf=tf, num_cycles=num_cycles):
-            c.do_test_run(riscv_i32mc_pipeline3_test_hw(c_riscv_minimal_test_dump(dump_filename=tf)), num_cycles=num_cycles*3 / 2)
-            pass
-        def test_smem_fn(c, tf=tf, num_cycles=num_cycles):
-            c.do_test_run(riscv_minimal_single_memory_test_hw(c_riscv_minimal_test_dump(dump_filename=tf,test_memory="mem")), num_cycles=num_cycles)
-            pass
-        for (test_class, fn) in [ (riscv_minimal,                  test_fn),
-                                  (riscv_minimal_single_memory,    test_smem_fn),
-                                  (riscv_i32c_minimal,             test_i32c_fn),
-                                  (riscv_i32c_pipeline3,           test_i32c_pipe3_fn),
-                                  (riscv_i32mc_pipeline3,          test_i32mc_pipe3_fn),
+        for test_class in [ riscv_minimal,                  
+                                  riscv_minimal_single_memory,    
+                                  riscv_i32c_minimal,             
+                                  riscv_i32c_pipeline3,           
+                                  riscv_i32mc_pipeline3,          
                                   ]:
             can_do = True
             for t in tags:
                 if t not in test_class.supports: can_do = False
                 pass
             if can_do:
-                setattr( test_class, "test_"+tc, fn)
+                test_class.add_test_fn(name=tc, tf=tf, num_cycles=num_cycles)
                 pass
         pass
     pass
