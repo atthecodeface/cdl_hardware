@@ -367,27 +367,33 @@ class riscv_jtag_debug(simple_tb.base_test):
 
 #c riscv_minimal
 class riscv_minimal(simple_tb.base_test):
+    supports = []
     pass
 
 #c riscv_i32c_minimal
 class riscv_i32c_minimal(simple_tb.base_test):
+    supports = ["compressed"]
     pass
 
 #c riscv_i32c_pipeline3
 class riscv_i32c_pipeline3(simple_tb.base_test):
+    supports = ["compressed"]
     pass
 
 #c riscv_i32mc_pipeline3
 class riscv_i32mc_pipeline3(simple_tb.base_test):
+    supports = ["compressed", "muldiv"]
     pass
 
 #c riscv_minimal_single_memory
 class riscv_minimal_single_memory(simple_tb.base_test):
+    supports = ["ifence"]
     pass
 
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[]),
                                "traps":("traps.dump",10*1000,[]),
+#                               "c_arith":("c_arith.dump",50*1000,["compressed"]),
 }
 riscv_regression_tests = {"or":("rv32ui-p-or.dump",3*1000,[]),
          "simple":("rv32ui-p-simple.dump",3*1000,[]),
@@ -459,13 +465,18 @@ for (test_dir,tests) in [(riscv_regression_dir,riscv_regression_tests),
         def test_smem_fn(c, tf=tf, num_cycles=num_cycles):
             c.do_test_run(riscv_minimal_single_memory_test_hw(c_riscv_minimal_test_dump(dump_filename=tf,test_memory="mem")), num_cycles=num_cycles)
             pass
-        if ("ifence" not in tags) and ("muldiv" not in tags):
-            setattr(riscv_minimal,               "test_"+tc, test_fn)
-            setattr(riscv_i32c_minimal,          "test_"+tc, test_i32c_fn)
-            setattr(riscv_i32c_pipeline3,        "test_"+tc, test_i32c_pipe3_fn)
-        if ("ifence" not in tags):
-            setattr(riscv_i32mc_pipeline3,       "test_"+tc, test_i32mc_pipe3_fn)
-        if ("muldiv" not in tags):
-            setattr(riscv_minimal_single_memory, "test_"+tc, test_smem_fn)
+        for (test_class, fn) in [ (riscv_minimal,                  test_fn),
+                                  (riscv_minimal_single_memory,    test_smem_fn),
+                                  (riscv_i32c_minimal,             test_i32c_fn),
+                                  (riscv_i32c_pipeline3,           test_i32c_pipe3_fn),
+                                  (riscv_i32mc_pipeline3,          test_i32mc_pipe3_fn),
+                                  ]:
+            can_do = True
+            for t in tags:
+                if t not in test_class.supports: can_do = False
+                pass
+            if can_do:
+                setattr( test_class, "test_"+tc, fn)
+                pass
         pass
     pass
