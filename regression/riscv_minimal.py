@@ -102,7 +102,7 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
             for i in range(len(e)):
                 d.append(self.read_memory(self.test_memory,address/4+i))
                 pass
-            self.compare_expected_list(reason+":"+str(a), e, d)
+            self.compare_expected_list(reason+":"+str(a)+":"+str(address), e, d)
             pass
         pass
     #f run
@@ -425,7 +425,10 @@ class riscv_minimal_single_memory(riscv_base):
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[]),
                                "traps":("traps.dump",10*1000,[]),
-#                               "c_arith":("c_arith.dump",50*1000,["compressed"]),
+                               "c_arith":("c_arith.dump",2*1000,["compressed"]),
+                               "c_stack":("c_stack.dump",2*1000,["compressed"]),
+                               "c_jump":("c_jump.dump",2*1000,["compressed"]),
+                               "c_logic":("c_logic.dump",50*1000,["compressed"]),
 }
 riscv_regression_tests = {"or":("rv32ui-p-or.dump",3*1000,[]),
          "simple":("rv32ui-p-simple.dump",3*1000,[]),

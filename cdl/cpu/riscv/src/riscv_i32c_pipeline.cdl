@@ -99,6 +99,9 @@ typedef struct {
 
     t_riscv_word   rs1;
     t_riscv_word   rs2;
+    bit[32] pc_plus_4;
+    bit[32] pc_plus_2;
+    bit[32] pc_plus_inst;
     bit[32] next_pc;
     bit     fetch_sequential;
 
@@ -338,7 +341,10 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
             decexecrfw_combs.trap_cause = riscv_trap_cause_illegal_instruction;
             decexecrfw_combs.trap_value = decexecrfw_state.instr_data;
         }
-        decexecrfw_combs.next_pc = decexecrfw_state.pc + 4;
+        decexecrfw_combs.pc_plus_4      = decexecrfw_state.pc + 4;
+        decexecrfw_combs.pc_plus_2      = decexecrfw_state.pc + 2;
+        decexecrfw_combs.pc_plus_inst   = decexecrfw_combs.idecode.is_compressed ? decexecrfw_combs.pc_plus_2 : decexecrfw_combs.pc_plus_4;
+        decexecrfw_combs.next_pc = decexecrfw_combs.pc_plus_inst;
         decexecrfw_combs.fetch_sequential = 1;
         if (decexecrfw_combs.branch_taken) {
             decexecrfw_combs.next_pc = decexecrfw_combs.branch_target;

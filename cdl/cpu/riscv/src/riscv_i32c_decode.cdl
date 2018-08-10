@@ -115,7 +115,7 @@ are from that specification)
         combs.imm_ci_v2 = bundle(24b0, instruction[2;2], instruction[12], instruction[3;4], 2b0);
         combs.imm_ci_v3 = bundle(combs.imm_signed[15;0], instruction[5;2], 12b0);             
         combs.imm_ci_v4 = bundle(combs.imm_signed[23;0], instruction[2;3], instruction[5], instruction[2], instruction[6], 4b0);
-        combs.imm_ciw   = bundle(22b0, instruction[4;7], instruction[2;11], instruction[2;6], 2b0);
+        combs.imm_ciw   = bundle(22b0, instruction[4;7], instruction[2;11], instruction[5], instruction[6], 2b0);
         combs.imm_css   = bundle(24b0, instruction[2;7], instruction[4;9],                  2b0);
         combs.imm_cl_cs = bundle(25b0,   instruction[5], instruction[3;10], instruction[6], 2b0);
         combs.imm_cb    = bundle(combs.imm_signed[24;0], instruction[2], instruction[2;5], instruction[2;10], instruction[2;3], 1b0);
@@ -178,6 +178,7 @@ are from that specification)
             part_switch(combs.opc) {
             case riscv_opcc2_misc_alu: { // uses zero
                 idecode.immediate_valid = 0;
+                idecode.immediate = 0; // as the ALU always uses the immediate value for jalr/sw/lw, just setting invalid is not enough
             }
             case riscv_opcc2_slli: {
                 idecode.immediate = combs.imm_ci_v2; // NOT USED
@@ -213,8 +214,8 @@ are from that specification)
         idecode.rs2_valid = 0;
         idecode.rd_written = 0;
         idecode.requires_machine_mode = 0;
-        idecode.memory_read_unsigned = instruction[14];
-        idecode.memory_width         = instruction[2;12];
+        idecode.memory_read_unsigned = 0;
+        idecode.memory_width         = mw_word;
         idecode.csr_access.address = 0;
         idecode.csr_access.access  = riscv_csr_access_none;
         idecode.op = riscv_op_illegal;;
@@ -237,7 +238,7 @@ are from that specification)
             }
             part_switch(combs.opc) {
             case riscv_opcc0_addi4spn: { // add immediate (addi rd', x2, imm)
-                idecode.illegal = (instruction[3;2]==0);
+                idecode.illegal = 0;
                 idecode.op      = riscv_op_alu;
                 idecode.subop   = riscv_subop_add;
                 idecode.rs1     = riscv_abi_sp; // x2
@@ -388,14 +389,14 @@ are from that specification)
                     idecode.rs2_valid = 0; // actually kills forwarding, but rs2==0 => it will use zero anyway
                     idecode.rd_written = 1;
                     if (instruction[12]) { // ebreak (if rs1==0) / jalr = jalr x1, rs1, x0
-                        idecode.rd  = 1;
+                        idecode.rd  = riscv_abi_link;
                         if (combs.rs1==0) { // == combs.rd_q12
                             idecode.op = riscv_op_system;
                             idecode.subop = riscv_subop_ebreak;
                             idecode.rd_written = 0;
                         }
                     } else { // jr (rs1==0 reserved) = jalr x0, rs1, x0
-                        idecode.rd = 0; // will kill the rd_written automatically, hence is really jr
+                        idecode.rd = riscv_abi_zero; // will kill the rd_written automatically, hence is really jr
                     }
                 } else { // mv rd, rs2 or add rd, rs1, rs2
                     idecode.op     = riscv_op_alu;
@@ -403,8 +404,8 @@ are from that specification)
                     idecode.rs1_valid = 1;
                     idecode.rs2_valid = 1;
                     idecode.rd_written = 1;
-                    if (instruction[12]) { // mv rd, rs2 == add rd, x0, rs2
-                        idecode.rs1 = 0;
+                    if (!instruction[12]) { // mv rd, rs2 == add rd, x0, rs2
+                        idecode.rs1 = riscv_abi_zero;
                     }
                 }
             }
@@ -444,6 +445,9 @@ are from that specification)
             if (idecode.rd_written && idecode.rd[4]) {
                 idecode.illegal = 1;
             }
+        }
+        if (instruction[16;0]==0) {
+            idecode.illegal = 1;
         }
     }
 
