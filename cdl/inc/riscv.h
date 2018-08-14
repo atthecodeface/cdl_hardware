@@ -49,25 +49,36 @@ typedef struct {
  */
 typedef bit[32] t_riscv_word;
 
+/*t t_riscv_mode
+ */
+typedef enum[3] {
+    rv_mode_user       = 3b000, // matches the encoding in table 1.1 of v1.10 privilege spec
+    rv_mode_supervisor = 3b001, // matches the encoding in table 1.1 of v1.10 privilege spec
+    rv_mode_machine    = 3b011, // matches the encoding in table 1.1 of v1.10 privilege spec
+    rv_mode_debug      = 3b111, // all 1s so that it is a superset of machine mode
+} t_riscv_mode;
+
 /*t t_riscv_fetch_req
  */
 typedef struct {
     bit      valid;
     bit[32]  address;
     bit      sequential;
-    // Needs mode
-    // Flush indication
+    t_riscv_mode mode;
+    bit          flush;
     // will_take?
 } t_riscv_fetch_req;
 
 /*t t_riscv_fetch_resp
  */
+typedef bit[2] t_riscv_fetch_tag;
 typedef struct {
     bit      valid;
     bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
     bit[32]  data;
-    // Needs mode and error
-    // Needs tag
+    t_riscv_mode mode;
+    bit          error;
+    t_riscv_fetch_tag tag;
 } t_riscv_fetch_resp;
 
 /*t t_riscv_config
@@ -78,6 +89,7 @@ typedef struct {
     bit      i32m;
     bit      i32m_fuse;
     bit      coproc_disable;
+    bit      unaligned_mem; // if clear, trap on unaligned memory loads/stores
 } t_riscv_config;
 
 /*t t_riscv_debug_op
