@@ -79,6 +79,9 @@ test_6502_adc: ${TARGET_DIR}/py_engine.so
 test_regress: ${TARGET_DIR}/py_engine.so
 	./regress_all regression.${SUITE}
 
+test_regress_riscv: ${TARGET_DIR}/py_engine.so
+	./regress_all regression.riscv_minimal
+
 #a Operational targets
 .PHONY: roms
 roms:

@@ -108,6 +108,7 @@ typedef struct {
 /*t t_alu_state */
 typedef struct {
     bit valid;
+    bit first_cycle              "Asserted if first cycle of an instruction execution (so instruction can be interrupted)";
     t_riscv_i32_decode idecode;
     bit[32] pc                   "PC of the fetched instruction";
     bit illegal_pc               "Asserted if a valid @instr_data is a fetched instruction from a badly aligned PC";
@@ -129,8 +130,9 @@ typedef struct {
  */
 typedef struct {
     bit valid_legal              "Asserted if @instr_data is a valid fetched instruction on a valid alignment";
-    bit blocked_by_mem;
-    bit blocked;
+    bit blocked_by_mem           "Must qualify with valid; asserted if the ALU instruction cannot start because it uses a result of the memory stage";
+    bit cannot_start             "Asserted if the instruction is blocked from starting; ignored unless valid and first_cycle; can be because of blocked_by_mem or coprocessor not ready";
+    bit cannot_complete          "Asserted if the ALU has a valid instruction that either cannot be started or cannot complete";
     bit flush_pipeline;
     bit[32] next_pc;
     t_riscv_word   rs1;
@@ -149,6 +151,7 @@ typedef struct {
     t_riscv_csr_access csr_access;
     t_riscv_word result_data;
     bit dmem_misaligned          "Asserted if the dmem address offset in a word does not match the size of the decoded access, whether the instruction is valid or not";
+    bit dmem_multicycle          "Asserted if dmem_misaligned and it would take 2 transactions to satisfy the memory operation, whether the instruction is valid or not";
 } t_alu_combs;
 
 /*t t_mem_state */
@@ -236,6 +239,7 @@ cycle, where it is registered for execution.
     clocked t_alu_state     alu_state={*=0};
     clocked t_mem_state     mem_state={*=0};
     clocked t_rfw_state     rfw_state={*=0};
+    comb t_riscv_i32_coproc_response   coproc_response_cfg "Coprocessor response masked out if configured off";
 
     comb t_riscv_csr_controls csr_controls;
     net t_riscv_csr_data csr_data;
@@ -298,7 +302,7 @@ cycle, where it is registered for execution.
 
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
         dec_state.valid <= 0;
-        if (alu_combs.blocked && dec_state.valid) {
+        if (alu_combs.cannot_complete && dec_state.valid) {
             dec_state <= dec_state;
         } elsif (ifetch_req.valid) {
             if (ifetch_resp.valid) {
@@ -379,7 +383,10 @@ cycle, where it is registered for execution.
         /*b Record state */
         alu_state.valid <= 0;
         alu_state.idecode.rd_written <= 0; // Ensure it is cleared if invalid
-        if (alu_combs.blocked) {
+        if (alu_combs.cannot_complete) {
+            if (!alu_combs.cannot_start) {
+                alu_state.first_cycle <= 0;
+            }
             alu_state <= alu_state;
             alu_state.rs1_from_alu <= 0;
             alu_state.rs2_from_alu <= 0;
@@ -393,6 +400,7 @@ cycle, where it is registered for execution.
             }
         } elsif (dec_state.valid && !alu_combs.flush_pipeline) {
             alu_state.valid               <= 1;
+            alu_state.first_cycle         <= 1;
             alu_state.illegal_pc          <= dec_state.illegal_pc;
             alu_state.idecode             <= dec_combs.idecode;
             alu_state.pc                  <= dec_state.pc;
@@ -438,10 +446,8 @@ cycle, where it is registered for execution.
                 alu_combs.blocked_by_mem = alu_state.idecode.rs2_valid;
             }
         }
-        alu_combs.blocked = alu_combs.blocked_by_mem || coproc_response.cannot_complete;
-        if (coproc_force_disable || riscv_config.coproc_disable) {
-            alu_combs.blocked = alu_combs.blocked_by_mem;
-        }
+        alu_combs.cannot_start    = alu_combs.blocked_by_mem || coproc_response_cfg.cannot_start;
+        alu_combs.cannot_complete = alu_combs.cannot_start   || coproc_response_cfg.cannot_complete;
 
         /*b Execute ALU stage */
         riscv_i32_alu alu( idecode <= alu_state.idecode,
@@ -468,12 +474,9 @@ cycle, where it is registered for execution.
                                  csrs => csrs);
 
         /*b ALU stage result */
-        alu_combs.result_data = alu_result.result | coproc_response.result;
-        if (coproc_response.result_valid) {
-            alu_combs.result_data = coproc_response.result;
-        }
-        if (coproc_force_disable || riscv_config.coproc_disable) {
-            alu_combs.result_data = alu_result.result;
+        alu_combs.result_data = alu_result.result | coproc_response_cfg.result;
+        if (coproc_response_cfg.result_valid) {
+            alu_combs.result_data = coproc_response_cfg.result;
         }
         if (alu_state.idecode.csr_access.access != riscv_csr_access_none) {
             alu_combs.result_data = csr_data.read_data;
@@ -490,30 +493,38 @@ cycle, where it is registered for execution.
 
         dmem_access_req.address   = alu_result.arith_result;
         alu_combs.word_offset     = alu_result.arith_result[2;0];
-        alu_combs.dmem_misaligned = (alu_combs.word_offset!=0);
-        dmem_access_req.byte_enable  = 4hf << alu_combs.word_offset;
-        alu_combs.read_data_rotation    = 2b00;
+        alu_combs.dmem_misaligned = (alu_combs.word_offset!=0); // valid for words
+        alu_combs.dmem_multicycle = (alu_combs.word_offset!=0); // valid for words
+        alu_combs.read_data_rotation = alu_combs.word_offset;
         alu_combs.read_data_byte_enable = 4hf;
         alu_combs.read_data_byte_clear  = 4hf;
         part_switch (alu_state.idecode.memory_width) {
         case mw_byte: {
             dmem_access_req.byte_enable  = 4h1 << alu_combs.word_offset;
-            alu_combs.read_data_rotation = alu_combs.word_offset;
             alu_combs.read_data_byte_enable = 4h1;
             alu_combs.dmem_misaligned = 0;
+            alu_combs.dmem_multicycle = 0;
         }
         case mw_half: {
             dmem_access_req.byte_enable  = 4h3 << alu_combs.word_offset;
-            alu_combs.read_data_rotation = alu_combs.word_offset;
             alu_combs.read_data_byte_enable = 4h3;
             alu_combs.dmem_misaligned = alu_combs.word_offset[0];
+            alu_combs.dmem_multicycle = (alu_combs.word_offset==2b11);
         }
         default: {
+            dmem_access_req.byte_enable  = 4hf << alu_combs.word_offset;
             alu_combs.dmem_misaligned = (alu_combs.word_offset!=0);
+            alu_combs.dmem_multicycle = (alu_combs.word_offset!=0);
         }
         }
 
-        dmem_access_req.write_data = alu_combs.rs2 << (bundle(alu_combs.word_offset,3b0));
+        dmem_access_req.write_data = alu_combs.rs2;
+        full_switch (alu_combs.word_offset) {
+        case 2b00: { dmem_access_req.write_data = alu_combs.rs2; }
+        case 2b01: { dmem_access_req.write_data = bundle(alu_combs.rs2[24; 0], alu_combs.rs2[ 8;24]); }
+        case 2b10: { dmem_access_req.write_data = bundle(alu_combs.rs2[16; 0], alu_combs.rs2[16;16]); }
+        case 2b11: { dmem_access_req.write_data = bundle(alu_combs.rs2[ 8; 0], alu_combs.rs2[24; 8]); }
+        }
 
         /*b Determine whether branch would be taken and find next PC */
         alu_combs.trap = 0;
@@ -573,7 +584,7 @@ cycle, where it is registered for execution.
             alu_combs.flush_pipeline = 1;
             alu_combs.next_pc = csrs.mtvec;
         }
-        if (!alu_state.valid || alu_combs.blocked) {
+        if (!alu_state.valid || alu_combs.cannot_complete) {
             alu_combs.flush_pipeline = 0;
         }
 
@@ -611,7 +622,7 @@ cycle, where it is registered for execution.
         mem_state.rotation     <= 0;
         mem_state.byte_enable  <= 0;
         mem_state.byte_clear   <= 4hf;
-        if (alu_combs.valid_legal && !alu_combs.blocked) {
+        if (alu_combs.valid_legal && !alu_combs.cannot_complete) {
             mem_state.valid        <= 1;
             mem_state.reading      <= alu_combs.reading;
             mem_state.rotation     <= alu_combs.read_data_rotation;
@@ -683,15 +694,20 @@ cycle, where it is registered for execution.
     coprocessor_interface """
     Drive the coprocessor controls unless disabled; mirror the pipeline combs
     """: {
+        coproc_response_cfg = coproc_response;
+        if (coproc_force_disable || riscv_config.coproc_disable) {
+            coproc_response_cfg = {*=0};
+        }
+
         coproc_controls = {*=0};
         coproc_controls.dec_idecode_valid  = dec_state.valid;
         coproc_controls.dec_idecode        = dec_combs.idecode;
-        coproc_controls.dec_to_alu_blocked = alu_combs.blocked;
+        coproc_controls.dec_to_alu_blocked = alu_combs.cannot_complete;
         coproc_controls.alu_rs1 = alu_combs.rs1;
         coproc_controls.alu_rs2 = alu_combs.rs2;
         coproc_controls.alu_flush_pipeline = alu_combs.flush_pipeline;
-        coproc_controls.alu_cannot_start = alu_combs.blocked_by_mem;  // ALU can always start itself; coprocessor can block it
-        coproc_controls.alu_cannot_complete = coproc_response.cannot_complete; // ALU can always complete (no unaligned transactions yet); coprocessor can block it
+        coproc_controls.alu_cannot_start    = alu_combs.blocked_by_mem;
+        coproc_controls.alu_cannot_complete = alu_combs.cannot_complete;
         if (coproc_force_disable || riscv_config.coproc_disable) {
             coproc_controls = {*=0};
         }
