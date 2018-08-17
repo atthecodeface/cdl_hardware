@@ -104,6 +104,7 @@ riscv_flows: ${TARGET_DIR}/py_engine.so
 	diff min_pipe3_${TEST}.flow min_min_${TEST}.flow
 
 #a Help
+DOLLAR := $$
 help:
 	@echo "This makefile permits making, testing and running of the BBC micro"
 	@echo "The standard ROMs and disk images are not included in a standard distribution"
@@ -126,7 +127,7 @@ help:
 	@echo "To run a particular RISC-V test with waves do something like:"
 	@echo "make WAVES=1 SUITE=riscv_minimal.riscv_i32mc_pipeline3.test_c_arith test_regress"
 	@echo "and to view its instruction trace do"
-	@echo "PYTHONPATH=`pwd`/../cdl:$PYTHONPATH ./python/rv_trace.py --logfile=itrace.log"
+	@echo "PYTHONPATH=`pwd`/../cdl:\${DOLLAR}PYTHONPATH ./python/rv_trace.py --logfile=itrace.log"
 	@echo ""
 	@echo "To run the JTAG apb timer with OpenOcd (to demonstrate JTAG running remotely)"
 	@echo "use 'make SUITE=jtag.jtag_apb_timer.openocd test_regress'"

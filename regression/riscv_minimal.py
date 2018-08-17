@@ -300,9 +300,12 @@ class riscv_i32mc_pipeline3_test_hw(simple_tb.cdl_test_hw):
     loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
                }
     th_forces = { "th.clock":"clk",
-                  "th.inputs":("a"),
-                  "th.outputs":("b"),
+                  "th.inputs":("tdo"),
+                  "th.outputs":("jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
                   }
+    clocks = {"jtag_tck":(0,1,1),
+              "clk":(0,1,1),
+              }
     module_name = "tb_riscv_i32mc_pipeline3"
     #f __init__
     def __init__(self, test):
