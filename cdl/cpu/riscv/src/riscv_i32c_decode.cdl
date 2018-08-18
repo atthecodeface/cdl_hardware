@@ -38,12 +38,12 @@ typedef struct {
     bit[5]         rs2       "Source 2 register (unshortened)";
     t_riscv_word   imm_signed "Sign-extension word, basically instruction[31] replicated";
     t_riscv_word   imm_ci_v1  "";
-    t_riscv_word   imm_ci_v2  "";
-    t_riscv_word   imm_ci_v3  "";
-    t_riscv_word   imm_ci_v4  "";
-    t_riscv_word   imm_ciw    "";
-    t_riscv_word   imm_css    "";
-    t_riscv_word   imm_cl_cs  "";
+    t_riscv_word   imm_clwsp  "";
+    t_riscv_word   imm_clui   "Immediate value for C.LUI instructions";
+    t_riscv_word   imm_caddi16sp  "";
+    t_riscv_word   imm_caddi4spn    "";
+    t_riscv_word   imm_cswsp    "";
+    t_riscv_word   imm_clwsw  "";
     t_riscv_word   imm_cb     "";
     t_riscv_word   imm_cj     "";
 } t_combs;
@@ -107,34 +107,57 @@ are from that specification)
 
     """: {
 
-        /*b Defaults for the decode */
+        /*b Defaults for the decode
+          immediates are from tables 12.4/5/6
+          Columns 0-15 indicate the 16 bits of instruction and which bit of immediate value they map to
+          imm_ci_v1     - sign-ext: x x x 5   x x x x x   4 3 2 1 0   x x : li/addi/srli/srai/andi (srl/sll/sll ignore bits 5 and above of immediate)
+          imm_clwsp     - zero-ext: x x x 5   x x x x x   4 3 2 7 6   x x : lwsp
+          imm_cswsp     - zero-ext: x x x 5   4 3 2 7 6   x x x x x   x x : swsp
+          imm_caddi4spn - zero-ext: x x x 5   4 9 8 7 6   2 3 x x x   x x : addi4spn
+          imm_clwsw     - zero-ext: x x x 5   4 3 x x x   2 6 x x x   x x : lw/sw
+          imm_caddi16sp - sign-ext: x x x 9   x x x x x   4 6 8 7 5   x x : addi16sp
+          imm_cb        - sign-ext: x x x 8   4 3 x x x   7 6 2 1 5   x x : beqz/bnez
+          imm_cj        - sign-ext: x x x 11  4 9 8 10 6  7 3 2 1 5   x x : jal/j
+          imm_clui      - zero-ext: x x x 17  x x x x x   16 15 14 13 12  x x : lui
+
+          Inverting the tables gives immediate-of-instruction-bit:
+          imm_ci_v1      - sign-ext:                   12  6  5  4  3  2 
+          imm_clwsp      - zero-ext:              3  2 12  6  5  4  x  x
+          imm_cswsp      - zero-ext:              8  7 12 11 10  9  x  x 
+          imm_caddi4spn  - zero-ext:       10  9  8  7 12 11  5  6  x  x
+          imm_clwsw      - zero-ext:                 5 12 11 10  6  x  x
+          imm_caddi16sp  - sign-ext:       12  4  3  5  2  6  x  x  x  x
+          imm_cb         - sign-ext:          12  6  5  2 11 10  4  3  x
+          imm_cj         - sign-ext: 12  8 10  9  6  7  2 11  5  4  3  x 
+          imm_clui       - zero-ext: 12  6 5  4  3  2 + 12 zeros
+         */
         combs.imm_signed  = instruction[12]  ? -1:0;
         idecode.immediate_valid = 1; // Most things are immediate
         idecode.immediate_shift = instruction[5;2] ; // c.slli/srli/srai, always the same
-        combs.imm_ci_v1 = bundle(combs.imm_signed[27;0],  instruction[5;2]);                  
-        combs.imm_ci_v2 = bundle(24b0, instruction[2;2], instruction[12], instruction[3;4], 2b0);
-        combs.imm_ci_v3 = bundle(combs.imm_signed[15;0], instruction[5;2], 12b0);             
-        combs.imm_ci_v4 = bundle(combs.imm_signed[23;0], instruction[2;3], instruction[5], instruction[2], instruction[6], 4b0);
-        combs.imm_ciw   = bundle(22b0, instruction[4;7], instruction[2;11], instruction[5], instruction[6], 2b0);
-        combs.imm_css   = bundle(24b0, instruction[2;7], instruction[4;9],                  2b0);
-        combs.imm_cl_cs = bundle(25b0,   instruction[5], instruction[3;10], instruction[6], 2b0);
-        combs.imm_cb    = bundle(combs.imm_signed[24;0], instruction[2], instruction[2;5], instruction[2;10], instruction[2;3], 1b0);
-        combs.imm_cj    = bundle(combs.imm_signed[20;0], instruction[8], instruction[2;9], instruction[3;6], instruction[2], instruction[11], instruction[3;3], 1b0);
+        combs.imm_ci_v1 = bundle(combs.imm_signed[27;0],  instruction[5;2]);                       // li/addi/srli/srai/andi
+        combs.imm_clwsp = bundle(24b0, instruction[2;2], instruction[12], instruction[3;4], 2b0);  // lwsp
+        combs.imm_clui = bundle(combs.imm_signed[15;0], instruction[5;2], 12b0);                  // lui
+        combs.imm_caddi16sp = bundle(combs.imm_signed[23;0], instruction[2;3], instruction[5], instruction[2], instruction[6], 4b0); // addi16sp
+        combs.imm_caddi4spn   = bundle(22b0, instruction[4;7], instruction[2;11], instruction[5], instruction[6], 2b0);                // addi4spn
+        combs.imm_cswsp   = bundle(24b0, instruction[2;7], instruction[4;9],                  2b0);  // swsp
+        combs.imm_clwsw = bundle(25b0,   instruction[5], instruction[3;10], instruction[6], 2b0);  // lw/sw
+        combs.imm_cb    = bundle(combs.imm_signed[24;0], instruction[2;5], instruction[2], instruction[2;10], instruction[2;3], 1b0); // beqz/bnez
+        combs.imm_cj    = bundle(combs.imm_signed[21;0], instruction[8], instruction[2;9], instruction[6], instruction[7], instruction[2], instruction[11], instruction[3;3], 1b0); // cj
 
         /*b Decode immediate and whether it is used based on instruction class */
         idecode.immediate = combs.imm_ci_v1; // NOTE if imm is 0 then HINT - i.e. do nothing
         part_switch(combs.quadrant) {
         case 2b00: {
-            idecode.immediate = combs.imm_cl_cs;
+            idecode.immediate = combs.imm_clwsw;
             part_switch(combs.opc) {
             case riscv_opcc0_addi4spn: {
-                idecode.immediate = combs.imm_ciw;
+                idecode.immediate = combs.imm_caddi4spn;
             }
             case riscv_opcc0_lw: {
-                idecode.immediate = combs.imm_cl_cs;
+                idecode.immediate = combs.imm_clwsw;
             }
             case riscv_opcc0_sw: {
-                idecode.immediate = combs.imm_cl_cs;
+                idecode.immediate = combs.imm_clwsw;
             }
             }
         }
@@ -151,9 +174,9 @@ are from that specification)
                 idecode.immediate = combs.imm_ci_v1; // NOTE if rd=0 then HINT
             }
             case riscv_opcc1_lui: {
-                idecode.immediate = combs.imm_ci_v3; // NOTE if rd=0 then HINT, imm=0 -> illegal
+                idecode.immediate = combs.imm_clui; // NOTE if rd=0 then HINT, imm=0 -> illegal
                 if (instruction[5;7]==2) { // ADDI16SP
-                    idecode.immediate = combs.imm_ci_v4; // NOTE imm=0 -> illegal
+                    idecode.immediate = combs.imm_caddi16sp; // NOTE imm=0 -> illegal
                 }
             }
             case riscv_opcc1_arith: { // SRLI/SRAI/ANDI / SUB/XOR/OR/AND
@@ -174,20 +197,20 @@ are from that specification)
             }
         }
         case 2b10: {
-            idecode.immediate = combs.imm_ci_v2;
+            idecode.immediate = combs.imm_clwsp;
             part_switch(combs.opc) {
             case riscv_opcc2_misc_alu: { // uses zero
                 idecode.immediate_valid = 0;
                 idecode.immediate = 0; // as the ALU always uses the immediate value for jalr/sw/lw, just setting invalid is not enough
             }
             case riscv_opcc2_slli: {
-                idecode.immediate = combs.imm_ci_v2; // NOT USED
+                idecode.immediate = combs.imm_clwsp; // NOT USED
             }
             case riscv_opcc2_lwsp: {
-                idecode.immediate = combs.imm_ci_v2;
+                idecode.immediate = combs.imm_clwsp;
             }
             case riscv_opcc2_swsp: {
-                idecode.immediate = combs.imm_css;
+                idecode.immediate = combs.imm_cswsp;
             }
             }
         }
