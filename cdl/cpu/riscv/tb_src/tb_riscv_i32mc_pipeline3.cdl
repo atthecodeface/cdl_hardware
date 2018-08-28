@@ -24,20 +24,41 @@ include "riscv_modules.h"
 include "riscv_submodules.h"
 
 /*a External modules */
-extern module se_test_harness( clock clk, input bit a, output bit b )
+extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_enable, input bit tdo )
 {
-    timing to rising clock clk a;
+    timing from rising clock clk jtag, tck_enable;
+    timing to rising clock clk tdo;
 }
 
 /*a Module
  */
-module tb_riscv_i32mc_pipeline3( clock clk,
-                                input bit reset_n
+module tb_riscv_i32mc_pipeline3( clock jtag_tck,
+                                 clock clk,
+                                 input bit reset_n
 )
 {
 
     /*b Nets
      */
+    net t_jtag jtag;
+    net bit tdo;
+    net bit[5]ir;
+    net t_jtag_action dr_action;
+    net bit[50]dr_in;
+    net bit[50]dr_tdi_mask;
+    net bit[50]dr_out;
+    net bit tck_enable;
+    comb bit tck_enable_fix;
+    gated_clock clock jtag_tck active_high tck_enable_fix jtag_tck_gated;
+
+    net   t_apb_request  apb_request  "APB request";
+    net   t_apb_response apb_response "APB response";
+    net   t_riscv_debug_mst debug_mst;
+    comb  t_riscv_debug_tgt debug_tgt;
+    net   t_riscv_debug_tgt debug_tgt0;
+    net   t_riscv_pipeline_debug_control debug_control0;
+    comb  t_riscv_pipeline_debug_response debug_response0;
+
     net  t_riscv_mem_access_req  dmem_access_req;
     comb t_riscv_mem_access_resp dmem_access_resp;
 
@@ -120,11 +141,14 @@ module tb_riscv_i32mc_pipeline3( clock clk,
         dmem_access_resp.read_data  = main_mem_read_data;
     }
 
-    /*b Instantiate RISC-V
+    /*b Instantiate RISC-V and debug
      */
     net t_riscv_i32_trace trace;
     riscv_instance: {
-        se_test_harness th( clk <- clk, a<=0 );
+        tck_enable_fix = tck_enable;
+        debug_response0 = {*=0};
+        debug_tgt  = debug_tgt0;
+        se_test_harness th(clk <- jtag_tck, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
         riscv_config = {*=0};
         riscv_config.i32c = 1;
         riscv_config.e32  = 0;
@@ -132,6 +156,49 @@ module tb_riscv_i32mc_pipeline3( clock clk,
         riscv_config.i32m_fuse = 1;
         riscv_config.coproc_disable = 0;
         
+        jtag_tap tap( jtag_tck <- jtag_tck_gated,
+                      reset_n <= reset_n,
+                      jtag <= jtag,
+                      tdo => tdo,
+
+                      ir => ir,
+                      dr_action => dr_action,
+                      dr_in => dr_in,
+                      dr_tdi_mask <= dr_tdi_mask,
+                      dr_out <= dr_out );
+
+        riscv_jtag_apb_dm dm_apb( jtag_tck <- jtag_tck_gated,
+                      reset_n <= reset_n,
+
+                      ir <= ir,
+                      dr_action <= dr_action,
+                      dr_in <= dr_in,
+                      dr_tdi_mask => dr_tdi_mask,
+                      dr_out => dr_out,
+
+                      apb_clock <- riscv_clk,
+                      apb_request => apb_request,
+                      apb_response <= apb_response );
+
+        riscv_i32_debug dm( clk <- riscv_clk,
+                            reset_n <= reset_n,
+
+                            apb_request <= apb_request,
+                            apb_response => apb_response,
+
+                            debug_mst  => debug_mst,
+                            debug_tgt <= debug_tgt 
+            );
+
+        riscv_i32_pipeline_debug pd0( clk <- riscv_clk,
+                                     reset_n <= reset_n,
+                                     debug_mst <= debug_mst,
+                                     debug_tgt => debug_tgt0,
+                                     debug_control => debug_control0,
+                                     debug_response <= debug_response0,
+
+                                     rv_select <= 0 );
+
         riscv_i32c_pipeline3 dut( clk <- riscv_clk,
                                   reset_n <= reset_n,
                                   dmem_access_req => dmem_access_req,
@@ -143,7 +210,7 @@ module tb_riscv_i32mc_pipeline3( clock clk,
                                   riscv_config <= riscv_config,
                                   trace => trace
                          );
-        
+
         riscv_i32_muldiv m( clk <- riscv_clk,
                             reset_n <= reset_n,
                             coproc_controls <= coproc_controls,

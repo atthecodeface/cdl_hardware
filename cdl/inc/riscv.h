@@ -39,10 +39,33 @@ typedef struct {
     bit[32]  write_data;
 } t_riscv_mem_access_req;
 
-/*t t_riscv_mem_access_resp */
+/*t t_riscv_mem_access_resp
+ *
+ * Note that the response in some circumstances is defined to be valid in the same cycle as the request.
+ * In other circumstances it is defined to be valid in the cycle following a request.
+ *
+ * The signals do not change.
+ *
+ * For example, a very simple fetch/execute RISC-V implementation
+ * requires the read response in the same cycle as a data memory
+ * request, since execute (which includes the full memory access) is a
+ * single cycle.
+ *
+ * However, a deeper pipeline RISC-V implementation such as pipeline3
+ * issues a request in the ALU cycle and provides a whole cycle for an
+ * SRAM access to satisfy any data memory read. Here, then, the
+ * response is valid one cycle after the request.
+ *
+ * Note that the wait signal is valid with the data; but it also
+ * applies to a memory cycle that is a write; that is, a write memory
+ * cycle cannot complete if wait is asserted. The next request is
+ * already being presented when the wait is given in response to the
+ * previous request, though.
+ *
+ */
 typedef struct {
-    bit                  wait;
-    bit[32]              read_data;
+    bit                  wait       "Valid in the same cycle as read_data";
+    bit[32]              read_data  "Data returned from reading the requested address";
 } t_riscv_mem_access_resp;
 
 /*t t_riscv_word

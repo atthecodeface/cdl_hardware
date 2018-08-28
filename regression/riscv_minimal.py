@@ -305,9 +305,12 @@ class riscv_i32mc_pipeline3_test_hw(simple_tb.cdl_test_hw):
     loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
                }
     th_forces = { "th.clock":"clk",
-                  "th.inputs":("a"),
-                  "th.outputs":("b"),
+                  "th.inputs":("tdo"),
+                  "th.outputs":("jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
                   }
+    clocks = {"jtag_tck":(0,1,1),
+              "clk":(0,1,1),
+              }
     module_name = "tb_riscv_i32mc_pipeline3"
     #f __init__
     def __init__(self, test):
@@ -433,6 +436,7 @@ riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[]),
                                "c_arith":("c_arith.dump",2*1000,["compressed"]),
                                "c_stack":("c_stack.dump",2*1000,["compressed"]),
                                "c_jump":("c_jump.dump",2*1000,["compressed"]),
+                               "c_branch":("c_branch.dump",2*1000,["compressed"]),
                                "c_mv":("c_mv.dump",5*1000,["compressed"]),
                                "c_logic":("c_logic.dump",50*1000,["compressed"]),
 #                               "c_temp":("c_temp.dump",5*1000,["compressed"]),

@@ -212,10 +212,42 @@ Memory operations are performed in the third stage
 Register file is written at the end of the third stage; there is a RFW stage to
 forward data from RFW back to execution.
 
+Instruction fetch
+-----------------
+
 The instruction fetch request for the next cycle is put out just after
-the ALU stage logic, which may be a long time into the cycle; the
-fetch data response presents the instruction fetched at the end of the
-cycle, where it is registered for execution.
+the ALU stage logic, which may be a long time into the cycle
+(althought the design keeps this to a minimum); the fetch data
+response presents the instruction fetched at the end of the cycle,
+where it is registered for execution.
+
+The instruction fetch response must then be valid combinatorially
+based on the instruction fetch request.
+
+Data memory access
+------------------
+
+The data memory request is presented in the ALU stage, for an access
+to complete during the memory stage.
+
+To support simple synchronous memory operation the data memory access
+includes valid write data in the same cycle as the request.
+
+The data memory response is valid one cycle later than a request. This
+includes a wait signal. The external memory subsystem, therefore, is a
+two stage pipeline. The wait signal controls whether an access
+completes, but not if an access can be taken (except indirectly).
+
+Hence external logic must always either register a request or
+guarantee not to assert wait.
+
+An example implementation of could be
+    dmem_access_resp.wait = fn ( access_in_progress );
+    access_can_be_taken = (!access_in_progress.valid) || (!dmem_access_resp.wait);
+    if (access_can_be_taken) {
+      access_in_progress <= dmem_access_req;
+    }
+}
 
 """
 {
@@ -294,8 +326,6 @@ cycle, where it is registered for execution.
     branches and backward conditional branches (to generate the next
     PC as far as decode is concerned), determines register forwarding
     required, reads the register file.
-
-    Currently assumes the pipeline always takes the decoded instruction
     """: {
         /*b Enable operation (zeroed in reset) */
         dec_state.enable <= 1;
@@ -375,7 +405,7 @@ cycle, where it is registered for execution.
         }
     }
 
-    /*b ALU (execute) stage registers
+    /*b ALU (execute) stage registers (alu_state)
      */
     alu_stage """
     The ALU stage does data forwarding, ALU operation, conditional branches, CSR accesses, memory request
@@ -417,7 +447,7 @@ cycle, where it is registered for execution.
         }
     }
 
-    /*b ALU (execute) stage
+    /*b ALU (execute) stage logic (alu_combs)
      */
     alu_stage_logic """
     The ALU stage does data forwarding, ALU operation, conditional branches, CSR accesses, memory request
@@ -526,23 +556,28 @@ cycle, where it is registered for execution.
         case 2b11: { dmem_access_req.write_data = bundle(alu_combs.rs2[ 8; 0], alu_combs.rs2[24; 8]); }
         }
 
-        /*b Determine whether branch would be taken and find next PC */
+        /*b Determine whether to trap
+
+          Trap sources are:
+
+          software interrupt (ecall)
+            epc <= address of instruction (even if it was a compressed inst)
+          debug 
+            lowest priority:  single step
+            next priority:    debugger requested
+            next priority:    ebreak with DCSR[ebreak*] set
+              epc <= address of instruction (even if it was a compressed inst)
+            highest priority: trigger with action=enter-debug-mode          
+          unaligned instruction fetch
+          unaligned data operation
+            load or atomic/store
+
+         */
         alu_combs.trap = 0;
         alu_combs.trap_cause = 0;
         alu_combs.trap_value = 0;
-        alu_combs.branch_taken = 0;
-        alu_combs.mret = 0;
-        alu_combs.jalr = 0;
         part_switch (alu_state.idecode.op) {
-        case riscv_op_branch:   { alu_combs.branch_taken = alu_result.branch_condition_met; }
-        case riscv_op_jal:      { alu_combs.branch_taken=1; }
-        case riscv_op_jalr:     {
-            alu_combs.jalr = 1;
-        }
         case riscv_op_system:   {
-            if (alu_state.idecode.subop==riscv_subop_mret) {
-                alu_combs.mret = 1;
-            }
             if (alu_state.idecode.subop==riscv_subop_ecall) {
                 alu_combs.trap = 1;
                 alu_combs.trap_cause = riscv_trap_cause_mecall;
@@ -563,6 +598,31 @@ cycle, where it is registered for execution.
             alu_combs.trap       = 1;
             alu_combs.trap_cause = riscv_trap_cause_instruction_misaligned;
             alu_combs.trap_value = alu_state.pc;
+        }
+
+        csr_controls.trap_cause = alu_combs.trap_cause;
+        csr_controls.trap       = 0;
+        csr_controls.trap_pc    = alu_state.pc;
+        csr_controls.trap_value = alu_combs.trap_value;
+        if (alu_combs.trap) {
+            csr_controls.trap       = alu_state.valid;
+        }
+
+        /*b Determine whether branch would be taken and find next PC */
+        alu_combs.branch_taken = 0;
+        alu_combs.mret = 0;
+        alu_combs.jalr = 0;
+        part_switch (alu_state.idecode.op) {
+        case riscv_op_branch:   { alu_combs.branch_taken = alu_result.branch_condition_met; }
+        case riscv_op_jal:      { alu_combs.branch_taken=1; }
+        case riscv_op_jalr:     {
+            alu_combs.jalr = 1;
+        }
+        case riscv_op_system:   {
+            if (alu_state.idecode.subop==riscv_subop_mret) {
+                alu_combs.mret = 1;
+            }
+        }
         }
 
         alu_combs.flush_pipeline = 0;
@@ -586,14 +646,6 @@ cycle, where it is registered for execution.
         }
         if (!alu_state.valid || alu_combs.cannot_complete) {
             alu_combs.flush_pipeline = 0;
-        }
-
-        csr_controls.trap_cause = alu_combs.trap_cause;
-        csr_controls.trap       = 0;
-        csr_controls.trap_pc    = alu_state.pc;
-        csr_controls.trap_value = alu_combs.trap_value;
-        if (alu_combs.trap) {
-            csr_controls.trap       = alu_state.valid;
         }
 
     }
