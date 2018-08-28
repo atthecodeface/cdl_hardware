@@ -28,7 +28,10 @@
 # Basic CDL makefile with additional targets for test regressions, help, etc
 #
 
+
 #a Global variables
+# Note: make Q= EXTRA_CXXFLAGS='-I ~/Git/brew/include' EXTRA_LIBS='-L ~/Git/brew/lib'
+# Note: make RISCV_ATCF_REGRESSION_DIR=../atthecodeface_riscv_tests SUITE=riscv_minimal.riscv_i32mc_pipeline3.test_c_arith test_regress
 CYCLICITY := ../cdl/
 CYCLICITY_ROOT := ${CYCLICITY}
 MODEL_LIST  := $(CURDIR)/model_list
@@ -38,13 +41,13 @@ PREFIX_OBJ_DIR := $(CURDIR)/build/
 DEBUG_BUILD := no
 EXTRA_CDLFLAGS := --extra_cdlflags="--v_clkgate_type='banana' --v_use_always_at_star --v_clks_must_have_enables "
 
-LOCAL_CFLAGS := -I/usr/local/include
-LOCAL_CXXFLAGS := -I/usr/local/include
+LOCAL_CFLAGS   := -I/usr/local/include ${EXTRA_CFLAGS}
+LOCAL_CXXFLAGS := -I/usr/local/include ${EXTRA_CXXFLAGS}
 LOCAL_LINKLIBS := -L/usr/local/lib  -L/lib -L/lib/x86_64-linux-gnu -L/usr/lib/x86_64-linux-gnu -lpng12 -ljpeg
-LOCAL_LINKLIBS := -lpng12 -ljpeg
+LOCAL_LINKLIBS :=  ${EXTRA_LIBS} -lpng12 -ljpeg
 OS := $(shell uname)
 ifeq ($(OS),Darwin)
-LOCAL_LINKLIBS := -L/usr/local/lib -lpng16 -ljpeg
+LOCAL_LINKLIBS :=  ${EXTRA_LIBS} -L/usr/local/lib -lpng16 -ljpeg
 endif
 
 #a Include standard build makefile

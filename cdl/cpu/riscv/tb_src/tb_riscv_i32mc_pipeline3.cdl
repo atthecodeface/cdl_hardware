@@ -51,7 +51,7 @@ module tb_riscv_i32mc_pipeline3( clock clk,
     net bit[32] imem_mem_read_data;
     net bit[32] main_mem_read_data;
     net t_riscv_i32_coproc_controls  coproc_controls;
-    net t_riscv_i32_coproc_response   coproc_response;
+    net t_riscv_i32_coproc_response  coproc_response;
 
     /*b Clock divider
      */
@@ -129,6 +129,7 @@ module tb_riscv_i32mc_pipeline3( clock clk,
         riscv_config.i32c = 1;
         riscv_config.e32  = 0;
         riscv_config.i32m = 1;
+        riscv_config.i32m_fuse = 1;
         riscv_config.coproc_disable = 0;
         
         riscv_i32c_pipeline3 dut( clk <- riscv_clk,
@@ -142,11 +143,13 @@ module tb_riscv_i32mc_pipeline3( clock clk,
                                   riscv_config <= riscv_config,
                                   trace => trace
                          );
+        
         riscv_i32_muldiv m( clk <- riscv_clk,
                             reset_n <= reset_n,
                             coproc_controls <= coproc_controls,
                             coproc_response => coproc_response,
                             riscv_config <= riscv_config );
+
         riscv_i32_trace trace(clk <- riscv_clk,
                               reset_n <= reset_n,
                               trace <= trace );

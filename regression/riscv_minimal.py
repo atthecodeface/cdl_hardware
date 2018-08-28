@@ -38,8 +38,13 @@ def bits_of_n(nbits, n):
     return bits
 
 #a Globals
+import os
 riscv_regression_dir      = "../riscv_tests_built/isa/"
 riscv_atcf_regression_dir = "../riscv-atcf-tests/build/dump/"
+if "RISCV_REGRESSION_DIR" in os.environ.keys():
+    riscv_regression_dir      = os.environ["RISCV_REGRESSION_DIR"]+"/"
+if "RISCV_ATCF_REGRESSION_DIR" in os.environ.keys():
+    riscv_atcf_regression_dir      = os.environ["RISCV_ATCF_REGRESSION_DIR"]+"/build/dump/"
 
 #a Test classes
 #c c_riscv_minimal_test_base
