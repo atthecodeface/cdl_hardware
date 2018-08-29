@@ -159,6 +159,7 @@ riscv_config = {"i32c":1,
                 "i32m":1,
                 "i32m_fuse":1,
                 "coproc_disable":1,
+                "unaligned_mem":1,
 }
 
 #v i32_csr_access - signal widths for pycdl.wirebundle - must match implementation
@@ -186,6 +187,7 @@ i32_decode = {"rs1":5,
 
 #v i32_coproc_response - signal widths for pycdl.wirebundle - must match implementation
 i32_coproc_response = {"result":32,
+                       "result_valid":1,
                        "cannot_complete":1,
                        "cannot_start":1}
 #v i32_coproc_controls - signal widths for pycdl.wirebundle - must match implementation

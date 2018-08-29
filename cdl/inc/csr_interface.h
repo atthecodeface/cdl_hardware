@@ -116,7 +116,11 @@ typedef bit[32] t_csr_access_data;
 
 
 /*a Modules */
-/*m csr_target_apb */
+/*m csr_target_apb
+ *
+ * CSR target that drives an APB
+ *
+ */
 extern
 module csr_target_apb( clock                    clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
                        input bit                reset_n       "Active low reset",
@@ -134,7 +138,11 @@ module csr_target_apb( clock                    clk           "Clock for the CSR
     timing to   rising clock clk apb_response;
 }
 
-/*m csr_target_csr */
+/*m csr_target_csr
+ *
+ * CSR target that drives a CSR access (select, read, write, data)
+ *
+ */
 extern
 module csr_target_csr( clock                       clk           "Clock for the CSR interface, possibly gated version of master CSR clock",
                        input bit                reset_n       "Active low reset",
@@ -152,7 +160,11 @@ module csr_target_csr( clock                       clk           "Clock for the 
     timing to   rising clock clk csr_access_data;
 }
 
-/*m csr_master_apb */
+/*m csr_master_apb
+ *
+ * APB target that drive a CSR master
+ *
+ */
 extern
 module csr_master_apb( clock                    clk           "Clock for the CSR interface; a superset of all targets clock",
                        input bit                reset_n       "Active low reset",
@@ -169,7 +181,13 @@ module csr_master_apb( clock                    clk           "Clock for the CSR
     timing from rising clock clk apb_response;
 }
 
-/*m csr_target_timeout */
+/*m csr_target_timeout
+ *
+ * CSR target that implements a timeout
+ *
+ * One of these can be placed on a CSR bus tree to terminate transactions that never complete
+ *
+ */
 extern
 module csr_target_timeout( clock                       clk        "Clock for the CSR interface, possibly gated version of master CSR clock",
                            input bit                reset_n       "Active low reset",

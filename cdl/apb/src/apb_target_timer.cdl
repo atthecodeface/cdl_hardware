@@ -70,10 +70,11 @@ module apb_target_timer( clock clk         "System clock",
 Simple timer with an APB interface.
 This is a monotonically increasing 31-bit timer with three 31-bit comparators.
 
-The timers are read/written through the APB interface with timer 0 at
-address 0, timer 1 at address 1, and so on. When a timer is written it
+The timers are read/written through the APB interface with the timer value read-only at address 0.
+
+The three comparators are at addresses 4, 5 and 6. When a comparator is written it
 writes the 31-bit @a comparator value and it clears the @a timer's @a
-equalled bit. When a timer is read it returns the @a comparator value
+equalled bit. When a comparator is read it returns the @a comparator value
 (in bits [31;0]), and it returns the @a equalled status in bit [31] -
 while atomically clearing it.
 

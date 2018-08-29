@@ -31,6 +31,9 @@
 cdl_options ass:on
 
 c_model cmodel/src   srams
+c_model cmodel/src   axi_master      inc:cmodel/inc
+c_src cmodel/src   ef_object      inc:cmodel/inc
+c_src cmodel/src   axi_types      inc:cmodel/inc
 c_model cmodel/src   bbc_display     inc:cmodel/inc
 c_model cmodel/src   bbc_floppy      inc:cmodel/inc
 c_src cmodel/src     bbc_floppy_disk inc:cmodel/inc
@@ -39,6 +42,7 @@ c_src cmodel/src     fb              inc:cmodel/inc
 c_src cmodel/src     vnc_rfb         inc:cmodel/inc
 #c_src cmodel/src    bbc_display_vnc inc:cmodel/inc
 c_src cmodel/src     bbc_shm         inc:cmodel/inc
+cdl cdl/axi/tb_src tb_axi inc:cdl/inc
 
 cdl cdl/utils/src    hysteresis_switch    inc:cdl/inc
 cdl cdl/utils/src    dprintf              inc:cdl/inc
@@ -135,6 +139,7 @@ cdl cdl/input_devices/src        ps2_host_keyboard inc:cdl/inc
 cdl cdl/input_devices/tb_src     tb_input_devices  inc:cdl/inc
 
 cdl cdl/apb/src  apb_master_mux   inc:cdl/inc
+cdl cdl/apb/src  apb_master_axi   inc:cdl/inc
 cdl cdl/apb/src  apb_target_gpio   inc:cdl/inc
 cdl cdl/apb/src  apb_target_timer  inc:cdl/inc
 cdl cdl/apb/src  apb_processor  inc:cdl/inc
