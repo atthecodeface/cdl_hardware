@@ -549,7 +549,7 @@ Remainder result is accumulator low, or negated accumulator low if signed and di
                     dp_combs.sel_neg_rs1 = 1;
                     dp_state.negate_remainder <= 1;
                 }
-                if (dp_combs.rs2_is_negative) { // use abs of dividsor to find its top bit set
+                if (dp_combs.rs2_is_negative) { // use abs of divisor to find its top bit set
                     dp_combs.sel_neg_rs2 = 1;
                 }
                 if (dp_combs.rs1_is_negative != dp_combs.rs2_is_negative) {

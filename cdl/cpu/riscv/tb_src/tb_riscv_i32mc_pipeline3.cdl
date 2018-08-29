@@ -72,7 +72,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
     net bit[32] imem_mem_read_data;
     net bit[32] main_mem_read_data;
     net t_riscv_i32_coproc_controls  coproc_controls;
-    net t_riscv_i32_coproc_response   coproc_response;
+    net t_riscv_i32_coproc_response  coproc_response;
 
     /*b Clock divider
      */
@@ -153,6 +153,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
         riscv_config.i32c = 1;
         riscv_config.e32  = 0;
         riscv_config.i32m = 1;
+        riscv_config.i32m_fuse = 1;
         riscv_config.coproc_disable = 0;
         
         jtag_tap tap( jtag_tck <- jtag_tck_gated,

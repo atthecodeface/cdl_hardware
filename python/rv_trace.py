@@ -252,9 +252,9 @@ pc_filter = c_logs.c_log_filter()
 pc_filter.add_match({"field":"reason", "type":"streq", "string":"PC"})
 itrace.add_filter("pc",pc_filter)
 
-retire_events = itrace.matching_event_occurrences(module=args.module, filter_name_list=["retire"])
+retire_events = itrace.matching_event_occurrences(module=args.module, filter_name_list=["retire"], max_occurrences=100000)
 
-pc_events = itrace.matching_event_occurrences(module=args.module, filter_name_list=["pc"])
+pc_events = itrace.matching_event_occurrences(module=args.module, filter_name_list=["pc"], max_occurrences=100000)
 
 rfw_events = {}
 for (k,o) in retire_events:
