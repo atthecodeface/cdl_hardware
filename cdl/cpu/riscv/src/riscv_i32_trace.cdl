@@ -57,7 +57,7 @@ Trace instruction execution
                 "pc",trace.instr_pc,
                 "branch_taken",trace.branch_taken,
                 "branch_target",trace.branch_target,
-                "instr",trace.instr_data);
+                "instr",trace.instruction.data);
             log("flow", "branch_taken", trace.branch_taken, "trap", trace.trap);
         }
         if (trace.rfw_retire) {

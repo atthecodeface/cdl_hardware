@@ -50,7 +50,7 @@ typedef struct {
 
 /*a Module
  */
-module riscv_i32c_decode( input t_riscv_word instruction,
+module riscv_i32c_decode( input t_riscv_i32_inst instruction,
                           output t_riscv_i32_decode idecode,
                           input t_riscv_config riscv_config
 )
@@ -75,12 +75,12 @@ are from that specification)
     course.
     """: {
         /*b  Break out the instruction word */
-        combs.quadrant      = instruction[ 2;0]; // 2;0  - must not be 2b11 for compressed
-        combs.opc           = instruction[3;13]; // 3;13 - with quadrant define the actual op
-        combs.rd_q0         = bundle( 2b01, instruction[ 3; 2]);
-        combs.rd_q12        = instruction[ 5; 7]; // set top two to 2b01 if rs'
-        combs.rs1           = instruction[ 5; 7]; // set top two to 2b01 if rs'
-        combs.rs2           = instruction[ 5; 2]; // set top two to 2b01 if rs'
+        combs.quadrant      = instruction.data[ 2;0]; // 2;0  - must not be 2b11 for compressed
+        combs.opc           = instruction.data[3;13]; // 3;13 - with quadrant define the actual op
+        combs.rd_q0         = bundle( 2b01, instruction.data[ 3; 2]);
+        combs.rd_q12        = instruction.data[ 5; 7]; // set top two to 2b01 if rs'
+        combs.rs1           = instruction.data[ 5; 7]; // set top two to 2b01 if rs'
+        combs.rs2           = instruction.data[ 5; 2]; // set top two to 2b01 if rs'
     }
 
     /*b Decode the immediate value
@@ -131,18 +131,18 @@ are from that specification)
           imm_cj         - sign-ext: 12  8 10  9  6  7  2 11  5  4  3  x 
           imm_clui       - zero-ext: 12  6 5  4  3  2 + 12 zeros
          */
-        combs.imm_signed  = instruction[12]  ? -1:0;
+        combs.imm_signed  = instruction.data[12]  ? -1:0;
         idecode.immediate_valid = 1; // Most things are immediate
-        idecode.immediate_shift = instruction[5;2] ; // c.slli/srli/srai, always the same
-        combs.imm_ci_v1 = bundle(combs.imm_signed[27;0],  instruction[5;2]);                       // li/addi/srli/srai/andi
-        combs.imm_clwsp = bundle(24b0, instruction[2;2], instruction[12], instruction[3;4], 2b0);  // lwsp
-        combs.imm_clui = bundle(combs.imm_signed[15;0], instruction[5;2], 12b0);                  // lui
-        combs.imm_caddi16sp = bundle(combs.imm_signed[23;0], instruction[2;3], instruction[5], instruction[2], instruction[6], 4b0); // addi16sp
-        combs.imm_caddi4spn   = bundle(22b0, instruction[4;7], instruction[2;11], instruction[5], instruction[6], 2b0);                // addi4spn
-        combs.imm_cswsp   = bundle(24b0, instruction[2;7], instruction[4;9],                  2b0);  // swsp
-        combs.imm_clwsw = bundle(25b0,   instruction[5], instruction[3;10], instruction[6], 2b0);  // lw/sw
-        combs.imm_cb    = bundle(combs.imm_signed[24;0], instruction[2;5], instruction[2], instruction[2;10], instruction[2;3], 1b0); // beqz/bnez
-        combs.imm_cj    = bundle(combs.imm_signed[21;0], instruction[8], instruction[2;9], instruction[6], instruction[7], instruction[2], instruction[11], instruction[3;3], 1b0); // cj
+        idecode.immediate_shift = instruction.data[5;2] ; // c.slli/srli/srai, always the same
+        combs.imm_ci_v1 = bundle(combs.imm_signed[27;0],  instruction.data[5;2]);                       // li/addi/srli/srai/andi
+        combs.imm_clwsp = bundle(24b0, instruction.data[2;2], instruction.data[12], instruction.data[3;4], 2b0);  // lwsp
+        combs.imm_clui = bundle(combs.imm_signed[15;0], instruction.data[5;2], 12b0);                  // lui
+        combs.imm_caddi16sp = bundle(combs.imm_signed[23;0], instruction.data[2;3], instruction.data[5], instruction.data[2], instruction.data[6], 4b0); // addi16sp
+        combs.imm_caddi4spn   = bundle(22b0, instruction.data[4;7], instruction.data[2;11], instruction.data[5], instruction.data[6], 2b0);                // addi4spn
+        combs.imm_cswsp   = bundle(24b0, instruction.data[2;7], instruction.data[4;9],                  2b0);  // swsp
+        combs.imm_clwsw = bundle(25b0,   instruction.data[5], instruction.data[3;10], instruction.data[6], 2b0);  // lw/sw
+        combs.imm_cb    = bundle(combs.imm_signed[24;0], instruction.data[2;5], instruction.data[2], instruction.data[2;10], instruction.data[2;3], 1b0); // beqz/bnez
+        combs.imm_cj    = bundle(combs.imm_signed[21;0], instruction.data[8], instruction.data[2;9], instruction.data[6], instruction.data[7], instruction.data[2], instruction.data[11], instruction.data[3;3], 1b0); // cj
 
         /*b Decode immediate and whether it is used based on instruction class */
         idecode.immediate = combs.imm_ci_v1; // NOTE if imm is 0 then HINT - i.e. do nothing
@@ -175,13 +175,13 @@ are from that specification)
             }
             case riscv_opcc1_lui: {
                 idecode.immediate = combs.imm_clui; // NOTE if rd=0 then HINT, imm=0 -> illegal
-                if (instruction[5;7]==2) { // ADDI16SP
+                if (instruction.data[5;7]==2) { // ADDI16SP
                     idecode.immediate = combs.imm_caddi16sp; // NOTE imm=0 -> illegal
                 }
             }
             case riscv_opcc1_arith: { // SRLI/SRAI/ANDI / SUB/XOR/OR/AND
                 idecode.immediate = combs.imm_ci_v1; // NOTE if imm=0 AND shift then HINT
-                if (instruction[2;10]==2b11) {
+                if (instruction.data[2;10]==2b11) {
                     idecode.immediate_valid=0;
                 }
             }
@@ -229,6 +229,7 @@ are from that specification)
 
     """: {
         /*b Defaults */
+        idecode.ext = {*=0};
         idecode.is_compressed = 1;
         idecode.rd  = combs.rd_q0;
         idecode.rs1 = combs.rs1;
@@ -321,15 +322,15 @@ are from that specification)
                 idecode.op         = riscv_op_lui;
                 idecode.rd_written = 1;
                 idecode.subop      = riscv_subop_add;
-                if (instruction[5;7]==2) { // ADDI16SP = addi x2, x2, imm
+                if (instruction.data[5;7]==2) { // ADDI16SP = addi x2, x2, imm
                     idecode.op         = riscv_op_alu;
                     idecode.rs1_valid  = 1;
                     idecode.rd_written = 1;
                     idecode.rd         = riscv_abi_sp; // x2
                     idecode.rs1        = riscv_abi_sp; // x2
                 }
-                if ( ((instruction[12]==0) && (instruction[5;2]==0)) ||
-                     (instruction[5;7]==0) ) { // rd must be non-zero, imm must be non-zero
+                if ( ((instruction.data[12]==0) && (instruction.data[5;2]==0)) ||
+                     (instruction.data[5;7]==0) ) { // rd must be non-zero, imm must be non-zero
                     idecode.illegal    = 1;
                 }
             }
@@ -340,7 +341,7 @@ are from that specification)
                 idecode.rs1_valid = 1;
                 idecode.rs2_valid = 0;
                 idecode.rd_written = 1;
-                full_switch (instruction[2;10])
+                full_switch (instruction.data[2;10])
                 {
                 case 2b00: { // srli rd', rd', amt
                     idecode.subop  = riscv_subop_srl;
@@ -355,10 +356,10 @@ are from that specification)
                     idecode.rs2_valid = 0;
                 }
                 case 2b11: { // sub/xor/or/and rd', rd', rs2'
-                    if (instruction[12]) { idecode.illegal=1; } // reserved if i[12] is 1
+                    if (instruction.data[12]) { idecode.illegal=1; } // reserved if i[12] is 1
                     idecode.subop  = riscv_subop_and;
                     idecode.rs2_valid = 1;
-                    full_switch (instruction[2;5]) {
+                    full_switch (instruction.data[2;5]) {
                     case 2b00: { idecode.subop  = riscv_subop_sub; }
                     case 2b01: { idecode.subop  = riscv_subop_xor; }
                     case 2b10: { idecode.subop  = riscv_subop_or;  }
@@ -411,7 +412,7 @@ are from that specification)
                     idecode.rs1_valid = 1;
                     idecode.rs2_valid = 0; // actually kills forwarding, but rs2==0 => it will use zero anyway
                     idecode.rd_written = 1;
-                    if (instruction[12]) { // ebreak (if rs1==0) / jalr = jalr x1, rs1, x0
+                    if (instruction.data[12]) { // ebreak (if rs1==0) / jalr = jalr x1, rs1, x0
                         idecode.rd  = riscv_abi_link;
                         if (combs.rs1==0) { // == combs.rd_q12
                             idecode.op = riscv_op_system;
@@ -427,7 +428,7 @@ are from that specification)
                     idecode.rs1_valid = 1;
                     idecode.rs2_valid = 1;
                     idecode.rd_written = 1;
-                    if (!instruction[12]) { // mv rd, rs2 == add rd, x0, rs2
+                    if (!instruction.data[12]) { // mv rd, rs2 == add rd, x0, rs2
                         idecode.rs1 = riscv_abi_zero;
                     }
                 }
@@ -478,7 +479,7 @@ are from that specification)
         if (idecode.rd == 0) {
             idecode.rd_written = 0;
         }
-        if (instruction[16;0]==0) {
+        if (instruction.data[16;0]==0) {
             idecode.illegal = 1;
         }
     }

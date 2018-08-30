@@ -71,9 +71,9 @@ typedef struct {
 /*t t_dec_state */
 typedef struct {
     bit enable                   "Asserted if execution is enabled, deasserted at reset";
-    t_riscv_word instr_data      "Fetched instruction, ready for decode, register fetch, execute and writeback";
-    bit valid                    "Asserted if @instr_data is a valid fetched instruction, whether misaligned or not";
-    bit illegal_pc               "Asserted if a valid @instr_data is a fetched instruction from a badly aligned PC";
+    t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
+    bit valid                    "Asserted if @instruction is a valid fetched instruction, whether misaligned or not";
+    bit illegal_pc               "Asserted if a valid @instruction is a fetched instruction from a badly aligned PC";
     bit[32] pc                   "PC of the fetched instruction";
     bit     fetch_sequential     "Asserted if?";
 } t_dec_state;
@@ -111,7 +111,7 @@ typedef struct {
     bit first_cycle              "Asserted if first cycle of an instruction execution (so instruction can be interrupted)";
     t_riscv_i32_decode idecode;
     bit[32] pc                   "PC of the fetched instruction";
-    bit illegal_pc               "Asserted if a valid @instr_data is a fetched instruction from a badly aligned PC";
+    bit illegal_pc               "Asserted if a valid @instruction is a fetched instruction from a badly aligned PC";
     bit[32] pc_if_mispredicted   "PC of the next instruction if branch prediction is incorrect";
     bit predicted_branch         "Asserted if instruction decode predicted this is a taken branch";
     bit rs1_from_alu;
@@ -121,7 +121,7 @@ typedef struct {
     t_riscv_word   rs1;
     t_riscv_word   rs2;
 
-    t_riscv_word debug_instr_data      "Decoded instruction, for trace only";
+    t_riscv_i32_inst debug_instruction    "Decoded instruction, for trace only";
 } t_alu_state;
 
 /*t t_alu_combs
@@ -129,7 +129,7 @@ typedef struct {
  * Combinatorials of the ALU stage
  */
 typedef struct {
-    bit valid_legal              "Asserted if @instr_data is a valid fetched instruction on a valid alignment";
+    bit valid_legal              "Asserted if @instruction is a valid fetched instruction on a valid alignment";
     bit blocked_by_mem           "Must qualify with valid; asserted if the ALU instruction cannot start because it uses a result of the memory stage";
     bit cannot_start             "Asserted if the instruction is blocked from starting; ignored unless valid and first_cycle; can be because of blocked_by_mem or coprocessor not ready";
     bit cannot_complete          "Asserted if the ALU has a valid instruction that either cannot be started or cannot complete";
@@ -337,7 +337,7 @@ An example implementation of could be
         } elsif (ifetch_req.valid) {
             if (ifetch_resp.valid) {
                 dec_state.valid <= 1;
-                dec_state.instr_data <= ifetch_resp.data;
+                dec_state.instruction <= {data=ifetch_resp.data, mode=rv_mode_machine};
                 dec_state.illegal_pc <= 0;
             }
             dec_state.pc               <= ifetch_req.address;
@@ -345,18 +345,18 @@ An example implementation of could be
         }
 
         /*b Decode instruction */
-        riscv_i32_decode decode_i32( instruction <= dec_state.instr_data,
+        riscv_i32_decode decode_i32( instruction <= dec_state.instruction,
                                      idecode     => idecode_i32,
                                      riscv_config      <= riscv_config );
 
-        riscv_i32c_decode decode_i32c( instruction <= dec_state.instr_data,
+        riscv_i32c_decode decode_i32c( instruction <= dec_state.instruction,
                                        idecode      => idecode_i32c,
                                        riscv_config      <= riscv_config );
 
         /*b Select decode */
         dec_combs.idecode = idecode_i32;
         if ((!i32c_force_disable) && riscv_config.i32c) {
-            if (dec_state.instr_data[2;0]!=2b11) {
+            if (dec_state.instruction.data[2;0]!=2b11) {
                 dec_combs.idecode = idecode_i32c;
             }
         }
@@ -443,7 +443,7 @@ An example implementation of could be
             alu_state.rs2_from_alu        <= dec_combs.rs2_from_alu;
             alu_state.rs2_from_mem        <= dec_combs.rs2_from_mem;
 
-            alu_state.debug_instr_data    <= dec_state.instr_data;
+            alu_state.debug_instruction   <= dec_state.instruction;
         }
     }
 
@@ -592,7 +592,7 @@ An example implementation of could be
         if (alu_state.idecode.illegal) {
             alu_combs.trap = 1;
             alu_combs.trap_cause = riscv_trap_cause_illegal_instruction;
-            alu_combs.trap_value = alu_state.debug_instr_data; // OPTIONAL???
+            alu_combs.trap_value = alu_state.debug_instruction.data; // OPTIONAL???
         }
         if (alu_state.illegal_pc) {
             alu_combs.trap       = 1;
@@ -771,7 +771,7 @@ An example implementation of could be
         trace = {*=0};
         trace.instr_valid = alu_state.valid;
         trace.instr_pc    = alu_state.pc;
-        trace.instr_data  = alu_state.debug_instr_data;
+        trace.instruction = alu_state.debug_instruction;
         trace.rfw_retire     = rfw_state.valid;
         trace.rfw_data_valid = rfw_state.rd_written;
         trace.rfw_rd         = rfw_state.rd;

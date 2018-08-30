@@ -66,6 +66,8 @@ include "riscv_submodules.h"
 /*a Constants
  */
 constant integer INITIAL_PC=0x80000000;
+constant integer i32c_force_disable=0;
+constant integer coproc_force_disable=0;
 
 /*a Types
  */
@@ -85,10 +87,10 @@ typedef struct {
 
 /*t t_decexecrfw_state */
 typedef struct {
-    t_riscv_word instr_data      "Fetched instruction, ready for decode, register fetch, execute and writeback";
-    bit valid                    "Asserted if @instr_data is a valid fetched instruction, whether misaligned or not";
-    bit valid_legal              "Asserted if @instr_data is a valid fetched instruction on a valid alignment";
-    bit illegal_pc               "Asserted if a valid @instr_data is a fetched instruction from a badly aligned PC";
+    t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
+    bit valid                    "Asserted if @instruction is a valid fetched instruction, whether misaligned or not";
+    bit valid_legal              "Asserted if @instruction is a valid fetched instruction on a valid alignment";
+    bit illegal_pc               "Asserted if a valid @instruction is a fetched instruction from a badly aligned PC";
     bit[32] pc                   "PC of the fetched instruction";
 } t_decexecrfw_state;
 
@@ -124,6 +126,7 @@ module riscv_i32c_minimal( clock clk,
                            input  t_riscv_mem_access_resp dmem_access_resp,
                            output t_riscv_mem_access_req  imem_access_req,
                            input  t_riscv_mem_access_resp imem_access_resp,
+                           input  t_riscv_config          riscv_config,
                            output t_riscv_i32_trace       trace
 )
 """
@@ -217,7 +220,7 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
         decexecrfw_state.valid <= 0;
         if (imem_access_req.read_enable && !imem_access_resp.wait) {
-            decexecrfw_state.instr_data <= imem_access_resp.read_data;
+            decexecrfw_state.instruction <= {data=imem_access_resp.read_data, mode=rv_mode_machine};
             decexecrfw_state.illegal_pc <= 0;
             decexecrfw_state.valid_legal <= 1;
             decexecrfw_state.valid <= 1;
@@ -227,16 +230,20 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         }
 
         /*b Decode instruction */
-        riscv_i32_decode decode_i32( instruction <= decexecrfw_state.instr_data,
-                                 idecode      => decexecrfw_idecode_i32 );
+        riscv_i32_decode decode_i32( instruction <= decexecrfw_state.instruction,
+                                     idecode      => decexecrfw_idecode_i32,
+                                     riscv_config <= riscv_config );
 
-        riscv_i32c_decode decode_i32c( instruction <= decexecrfw_state.instr_data,
-                                  idecode      => decexecrfw_idecode_i32c );
+        riscv_i32c_decode decode_i32c( instruction <= decexecrfw_state.instruction,
+                                       idecode      => decexecrfw_idecode_i32c,
+                                       riscv_config <= riscv_config );
 
         /*b Select decode */
-        decexecrfw_combs.idecode = decexecrfw_idecode_i32c;
-        if (decexecrfw_state.instr_data[2;0]==2b11) {
-            decexecrfw_combs.idecode = decexecrfw_idecode_i32;
+        decexecrfw_combs.idecode = decexecrfw_idecode_i32;
+        if ((!i32c_force_disable) && riscv_config.i32c) {
+            if (decexecrfw_state.instruction.data[2;0]!=2b11) {
+                decexecrfw_combs.idecode = decexecrfw_idecode_i32c;
+            }
         }
 
         /*b Register read */
@@ -368,7 +375,7 @@ Mem, CPU , imem_req.7 , imem_resp.9 , ifetch.0, decode.2, RF rd.5 , Exec  , dmem
         trace = {*=0};
         trace.instr_valid    = decexecrfw_state.valid;
         trace.instr_pc       = decexecrfw_state.pc;
-        trace.instr_data     = decexecrfw_state.instr_data;
+        trace.instruction    = decexecrfw_state.instruction;
         trace.rfw_data_valid = decexecrfw_state.valid;
         trace.rfw_data       = decexecrfw_combs.rfw_write_data;
         trace.branch_taken   = decexecrfw_combs.branch_taken;

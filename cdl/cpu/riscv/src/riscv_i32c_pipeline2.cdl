@@ -33,7 +33,7 @@ constant integer i32c_force_disable=0;
  */
 /*t t_decexec_state */
 typedef struct {
-    t_riscv_word instr_data;
+    t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
     bit valid;
     bit[32] pc                   "PC of the decoded instruction";
 } t_decexec_state;
@@ -135,25 +135,25 @@ module riscv_i32c_pipeline2( clock clk,
         decexec_state.valid <= 0;
         if (ifetch_req.valid && ifetch_resp.valid) {
             decexec_state.valid <= 1;
-            decexec_state.instr_data <= ifetch_resp.data;
+            decexec_state.instruction <= {data=ifetch_resp.data, mode=rv_mode_machine};
         }
         if (decexec_state.valid) {
             decexec_state.pc <= decexec_combs.next_pc;
         }
 
         /*b Decode instruction */
-        riscv_i32_decode decode_i32( instruction <= decexec_state.instr_data,
+        riscv_i32_decode decode_i32( instruction <= decexec_state.instruction,
                                      idecode      => decexec_idecode_i32,
                                      riscv_config <= riscv_config );
 
-        riscv_i32c_decode decode_i32c( instruction <= decexec_state.instr_data,
+        riscv_i32c_decode decode_i32c( instruction <= decexec_state.instruction,
                                        idecode      => decexec_idecode_i32c,
                                        riscv_config <= riscv_config );
 
         /*b Select decode */
         decexec_combs.idecode = decexec_idecode_i32;
         if ((!i32c_force_disable) && riscv_config.i32c) {
-            if (decexec_state.instr_data[2;0]!=2b11) {
+            if (decexec_state.instruction.data[2;0]!=2b11) {
                 decexec_combs.idecode = decexec_idecode_i32c;
             }
         }
@@ -259,7 +259,7 @@ module riscv_i32c_pipeline2( clock clk,
         trace = {*=0};
         trace.instr_valid    = decexec_state.valid;
         trace.instr_pc       = decexec_state.pc;
-        trace.instr_data     = decexec_state.instr_data;
+        trace.instruction    = decexec_state.instruction;
         trace.rfw_retire     = rfw_state.valid;
         trace.rfw_data_valid = rfw_state.idecode.rd_written;
         trace.rfw_rd         = rfw_state.idecode.rd;

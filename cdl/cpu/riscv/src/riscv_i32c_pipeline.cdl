@@ -82,12 +82,12 @@ typedef struct {
 
 /*t t_decexecrfw_state */
 typedef struct {
-    bit enable                   "Asserted if execution is enabled, deasserted at reset";
-    t_riscv_word instr_data      "Fetched instruction, ready for decode, register fetch, execute and writeback";
-    bit valid                    "Asserted if @instr_data is a valid fetched instruction, whether misaligned or not";
-    bit valid_legal              "Asserted if @instr_data is a valid fetched instruction on a valid alignment";
-    bit illegal_pc               "Asserted if a valid @instr_data is a fetched instruction from a badly aligned PC";
-    bit[32] pc                   "PC of the fetched instruction";
+    bit enable                     "Asserted if execution is enabled, deasserted at reset";
+    t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
+    bit valid                      "Asserted if @instr_data is a valid fetched instruction, whether misaligned or not";
+    bit valid_legal                "Asserted if @instr_data is a valid fetched instruction on a valid alignment";
+    bit illegal_pc                 "Asserted if a valid @instr_data is a fetched instruction from a badly aligned PC";
+    bit[32] pc                     "PC of the fetched instruction";
 } t_decexecrfw_state;
 
 /*t t_decexecrfw_combs
@@ -222,7 +222,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         decexecrfw_state.enable <= 1;
         decexecrfw_state.valid <= 0;
         if (ifetch_req.valid && ifetch_resp.valid) {
-            decexecrfw_state.instr_data <= ifetch_resp.data;
+            decexecrfw_state.instruction <= {data=ifetch_resp.data, mode=rv_mode_machine};
             decexecrfw_state.illegal_pc <= 0;
             decexecrfw_state.valid_legal <= 1;
             decexecrfw_state.valid <= 1;
@@ -232,18 +232,18 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         }
 
         /*b Decode instruction */
-        riscv_i32_decode decode_i32( instruction <= decexecrfw_state.instr_data,
+        riscv_i32_decode decode_i32( instruction <= decexecrfw_state.instruction,
                                      idecode      => decexecrfw_idecode_i32,
                                      riscv_config <= riscv_config );
 
-        riscv_i32c_decode decode_i32c( instruction <= decexecrfw_state.instr_data,
+        riscv_i32c_decode decode_i32c( instruction <= decexecrfw_state.instruction,
                                        idecode      => decexecrfw_idecode_i32c,
                                        riscv_config <= riscv_config );
 
         /*b Select decode */
         decexecrfw_combs.idecode = decexecrfw_idecode_i32;
         if ((!i32c_force_disable) && riscv_config.i32c) {
-            if (decexecrfw_state.instr_data[2;0]!=2b11) {
+            if (decexecrfw_state.instruction.data[2;0]!=2b11) {
                 decexecrfw_combs.idecode = decexecrfw_idecode_i32c;
             }
         }
@@ -339,7 +339,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         if (decexecrfw_combs.idecode.illegal) {
             decexecrfw_combs.trap = 1;
             decexecrfw_combs.trap_cause = riscv_trap_cause_illegal_instruction;
-            decexecrfw_combs.trap_value = decexecrfw_state.instr_data;
+            decexecrfw_combs.trap_value = decexecrfw_state.instruction.data;
         }
         decexecrfw_combs.pc_plus_4      = decexecrfw_state.pc + 4;
         decexecrfw_combs.pc_plus_2      = decexecrfw_state.pc + 2;
@@ -421,7 +421,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         trace = {*=0};
         trace.instr_valid    = decexecrfw_state.valid;
         trace.instr_pc       = decexecrfw_state.pc;
-        trace.instr_data     = decexecrfw_state.instr_data;
+        trace.instruction    = decexecrfw_state.instruction;
         trace.rfw_retire     = decexecrfw_state.valid;
         trace.rfw_data_valid = decexecrfw_state.valid_legal && decexecrfw_combs.idecode.rd_written && !decexecrfw_combs.idecode.illegal;
         trace.rfw_rd         = decexecrfw_combs.idecode.rd;

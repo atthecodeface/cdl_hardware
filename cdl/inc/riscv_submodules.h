@@ -25,7 +25,7 @@ include "riscv_internal_types.h"
  */
 /*m riscv_i32_decode  */
 extern
-module riscv_i32_decode( input t_riscv_word instruction,
+module riscv_i32_decode( input t_riscv_i32_inst instruction,
                          output t_riscv_i32_decode idecode,
                          input  t_riscv_config          riscv_config
 )
@@ -36,9 +36,9 @@ module riscv_i32_decode( input t_riscv_word instruction,
 
 /*m riscv_i32c_decode  */
 extern
-module riscv_i32c_decode( input t_riscv_word instruction,
+module riscv_i32c_decode( input t_riscv_i32_inst instruction,
                           output t_riscv_i32_decode idecode,
-                         input  t_riscv_config          riscv_config
+                          input  t_riscv_config          riscv_config
 )
 {
     timing comb input instruction, riscv_config;
@@ -47,11 +47,23 @@ module riscv_i32c_decode( input t_riscv_word instruction,
 
 /*m riscv_e32_decode  */
 extern
-module riscv_e32_decode( input t_riscv_word instruction,
-                         output t_riscv_i32_decode idecode
+module riscv_e32_decode( input t_riscv_i32_inst    instruction,
+                         output t_riscv_i32_decode idecode,
+                         input  t_riscv_config     riscv_config
 )
 {
-    timing comb input instruction;
+    timing comb input instruction, riscv_config;
+    timing comb output idecode;
+}
+
+/*m riscv_e32c_decode  */
+extern
+module riscv_e32c_decode( input t_riscv_i32_inst    instruction,
+                          output t_riscv_i32_decode idecode,
+                          input  t_riscv_config     riscv_config
+)
+{
+    timing comb input instruction, riscv_config;
     timing comb output idecode;
 }
 

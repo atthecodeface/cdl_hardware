@@ -27,9 +27,9 @@ include "riscv.h"
 
 /*a Module
  */
-module riscv_e32_decode( input t_riscv_i32_inst    instruction,
-                         output t_riscv_i32_decode idecode,
-                         input  t_riscv_config     riscv_config
+module riscv_e32c_decode( input t_riscv_i32_inst    instruction,
+                          output t_riscv_i32_decode idecode,
+                          input  t_riscv_config     riscv_config
 )
 """
 Instruction decoder for RISC-V RV32E instruction set.
@@ -45,7 +45,7 @@ are from that specification)
     instruction_decode """
     Decode the instruction
     """: {
-        riscv_i32_decode rv32i_decode( instruction <= instruction,
+        riscv_i32c_decode rv32ic_decode( instruction <= instruction,
                                        idecode => rv32i_idecode,
                                        riscv_config <= riscv_config );
 

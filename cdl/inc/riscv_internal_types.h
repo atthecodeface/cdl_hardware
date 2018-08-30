@@ -44,7 +44,7 @@ typedef enum[5] {
 } t_riscv_abi;
 
 /*a RISC-V instruction decode types */
-/*t t_riscv_opc (I32) enumeration
+/*t t_riscv_opc (I32) enumeration - from inst[5;2] - see table 19.1 in RISC-V spec v2.2
  */
 typedef enum[5] {
     riscv_opc_load     =  0, // rv32i (lb, lh, lw, lbu, lhu); rv64i (lwu, ld)
@@ -56,7 +56,7 @@ typedef enum[5] {
     riscv_opc_op_imm32 =  6, // rv64i (addiw, slliw, srliw, sraiw)
     riscv_opc_store    =  8, // rv32i (sb, sh, sw); rv64i (sd)
     riscv_opc_store_fp =  9, // rv32f (fsw)
-    riscv_opc_custom_1 = 10,
+    riscv_opc_custom_1 = 10, 
     riscv_opc_amo      = 11, // rv32a (lr.w, sc.w, amoswap.w, amoadd.w, amoxor.w, amoand.w, amoor.w, amomin.w, amomax.w, amomaxu.w) (+rv64a)
     riscv_opc_op       = 12, // rv32i (add, sub, sll, slt, sltu, xor, srl, sra, or, and); rv32m (mul, mulh, mulhsu, mulhu, div, divu, rem, remu)
     riscv_opc_lui      = 13, // rv32i
@@ -204,6 +204,7 @@ typedef enum[4] {
     riscv_op_muldiv,
     riscv_op_auipc,
     riscv_op_lui,
+    riscv_op_ext, // for custom extensions
     riscv_op_illegal
 } t_riscv_op;
 
@@ -448,6 +449,22 @@ typedef struct {
 } t_riscv_csrs_minimal;
 
 /*a I32 types */
+/*t t_riscv_i32_inst
+ */
+typedef struct {
+    t_riscv_mode mode;
+    bit[32]      data;
+} t_riscv_i32_inst;
+
+/*t t_riscv_i32_decode_ext
+ *
+ * A type that can be used to create an extended RISC-V, returned as part of the decode
+ *
+ */
+typedef struct {
+    bit dummy; // not used, but the struct must not be empty
+} t_riscv_i32_decode_ext;
+
 /*t t_riscv_i32_decode
  * Decoded i32 instruction, used throughout a pipeline (decode onwards)
  */
@@ -469,6 +486,7 @@ typedef struct {
     t_riscv_mem_width  memory_width    "ignored unless @a memory_read or @a memory_write; indicates size of memory transfer";
     bit           illegal              "asserted if an illegal opcode";
     bit           is_compressed        "asserted if from an i32-c decode, clear otherwise (effects link register)";
+    t_riscv_i32_decode_ext ext         "extended decode, not used by the main pipeline";
 } t_riscv_i32_decode;
 
 /*t t_riscv_i32_alu_result
@@ -505,4 +523,20 @@ typedef struct {
     bit          result_valid "Early in cycle, if asserted then coproc overcomes the ALU result";
     bit          cannot_complete "Early in cycle: if deasserted the module is performing a calculation that has not produced a valid result yet (feeds back in to controls alu_cannot_complete)";
 } t_riscv_i32_coproc_response;
+
+/*t t_riscv_i32_trace
+ */
+typedef struct {
+    bit                instr_valid;
+    bit[32]            instr_pc   "Program counter of the instruction";
+    t_riscv_i32_inst   instruction "Instruction word being decoded";
+    bit                rfw_retire "Asserted if an instruction is being retired";
+    bit                rfw_data_valid;
+    bit[5]             rfw_rd;
+    t_riscv_word       rfw_data   "Result of ALU/memory operation for the instruction";
+    bit                branch_taken "Asserted if a branch is being taken";
+    bit[32]            branch_target "Target of branch if being taken";
+    bit                trap;
+    // Needs tag
+} t_riscv_i32_trace;
 

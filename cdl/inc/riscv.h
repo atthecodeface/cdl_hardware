@@ -176,19 +176,3 @@ typedef struct {
     bit exec_dret;
 } t_riscv_pipeline_debug_response;
 
-/*t t_riscv_i32_trace
- */
-typedef struct {
-    bit                instr_valid;
-    bit[32]            instr_pc   "Program counter of the instruction";
-    t_riscv_word       instr_data "Instruction word being decoded";
-    bit                rfw_retire "Asserted if an instruction is being retired";
-    bit                rfw_data_valid;
-    bit[5]             rfw_rd;
-    t_riscv_word       rfw_data   "Result of ALU/memory operation for the instruction";
-    bit                branch_taken "Asserted if a branch is being taken";
-    bit[32]            branch_target "Target of branch if being taken";
-    bit                trap;
-    // Needs tag
-} t_riscv_i32_trace;
-

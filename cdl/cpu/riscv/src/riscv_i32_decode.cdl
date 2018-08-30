@@ -27,6 +27,10 @@ include "riscv.h"
 /*a Constants - configuration */
 constant integer e32_force_enable=0;
 constant integer i32m_force_disable=0;
+constant integer i32_custom0_enable=0;
+constant integer i32_custom1_enable=0;
+constant integer i32_custom2_enable=0;
+constant integer i32_custom3_enable=0;
 
 /*a Types
  */
@@ -42,7 +46,7 @@ typedef struct {
 
 /*a Module
  */
-module riscv_i32_decode( input t_riscv_word instruction,
+module riscv_i32_decode( input t_riscv_i32_inst instruction,
                          output t_riscv_i32_decode idecode,
                          input t_riscv_config riscv_config
 )
@@ -83,13 +87,13 @@ then the instructions are decoded as illegal.
     The other fields in fig 2.3 relate to the immediate value (see immediate_decode)
     """: {
         /*b  Break out the instruction word */
-        combs.must_be_ones  = instruction[ 2;riscv_i32_ones]; // 2;0
-        combs.opc           = instruction[ 5;riscv_i32_opc ]; // 5;2 
-        idecode.rd          = instruction[ 5;riscv_i32_rd  ]; // 5;7
-        combs.funct3        = instruction[ 3;riscv_i32_f3  ]; // 3;12
-        idecode.rs1         = instruction[ 5;riscv_i32_rs1 ]; // 5;15
-        idecode.rs2         = instruction[ 5;riscv_i32_rs2 ]; // 5;20
-        combs.funct7        = instruction[ 7;riscv_i32_f7  ]; //  7;25
+        combs.must_be_ones  = instruction.data[ 2;riscv_i32_ones]; // 2;0
+        combs.opc           = instruction.data[ 5;riscv_i32_opc ]; // 5;2 - major opcode, table 19.1
+        idecode.rd          = instruction.data[ 5;riscv_i32_rd  ]; // 5;7
+        combs.funct3        = instruction.data[ 3;riscv_i32_f3  ]; // 3;12
+        idecode.rs1         = instruction.data[ 5;riscv_i32_rs1 ]; // 5;15
+        idecode.rs2         = instruction.data[ 5;riscv_i32_rs2 ]; // 5;20
+        combs.funct7        = instruction.data[ 7;riscv_i32_f7  ]; //  7;25
     }
 
     /*b Decode the immediate value
@@ -145,7 +149,7 @@ then the instructions are decoded as illegal.
             idecode.immediate = bundle(combs.funct7, idecode.rs2, idecode.rs1, combs.funct3, 12b0);
         }
         case riscv_opc_system: {
-            idecode.immediate_valid = instruction[14]; // for csr write immediates only, data written is rs1
+            idecode.immediate_valid = instruction.data[14]; // for csr write immediates only, data written is rs1
         }
         }
     }
@@ -156,20 +160,21 @@ then the instructions are decoded as illegal.
     Decode the instruction
     """: {
         /*b  Defaults */
+        idecode.ext = {*=0};
         idecode.is_compressed = 0;
         idecode.rs1_valid = 0;
         idecode.rs2_valid = 0;
         idecode.rd_written = 0;
         idecode.requires_machine_mode = 0;
-        idecode.memory_read_unsigned = instruction[14];
-        idecode.memory_width         = instruction[2;12];
+        idecode.memory_read_unsigned = instruction.data[14];
+        idecode.memory_width         = instruction.data[2;12];
 
         /*b Decode 'opc' */
         combs.is_imm_op = (combs.opc==riscv_opc_op_imm);
         idecode.op = riscv_op_illegal;
         idecode.illegal = 1;
         idecode.subop = riscv_subop_valid; // so only opc has to be set to 'valid'
-        idecode.csr_access.address = instruction[12;20];
+        idecode.csr_access.address = instruction.data[12;20];
         idecode.csr_access.access  = riscv_csr_access_none;
         combs.rs1_nonzero = (idecode.rs1 != 0);
         part_switch (combs.opc) {
@@ -307,7 +312,7 @@ then the instructions are decoded as illegal.
             }
             case riscv_f3_privileged: {
                 idecode.op = riscv_op_system;
-                full_switch (instruction[12;20]) {
+                full_switch (instruction.data[12;20]) {
                 case riscv_f12_ecall:  { idecode.subop = riscv_subop_ecall;  }
                 case riscv_f12_ebreak: { idecode.subop = riscv_subop_ebreak; }
                 case riscv_f12_mret:   { idecode.subop = riscv_subop_mret;
@@ -317,6 +322,34 @@ then the instructions are decoded as illegal.
                 default:               { idecode.illegal = 1; }
                 }
             }
+            }
+        }
+        case riscv_opc_custom_0: {
+            if (i32_custom0_enable==1) {
+                idecode.illegal = 0;
+                idecode.op = riscv_op_ext;
+                idecode.subop = 0;
+            }
+        }
+        case riscv_opc_custom_1: {
+            if (i32_custom1_enable==1) {
+                idecode.illegal = 0;
+                idecode.op = riscv_op_ext;
+                idecode.subop = 1;
+            }
+        }
+        case riscv_opc_custom_2: {
+            if (i32_custom0_enable==1) {
+                idecode.illegal = 0;
+                idecode.op = riscv_op_ext;
+                idecode.subop = 2;
+            }
+        }
+        case riscv_opc_custom_3: {
+            if (i32_custom0_enable==1) {
+                idecode.illegal = 0;
+                idecode.op = riscv_op_ext;
+                idecode.subop = 3;
             }
         }
         }
@@ -346,6 +379,7 @@ then the instructions are decoded as illegal.
             }
         }
     }
+
 
     /*b All done */
 }
