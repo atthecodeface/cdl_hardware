@@ -251,7 +251,7 @@ module hps_fpga_debug( clock clk,
         framebuffer_teletext ftb( csr_clk <- lw_axi_clock_clk,
                                   sram_clk <- lw_axi_clock_clk,
                                   video_clk <- de1_vga_clock,
-                                  reset_n <= de1_vga_reset_n,
+                                  reset_n <= reset_n,
                                   video_bus => video_bus,
                                   display_sram_write <= tt_display_sram_write,
                                   csr_request <= csr_request,
@@ -283,9 +283,28 @@ module hps_fpga_debug( clock clk,
     }
 
     /*b Stub out unused outputs and all done */
+    default clock de1_vga_clock;
+    default reset active_low de1_vga_reset_n;
+    clocked bit[16] counter=0;
     stubs : {
+        if (de1_switches[3;2]==0) {
+            counter <= counter + 1;
+        }
+        if ((de1_switches[3;2]==1) && (video_bus.hsync)) {
+            counter <= counter + 1;
+        }
+        if ((de1_switches[3;2]==2) && (video_bus.vsync)) {
+            counter <= counter + 1;
+        }
+        if ((de1_switches[3;2]==3) && (video_bus.display_enable)) {
+            counter <= counter + 1;
+        }
+        if ((de1_switches[3;2]==4) && (video_bus.display_enable) && (video_bus.green!=0)) {
+            counter <= counter + 1;
+        }
         gpio_input = {*=0};
         de1_leds = {*=0};
+        de1_leds.leds = counter[10;0];
         de1_cl_led_data_pin = 0;
         de1_cl_inputs_control = {*=0};
         de1_ps2_out = {*=0};
