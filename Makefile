@@ -90,6 +90,7 @@ test_regress_riscv: ${TARGET_DIR}/py_engine.so
 roms:
 	python python/teletext_font.py > roms/teletext.mif
 	python python/apb_speed_selection.py > roms/apb_rom.mif
+	python python/apb_vga.py > roms/apb_vga_rom.mif
 	python python/ps2_bbc_kbd_map.py
 	python python/rom_to_mif.py
 

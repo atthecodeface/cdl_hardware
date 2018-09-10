@@ -245,7 +245,7 @@ c_axi_master::c_axi_master( class c_engine *eng, void *eng_handle )
     verbose       = engine->get_option_int( engine_handle, "verbose", 0 );
     address_width = engine->get_option_int( engine_handle, "address_width", 32 );
     data_width    = engine->get_option_int( engine_handle, "data_width", 32 ); // 32-bit or 64-bit
-    id_width      = engine->get_option_int( engine_handle, "id_width", 4 ); // awid, 
+    id_width      = engine->get_option_int( engine_handle, "id_width", 12 ); // awid, 
     len_width     = engine->get_option_int( engine_handle, "len_width", 4 ); // awlen, arlen
 
     int max_wreq  = engine->get_option_int( engine_handle, "max_wr_req", 4 );
@@ -283,7 +283,7 @@ c_axi_master::c_axi_master( class c_engine *eng, void *eng_handle )
     REGISTER_OUTPUT(aw__len,len_width);
     REGISTER_OUTPUT(aw__size,3);
     REGISTER_OUTPUT(aw__burst,2);
-    REGISTER_OUTPUT(aw__lock,1);  // 2 in axi3
+    REGISTER_OUTPUT(aw__lock,2);  // 2 in axi3
     REGISTER_OUTPUT(aw__cache,4); // slightly different used between axi3 and axi4
     REGISTER_OUTPUT(aw__prot,3); //
     REGISTER_OUTPUT(aw__qos,4); // axi4 only, optional
@@ -311,7 +311,7 @@ c_axi_master::c_axi_master( class c_engine *eng, void *eng_handle )
     REGISTER_OUTPUT(ar__len,len_width);
     REGISTER_OUTPUT(ar__size,3);
     REGISTER_OUTPUT(ar__burst,2);
-    REGISTER_OUTPUT(ar__lock,1);  // 2 in axi3
+    REGISTER_OUTPUT(ar__lock,2);  // 2 in axi3
     REGISTER_OUTPUT(ar__cache,4); // slightly different used between axi3 and axi4
     REGISTER_OUTPUT(ar__prot,3); //
     REGISTER_OUTPUT(ar__qos,4); // axi4 only, optional

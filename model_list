@@ -42,7 +42,7 @@ c_src cmodel/src     fb              inc:cmodel/inc
 c_src cmodel/src     vnc_rfb         inc:cmodel/inc
 #c_src cmodel/src    bbc_display_vnc inc:cmodel/inc
 c_src cmodel/src     bbc_shm         inc:cmodel/inc
-#cdl cdl/axi/tb_src tb_axi inc:cdl/inc
+cdl cdl/axi/tb_src tb_axi inc:cdl/inc
 
 cdl cdl/utils/src    hysteresis_switch    inc:cdl/inc
 cdl cdl/utils/src    dprintf              inc:cdl/inc
@@ -131,6 +131,8 @@ cdl cdl/boards/de1_cl/src          bbc_micro_de1_cl      inc:cdl/inc
 cdl cdl/boards/de1_cl/src          de1_cl_controls       inc:cdl/inc
 cdl cdl/boards/de1_cl/tb_src       tb_de1_cl_controls    inc:cdl/inc
 
+cdl cdl/boards/de1_cl/src          riscv_adjunct_de1_cl      inc:cdl/inc
+
 cdl cdl/led/src        led_seven_segment   inc:cdl/inc
 cdl cdl/led/src        led_ws2812_chain    inc:cdl/inc
 cdl cdl/led/tb_src     tb_led_ws2812_chain inc:cdl/inc
@@ -143,6 +145,7 @@ cdl cdl/apb/src  apb_master_mux   inc:cdl/inc
 cdl cdl/apb/src  apb_master_axi   inc:cdl/inc
 cdl cdl/apb/src  apb_target_gpio   inc:cdl/inc
 cdl cdl/apb/src  apb_target_timer  inc:cdl/inc
+cdl cdl/apb/src  apb_target_dprintf  inc:cdl/inc
 cdl cdl/apb/src  apb_processor  inc:cdl/inc
 cdl cdl/apb/tb_src  tb_apb_processor  inc:cdl/inc
 
@@ -150,7 +153,10 @@ cdl cdl/csrs/src csr_master_apb      inc:cdl/inc
 cdl cdl/csrs/src csr_target_csr      inc:cdl/inc
 cdl cdl/csrs/src csr_target_apb      inc:cdl/inc
 cdl cdl/csrs/src csr_target_timeout  inc:cdl/inc
-cdl cdl/csrs/tb_src tb_csrs    inc:cdl/inc
+cdl cdl/csrs/tb_src tb_csrs          inc:cdl/inc
+
+cdl cdl/hps_fpga/src     hps_fpga_debug          inc:cdl/inc
+cdl cdl/hps_fpga/tb_src  tb_hps_fpga_debug  inc:cdl/hps_fpga/tb_src inc:cdl/inc rit:tb_hps_fpga_generic.hps_fpga_generic=hps_fpga_debug rmn:tb_hps_fpga_generic=tb_hps_fpga_debug
 
 #a Editor preferences and notes
 # Local Variables: ***

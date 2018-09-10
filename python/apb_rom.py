@@ -65,6 +65,26 @@ class rom(object):
     #f compile_program
     @staticmethod
     def compile_program(program, address=0):
+        """
+        Does a two-pass compile of a program
+
+        A program consists of a list of (op | (op*labels tuple))
+
+        labels is a list of label string
+
+        A label string can be a 'set label' if it ends in a colon e.g. 'retry:'
+        A label string is otherwise a 'use label as data'
+
+        An op is
+        op_alu("or|and|bic|xor|add",data)
+        op_branch("branch|beq|bne|loop",data)
+        op_set("address|repeat|accumulator",data)
+        op_req("read|write_arg|write_acc|read_inc|write_arg_inc|write_acc_inc",data)
+        op_wait(data)
+        op_finish()
+
+        inc is a post-increment
+        """
         compiled = {"labels":{},
                     "object":[]}
         label_addresses = {}
@@ -95,4 +115,11 @@ class rom(object):
         compiled["labels"] = label_addresses
         return compiled
     pass
+    #f mif_of_compilation
+    @staticmethod
+    def mif_of_compilation(compiled):
+        for (a,d) in compiled["object"]:
+            print "%02x: %010x"%(a,d)
+            pass
+        pass
 

@@ -54,12 +54,12 @@ typedef enum[2] // 2 bits
 /*t t_axi_request */
 typedef struct {
     bit valid;
-    bit[4] id;
+    bit[12] id;
     bit[32] addr;
     bit[4] len;
     t_axi_size size;
     t_axi_burst burst;
-    bit lock;
+    bit[2] lock;
     bit[4] cache;
     bit[3] prot;
     bit[4] qos;
@@ -70,7 +70,7 @@ typedef struct {
 /*t t_axi_write_data */
 typedef struct {
     bit valid;
-    bit[4] id;
+    bit[12] id;
     bit[32] data;
     bit[4] strb;
     bit last;
@@ -80,7 +80,7 @@ typedef struct {
 /*t t_axi_write_response */
 typedef struct {
     bit valid;
-    bit[4] id;
+    bit[12] id;
     t_axi_resp resp;
     bit[4] user;
 } t_axi_write_response;
@@ -91,7 +91,7 @@ typedef struct {
  */
 typedef struct {
     bit valid;
-    bit[4] id;
+    bit[12] id;
     bit[32] data;
     t_axi_resp resp;
     bit last;

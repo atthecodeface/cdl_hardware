@@ -118,6 +118,17 @@ extern module de1_cl_controls( clock clk          "system clock - not the shift 
     timing from  rising clock clk inputs_control, user_inputs;
 }
 
+/*t t_de1_leds */
+typedef struct {
+    bit[10] leds;
+    bit[7] h0;
+    bit[7] h1;
+    bit[7] h2;
+    bit[7] h3;
+    bit[7] h4;
+    bit[7] h5;
+} t_de1_leds;
+
 /*a Modules */
 /*m bbc_micro_de1_cl_bbc */
 extern

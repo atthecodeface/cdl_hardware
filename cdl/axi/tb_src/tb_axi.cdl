@@ -1,0 +1,118 @@
+/** @copyright (C) 2018,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   tb_axi.cdl
+ * @brief  Testbench for AXI
+ *
+ */
+
+/*a Includes
+ */
+include "axi.h"
+include "apb.h"
+include "apb_peripherals.h"
+
+/*a Module
+ */
+module tb_axi(clock aclk,
+              input bit reset_n
+    )
+{
+
+    default clock aclk;
+    default reset active_low reset_n;
+
+    /*b Nets
+     */
+    net t_axi_request ar;
+    net t_axi_request aw;
+    net t_axi_write_data w;
+    net bit bready;
+    net bit rready;
+
+    net bit awready;
+    net bit arready;
+    net bit wready;
+    net t_axi_write_response b;
+    net t_axi_read_response r;
+
+    net t_apb_request     apb_request;
+
+    net t_apb_response timer_apb_response;
+    net t_apb_response gpio_apb_response;
+    net bit[3] timer_equalled;
+    comb t_apb_response            apb_response;
+    comb t_apb_request timer_apb_request;
+    comb t_apb_request gpio_apb_request;
+
+    net bit[16] gpio_output;
+    net bit[16] gpio_output_enable;
+    comb bit[16]  gpio_input;
+    net bit     gpio_input_event;
+
+    /*b Instantiate APB timer
+     */
+    dut_instance: {
+        axi_master axim(aclk <- aclk,
+                        areset_n <= reset_n,
+                        ar => ar,
+                        arready <= arready,
+                        aw => aw,
+                        awready <= awready,
+                        w => w,
+                        wready <= wready,
+                        b <= b,
+                        bready => bready,
+                        r <= r,
+                        rready => rready );
+
+        apb_master_axi apbm(aclk <- aclk,
+                        areset_n <= reset_n,
+                        ar <= ar,
+                        arready => arready,
+                        aw <= aw,
+                        awready => awready,
+                        w <= w,
+                        wready => wready,
+                        b => b,
+                        bready <= bready,
+                        r => r,
+                        rready <= rready,
+
+                        apb_request => apb_request,
+                        apb_response <= apb_response );
+
+        apb_target_timer timer( clk <- aclk,
+                                reset_n <= reset_n,
+                                apb_request  <= timer_apb_request,
+                                apb_response => timer_apb_response,
+                                timer_equalled => timer_equalled );
+
+        apb_target_gpio gpio( clk <- aclk,
+                              reset_n <= reset_n,
+                              apb_request  <= gpio_apb_request,
+                              apb_response => gpio_apb_response,
+                              gpio_input <= gpio_input,
+                              gpio_output => gpio_output,
+                              gpio_output_enable => gpio_output_enable,
+                              gpio_input_event => gpio_input_event
+            );
+        timer_apb_request = apb_request;
+        gpio_apb_request = apb_request;
+        timer_apb_request.psel = apb_request.psel && (apb_request.paddr[4;28]==0);
+        gpio_apb_request.psel  = apb_request.psel && (apb_request.paddr[4;28]==1);
+        apb_response = timer_apb_response;
+        if (apb_request.paddr[4;28]==1) { apb_response = gpio_apb_response; }
+        gpio_input = bundle(13b0, timer_equalled);
+    }
+}

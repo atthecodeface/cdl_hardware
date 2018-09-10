@@ -118,12 +118,14 @@ class base_th(pycdl._thfile):
     def set_run_time(self, num_cycles):
         self.run_time = num_cycles-10
         pass
+
     #f exec_run
     def exec_run(self):
         self._th = self
         self._failtests = 0
         self.run()
         pass
+
     #f sim_message
     def sim_message(self):
         self.cdlsim_reg.sim_message( "sim_message_obj" )

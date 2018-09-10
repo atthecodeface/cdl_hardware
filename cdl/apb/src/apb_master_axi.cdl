@@ -40,7 +40,7 @@ typedef struct
 {
     t_axi_wr_fsm state;
     bit     errored;
-    bit[4]  id;
+    bit[12] id;
     bit[32] address;
     bit[32] data;
 } t_axi_wr_state;
@@ -57,7 +57,7 @@ typedef struct
 {
     t_axi_rd_fsm state;
     bit     errored;
-    bit[4]  id;
+    bit[12] id;
     bit[32] address;
 } t_axi_rd_state;
 

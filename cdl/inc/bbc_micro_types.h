@@ -20,6 +20,9 @@
  *
  */
 
+/*a Includes */
+include "video.h"
+
 /*a Types */
 /*t t_bbc_keyboard */
 /**
@@ -366,13 +369,3 @@ typedef enum[8] {
     bbc_sram_select_cpu_rom_2 = 26,
     bbc_sram_select_cpu_rom_3 = 27,
 } t_bbc_sram_select;
-/*t t_video_bus */
-typedef struct {
-    bit    vsync;
-    bit    hsync;
-    bit    display_enable;
-    bit[8] red;
-    bit[8] green;
-    bit[8] blue;
-} t_video_bus;
-

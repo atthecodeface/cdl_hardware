@@ -29,6 +29,8 @@ include "teletext.h"
 include "dprintf.h"
 include "de1_cl.h"
 include "apb.h"
+include "apb_peripherals.h"
+include "framebuffer.h"
 
 /*a Constants */
 constant bit[8] sr_divider    = 49; // 1MHz
@@ -350,6 +352,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
         tt_display_sram_write = {enable = dprintf_byte.valid,
                                  address = dprintf_byte.address,
                                  data = bundle(40b0, dprintf_byte.data) };
+
         framebuffer_teletext ftb( csr_clk <- clk,
                                   sram_clk <- clk,
                                   video_clk <- video_clk,

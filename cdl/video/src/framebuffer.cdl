@@ -19,6 +19,11 @@
  * one side, read on the other), where the video side drives out
  * vsync, hsync, data enable and pixel data.
  *
+ * The current implementation is 1bpp RGB, with 16 pixels per SRAM word
+ * Bottom 16 SRAM data bits [16; 0] are red, bit[15] leftmost
+ * Next 16 SRAM data bits [16; 16] are green, bit[31] leftmost
+ * Top 16 SRAM data bits [16; 132] are blue, bit[47] leftmost
+ *
  */
 /*a Includes */
 include "csr_interface.h"

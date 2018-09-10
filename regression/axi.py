@@ -122,7 +122,7 @@ class axi_hw(simple_tb.cdl_test_hw):
     """
     th_forces = { "axim.address_width":"32",
                   "axim.data_width":"32",
-                  "axim.id_width":"4",
+                  "axim.id_width":"12",
                   "axim.len_width":"4",
                   }
     module_name = "tb_axi"

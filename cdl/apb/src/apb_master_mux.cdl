@@ -79,9 +79,11 @@ are performed using simple round-robin arbitration.
         /*b Register requests */
         if (apb_request_0.psel || apb_request_0_r.psel) {
             apb_request_0_r <= apb_request_0;
+            if (apb_response_0.pready) { apb_request_0_r.psel <= 0; }
         }
         if (apb_request_1.psel || apb_request_1_r.psel) {
             apb_request_1_r <= apb_request_1;
+            if (apb_response_1.pready) { apb_request_1_r.psel <= 0; }
         }
 
         /*b Register responses to masters */
@@ -109,12 +111,12 @@ are performed using simple round-robin arbitration.
         } else {
             // Take request 0 if it is the only one, or if the last one being handled was request 1
             // Else take request 1 if it is asking...
-            if (apb_request_0_r.psel && (!apb_request_1_r.psel || arbiter_state.handling)) {
+            if (apb_request_0_r.psel && !apb_response_0.pready && (!apb_request_1_r.psel || arbiter_state.handling)) {
                 arbiter_state.busy <= 1;
                 arbiter_state.handling <= 0;
                 apb_request <= apb_request_0_r;
                 apb_request.penable <= 0;
-            } elsif (apb_request_1_r.psel) {
+            } elsif (apb_request_1_r.psel && !apb_response_1.pready) {
                 arbiter_state.busy <= 1;
                 arbiter_state.handling <= 1;
                 apb_request <= apb_request_1_r;

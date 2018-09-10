@@ -1,0 +1,172 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_target_dprintf.cdl
+ * @brief  Simple timer target for an APB bus
+ *
+ * CDL implementation of a simple timer target on an APB bus, derived
+ * from an original GIP version.
+ *
+ */
+/*a Includes
+ */
+include "dprintf.h"
+include "apb.h"
+
+/*a Types */
+/*t t_apb_address
+ *
+ * APB address map, used to decode paddr
+ */
+typedef enum [2] {
+    apb_address_address         = 0,
+    apb_address_data            = 1, // actually 8 to 15
+    apb_address_address_commit  = 2, // actually 16 to 23
+    apb_address_data_commit     = 3, // actually 24 to 31
+} t_apb_address;
+
+/*t t_access
+ *
+ * APB access that is in progress; a decode of psel and paddr
+ */
+typedef enum [3] {
+    access_none,
+    access_write_address,
+    access_write_address_commit,
+    access_read_address,
+    access_write_data,
+    access_write_data_commit,
+} t_access;
+
+/*a Module */
+module apb_target_dprintf( clock clk         "System clock",
+                           input bit reset_n "Active low reset",
+
+                           input  t_apb_request  apb_request  "APB request",
+                           output t_apb_response apb_response "APB response",
+
+                           output t_dprintf_req_4 dprintf_req,
+                           input  bit             dprintf_ack
+    )
+"""
+Simple Dprintf requester with an APB interface.
+
+The dprintf has valid, address, and two sets of 64 bit data
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Decode APB interface */
+    clocked t_access access=access_none   "Access being performed by APB";
+
+    /*b Dprintf state */
+    clocked t_dprintf_req_4 dprintf_req={*=0};
+
+    /*b APB interface */
+    apb_interface_logic """
+    The APB interface is decoded to @a access when @p psel is asserted
+    and @p penable is deasserted - this is the first cycle of an APB
+    access. This permits the access type to be registered, so that the
+    APB @p prdata can be driven from registers, and so that writes
+    will occur correctly when @p penable is asserted.
+
+    The APB read data @p prdata can then be generated based on @a
+    access.
+    """ : {
+        /*b Decode access */
+        access <= access_none;
+        part_switch (apb_request.paddr[2;3]) {
+        case apb_address_address: {
+            access <= apb_request.pwrite ? access_write_address : access_read_address;
+        }
+        case apb_address_address_commit: {
+            access <= apb_request.pwrite ? access_write_address_commit : access_read_address;
+        }
+        case apb_address_data: {
+            access <= apb_request.pwrite ? access_write_data : access_none;
+        }
+        case apb_address_data_commit: {
+            access <= apb_request.pwrite ? access_write_data_commit : access_none;
+        }
+        }
+        if (!apb_request.psel || apb_request.penable) {
+            access <= access_none;
+        }
+
+        /*b Handle APB read data */
+        apb_response = {*=0, pready=1};
+        part_switch (access) {
+        case access_read_address: {
+            apb_response.prdata = bundle(dprintf_req.valid,15b0,dprintf_req.address);
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b Handle the dprintf */
+    dprintf_req_logic """
+    The @a dprintf_req is invalidated on an ack; it is written to by an access,
+    with a commit forcing valid to 1.
+    """: {
+        if (dprintf_ack) {
+            dprintf_req.valid <= 0;
+        }
+        if ((access == access_write_address_commit) || (access == access_write_data_commit)) {
+            dprintf_req.valid <= 1;
+        }
+        if ((access == access_write_address) || (access == access_write_address_commit)) {
+            dprintf_req.address <= apb_request.pwdata[16;0];
+        }
+        if ((access == access_write_data) || (access == access_write_data_commit)) {
+            full_switch (apb_request.paddr[3;0]) {
+            case 0 : {
+                dprintf_req.data_0[32;32] <= apb_request.pwdata;
+            }
+            case 1 : {
+                dprintf_req.data_0[32; 0] <= apb_request.pwdata;
+            }
+            case 2 : {
+                dprintf_req.data_1[32;32] <= apb_request.pwdata;
+            }
+            case 3 : {
+                dprintf_req.data_1[32; 0] <= apb_request.pwdata;
+            }
+            case 4 : {
+                dprintf_req.data_2[32;32] <= apb_request.pwdata;
+            }
+            case 5 : {
+                dprintf_req.data_2[32; 0] <= apb_request.pwdata;
+            }
+            case 6 : {
+                dprintf_req.data_3[32;32] <= apb_request.pwdata;
+            }
+            case 7 : {
+                dprintf_req.data_3[32; 0] <= apb_request.pwdata;
+            }
+            }
+        }
+    }
+
+    /*b Done
+     */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/

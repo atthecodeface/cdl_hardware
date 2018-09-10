@@ -1,0 +1,295 @@
+/** @copyright (C) 2018,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_master_axi.cdl
+ * @brief  AXI target to an APB master interface
+ *
+ * The AXI target supports 32-bit aligned 32-bit read/writes with full
+ * byte enables only.
+ * 
+ * Other transactions return a slave error response
+ *
+ */
+
+/*a Includes
+ */
+include "dprintf.h"
+include "srams.h"
+include "apb.h"
+include "axi.h"
+include "de1_cl.h"
+include "apb_peripherals.h"
+include "video.h"
+include "input_devices.h"
+include "leds.h"
+include "teletext.h"
+include "framebuffer.h"
+
+/*a Types */
+/*a Module
+ */
+/*m hps_fpga_debug
+ *
+ * Debug module for testing out HPS in the Cyclone-V FPGA
+ *
+ */
+module hps_fpga_debug( clock clk,
+                       input bit reset_n,
+
+                       clock lw_axi_clock_clk,
+                       input t_axi_request    lw_axi_ar,
+                       output bit             lw_axi_arready,
+                       input t_axi_request    lw_axi_aw,
+                       output bit             lw_axi_awready,
+                       output bit             lw_axi_wready,
+                       input t_axi_write_data lw_axi_w,
+                       input bit              lw_axi_bready,
+                       output t_axi_write_response lw_axi_b,
+                       input bit lw_axi_rready,
+                       output t_axi_read_response lw_axi_r,
+
+                       input  t_de1_cl_inputs_status  de1_cl_inputs_status,
+                       output t_de1_cl_inputs_control de1_cl_inputs_control,
+
+                       output bit de1_cl_led_data_pin,
+
+                       clock de1_cl_lcd_clock,
+                       output t_de1_cl_lcd de1_cl_lcd,
+                       output t_de1_leds de1_leds,
+
+                       input t_ps2_pins   de1_ps2_in,
+                       output t_ps2_pins  de1_ps2_out,
+                       input t_ps2_pins   de1_ps2b_in,
+                       output t_ps2_pins  de1_ps2b_out,
+
+                       clock de1_vga_clock,
+                       input bit de1_vga_reset_n,
+                       output t_adv7123 de1_vga,
+                       input bit[4] de1_keys,
+                       input bit[10] de1_switches,
+                       input bit de1_irda_rxd,
+                       output bit de1_irda_txd
+    )
+{
+    default clock clk;
+    default reset active_low reset_n;
+
+    net bit             lw_axi_arready;
+    net bit             lw_axi_awready;
+    net bit             lw_axi_wready;
+    net t_axi_write_response lw_axi_b;
+    net t_axi_read_response lw_axi_r;
+
+    net t_apb_request     apb_request;
+
+    net t_apb_response timer_apb_response;
+    net t_apb_response gpio_apb_response;
+    net t_apb_response dprintf_apb_response;
+    net bit[3] timer_equalled;
+    comb t_apb_response            apb_response;
+    comb t_apb_request timer_apb_request;
+    comb t_apb_request gpio_apb_request;
+    comb t_apb_request dprintf_apb_request;
+    comb t_apb_request csr_apb_request;
+    net t_apb_response csr_apb_response;
+    net  t_apb_request axi_apb_request;
+    net  t_apb_request proc_apb_request;
+    net  t_apb_response axi_apb_response;
+    net  t_apb_response proc_apb_response;
+
+    net bit[16] gpio_output;
+    net bit[16] gpio_output_enable;
+    comb bit[16]  gpio_input;
+    net bit     gpio_input_event;
+
+    net  t_dprintf_req_4 dprintf_req;
+    net  bit             dprintf_ack;
+    net t_dprintf_byte dprintf_byte;
+
+    net t_csr_request   csr_request;
+    clocked t_csr_response csr_response_r = {*=0};
+    net t_csr_response tt_framebuffer_csr_response;
+    comb t_bbc_display_sram_write tt_display_sram_write;
+    net t_video_bus video_bus;
+
+    clocked t_apb_processor_request  apb_processor_request={*=0};
+    clocked bit apb_processor_completed = 0;
+    net t_apb_processor_response  apb_processor_response;
+    net t_apb_rom_request         apb_rom_request;
+    net bit[40]                   apb_rom_data;
+
+    default clock de1_vga_clock;
+    default reset active_low de1_vga_reset_n;
+    clocked t_adv7123 de1_vga={*=0};
+    clocked t_de1_cl_lcd de1_cl_lcd={*=0};
+
+    /*b AXI to APB master, APB  */
+    apb_instances: {
+        apb_processor_request.address <= 0;
+        apb_processor_request.valid   <= !apb_processor_completed;
+        if (apb_processor_response.acknowledge) {
+            apb_processor_request.valid   <= 0;
+            apb_processor_completed <= 1;
+        }
+        apb_processor apbp( clk <- clk,
+                            reset_n <= reset_n,
+
+                            apb_processor_request <= apb_processor_request,
+                            apb_processor_response => apb_processor_response,
+                            apb_request   => proc_apb_request,
+                            apb_response  <= proc_apb_response,
+                            rom_request   => apb_rom_request,
+                            rom_data      <= apb_rom_data );
+
+        se_sram_srw_256x40 apb_rom(sram_clock <- clk,
+                                   select <= apb_rom_request.enable,
+                                   address <= apb_rom_request.address[8;0],
+                                   read_not_write <= 1,
+                                   write_data <= 0,
+                                   data_out => apb_rom_data );
+
+        apb_master_axi apbm(aclk <- lw_axi_clock_clk,
+                        areset_n <= reset_n,
+                        ar <= lw_axi_ar,
+                        arready => lw_axi_arready,
+                        aw <= lw_axi_aw,
+                        awready => lw_axi_awready,
+                        w <= lw_axi_w,
+                        wready => lw_axi_wready,
+                        b => lw_axi_b,
+                        bready <= lw_axi_bready,
+                        r => lw_axi_r,
+                        rready <= lw_axi_rready,
+
+                        apb_request =>  axi_apb_request,
+                        apb_response <= axi_apb_response );
+
+        apb_master_mux apbmux( clk <- lw_axi_clock_clk,
+                               reset_n <= reset_n,
+                               apb_request_0 <= axi_apb_request,
+                               apb_request_1 <= proc_apb_request,
+
+                               apb_response_0 => axi_apb_response,
+                               apb_response_1 => proc_apb_response,
+
+                               apb_request =>  apb_request,
+                               apb_response <= apb_response );
+    }
+
+    /*b APB targets */
+    apb_target_instances: {
+
+        apb_target_dprintf apb_dprintf( clk <- lw_axi_clock_clk,
+                                    reset_n <= reset_n,
+                                    apb_request  <= dprintf_apb_request,
+                                    apb_response => dprintf_apb_response,
+                                    dprintf_req => dprintf_req,
+                                    dprintf_ack <= dprintf_ack );
+
+        apb_target_timer timer( clk <- lw_axi_clock_clk,
+                                reset_n <= reset_n,
+                                apb_request  <= timer_apb_request,
+                                apb_response => timer_apb_response,
+                                timer_equalled => timer_equalled );
+
+        apb_target_gpio gpio( clk <- lw_axi_clock_clk,
+                              reset_n <= reset_n,
+                              apb_request  <= gpio_apb_request,
+                              apb_response => gpio_apb_response,
+                              gpio_input <= gpio_input,
+                              gpio_output => gpio_output,
+                              gpio_output_enable => gpio_output_enable,
+                              gpio_input_event => gpio_input_event
+            );
+
+        csr_master_apb master( clk <- clk,
+                               reset_n <= reset_n,
+                               apb_request <= csr_apb_request,
+                               apb_response => csr_apb_response,
+                               csr_request => csr_request,
+                               csr_response <= csr_response_r );
+
+        timer_apb_request   = apb_request;
+        gpio_apb_request    = apb_request;
+        dprintf_apb_request = apb_request;
+        csr_apb_request     = apb_request;
+        timer_apb_request.psel   = apb_request.psel && (apb_request.paddr[4;28]==0);
+        gpio_apb_request.psel    = apb_request.psel && (apb_request.paddr[4;28]==1);
+        dprintf_apb_request.psel = apb_request.psel && (apb_request.paddr[4;28]==2);
+        csr_apb_request.psel     = apb_request.psel && (apb_request.paddr[4;28]==3);
+        csr_apb_request.paddr[4;28] = 0; // map to CSR space
+
+        apb_response = timer_apb_response;
+        if (apb_request.paddr[4;28]==1) { apb_response = gpio_apb_response; }
+        if (apb_request.paddr[4;28]==2) { apb_response = dprintf_apb_response; }
+        if (apb_request.paddr[4;28]==3) { apb_response = csr_apb_response; }
+    }
+
+    /*b Dprintf/framebuffer */
+    dprintf_framebuffer_instances: {
+        dprintf dprintf( clk <- lw_axi_clock_clk,
+                         reset_n <= reset_n,
+                         dprintf_req <= dprintf_req,
+                         dprintf_ack => dprintf_ack,
+                         dprintf_byte => dprintf_byte
+            );
+
+        tt_display_sram_write = {enable = dprintf_byte.valid,
+                                 address = dprintf_byte.address,
+                                 data = bundle(40b0, dprintf_byte.data) };
+
+        framebuffer_teletext ftb( csr_clk <- lw_axi_clock_clk,
+                                  sram_clk <- lw_axi_clock_clk,
+                                  video_clk <- de1_vga_clock,
+                                  reset_n <= de1_vga_reset_n,
+                                  video_bus => video_bus,
+                                  display_sram_write <= tt_display_sram_write,
+                                  csr_request <= csr_request,
+                                  csr_response => tt_framebuffer_csr_response
+            );
+
+        if (0) {
+            de1_cl_lcd <= {*=0};
+            de1_vga.vs <= video_bus.vsync;
+            de1_vga.hs <= video_bus.hsync;
+            de1_vga.blank_n <= video_bus.display_enable;
+            de1_vga.sync_n  <= video_bus.vsync | video_bus.hsync;
+            de1_vga.red     <= bundle(video_bus.red  [8;0],2b0);
+            de1_vga.green   <= bundle(video_bus.green[8;0],2b0);
+            de1_vga.blue    <= bundle(video_bus.blue [8;0],2b0);
+        } else {
+            de1_vga <= {*=0};
+            de1_cl_lcd.vsync_n <= !video_bus.vsync;
+            de1_cl_lcd.hsync_n <= !video_bus.hsync;
+            de1_cl_lcd.display_enable <= video_bus.display_enable;
+            de1_cl_lcd.red   <= video_bus.red  [6;2];
+            de1_cl_lcd.green <= video_bus.green[7;1];
+            de1_cl_lcd.blue  <= video_bus.blue [6;2];
+            de1_cl_lcd.backlight <= 1;
+        }
+
+        csr_response_r <= tt_framebuffer_csr_response;
+                        
+    }
+
+    /*b Stub out unused outputs and all done */
+    stubs : {
+        gpio_input = {*=0};
+        de1_leds = {*=0};
+        de1_cl_led_data_pin = 0;
+        de1_cl_inputs_control = {*=0};
+        de1_ps2_out = {*=0};
+        de1_ps2b_out = {*=0};
+        de1_irda_txd = 0;
+    }
+}
