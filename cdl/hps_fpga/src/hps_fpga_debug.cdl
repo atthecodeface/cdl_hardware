@@ -281,7 +281,6 @@ module hps_fpga_debug( clock clk,
             de1_cl_lcd.hsync_n <= !video_bus.hsync;
             de1_cl_lcd.display_enable <= video_bus.display_enable;
             de1_cl_lcd.red   <= video_bus.red  [6;2];
-            de1_cl_lcd.red   <= counter[6;0];
             de1_cl_lcd.green <= video_bus.green[7;1];
             de1_cl_lcd.blue  <= video_bus.blue [6;2];
             de1_cl_lcd.backlight <= 1;
@@ -312,6 +311,10 @@ module hps_fpga_debug( clock clk,
         if ((de1_switches[3;2]==5) && (apb_processor_response.acknowledge)) {
             counter <= counter + 1;
         }
+        if ((de1_switches[3;2]==6) && (tt_display_sram_write.enable)) {
+            counter <= counter + 1;
+        }
+
         gpio_input = {*=0};
         de1_leds = {*=0};
         de1_leds.leds = counter[10;0];
