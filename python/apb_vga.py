@@ -21,11 +21,11 @@ csr_dprintf_data    = (csr_select["dprintf"]<<16)|8
 csr_dprintf_address_commit = (csr_select["dprintf"]<<16)|16
 csr_dprintf_data_commit    = (csr_select["dprintf"]<<16)|32
 
-porches = [(65536-170+16-3*i) | (((65536-68)<<16)) for i in range(16)]
-
 h_porches    = (display["h"][0]-1) | ((display["h"][2]-1)<<16) # back porch in low, front porch in high
 v_porches    = (display["v"][0]-1) | ((display["v"][2]-1)<<16) # 
 display_size = (display["h"][1]-1) | ((display["v"][1]-1)<<16) # h size in low, v size in high
+
+porches = [(65536-170+16-3*i) | (((65536-68)<<16)) for i in range(16)]
 
 # data is bigendian in dprintf
 # dprintf data is 0-skip; 1->127 character; 128-143 1 to 16 hex nybbles; 192-195 1-4 byte unpadded decimal; 192+(pad<<2)+(nbytes) is 1-4 nbytes decimal with padding of field to (pad+1)
@@ -40,15 +40,15 @@ dprintf_data[1] = 0x4f504741
 dprintf_data[2] = 0x0343533a # 03 -> green (teletext)
 dprintf_data[3] = 0x8f000000 | ((cs>>40)&0xffffff)
 dprintf_data[4] = (cs>> 8)&0xffffffff
-dprintf_data[5] = ((cs>> 0)&0xff) << 24
+dprintf_data[5] = (((cs>> 0)&0xff) << 24) | 0xffffff
 dprintf_data[6] = 0xffffffff
 program = {}
 program["code"] = []
-program["code"] += [ (apb_rom.rom.op_set("address",csr_display_size),),
-                     (apb_rom.rom.op_req("write_arg_inc",display_size),),
-                     (apb_rom.rom.op_req("write_arg_inc",h_porches),),
-                     (apb_rom.rom.op_req("write_arg_inc",v_porches),),
-                     ]
+#program["code"] += [ (apb_rom.rom.op_set("address",csr_display_size),),
+#                     (apb_rom.rom.op_req("write_arg_inc",display_size),),
+#                     (apb_rom.rom.op_req("write_arg_inc",h_porches),),
+#                     (apb_rom.rom.op_req("write_arg_inc",v_porches),),
+#                     ]
 program["code"] += [ (apb_rom.rom.op_set("address",csr_dprintf_data),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[0]),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[1]),),
@@ -58,7 +58,7 @@ program["code"] += [ (apb_rom.rom.op_set("address",csr_dprintf_data),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[5]),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[6]),),
                      (apb_rom.rom.op_set("address",csr_dprintf_address_commit),),
-                     (apb_rom.rom.op_req("write_arg",0),),
+                     (apb_rom.rom.op_req("write_arg",40*8),),
                      ]
 program["code"] += [
     (apb_rom.rom.op_finish(),),
