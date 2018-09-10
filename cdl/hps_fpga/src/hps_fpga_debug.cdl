@@ -128,10 +128,14 @@ module hps_fpga_debug( clock clk,
     net t_apb_rom_request         apb_rom_request;
     net bit[40]                   apb_rom_data;
 
+    clocked bit[32] divider=0;
+    clocked bit[16] counter=0;
+
     default clock de1_vga_clock;
     default reset active_low de1_vga_reset_n;
     clocked t_adv7123 de1_vga={*=0};
     clocked t_de1_cl_lcd de1_cl_lcd={*=0};
+
 
     /*b AXI to APB master, APB  */
     apb_instances: {
@@ -141,6 +145,10 @@ module hps_fpga_debug( clock clk,
             apb_processor_request.valid   <= 0;
             apb_processor_completed <= 1;
         }
+        if (divider[24;0]==0) { // 16M @ 50MHz = 3 times per second
+            apb_processor_completed <= 0;
+        }
+
         apb_processor apbp( clk <- clk,
                             reset_n <= reset_n,
 
@@ -273,6 +281,7 @@ module hps_fpga_debug( clock clk,
             de1_cl_lcd.hsync_n <= !video_bus.hsync;
             de1_cl_lcd.display_enable <= video_bus.display_enable;
             de1_cl_lcd.red   <= video_bus.red  [6;2];
+            de1_cl_lcd.red   <= counter[6;0];
             de1_cl_lcd.green <= video_bus.green[7;1];
             de1_cl_lcd.blue  <= video_bus.blue [6;2];
             de1_cl_lcd.backlight <= 1;
@@ -283,23 +292,24 @@ module hps_fpga_debug( clock clk,
     }
 
     /*b Stub out unused outputs and all done */
-    default clock de1_vga_clock;
-    default reset active_low de1_vga_reset_n;
-    clocked bit[16] counter=0;
     stubs : {
+        divider <= divider+1;
         if (de1_switches[3;2]==0) {
             counter <= counter + 1;
         }
-        if ((de1_switches[3;2]==1) && (video_bus.hsync)) {
+        if ((de1_switches[3;2]==1) && (dprintf_req.valid)) {
             counter <= counter + 1;
         }
-        if ((de1_switches[3;2]==2) && (video_bus.vsync)) {
+        if ((de1_switches[3;2]==2) && (dprintf_ack)) {
             counter <= counter + 1;
         }
-        if ((de1_switches[3;2]==3) && (video_bus.display_enable)) {
+        if ((de1_switches[3;2]==3) && (apb_request.psel)) {
             counter <= counter + 1;
         }
-        if ((de1_switches[3;2]==4) && (video_bus.display_enable) && (video_bus.green!=0)) {
+        if ((de1_switches[3;2]==4) && (apb_processor_request.valid)) {
+            counter <= counter + 1;
+        }
+        if ((de1_switches[3;2]==5) && (apb_processor_response.acknowledge)) {
             counter <= counter + 1;
         }
         gpio_input = {*=0};
