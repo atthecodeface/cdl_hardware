@@ -1,0 +1,138 @@
+/** Copyright (C) 2016-2018,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   riscv_adjunct_de1_cl.cdl
+ * @brief  RISC-V adjunct for ARM AXI for the CL DE1 + daughterboard
+ *
+ * CDL module containing the BBC microcomputer with RAMs and a
+ * framebuffer for the Cambridge University Computer Laboratory DE1 +
+ * daughterboard system.
+ *
+ */
+/*a Includes */
+include "bbc_micro_types.h"
+include "bbc_submodules.h"
+include "de1_cl.h"
+include "dprintf.h"
+include "input_devices.h"
+include "leds.h"
+include "de1_cl.h"
+
+/*a Constants */
+
+/*a Module */
+module riscv_adjunct_de1_cl( clock clk          "50MHz clock from DE1 clock generator",
+                         clock video_clk    "9MHz clock from PLL, derived from 50MHz",
+                         input bit reset_n  "hard reset from a pin - a key on DE1",
+                         input bit video_locked "High if video PLL has locked",
+                         output t_de1_cl_lcd lcd   "LCD display out to computer lab daughterboard",
+                         input bit[4] keys       "DE1 keys",
+                         input bit[10] switches  "DE1 switches",
+                         output bit[10] leds     "DE1 leds",
+                         input t_ps2_pins ps2_in   "PS2 input pins",
+                         output t_ps2_pins ps2_out "PS2 output pin driver open collector",
+                         output bit led_data_pin "DE1 CL daughterboard neopixel LED pin",
+                         input  t_de1_cl_inputs_status   inputs_status  "DE1 CL daughterboard shifter register etc status",
+                         output t_de1_cl_inputs_control  inputs_control "DE1 CL daughterboard shifter register control"
+    )
+{
+    net t_video_bus bbc_video_bus;
+    net t_video_bus io_video_bus;
+
+    net t_bbc_clock_control bbc_clock_control;
+
+    net t_ps2_pins ps2_out;
+
+    net t_csr_request csr_request;
+    net t_csr_response bbc_csr_response;
+
+    net  bit led_chain;
+    net bit[10] leds;
+    net  t_de1_cl_inputs_control inputs_control "DE1 CL IO inputs control - shift register clock, and so on";
+
+    comb bit bbc_reset_n;
+    comb bit framebuffer_reset_n;
+    net t_bbc_keyboard bbc_keyboard;
+    net bit lcd_source;
+
+    /*b Miscellaneous logic */
+    misc_logic """
+    """: {
+        bbc_reset_n             = reset_n & !bbc_clock_control.reset_cpu & switches[0];
+        framebuffer_reset_n     = reset_n & video_locked;
+    }
+
+    /*b DE1/CL IO for BBC subsystem */
+    bbc_de1_cl_instantiations: {
+        bbc_micro_de1_cl_io io( clk <- clk,
+                                video_clk <- video_clk,
+                                reset_n <= reset_n,
+                                bbc_reset_n <= bbc_reset_n,
+                                framebuffer_reset_n <= framebuffer_reset_n,
+                                keys <= keys,
+                                switches <= switches,
+                                clock_control <= bbc_clock_control,
+                                bbc_keyboard => bbc_keyboard,
+                                video_bus => io_video_bus,
+                                csr_request => csr_request,
+                                csr_response <= bbc_csr_response,
+                                inputs_control => inputs_control,
+                                inputs_status <= inputs_status,
+                                ps2_in <= ps2_in,
+                                ps2_out => ps2_out,
+                                lcd_source => lcd_source,
+                                leds => leds,
+                                led_chain => led_chain
+            );
+    }
+
+    /*b BBC Micro subsystem */
+    bbc_micro_instantiations: {
+        bbc_micro_de1_cl_bbc bbc( clk <- clk,
+                                  video_clk <- video_clk,
+                                  reset_n <= reset_n,
+                                  bbc_reset_n <= bbc_reset_n,
+                                  framebuffer_reset_n <= framebuffer_reset_n,
+                                  clock_control => bbc_clock_control,
+                                  bbc_keyboard <= bbc_keyboard,
+                                  video_bus => bbc_video_bus,
+                                  csr_request <= csr_request,
+                                  csr_response => bbc_csr_response );
+    }
+
+    /*b Output muxes */
+    output_muxes """
+    """: {
+        lcd = { vsync_n        = !bbc_video_bus.vsync,
+                hsync_n        = !bbc_video_bus.hsync,
+                display_enable = bbc_video_bus.display_enable,
+                red            = bbc_video_bus.red[6;2],
+                green          = bbc_video_bus.green[7;1],
+                blue           = bbc_video_bus.blue[6;2],
+                backlight = switches[1]
+        };
+        if (lcd_source) {
+            lcd = { vsync_n        = !io_video_bus.vsync,
+                    hsync_n        = !io_video_bus.hsync,
+                    display_enable = io_video_bus.display_enable,
+                    red            = io_video_bus.red[6;2],
+                    green          = io_video_bus.green[7;1],
+                    blue           = io_video_bus.blue[6;2]
+            };
+        }
+        led_data_pin = !led_chain;
+    }
+
+    /*b All done */
+}
