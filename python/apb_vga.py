@@ -36,7 +36,7 @@ print >> sys.stderr, "VGA rom - CS from GIT is ",cs_string
 print >> sys.stderr, "%016x"%cs
 dprintf_data = [0]*8
 dprintf_data[0] = 0x48505320
-dprintf_data[1] = 0x4f504741
+dprintf_data[1] = 0x46504741
 dprintf_data[2] = 0x0343533a # 03 -> green (teletext)
 dprintf_data[3] = 0x8f000000 | ((cs>>40)&0xffffff)
 dprintf_data[4] = (cs>> 8)&0xffffffff
@@ -58,7 +58,7 @@ program["code"] += [ (apb_rom.rom.op_set("address",csr_dprintf_data),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[5]),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[6]),),
                      (apb_rom.rom.op_set("address",csr_dprintf_address_commit),),
-                     (apb_rom.rom.op_req("write_arg",40*8),),
+                     (apb_rom.rom.op_req("write_arg",40*0),),
                      ]
 program["code"] += [
     (apb_rom.rom.op_finish(),),
