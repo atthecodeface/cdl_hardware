@@ -110,6 +110,9 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
 
     /*b State and comb
      */
+    default clock clk;
+    default reset active_low reset_n;
+
     net t_riscv_fetch_req       ifetch_req;
     comb  t_riscv_fetch_resp    ifetch_resp;
     net t_riscv_i32_trace       trace_pipe;
@@ -117,10 +120,9 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     comb t_riscv_i32_coproc_response   coproc_response;
     comb  t_riscv_config          riscv_config_pipe;
     net  t_riscv_mem_access_req  dmem_access_req;
-    comb t_riscv_mem_access_resp dmem_access_resp;
-
+    clocked t_riscv_mem_access_resp dmem_access_resp = {*=0};
     comb  t_riscv_mem_access_req  data_sram_access_req;
-    comb t_riscv_mem_access_resp  data_sram_access_resp;
+    clocked t_riscv_mem_access_req  data_access_req = {*=0};
 
     comb t_riscv_mem_access_req  imem_access_req;
     comb t_riscv_mem_access_resp imem_access_resp;
@@ -133,8 +135,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     /*b Clock control
      */
     comb bit riscv_clk_enable;
-    clocked clock clk reset active_low reset_n t_riscv_clock_phase riscv_clock_phase=rcp_clock_high;
-    clocked clock clk reset active_low reset_n bit[32] read_data_reg=0;
+    clocked t_riscv_clock_phase riscv_clock_phase=rcp_clock_high;
     comb t_riscv_clock_action riscv_clock_action;
     clocked clock clk reset active_low reset_n bit riscv_clk_high = 0;
     gated_clock clock clk active_high riscv_clk_enable riscv_clk;
@@ -174,8 +175,23 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     directly to the RISC-V core.
     """ : {
         sram_access_resp = {*=0};
-        data_access_req = {*=0};
         data_sram_access_req = dmem_access_req;
+        if (dmem_access_req.address[12;20]!=0) {
+            data_sram_access_req.read_enable = 0;
+            data_sram_access_req.write_enable = 0;
+        }
+        if (riscv_clk_high) {
+            data_access_req.read_enable <= 0;
+            data_access_req.write_enable <= 0;
+            if (dmem_access_req.read_enable || dmem_access_req.write_enable) {
+                data_access_req <= dmem_access_req;
+            }
+            if (dmem_access_req.address[12;20]==0) {
+                data_access_req.read_enable <= 0;
+                data_access_req.write_enable <= 0;
+            }
+        }
+        
         riscv_clock_action = riscv_clock_action_rise;
         full_switch (riscv_clock_phase) {
         case rcp_clock_high: { // riscv_clk has just gone high, so core is presenting memory requests
@@ -183,7 +199,8 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             case 3b000:        { riscv_clock_action = riscv_clock_action_fall; }
             case 3b100:        { riscv_clock_action = riscv_clock_action_ifetch; }
             case 3b101, 3b001: { riscv_clock_action = riscv_clock_action_dwrite; }
-            default:           { riscv_clock_action = riscv_clock_action_dread; } // cannot dmem read and write simultaneously
+            case 3b110, 3b010: { riscv_clock_action = riscv_clock_action_dread; } 
+            default:           { riscv_clock_action = riscv_clock_action_dread; } // cannot dmem read and write simultaneously, so this is don't care really
             }
         }
         case rcp_dwrite_in_progress: {
@@ -248,15 +265,12 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                      write_data     <= mem_access_req.write_data,
                                      data_out       => mem_read_data );
         if (riscv_clock_phase==rcp_dread_in_progress) {
-            read_data_reg <= mem_read_data;
+            dmem_access_resp.read_data <= mem_read_data;
         }
-
-        data_sram_access_resp.read_data = read_data_reg;
-        data_sram_access_resp.wait = 0;
 
         imem_access_resp.wait      = 0;
         imem_access_resp.read_data  = mem_read_data;
-        dmem_access_resp  = data_sram_access_resp;
+        dmem_access_resp.wait <= 0;
     }
 
     /*b Ifetch stage
