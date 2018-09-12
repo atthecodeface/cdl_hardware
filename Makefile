@@ -112,7 +112,7 @@ riscv_flows: ${TARGET_DIR}/py_engine.so
 #a RISC-V trace targets
 .PHONY: rv_trace
 rv_trace:
-	PYTHONPATH=${PYTHON_DIR}:${CYCLICITY_ROOT}:$PYTHONPATH ./python/rv_trace.py --logfile=itrace.log --timestamps=1
+	PYTHONPATH=${PYTHON_DIR}:${CYCLICITY_ROOT}:${PYTHONPATH} ./python/rv_trace.py --logfile=itrace.log --timestamps=1
 
 #a Help
 DOLLAR := $$

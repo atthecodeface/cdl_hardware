@@ -60,11 +60,11 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
         self.test_image = dump.c_dump()
         if self.mif_filename is not None:
             f = open(self.mif_filename)
-            self.test_image.load_mif(f, self.base_address)
+            self.test_image.load_mif(f, self.base_address, address_mask=0x7fffffff)
             f.close()
             return self.mif_filename
         f = open(self.dump_filename)
-        self.test_image.load(f, self.base_address)
+        self.test_image.load(f, self.base_address, address_mask=0x7fffffff)
         f.close()
         self.mif = tempfile.NamedTemporaryFile(mode='w')
         self.test_image.write_mif(self.mif)
@@ -124,7 +124,7 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
 #c c_riscv_minimal_test_dump
 class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
     dump_filename = riscv_regression_dir+"rv32ui-p-or.dump"
-    base_address = 0x80000000
+    base_address = 0x0000000
     memory_expectation = { "tohost":(1,),
                            }
     def __init__(self, dump_filename, test_memory="dmem", **kwargs):
@@ -137,7 +137,7 @@ class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
 #c c_riscv_minimal_test_one
 class c_riscv_minimal_test_one(c_riscv_minimal_test_base):
     dump_filename = riscv_regression_dir+"rv32ui-p-or.dump"
-    base_address = 0x80000000
+    base_address = 0x0000000
     memory_expectation = { "tohost":(1,),
                            }
     pass
