@@ -119,6 +119,9 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     net  t_riscv_mem_access_req  dmem_access_req;
     comb t_riscv_mem_access_resp dmem_access_resp;
 
+    comb  t_riscv_mem_access_req  data_sram_access_req;
+    comb t_riscv_mem_access_resp  data_sram_access_resp;
+
     comb t_riscv_mem_access_req  imem_access_req;
     comb t_riscv_mem_access_resp imem_access_resp;
 
@@ -172,10 +175,11 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     """ : {
         sram_access_resp = {*=0};
         data_access_req = {*=0};
+        data_sram_access_req = dmem_access_req;
         riscv_clock_action = riscv_clock_action_rise;
         full_switch (riscv_clock_phase) {
         case rcp_clock_high: { // riscv_clk has just gone high, so core is presenting memory requests
-            full_switch (bundle(imem_access_req.read_enable, dmem_access_req.read_enable, dmem_access_req.write_enable)) {
+            full_switch (bundle(imem_access_req.read_enable, data_sram_access_req.read_enable, data_sram_access_req.write_enable)) {
             case 3b000:        { riscv_clock_action = riscv_clock_action_fall; }
             case 3b100:        { riscv_clock_action = riscv_clock_action_ifetch; }
             case 3b101, 3b001: { riscv_clock_action = riscv_clock_action_dwrite; }
@@ -224,13 +228,13 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     /*b Instantiate srams
      */
     srams: {
-        mem_access_req = {*=0, address=dmem_access_req.address, byte_enable=dmem_access_req.byte_enable, write_data=dmem_access_req.write_data};
+        mem_access_req = {*=0, address=data_sram_access_req.address, byte_enable=data_sram_access_req.byte_enable, write_data=data_sram_access_req.write_data};
         part_switch (riscv_clock_action) {
         case riscv_clock_action_dread: {
-            mem_access_req = {read_enable=1, address=dmem_access_req.address};
+            mem_access_req = {read_enable=1, address=data_sram_access_req.address};
         }
         case riscv_clock_action_dwrite: {
-            mem_access_req = {write_enable=1, byte_enable=dmem_access_req.byte_enable, address=dmem_access_req.address, write_data=dmem_access_req.write_data};
+            mem_access_req = {write_enable=1, byte_enable=data_sram_access_req.byte_enable, address=data_sram_access_req.address, write_data=data_sram_access_req.write_data};
         }
         case riscv_clock_action_ifetch: {
             mem_access_req = {read_enable=imem_access_req.read_enable, address=imem_access_req.address};
@@ -246,10 +250,13 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         if (riscv_clock_phase==rcp_dread_in_progress) {
             read_data_reg <= mem_read_data;
         }
+
+        data_sram_access_resp.read_data = read_data_reg;
+        data_sram_access_resp.wait = 0;
+
         imem_access_resp.wait      = 0;
-        dmem_access_resp.wait      = 0;
         imem_access_resp.read_data  = mem_read_data;
-        dmem_access_resp.read_data  = read_data_reg;
+        dmem_access_resp  = data_sram_access_resp;
     }
 
     /*b Ifetch stage
@@ -282,8 +289,8 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                      riscv_config     <= riscv_config_pipe,
                                      trace            => trace_pipe );
         trace = trace_pipe;
-        trace.instr_valid    = trace_pipe.instr_valid    && riscv_clk_high;
-        trace.rfw_data_valid = trace_pipe.rfw_data_valid && riscv_clk_high;
+        trace.instr_valid    = trace_pipe.instr_valid    && riscv_clk_enable;
+        trace.rfw_data_valid = trace_pipe.rfw_data_valid && riscv_clk_enable;
     }
 
     /*b All done */

@@ -37,6 +37,7 @@ CYCLICITY_ROOT := ${CYCLICITY}
 MODEL_LIST  := $(CURDIR)/model_list
 MODELS_MAKE := $(CURDIR)/models.make
 SRC_ROOT    := $(CURDIR)/
+PYTHON_DIR  := ${SRC_ROOT}/python
 PREFIX_OBJ_DIR := $(CURDIR)/build/
 DEBUG_BUILD := no
 EXTRA_CDLFLAGS := --extra_cdlflags="--v_clkgate_type='banana' --v_use_always_at_star --v_clks_must_have_enables "
@@ -107,6 +108,11 @@ riscv_flows: ${TARGET_DIR}/py_engine.so
 	./regress_all regression.riscv_minimal.riscv_minimal.${TEST}
 	./python/rv_flow.py > min_min_${TEST}.flow
 	diff min_pipe3_${TEST}.flow min_min_${TEST}.flow
+
+#a RISC-V trace targets
+.PHONY: rv_trace
+rv_trace:
+	PYTHONPATH=${PYTHON_DIR}:${CYCLICITY_ROOT}:$PYTHONPATH ./python/rv_trace.py --logfile=itrace.log --timestamps=1
 
 #a Help
 DOLLAR := $$

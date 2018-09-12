@@ -256,32 +256,57 @@ retire_events = itrace.matching_event_occurrences(module=args.module, filter_nam
 
 pc_events = itrace.matching_event_occurrences(module=args.module, filter_name_list=["pc"], max_occurrences=100000)
 
-rfw_events = {}
+rfw_events = []
 for (k,o) in retire_events:
     (timestamp,n,event_args) = o
     rfw = event_args[0]
     rd = event_args[1]
     data = event_args[2]
     if rfw:
-        rfw_events[n] = "r%d <= %08x"%(rd, data)
+        rfw_events.append((timestamp, "r%d <= %08x"%(rd, data)))
         pass
     pass
 
-for (k,o) in pc_events:
-    (timestamp,n,event_args) = o
-    pc = event_args[0]
-    branch_taken  = event_args[1]
-    branch_nonpredicted = event_args[2]
-    instr_data   = event_args[3]
-    c = rv_instr.from_binary(pc, instr_data)
-    rfw_str = ""
-    if n in rfw_events: rfw_str = rfw_events[n]
-    timestamp_str = ""
-    if args.timestamps:
-        timestamp_str = "%7d : "%timestamp
-    print "%s%08x : %30s : %15s"%(timestamp_str,pc,c.disassemble(), rfw_str)
-
-
-
-        
+pc_i = 0
+rfw_i = 0
+while ((pc_i<len(pc_events)) or (rfw_i<len(rfw_events))):
+    if (rfw_i >= len(rfw_events)):
+        (rfw_ts,rfw) = (1E425,"")
+        pass
+    else:
+        (rfw_ts,rfw) = rfw_events[rfw_i]
+        pass
+    if (pc_i >= len(pc_events)):
+        (k,o) = (None, (1E425,None,None))
+        pass
+    else:
+        (k,o) = pc_events[pc_i]
+        pass
+    if (o[0]<=rfw_ts):
+        (timestamp,n,event_args) = o
+        pc = event_args[0]
+        branch_taken  = event_args[1]
+        branch_nonpredicted = event_args[2]
+        instr_data   = event_args[3]
+        c = rv_instr.from_binary(pc, instr_data)
+        rfw_str = ""
+        if timestamp==rfw_ts: rfw_str=rfw
+        timestamp_str = ""
+        if args.timestamps:
+            timestamp_str = "%7d : "%timestamp
+            pass
+        print "%s%08x : %30s : %15s"%(timestamp_str,pc,c.disassemble(), rfw_str)
+        pc_i += 1
+        if timestamp==rfw_ts: rfw_i+=1
+        pass
+    else:
+        timestamp = rfw_ts
+        timestamp_str = ""
+        if args.timestamps:
+            timestamp_str = "%7d : "%timestamp
+            pass
+        print "%s         : %30s : %15s"%(timestamp_str,"", rfw)
+        rfw_i+=1
+        pass
+    pass
 
