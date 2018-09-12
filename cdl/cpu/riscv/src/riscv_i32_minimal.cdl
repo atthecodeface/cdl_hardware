@@ -97,7 +97,8 @@ typedef enum[3] {
     riscv_clock_action_fall,
     riscv_clock_action_ifetch,
     riscv_clock_action_dread,
-    riscv_clock_action_dwrite
+    riscv_clock_action_dwrite,
+    riscv_clock_action_wait
 } t_riscv_clock_action;
 
 /*a Module
@@ -199,7 +200,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             data_sram_access_req.read_enable = 0;
             data_sram_access_req.write_enable = 0;
         }
-        if (riscv_clk_high) {
+        if (riscv_clk_high) { // first cycle of riscv_clk
             data_access_req.read_enable <= 0;
             data_access_req.write_enable <= 0;
             if (dmem_access_req.read_enable || dmem_access_req.write_enable) {
@@ -208,6 +209,13 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             if (dmem_access_req.address[12;20]==0) {
                 data_access_req.read_enable <= 0;
                 data_access_req.write_enable <= 0;
+            }
+        } else {
+            if (data_access_req.read_enable || data_access_req.write_enable) {
+                if (!data_access_resp.wait) {
+                    data_access_req.read_enable <= 0;
+                    data_access_req.write_enable <= 0;
+                }
             }
         }
 
@@ -229,9 +237,15 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         }
         case rcp_clock_low: {
             riscv_clock_action = riscv_clock_action_rise; // or wait for data access to complete
+            if ((data_access_req.read_enable || data_access_req.write_enable) && data_access_resp.wait) {
+                riscv_clock_action = riscv_clock_action_wait;
+            }
         }
         case rcp_ifetch_in_progress: {
             riscv_clock_action = riscv_clock_action_rise; // or wait for data access to complete
+            if ((data_access_req.read_enable || data_access_req.write_enable) && data_access_resp.wait) {
+                riscv_clock_action = riscv_clock_action_wait;
+            }
             if (data_sram_access_req.read_enable) {
                 riscv_clock_action = riscv_clock_action_dread;
             } elsif (data_sram_access_req.write_enable) {
@@ -257,6 +271,9 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         case riscv_clock_action_rise: { 
             riscv_clock_phase <= rcp_clock_high;
             riscv_clk_enable = 1;
+        }
+        case riscv_clock_action_wait: { 
+            riscv_clock_phase <= rcp_clock_low; // it is possibly already low; make sure it is there
         }
         case riscv_clock_action_ifetch: { 
             riscv_clock_phase <= rcp_ifetch_in_progress;
@@ -303,7 +320,10 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             imem_access_resp.read_data  = ifetch_reg;
         }
         dmem_access_resp.wait = 0;
-        dmem_access_resp.read_data = mem_read_data;
+        dmem_access_resp.read_data = data_access_resp.read_data;
+        if (data_src == data_src_sram) {
+            dmem_access_resp.read_data = mem_read_data;
+        }
     }
 
     /*b Ifetch stage

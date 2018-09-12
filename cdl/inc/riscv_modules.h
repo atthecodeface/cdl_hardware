@@ -50,6 +50,7 @@ module riscv_i32_minimal( clock clk,
     timing to   rising clock clk irqs;
     timing from rising clock clk trace;
     timing comb input riscv_config;
+    timing comb input data_access_resp;
     timing comb output trace;
 }
 
