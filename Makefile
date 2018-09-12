@@ -41,13 +41,14 @@ PREFIX_OBJ_DIR := $(CURDIR)/build/
 DEBUG_BUILD := no
 EXTRA_CDLFLAGS := --extra_cdlflags="--v_clkgate_type='banana' --v_use_always_at_star --v_clks_must_have_enables "
 
-LOCAL_CFLAGS   := -I/usr/local/include ${EXTRA_CFLAGS}
-LOCAL_CXXFLAGS := -I/usr/local/include ${EXTRA_CXXFLAGS}
-LOCAL_LINKLIBS := -L/usr/local/lib  -L/lib -L/lib/x86_64-linux-gnu -L/usr/lib/x86_64-linux-gnu -lpng12 -ljpeg
+LOCAL_DIR := /usr/local
+LOCAL_CFLAGS   := -I${LOCAL_DIR}/include ${EXTRA_CFLAGS}
+LOCAL_CXXFLAGS := -I${LOCAL_DIR}/include ${EXTRA_CXXFLAGS}
+LOCAL_LINKLIBS := -L${LOCAL_DIR}/lib  -L/lib -L/lib/x86_64-linux-gnu -L/usr/lib/x86_64-linux-gnu -lpng12 -ljpeg
 LOCAL_LINKLIBS :=  ${EXTRA_LIBS} -lpng12 -ljpeg
 OS := $(shell uname)
 ifeq ($(OS),Darwin)
-LOCAL_LINKLIBS :=  ${EXTRA_LIBS} -L/usr/local/lib -lpng16 -ljpeg
+LOCAL_LINKLIBS :=  ${EXTRA_LIBS} -L${LOCAL_DIR}/lib -lpng16 -ljpeg
 endif
 
 #a Include standard build makefile

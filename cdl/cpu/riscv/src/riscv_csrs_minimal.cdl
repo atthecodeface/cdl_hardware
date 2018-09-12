@@ -38,10 +38,11 @@ typedef struct {
 /*a Module */
 module riscv_csrs_minimal( clock clk                                   "RISC-V clock",
                            input bit reset_n                           "Active low reset",
-                           input t_riscv_csr_access csr_access         "RISC-V CSR access, combinatorially decoded",
-                           input t_riscv_word       csr_write_data     "Write data for the CSR access, later in the cycle than @csr_access possibly",
-                           output t_riscv_csr_data csr_data            "CSR respone (including read data), from the current @a csr_access",
-                           input t_riscv_csr_controls csr_controls     "Control signals to update the CSRs",
+                           input t_riscv_irqs          irqs            "Interrupts in to the CPU",
+                           input t_riscv_csr_access    csr_access      "RISC-V CSR access, combinatorially decoded",
+                           input t_riscv_word          csr_write_data  "Write data for the CSR access, later in the cycle than @csr_access possibly",
+                           output t_riscv_csr_data     csr_data        "CSR respone (including read data), from the current @a csr_access",
+                           input t_riscv_csr_controls  csr_controls    "Control signals to update the CSRs",
                            output t_riscv_csrs_minimal csrs            "CSR values"
     )
 """
@@ -49,6 +50,72 @@ This module implements a minimal set of RISC-V CSRs, as per v2.1 (May
 2016) of the RISC-V instruction set manual user level ISA and v1.9.1
 of the privilege architecture (Nov 2016), with the exception that
 MTIME has been removed (as this seems to be the correct thing to do).
+
+The privilege specifcation (v1.10) indicates:
+
+* meip is read-only and is derived from the external irq in to this module
+
+* mtip is read-only, cleared by writing to the memory-mapped timer comparator
+
+* msip is read-write in a memory-mapped register somewhere
+
+Hence the irqs structure must provide these three signals
+
+
+Minimal CSRs as only machine mode and debug mode are supported.
+In debug mode every register access is supported.
+In machine mode then every register EXCEPT access to ??? is supported.
+
+Given machine mode is the only mode supported:
+
+* there are no SEI and UEI interrupt pins in to this module
+
+* SEIP and UEIP are not supported
+
+* STIP and UTIP are not supported
+
+* SSIP and USIP are not supported
+
+* mstatus.SIE and mstatus.UIE (and previous versions) are hardwired to 0
+
+* mstatus.SPP and mstatus.UPP are hardwired to 0
+
+The mip (machine interrupt pending register) therefore is:
+
+{20b0, MEIP, 3b0, MTIP, 3b0, MSIP, 3b0}
+
+The mie (machine interrupt enable register) is:
+
+{20b0, MEIE, 3b0, MTIE, 3b0, MSIE, 3b0}
+
+
+The instruction to the pipeline to request an interrupt (which is only
+taken if an instruction is in uncommitted in the execution stage) must be generated using the
+execution mode and the interrupt enable bits and the interrupt pending
+bits.
+
+Hence the 'take interrupt' is (mip & mie) != 0 && mstatus.MIE && (current mode >= machine mode) && (current mode != debug mode).
+
+The required priority order is:
+
+external interrupts, software interrupts, timer interrupts
+
+If an instruction has been committed then it may trap, and the trap
+will occur prior to an interrupt which happens after the commit
+point. In this case there will be a trap, and the trapped instruction
+will be fetched, and then an interrupt can be taken.
+
+When an interrupt is taken the following occurs:
+
+* MPP <= current execution mode (must be machine mode, as debug mode is not interruptible)
+
+* mstatus.MPIE <= mstatus.MIE
+
+Note that WFI should wait independent of mstatus.MIE for (mip & mie) != 0 (given machine mode only)
+In debug mode WFI should be a NOP.
+
+WFI may always be a NOP.
+
 """
 {
 

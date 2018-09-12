@@ -123,6 +123,7 @@ typedef struct {
  */
 module riscv_i32c_pipeline( clock clk,
                             input bit reset_n,
+                            input t_riscv_irqs       irqs               "Interrupts in to the CPU",
                             output t_riscv_mem_access_req  dmem_access_req,
                             input  t_riscv_mem_access_resp dmem_access_resp,
                             output t_riscv_fetch_req       ifetch_req,
@@ -270,6 +271,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         }
         riscv_csrs_minimal csrs( clk <- clk,
                                  reset_n <= reset_n,
+                                 irqs <= irqs,
                                  csr_access     <= decexecrfw_combs.csr_access,
                                  csr_write_data <= decexecrfw_combs.idecode.illegal ? bundle(27b0, decexecrfw_combs.idecode.rs1) : decexecrfw_combs.rs1,
                                  csr_data       => csr_data,

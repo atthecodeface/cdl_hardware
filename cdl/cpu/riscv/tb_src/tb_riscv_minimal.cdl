@@ -86,15 +86,18 @@ module tb_riscv_minimal( clock clk,
     /*b Instantiate RISC-V
      */
     net t_riscv_i32_trace trace;
+    comb t_riscv_irqs       irqs;
     riscv_instance: {
         riscv_config = {*=0};
         riscv_config.i32c = 0;
         riscv_config.e32  = 0;
         riscv_config.i32m = 0;
+        irqs = {*=0};
         se_test_harness th( clk <- clk, a<=0 );
         
         riscv_minimal dut( clk <- riscv_clk,
                            reset_n <= reset_n,
+                           irqs <= irqs,
                            dmem_access_req => dmem_access_req,
                            dmem_access_resp <= dmem_access_resp,
                            imem_access_req => imem_access_req,

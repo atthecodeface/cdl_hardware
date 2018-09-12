@@ -72,6 +72,17 @@ typedef struct {
  */
 typedef bit[32] t_riscv_word;
 
+/*t t_riscv_irqs
+ */
+typedef struct {
+    bit nmi;
+    bit meip;
+    bit seip;
+    bit ueip;
+    bit mtip;
+    bit msip;
+} t_riscv_irqs;
+
 /*t t_riscv_mode
  */
 typedef enum[3] {

@@ -320,18 +320,23 @@ typedef struct {
 /*t t_riscv_csr_data
  */
 typedef struct {
-    t_riscv_word            read_data;
-    bit                     illegal_access;
+    t_riscv_word    read_data;
+    bit             take_interrupt;
+    t_riscv_mode    interrupt_mode  "Mode to enter if take_interrupt is asserted";
+    bit[4]          interrupt_cause "From table 3.6 in RV priv space 1.10";
+    bit             illegal_access;
 } t_riscv_csr_data;
 
 /*t t_riscv_csr_controls
  */
 typedef struct {
+    t_riscv_mode exec_mode "Mode of instruction in the execution stage";
     bit retire;
     bit timer_inc;
     bit timer_clear;
     bit timer_load;
     bit[64] timer_value;
+    bit interrupt;
     bit trap;
     t_riscv_trap_cause trap_cause;
     bit[32] trap_pc;
@@ -433,14 +438,111 @@ typedef enum[12] {
     CSR_ADDR_DSCRATCH  = 12h7B2
 } t_riscv_csr_addr;
 
+/*t t_riscv_csr_dcsr
+ *
+ * From Debug spec v?
+ * 
+ */
+typedef struct {
+    bit[4] xdebug_ver "4 for conformant debug support, 0 otherwise";
+    bit    ebreakm    "make ebreak instructions in machine mode enter debug mode";
+    bit    ebreaks    "make ebreak instructions in system mode enter debug mode";
+    bit    ebreaku    "make ebreak instructions in user mode enter debug mode";
+    bit    stepie     "set to enable interrupts during stepping (may be hardwired to 0)";
+    bit    stopcount  "set to stop cycle and instret incrementing on instructions executed in debug mode";
+    bit    stoptime   "set to disable incrementing of hart-local timers when in debug mode";
+    bit[3] cause      "1=ebreak, 2=trigger module, 3=debugger request, 4=single step as step was set";
+    bit    mprven     "if clear ignore mstatus.mprv when in debug mode";
+    bit    nmip       "asserted if an NMI is pending for the hart";
+    bit    step       "when set enter debug mode after current instruction completes";
+    bit[2] prv        "mode of execution prior to entry to debug mode, and to return to on dret";
+} t_riscv_csr_dcsr;
+
+/*t t_riscv_csr_mstatus
+ *
+ * From Priv spec v1.10
+ * 
+ */
+typedef struct {
+    bit sd;
+    bit tsr;
+    bit tw;
+    bit tvm;
+    bit mxr;
+    bit sum;
+    bit mprv;
+    bit[2] xs;
+    bit[2] fs;
+    bit[2] mpp;
+    bit spp;
+    bit mpie;
+    bit spie;
+    bit upie;
+    bit mie;
+    bit sie;
+    bit uie;
+} t_riscv_csr_mstatus;
+
+/*t t_riscv_csr_mip
+ *
+ * From Priv spec v1.10
+ * 
+ */
+typedef struct {
+    bit meip "Machine-external interrupt pending, mirroring the input pin";
+    bit seip "System-external interrupt pending, mirroring the input pin";
+    bit ueip "User-external interrupt pending, mirroring the input pin";
+    bit mtip "Machine timer interrupt pending, set by memory-mapped machine timer comparator meeting mtime";
+    bit stip "System timer interrupt pending, set by software";
+    bit utip "User timer interrupt pending, set by software";
+    bit msip "Machine system interrupt pending, set by memory-mapped register if supported";
+    bit ssip "System software interrupt pending, set by software";
+    bit usip "User software interrupt pending, set by software";
+} t_riscv_csr_mip;
+
+/*t t_riscv_csr_mie
+ *
+ * From Priv spec v1.10
+ * 
+ */
+typedef struct {
+    bit meie "Enable for machine-external interrupt pending";
+    bit seie "Enable for system-external interrupt pending";
+    bit ueie "Enable for user-external interrupt pending";
+    bit mtie "Enable for machine timer interrupt pending";
+    bit stie "Enable for system timer interrupt pending";
+    bit utie "Enable for user timer interrupt pending";
+    bit msie "Enable for machine system interrupt pending";
+    bit ssie "Enable for system software interrupt pending";
+    bit usie "Enable for user software interrupt pending";
+} t_riscv_csr_mie;
+
 /*t t_riscv_csrs_minimal
  *
  * Minimal set of RISC-V CSRs
+ *
+ * mstatus    - see above
+ * medeleg    - sync exceptions delegation - must be 0 if machine mode only
+ * mideleg    - interrupt delegation       - must be 0 if machine mode only
+ * mie        - interrupt enable           - meie, mtie, msie as a minimum
+ * mtvec      - can be hardwired to 0
+ * mcounteren - counter permissions     - should be 0 if machine mode only
+ * mcause     - cause of interrupt/trap    - top bit set if interrupt, bottom bits indicate trap/irq
+ * mscratch
+ * mepc
+ * mtval
+ * mip        - interrupt pending          - meip, mtip, msip as a minimum
+ * 
+ * dcsr       - see above
+ * dpc        - address of ebreak, or of instruction to be executed after (single step or halt)
+ * dscratch
+ *
  */
 typedef struct {
     bit[64] cycles    "Number of cycles since reset";
     bit[64] instret   "Number of instructions retired";
     bit[64] time      "Global time concept, synchronized through the timer control interface";
+
     bit[32] mscratch  "Scratch register for exception routines";
     bit[32] mepc      "PC at last exception";
     bit[32] mcause    "Cause of last exception";

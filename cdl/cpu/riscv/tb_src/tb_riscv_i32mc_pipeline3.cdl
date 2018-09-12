@@ -144,6 +144,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
     /*b Instantiate RISC-V and debug
      */
     net t_riscv_i32_trace trace;
+    comb t_riscv_irqs      irqs;
     riscv_instance: {
         tck_enable_fix = tck_enable;
         debug_response0 = {*=0};
@@ -155,6 +156,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
         riscv_config.i32m = 1;
         riscv_config.i32m_fuse = 1;
         riscv_config.coproc_disable = 0;
+        irqs = {*=0};
         
         jtag_tap tap( jtag_tck <- jtag_tck_gated,
                       reset_n <= reset_n,
@@ -201,6 +203,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
 
         riscv_i32c_pipeline3 dut( clk <- riscv_clk,
                                   reset_n <= reset_n,
+                                  irqs <= irqs,
                                   dmem_access_req => dmem_access_req,
                                   dmem_access_resp <= dmem_access_resp,
                                   ifetch_req => rv_imem_access_req,

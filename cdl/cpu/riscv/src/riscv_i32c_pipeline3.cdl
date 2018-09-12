@@ -191,6 +191,7 @@ typedef struct {
  */
 module riscv_i32c_pipeline3( clock clk,
                              input bit reset_n,
+                             input t_riscv_irqs       irqs               "Interrupts in to the CPU",
                              output t_riscv_mem_access_req  dmem_access_req,
                              input  t_riscv_mem_access_resp dmem_access_resp,
                              output t_riscv_fetch_req       ifetch_req,
@@ -497,6 +498,7 @@ An example implementation of could be
         }
         riscv_csrs_minimal csrs( clk <- clk,
                                  reset_n <= reset_n,
+                                 irqs <= irqs,
                                  csr_access     <= alu_combs.csr_access,
                                  csr_write_data <= alu_state.idecode.illegal ? bundle(27b0, alu_state.idecode.rs1) : alu_combs.rs1,
                                  csr_data       => csr_data,

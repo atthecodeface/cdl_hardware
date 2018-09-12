@@ -181,14 +181,17 @@ module picoriscv( clock clk                   "Clock, divided down for CPU",
      */
     comb t_riscv_config riscv_config;
     net t_riscv_i32_trace trace;
+    comb t_riscv_irqs irqs;
     cpu_and_addressing """
     """: {
         riscv_config = {*=0};
         riscv_config.i32c = 0;
         riscv_config.e32  = 0;
         riscv_config.i32m = 0;
+        irqs = {*=0};
         riscv_minimal riscv( clk <- riscv_clk,
                              reset_n <= reset_n,
+                             irqs <= irqs,
                              dmem_access_req  => dmem_access_req,
                              dmem_access_resp <= dmem_access_resp,
                              imem_access_req  => imem_access_req,
