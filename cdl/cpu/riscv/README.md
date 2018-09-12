@@ -24,7 +24,7 @@ cycle
 + riscv_i32_alu
 
 
-riscv_minimal
+riscv_i32c_minimal
 ----------------
 
 * needs to be removed and changed to riscv_i32c_minimal

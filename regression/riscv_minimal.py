@@ -231,8 +231,8 @@ class c_riscv_jtag_debug_simple(c_riscv_jtag_debug_base):
         pass
 
 #a Hardware classes
-#c riscv_minimal_test_hw
-class riscv_minimal_test_hw(simple_tb.cdl_test_hw):
+#c riscv_i32_minimal_test_hw
+class riscv_i32_minimal_test_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
@@ -242,13 +242,12 @@ class riscv_minimal_test_hw(simple_tb.cdl_test_hw):
                   "th.inputs":("a"),
                   "th.outputs":("b"),
                   }
-    module_name = "tb_riscv_minimal"
+    module_name = "tb_riscv_i32_minimal"
     #f __init__
     def __init__(self, test):
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
-        self.th_forces["imem.filename"] = mif_filename
-        self.th_forces["dmem.filename"] = mif_filename
+        self.th_forces["dut.mem.filename"] = mif_filename
         simple_tb.cdl_test_hw.__init__(self,test)
         pass
     pass
@@ -322,8 +321,8 @@ class riscv_i32mc_pipeline3_test_hw(simple_tb.cdl_test_hw):
         pass
     pass
 
-#c riscv_minimal_single_memory_test_hw
-class riscv_minimal_single_memory_test_hw(simple_tb.cdl_test_hw):
+#c OLD riscv_minimal_single_memory_test_hw
+class old_riscv_minimal_single_memory_test_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
@@ -390,11 +389,11 @@ class riscv_base(simple_tb.base_test):
         setattr(cls, "test_"+name, test_fn)
         pass
 
-#c riscv_minimal
-class riscv_minimal(riscv_base):
+#c riscv_i32_minimal
+class riscv_i32_minimal(riscv_base):
     supports = []
-    hw = riscv_minimal_test_hw
-    test_memory = "dmem"
+    hw = riscv_i32_minimal_test_hw
+    test_memory = "dut.mem"
     cycles_scale = 1.0
     pass
 
@@ -422,12 +421,8 @@ class riscv_i32mc_pipeline3(riscv_base):
     cycles_scale = 1.5
     pass
 
-#c riscv_minimal_single_memory
-class riscv_minimal_single_memory(riscv_base):
-    supports = ["ifence"]
-    hw = riscv_minimal_single_memory_test_hw
-    test_memory = "mem"
-    cycles_scale = 1.5
+#c OLD riscv_minimal_single_memory
+class old_riscv_minimal_single_memory(riscv_base):
     pass
 
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
@@ -496,8 +491,7 @@ for (test_dir,tests) in [(riscv_regression_dir,riscv_regression_tests),
     for tc in tests:
         (tf,num_cycles,tags) = tests[tc]
         tf = test_dir+tf
-        for test_class in [ riscv_minimal,                  
-                                  riscv_minimal_single_memory,    
+        for test_class in [ riscv_i32_minimal,                  
                                   riscv_i32c_minimal,             
                                   riscv_i32c_pipeline3,           
                                   riscv_i32mc_pipeline3,          
