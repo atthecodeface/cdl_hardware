@@ -127,7 +127,7 @@ module riscv_i32_minimal( clock clk,
 """
 An instantiation of the single stage pipeline RISC-V with RV32I with a single SRAM
 
-Compressed instructions are not supported
+Compressed instructions are supported IF i32c_force_disable is 0 and riscv_config.i32c is 1
 
 A single memory is used for instruction and data, at address 0
 
@@ -149,6 +149,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     net  t_riscv_mem_access_req  dmem_access_req;
     comb t_riscv_mem_access_resp dmem_access_resp;
     clocked bit[32] ifetch_reg = 0;
+    clocked bit[16] ifetch_last16_reg = 0 "Only used if RV32IC is enabled and configured";
 
     comb  t_riscv_mem_access_req    data_sram_access_req;
     clocked t_riscv_mem_access_req  data_access_req = {*=0};
@@ -249,7 +250,11 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                 riscv_clock_action = riscv_clock_action_ifetch;
                 if (!i32c_force_disable || riscv_config.i32c) {
                     if (ifetch_req.address[1]) {
-                        riscv_clock_action = riscv_clock_action_ifetch_first16;
+                        if (ifetch_req.sequential) {
+                            riscv_clock_action = riscv_clock_action_ifetch_second16;
+                        } else {
+                            riscv_clock_action = riscv_clock_action_ifetch_first16;
+                        }
                     }
                 }
             } else {
@@ -391,11 +396,20 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         if (riscv_clock_phase==rcp_ifetch_in_progress) {
             ifetch_reg <= mem_read_data;
         }
-        if (riscv_clock_phase==rcp_ifetch_first16_in_progress) {
-            ifetch_reg <= mem_read_data;
-        }
-        if (riscv_clock_phase==rcp_ifetch_second16_in_progress) {
-            ifetch_reg <= bundle(mem_read_data[16;0],ifetch_reg[16;16]);
+        if (i32c_force_disable==0) {
+            if (riscv_clock_phase==rcp_ifetch_in_progress) {
+                ifetch_last16_reg <= mem_read_data[16;16];
+            }
+            if (riscv_clock_phase==rcp_ifetch_first16_in_progress) {
+                ifetch_reg <= mem_read_data;
+            }
+            if (riscv_clock_phase==rcp_ifetch_second16_in_progress) {
+                ifetch_reg <= bundle(mem_read_data[16;0],ifetch_reg[16;16]);
+                if (ifetch_req.sequential) {
+                    ifetch_reg <= bundle(mem_read_data[16;0],ifetch_last16_reg);
+                }
+                ifetch_last16_reg <= mem_read_data[16;16];
+            }
         }
 
         ifetch_resp = {*=0};
@@ -404,8 +418,13 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         if (ifetch_src == ifetch_src_reg) {
             ifetch_resp.data  = ifetch_reg;
         }
-        if (ifetch_src == ifetch_src_reg16) {
-            ifetch_resp.data  = bundle(mem_read_data[16;0],ifetch_reg[16;16]);
+        if (i32c_force_disable==0) {
+            if (ifetch_src == ifetch_src_reg16) { // only compressed, and only if (riscv_clock_phase==rcp_ifetch_second16_in_progress)
+                ifetch_resp.data  = bundle(mem_read_data[16;0],ifetch_reg[16;16]);
+                if (ifetch_req.sequential) {
+                    ifetch_resp.data  = bundle(mem_read_data[16;0],ifetch_last16_reg);
+                }
+            }
         }
         dmem_access_resp.wait = 0;
         dmem_access_resp.read_data = data_access_resp.read_data;

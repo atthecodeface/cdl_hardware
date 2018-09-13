@@ -183,6 +183,7 @@ i32_decode = {"rs1":5,
               "illegal":1,
               "requires_machine_mode":1,
               "is_compressed":1,
+              "ext__dummy":1,
               }
 
 #v i32_coproc_response - signal widths for pycdl.wirebundle - must match implementation
