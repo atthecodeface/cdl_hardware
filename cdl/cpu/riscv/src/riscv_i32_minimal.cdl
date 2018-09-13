@@ -63,6 +63,10 @@ include "riscv.h"
 include "riscv_modules.h"
 include "srams.h"
 
+/*a Constants
+ */
+constant integer i32c_force_disable=0;
+
 /*a Types
  */
 /*t t_riscv_clock_phase
@@ -71,16 +75,20 @@ include "srams.h"
  */
 typedef fsm {
     rcp_clock_high          "RISC-V clock high; decode of instruction presents correct dmem/imem requests for the whole RISC-V cycle";
-    rcp_dread_in_progress   "RISC-V clock low with data memory read in progress; will do instruction fetch next";
-    rcp_dwrite_in_progress  "RISC-V clock low with data memory write in progress; will do instruction fetch next or clock will go high";
-    rcp_ifetch_in_progress  "RISC-V clock low with fetch of instruction, clock will go high";
-    rcp_clock_low           "RISC-V clock low with no requests from RISC-V, will go high";
+    rcp_dread_in_progress   "RISC-V clock low with data memory read in progress; clock will go high";
+    rcp_dwrite_in_progress  "RISC-V clock low with data memory write in progress; clock will go high";
+    rcp_ifetch_in_progress  "RISC-V clock low with fetch of instruction, clock will go high if no data access";
+    rcp_clock_low           "RISC-V clock low with no requests from RISC-V, will go high if not waiting for data access";
+
+    rcp_ifetch_first16_in_progress   "RISC-V clock low with fetch of bottom 16-bits instruction in top of SRAM data, clock will stay low";
+    rcp_ifetch_second16_in_progress  "RISC-V clock low with fetch of top 16-bits instruction in bottom of SRAM data, clock will go high if not waiting for data access";
 } t_riscv_clock_phase;
 
 /*t t_ifetch_src */
 typedef enum[2] {
     ifetch_src_sram,
-    ifetch_src_reg
+    ifetch_src_reg,
+    ifetch_src_reg16   // Only used if compressed supported
 } t_ifetch_src;
 
 /*t t_data_src */
@@ -98,7 +106,10 @@ typedef enum[3] {
     riscv_clock_action_ifetch,
     riscv_clock_action_dread,
     riscv_clock_action_dwrite,
-    riscv_clock_action_wait
+    riscv_clock_action_wait,
+
+    riscv_clock_action_ifetch_first16,  // Only used if compressed is supported by config AND i32c_force_disable is low
+    riscv_clock_action_ifetch_second16, // Only used if compressed is supported by config AND i32c_force_disable is low
 } t_riscv_clock_action;
 
 /*a Module
@@ -236,6 +247,11 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             riscv_clock_action = riscv_clock_action_fall;
             if (ifetch_req.valid) {
                 riscv_clock_action = riscv_clock_action_ifetch;
+                if (!i32c_force_disable || riscv_config.i32c) {
+                    if (ifetch_req.address[1]) {
+                        riscv_clock_action = riscv_clock_action_ifetch_first16;
+                    }
+                }
             } else {
                 if (data_sram_access_req.read_enable) {
                     riscv_clock_action = riscv_clock_action_dread;
@@ -253,6 +269,21 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         }
         case rcp_ifetch_in_progress: {
             riscv_clock_action = riscv_clock_action_rise;
+            if (data_access_wait) {
+                riscv_clock_action = riscv_clock_action_wait;
+            }
+            if (data_sram_access_req.read_enable) {
+                riscv_clock_action = riscv_clock_action_dread;
+            } elsif (data_sram_access_req.write_enable) {
+                riscv_clock_action = riscv_clock_action_dwrite;
+            }
+        }
+        case rcp_ifetch_first16_in_progress: { // only if compressed supported
+            riscv_clock_action = riscv_clock_action_ifetch_second16;
+        }
+        case rcp_ifetch_second16_in_progress: { // only if compressed supported
+            riscv_clock_action = riscv_clock_action_rise;
+            ifetch_src = ifetch_src_reg16;
             if (data_access_wait) {
                 riscv_clock_action = riscv_clock_action_wait;
             }
@@ -288,6 +319,12 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         case riscv_clock_action_ifetch: { 
             riscv_clock_phase <= rcp_ifetch_in_progress;
         }
+        case riscv_clock_action_ifetch_first16: { 
+            riscv_clock_phase <= rcp_ifetch_first16_in_progress;
+        }
+        case riscv_clock_action_ifetch_second16: { 
+            riscv_clock_phase <= rcp_ifetch_second16_in_progress;
+        }
         case riscv_clock_action_dread: { 
             riscv_clock_phase <= rcp_dread_in_progress;
         }
@@ -316,8 +353,11 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         case riscv_clock_action_dwrite: {
             mem_access_req = {write_enable=1, byte_enable=data_sram_access_req.byte_enable, address=data_sram_access_req.address, write_data=data_sram_access_req.write_data};
         }
-        case riscv_clock_action_ifetch: {
-            mem_access_req = {read_enable=ifetch_req.valid, address=ifetch_req.address};
+        case riscv_clock_action_ifetch, riscv_clock_action_ifetch_first16: {
+            mem_access_req = {read_enable=1, address=ifetch_req.address};
+        }
+        case riscv_clock_action_ifetch_second16: {
+            mem_access_req = {read_enable=1, address=ifetch_req.address+4};
         }
         default: {
             if (sram_access_req_r.valid) {
@@ -334,9 +374,9 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                      write_data     <= mem_access_req.write_data,
                                      data_out       => mem_read_data );
         if (sram_access_resp.ack) {
-            sram_access_resp.valid <= 1;
-            sram_access_resp.id    <= sram_access_req_r.id;
-            sram_access_resp.data[32;0]  <= mem_read_data;
+            sram_access_resp.valid      <= 1;
+            sram_access_resp.id         <= sram_access_req_r.id;
+            sram_access_resp.data[32;0] <= mem_read_data;
         }
         if (sram_access_req.valid) {
             sram_access_req_r <= sram_access_req;
@@ -351,12 +391,21 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         if (riscv_clock_phase==rcp_ifetch_in_progress) {
             ifetch_reg <= mem_read_data;
         }
+        if (riscv_clock_phase==rcp_ifetch_first16_in_progress) {
+            ifetch_reg <= mem_read_data;
+        }
+        if (riscv_clock_phase==rcp_ifetch_second16_in_progress) {
+            ifetch_reg <= bundle(mem_read_data[16;0],ifetch_reg[16;16]);
+        }
 
         ifetch_resp = {*=0};
         ifetch_resp.valid = ifetch_req.valid;
         ifetch_resp.data  = mem_read_data;
         if (ifetch_src == ifetch_src_reg) {
             ifetch_resp.data  = ifetch_reg;
+        }
+        if (ifetch_src == ifetch_src_reg16) {
+            ifetch_resp.data  = bundle(mem_read_data[16;0],ifetch_reg[16;16]);
         }
         dmem_access_resp.wait = 0;
         dmem_access_resp.read_data = data_access_resp.read_data;
@@ -369,7 +418,6 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     pipeline: {
         coproc_response = {*=0};
         riscv_config_pipe = riscv_config;
-        riscv_config_pipe.i32c = 0;
         riscv_config_pipe.i32m = 0;
         riscv_i32c_pipeline pipeline(clk              <- riscv_clk,
                                      reset_n          <= reset_n,

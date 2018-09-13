@@ -268,8 +268,7 @@ class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
     def __init__(self, test):
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
-        self.th_forces["imem.filename"] = mif_filename
-        self.th_forces["dmem.filename"] = mif_filename
+        self.th_forces["dut.mem.filename"] = mif_filename
         simple_tb.cdl_test_hw.__init__(self,test)
         pass
     pass
@@ -402,7 +401,7 @@ class riscv_i32c_minimal(riscv_base):
     supports = ["compressed"]
     hw = riscv_i32c_minimal_test_hw
     cycles_scale = 1.3
-    test_memory = "dmem"
+    test_memory = "dut.mem"
     pass
 
 #c riscv_i32c_pipeline3
@@ -493,7 +492,7 @@ for (test_dir,tests) in [(riscv_regression_dir,riscv_regression_tests),
         (tf,num_cycles,tags) = tests[tc]
         tf = test_dir+tf
         for test_class in [ riscv_i32_minimal,                  
-                                  #riscv_i32c_minimal,             
+                                  riscv_i32c_minimal,             
                                   riscv_i32c_pipeline3,           
                                   riscv_i32mc_pipeline3,          
                                   ]:

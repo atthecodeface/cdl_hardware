@@ -24,6 +24,10 @@ include "riscv_modules.h"
 include "apb.h"
 include "apb_peripherals.h"
 
+/*a Constants
+ */
+constant integer i32c_force_disable=1;
+
 /*a External modules */
 extern module se_test_harness( clock clk, input bit a, output bit b )
 {
@@ -59,7 +63,8 @@ module tb_riscv_i32_minimal( clock clk,
     comb t_riscv_irqs       irqs;
     riscv_instance: {
         riscv_config = {*=0};
-        riscv_config.e32  = 0;
+        riscv_config.e32   = 0;
+        riscv_config.i32c  = !i32c_force_disable;
         irqs = {*=0};
         data_access_resp = {*=0};
         if (apb_request.psel) {
