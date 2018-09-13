@@ -541,7 +541,7 @@ typedef struct {
 typedef struct {
     bit[64] cycles    "Number of cycles since reset";
     bit[64] instret   "Number of instructions retired";
-    bit[64] time      "Global time concept, synchronized through the timer control interface";
+    bit[64] time      "Mirror of irqs.time - may be tied to 0 if only machine mode is supported";
 
     bit[32] mscratch  "Scratch register for exception routines";
     bit[32] mepc      "PC at last exception";

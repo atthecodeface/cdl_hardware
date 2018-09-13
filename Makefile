@@ -67,8 +67,12 @@ shm_vnc: ${SHM_VNC_OBJS}
 
 #a Test targets
 .PHONY: regression
-regression:
+regression: non_bbc_roms
 	$(MAKE) clean ALL
+	./regress_all
+
+.PHONY: regression_unclean
+regression_unclean: non_bbc_roms
 	./regress_all
 
 test_python_6502: ${TARGET_DIR}/py_engine.so
@@ -88,12 +92,15 @@ test_regress_riscv: ${TARGET_DIR}/py_engine.so
 	./regress_all regression.riscv_minimal
 
 #a Operational targets
-.PHONY: roms
-roms:
+.PHONY: non_bbc_roms
+non_bbc_roms:
 	python python/teletext_font.py > roms/teletext.mif
 	python python/apb_speed_selection.py > roms/apb_rom.mif
 	python python/apb_vga.py > roms/apb_vga_rom.mif
 	python python/ps2_bbc_kbd_map.py
+
+.PHONY: roms
+roms: non_bbc_roms
 	python python/rom_to_mif.py
 
 bbc_run: ${TARGET_DIR}/py_engine.so

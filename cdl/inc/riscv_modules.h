@@ -19,6 +19,7 @@
 /*a Includes */
 include "riscv.h"
 include "riscv_internal_types.h"
+include "srams.h"
 
 /*a Implementations */
 /*m riscv_minimal

@@ -151,6 +151,9 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     comb t_riscv_mem_access_req   mem_access_req;
     comb t_ifetch_src ifetch_src;
     comb t_data_src data_src;
+    comb bit sram_access_ack;
+    clocked t_sram_access_req  sram_access_req_r = {*=0};
+    clocked t_sram_access_resp sram_access_resp = {*=0};
 
     /*b Clock control
      */
@@ -194,7 +197,6 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     speed cycle while the instruction being read. This is presented
     directly to the RISC-V core.
     """ : {
-        sram_access_resp = {*=0};
         data_sram_access_req = dmem_access_req;
         if (dmem_access_req.address[12;20]!=0) {
             data_sram_access_req.read_enable = 0;
@@ -236,6 +238,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             }
         }
         case rcp_clock_low: {
+            ifetch_src = ifetch_src_reg;
             riscv_clock_action = riscv_clock_action_rise; // or wait for data access to complete
             if ((data_access_req.read_enable || data_access_req.write_enable) && data_access_resp.wait) {
                 riscv_clock_action = riscv_clock_action_wait;
@@ -289,10 +292,17 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     }
 
     /*b Instantiate srams
+     *
+     * SRAM access path can run when no RISC-V access is required.
+     *
+     * However, RISC-V could run a large number of stores or loads
+     * So the SRAM access path can also usurp the dread/dwrite, and potentially hold them off
+     *  
      */
     srams: {
+        sram_access_ack = 1;
         mem_access_req = {*=0, address=data_sram_access_req.address, byte_enable=data_sram_access_req.byte_enable, write_data=data_sram_access_req.write_data};
-        part_switch (riscv_clock_action) {
+        full_switch (riscv_clock_action) {
         case riscv_clock_action_dread: {
             mem_access_req = {read_enable=1, address=data_sram_access_req.address};
         }
@@ -302,6 +312,12 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         case riscv_clock_action_ifetch: {
             mem_access_req = {read_enable=imem_access_req.read_enable, address=imem_access_req.address};
         }
+        default: {
+            if (sram_access_req_r.valid) {
+                mem_access_req = {address=sram_access_req_r.address[32;0], byte_enable=sram_access_req_r.byte_enable[4;0], write_data=sram_access_req_r.write_data[32;0]};
+                sram_access_ack = 1;
+            }
+        }
         }
         se_sram_srw_16384x32_we8 mem(sram_clock <- clk,
                                      select         <= mem_access_req.read_enable || mem_access_req.write_enable,
@@ -310,6 +326,21 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                      address        <= mem_access_req.address[14;2],
                                      write_data     <= mem_access_req.write_data,
                                      data_out       => mem_read_data );
+        if (sram_access_resp.ack) {
+            sram_access_resp.valid <= 1;
+            sram_access_resp.id    <= sram_access_req_r.id;
+            sram_access_resp.data[32;0]  <= mem_read_data;
+        }
+        if (sram_access_req.valid) {
+            sram_access_req_r <= sram_access_req;
+        }
+        if (sram_access_ack) {
+            sram_access_req_r.valid <= 0;
+        }
+        if (sram_access_resp.ack || sram_access_ack) {
+            sram_access_resp.ack <= sram_access_ack;
+        }
+        
         if (riscv_clock_phase==rcp_ifetch_in_progress) {
             ifetch_reg <= mem_read_data;
         }

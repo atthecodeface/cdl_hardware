@@ -183,6 +183,9 @@ WFI may always be a NOP.
     /*b CSR state update */
     csr_state_update """
     """: {
+        /*b Mirror time */
+        csrs.time <= irqs.time;
+            
         /*b Handle CSR cycle state */
         csrs.cycles[32;0] <= csrs.cycles[32;0] + 1;
         if (csrs.cycles[32;0]==-1) {csrs.cycles[32;32] <= csrs.cycles[32;32]+1;}
@@ -192,17 +195,6 @@ WFI may always be a NOP.
         }
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MCYCLEH)) {
             csrs.cycles[32;32]    <= csr_write.data;
-        }
-
-        /*b Handle timer state */
-        if (csr_controls.timer_clear) { csrs.time <= {*=0}; }
-        if (csr_controls.timer_load)  {
-            csrs.time[32;0]  <= csr_controls.timer_value[32;0];
-            csrs.time[32;32] <= csr_controls.timer_value[32;32];
-        }
-        if (csr_controls.timer_inc)  {
-            if (csrs.time[32;0]==-1)  {csrs.time[32;32]  <= csrs.time[32;32]+1;}
-            csrs.time[32;0]  <= csrs.time[32;0] + 1;
         }
 
         /*b Handle instruction retire counter state */

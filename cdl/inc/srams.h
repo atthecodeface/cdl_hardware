@@ -24,14 +24,15 @@ typedef struct {
     bit     valid;
     bit[4]  id;
     bit     read_not_write;
-    bit[8]  byte_enables;
-    bit[16] address;
-    bit[64] data;
+    bit[8]  byte_enable;
+    bit[32] address;
+    bit[64] write_data;
 } t_sram_access_req;
 
 /*t t_sram_access_resp
  */
 typedef struct {
+    bit     ack;
     bit     valid;
     bit[4]  id;
     bit[64] data;

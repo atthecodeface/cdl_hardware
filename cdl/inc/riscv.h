@@ -81,6 +81,7 @@ typedef struct {
     bit ueip;
     bit mtip;
     bit msip;
+    bit[64] time      "Global time concept; may be tied low if user time CSR is not required";
 } t_riscv_irqs;
 
 /*t t_riscv_mode

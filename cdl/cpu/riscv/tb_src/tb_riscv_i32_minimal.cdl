@@ -21,6 +21,8 @@
 include "srams.h"
 include "riscv.h"
 include "riscv_modules.h"
+include "apb.h"
+include "apb_peripherals.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk, input bit a, output bit b )
@@ -45,6 +47,11 @@ module tb_riscv_i32_minimal( clock clk,
     comb t_sram_access_req sram_access_req;
     comb t_riscv_mem_access_resp data_access_resp;
     comb t_riscv_config riscv_config;
+    default clock clk;
+    default reset active_low reset_n;
+    clocked t_apb_request apb_request={*=0};
+    net t_apb_response apb_response;
+    net bit[3] timer_equalled;
 
     /*b Instantiate RISC-V
      */
@@ -55,10 +62,38 @@ module tb_riscv_i32_minimal( clock clk,
         riscv_config.e32  = 0;
         irqs = {*=0};
         data_access_resp = {*=0};
+        if (apb_request.psel) {
+            data_access_resp.wait = 1;
+            apb_request.penable <= 1;
+            if (apb_request.penable && apb_response.pready) {
+                apb_request.psel <= 0;
+                apb_request.penable <= 0;
+                data_access_resp.read_data = apb_response.prdata;
+                data_access_resp.wait = 0;
+            }
+        } else {
+            if (data_access_req.read_enable || data_access_req.write_enable) {
+                data_access_resp.wait = 1;
+                apb_request.psel <= 1;
+                apb_request.penable <= 0;
+                apb_request.paddr <= bundle(16b0,data_access_req.address[16;2]);
+                apb_request.pwrite <= data_access_req.write_enable;
+                apb_request.pwdata <= data_access_req.write_data;
+            }
+        }
+
+        apb_target_timer timer( clk <- clk,
+                                reset_n <= reset_n,
+                                apb_request  <= apb_request,
+                                apb_response => apb_response,
+                                timer_equalled => timer_equalled );
+
+
         sram_access_req = {*=0};
         se_test_harness th( clk <- clk, a<=0 );
         
         riscv_i32_minimal dut( clk <- clk,
+                               // add processor reset
                                reset_n <= reset_n,
                                irqs <= irqs,
                                data_access_req => data_access_req,

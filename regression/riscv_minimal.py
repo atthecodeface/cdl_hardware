@@ -428,6 +428,7 @@ class old_riscv_minimal_single_memory(riscv_base):
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[]),
                                "traps":("traps.dump",10*1000,[]),
+                               "data_access":("data_access.dump",10*1000,["apb_timer"]),
                                "c_arith":("c_arith.dump",2*1000,["compressed"]),
                                "c_stack":("c_stack.dump",2*1000,["compressed"]),
                                "c_jump":("c_jump.dump",2*1000,["compressed"]),
@@ -492,7 +493,7 @@ for (test_dir,tests) in [(riscv_regression_dir,riscv_regression_tests),
         (tf,num_cycles,tags) = tests[tc]
         tf = test_dir+tf
         for test_class in [ riscv_i32_minimal,                  
-                                  riscv_i32c_minimal,             
+                                  #riscv_i32c_minimal,             
                                   riscv_i32c_pipeline3,           
                                   riscv_i32mc_pipeline3,          
                                   ]:
