@@ -139,11 +139,10 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     comb t_riscv_mem_access_resp dmem_access_resp;
     clocked bit[32] ifetch_reg = 0;
 
-    comb  t_riscv_mem_access_req  data_sram_access_req;
+    comb  t_riscv_mem_access_req    data_sram_access_req;
     clocked t_riscv_mem_access_req  data_access_req = {*=0};
-
-    comb t_riscv_mem_access_req  imem_access_req;
-    comb t_riscv_mem_access_resp imem_access_resp;
+    comb bit                        data_access_completing "Asserted if either data_access read or write and the response wait is deasserted";
+    comb bit                        data_access_wait       "Asserted if either data_access read or write and the response wait is asserted";
 
     /*b State and comb
      */
@@ -154,14 +153,51 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     comb bit sram_access_ack;
     clocked t_sram_access_req  sram_access_req_r = {*=0};
     clocked t_sram_access_resp sram_access_resp = {*=0};
-
-    /*b Clock control
-     */
     comb bit riscv_clk_enable;
     clocked t_riscv_clock_phase riscv_clock_phase=rcp_clock_high;
     comb t_riscv_clock_action riscv_clock_action;
     clocked clock clk reset active_low reset_n bit riscv_clk_high = 0;
     gated_clock clock clk active_high riscv_clk_enable riscv_clk;
+
+    /*b Data decode
+     */
+    data_decode """
+    Decode a data access. A data access may decode into an SRAM access
+    request, which remains stable in a riscv_clk period *after* the
+    first clock cycle riscv_clk_high; or it may decode into a data
+    access request, which is a registered request that is guaranteed
+    to be 0 in riscv_clk_high, and may be set for subsequent clock
+    cycles, until it has completed.
+    """ : {
+        data_sram_access_req = dmem_access_req;
+        if (dmem_access_req.address[12;20]!=0) {
+            data_sram_access_req.read_enable = 0;
+            data_sram_access_req.write_enable = 0;
+        }
+
+        data_access_completing = (data_access_req.read_enable || data_access_req.write_enable) && !data_access_resp.wait;
+        data_access_wait       = (data_access_req.read_enable || data_access_req.write_enable) && data_access_resp.wait;
+            
+        if (riscv_clk_high) { // first cycle of riscv_clk
+            data_access_req.read_enable <= 0;
+            data_access_req.write_enable <= 0;
+            if (dmem_access_req.read_enable || dmem_access_req.write_enable) {
+                data_access_req <= dmem_access_req;
+            }
+            if (dmem_access_req.address[12;20]==0) {
+                data_access_req.read_enable  <= 0;
+                data_access_req.write_enable <= 0;
+            }
+        } else {
+            if (data_access_completing) {
+                data_access_req.read_enable <= 0;
+                data_access_req.write_enable <= 0;
+            }
+        }
+    }
+
+    /*b Clock control
+     */
     clock_control """
     The clock control for a single SRAM implementation could be
     performed with three high speed clocks for each RISC-V
@@ -179,55 +215,26 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     cycle is the instruction being read. This is presented directly to
     the RISC-V core.
 
-    If an instruction fetch and data read are required then a first
-    high speed cycle is used to present the data read, a second to
-    present the ifetch and perform the data read - with the data out
-    registered at the start of a third high speed cycle while the
-    instruction being read. This is presented directly to the RISC-V
-    core; the data read is presented from its stored register
+    If an instruction fetch and data read/write are required then a
+    first high speed cycle is used to present the instruction fetch, a
+    second to present the data read/write and perform the ifetch -
+    with the data out registered at the start of a third high speed
+    cycle while the data is being read (for data reads). This is
+    presented directly to the RISC-V core; the instruction fetched is
+    presented from its stored register
 
-    To ease implementation, and because the minimal RISC-V probably
-    always requests an instruction fetch, if a data fetch only is
-    requested then the flow follows as if an instruction fetch had
-    been requested.
+    If only a data read/write is required then that is presented in
+    riscv_clk_high, with the data valid (on reads) at the end of the
+    subsequent cycle.
 
-    If an instruction fetch and data write are required then a
-    first high speed cycle is used to present the data write, a second
-    to present the ifetch and perform the data write, and a third high
-    speed cycle while the instruction being read. This is presented
-    directly to the RISC-V core.
     """ : {
-        data_sram_access_req = dmem_access_req;
-        if (dmem_access_req.address[12;20]!=0) {
-            data_sram_access_req.read_enable = 0;
-            data_sram_access_req.write_enable = 0;
-        }
-        if (riscv_clk_high) { // first cycle of riscv_clk
-            data_access_req.read_enable <= 0;
-            data_access_req.write_enable <= 0;
-            if (dmem_access_req.read_enable || dmem_access_req.write_enable) {
-                data_access_req <= dmem_access_req;
-            }
-            if (dmem_access_req.address[12;20]==0) {
-                data_access_req.read_enable <= 0;
-                data_access_req.write_enable <= 0;
-            }
-        } else {
-            if (data_access_req.read_enable || data_access_req.write_enable) {
-                if (!data_access_resp.wait) {
-                    data_access_req.read_enable <= 0;
-                    data_access_req.write_enable <= 0;
-                }
-            }
-        }
-
         riscv_clock_action = riscv_clock_action_rise;
         ifetch_src = ifetch_src_sram;
         data_src   = data_src_access;
         full_switch (riscv_clock_phase) {
         case rcp_clock_high: { // riscv_clk has just gone high, so core is presenting memory requests
-            riscv_clock_action = riscv_clock_action_fall; // might be doing a data access ?
-            if (imem_access_req.read_enable) {
+            riscv_clock_action = riscv_clock_action_fall;
+            if (ifetch_req.valid) {
                 riscv_clock_action = riscv_clock_action_ifetch;
             } else {
                 if (data_sram_access_req.read_enable) {
@@ -239,14 +246,14 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         }
         case rcp_clock_low: {
             ifetch_src = ifetch_src_reg;
-            riscv_clock_action = riscv_clock_action_rise; // or wait for data access to complete
-            if ((data_access_req.read_enable || data_access_req.write_enable) && data_access_resp.wait) {
+            riscv_clock_action = riscv_clock_action_rise;
+            if (data_access_wait) {
                 riscv_clock_action = riscv_clock_action_wait;
             }
         }
         case rcp_ifetch_in_progress: {
-            riscv_clock_action = riscv_clock_action_rise; // or wait for data access to complete
-            if ((data_access_req.read_enable || data_access_req.write_enable) && data_access_resp.wait) {
+            riscv_clock_action = riscv_clock_action_rise;
+            if (data_access_wait) {
                 riscv_clock_action = riscv_clock_action_wait;
             }
             if (data_sram_access_req.read_enable) {
@@ -310,7 +317,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             mem_access_req = {write_enable=1, byte_enable=data_sram_access_req.byte_enable, address=data_sram_access_req.address, write_data=data_sram_access_req.write_data};
         }
         case riscv_clock_action_ifetch: {
-            mem_access_req = {read_enable=imem_access_req.read_enable, address=imem_access_req.address};
+            mem_access_req = {read_enable=ifetch_req.valid, address=ifetch_req.address};
         }
         default: {
             if (sram_access_req_r.valid) {
@@ -345,28 +352,17 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             ifetch_reg <= mem_read_data;
         }
 
-        imem_access_resp.wait       = 0;
-        imem_access_resp.read_data  = mem_read_data;
+        ifetch_resp = {*=0};
+        ifetch_resp.valid = ifetch_req.valid;
+        ifetch_resp.data  = mem_read_data;
         if (ifetch_src == ifetch_src_reg) {
-            imem_access_resp.read_data  = ifetch_reg;
+            ifetch_resp.data  = ifetch_reg;
         }
         dmem_access_resp.wait = 0;
         dmem_access_resp.read_data = data_access_resp.read_data;
         if (data_src == data_src_sram) {
             dmem_access_resp.read_data = mem_read_data;
         }
-    }
-
-    /*b Ifetch stage
-     */
-    instruction_fetch_stage: {
-        imem_access_req             = {*=0};
-        imem_access_req.read_enable = ifetch_req.valid;
-        imem_access_req.address     = bundle(1b0,ifetch_req.address[31;1]);
-        imem_access_req.address     = ifetch_req.address;
-        ifetch_resp = {*=0};
-        ifetch_resp.valid = ifetch_req.valid && !imem_access_resp.wait;
-        ifetch_resp.data  = imem_access_resp.read_data;
     }
 
     /*b Pipeline */
