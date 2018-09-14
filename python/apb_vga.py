@@ -11,15 +11,15 @@ displays["lcd_480x272"] = {"h":(40,480,5),
 display = displays["lcd_480x272"]
 
 csr_select = {}
-csr_select["vga_rom"] = 0x3004 # for HPS FPGA frame buffer OR framebuffer_teletext
-csr_select["dprintf"] = 0x2000 # for HPS FPGA dprintf
-csr_display_size    = (csr_select["vga_rom"]<<16)|0
-csr_display_h_porch = (csr_select["vga_rom"]<<16)|1
-csr_display_v_porch = (csr_select["vga_rom"]<<16)|2
-csr_dprintf_address = (csr_select["dprintf"]<<16)|0
-csr_dprintf_data    = (csr_select["dprintf"]<<16)|8
-csr_dprintf_address_commit = (csr_select["dprintf"]<<16)|16
-csr_dprintf_data_commit    = (csr_select["dprintf"]<<16)|32
+csr_select["vga_rom"] = 0x00034000 # for HPS FPGA frame buffer OR framebuffer_teletext
+csr_select["dprintf"] = 0x00020000 # for HPS FPGA dprintf
+csr_display_size    = csr_select["vga_rom"] |  0
+csr_display_h_porch = csr_select["vga_rom"] |  4
+csr_display_v_porch = csr_select["vga_rom"] |  8
+csr_dprintf_address        = csr_select["dprintf"] |  0
+csr_dprintf_data           = csr_select["dprintf"] |  32
+csr_dprintf_address_commit = csr_select["dprintf"] |  64
+csr_dprintf_data_commit    = csr_select["dprintf"] | 128
 
 h_porches    = (display["h"][0]-1) | ((display["h"][2]-1)<<16) # back porch in low, front porch in high
 v_porches    = (display["v"][0]-1) | ((display["v"][2]-1)<<16) # 
@@ -31,7 +31,7 @@ porches = [(65536-170+16-3*i) | (((65536-68)<<16)) for i in range(16)]
 # dprintf data is 0-skip; 1->127 character; 128-143 1 to 16 hex nybbles; 192-195 1-4 byte unpadded decimal; 192+(pad<<2)+(nbytes) is 1-4 nbytes decimal with padding of field to (pad+1)
 
 cs_string = subprocess.check_output(["git","rev-parse","HEAD"]).strip()
-cs = int(cs_string[-16:],16)
+cs = int(cs_string[:16],16)
 print >> sys.stderr, "VGA rom - CS from GIT is ",cs_string
 print >> sys.stderr, "%016x"%cs
 dprintf_data = [0]*8

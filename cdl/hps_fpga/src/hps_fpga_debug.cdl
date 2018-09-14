@@ -158,7 +158,7 @@ module hps_fpga_debug( clock clk,
             apb_processor_completed <= 1;
         }
         if (divider[24;0]==0) { // 16M @ 50MHz = 3 times per second
-            apb_processor_completed <= 0;
+            //apb_processor_completed <= 0;
         }
 
         apb_processor apbp( clk <- clk,
@@ -247,7 +247,7 @@ module hps_fpga_debug( clock clk,
         }
         if (apb_request.psel) {
             dprintf_req[6] <= {valid=1, address=240,
-                    data_0=bundle(40h41_50_52_3a_80, 7b0,apb_request.pwrite, 16h_20_87), // APB:%x %08x %08x (pwrite paddr pwdata)
+                    data_0=bundle(40h41_50_42_3a_80, 7b0,apb_request.pwrite, 16h_20_87), // APB:%x %08x %08x (pwrite paddr pwdata)
                     data_1=bundle(apb_request.paddr, 32h20000087),
                     data_2=bundle(apb_request.pwdata, 8hff, 24h0) };
         }
