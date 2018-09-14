@@ -26,6 +26,7 @@
 include "dprintf.h"
 include "srams.h"
 include "apb.h"
+include "csr_interface.h"
 include "axi.h"
 include "de1_cl.h"
 include "apb_peripherals.h"
@@ -109,6 +110,7 @@ module hps_fpga_debug( clock clk,
     net  t_apb_request proc_apb_request;
     net  t_apb_response axi_apb_response;
     net  t_apb_response proc_apb_response;
+    comb bit[4] apb_request_sel;
 
     net bit[16] gpio_output;
     net bit[16] gpio_output_enable;
@@ -125,8 +127,10 @@ module hps_fpga_debug( clock clk,
     net t_dprintf_byte dprintf_byte;
 
     net t_csr_request   csr_request;
+    comb t_csr_response csr_response;
     clocked t_csr_response csr_response_r = {*=0};
     net t_csr_response tt_framebuffer_csr_response;
+    net t_csr_response timeout_csr_response;
     comb t_bbc_display_sram_write tt_display_sram_write;
     net t_video_bus video_bus;
 
@@ -241,6 +245,19 @@ module hps_fpga_debug( clock clk,
                     data_1=bundle(lw_axi_r.data, 16h2080, 6b0,lw_axi_r.resp, 8h20),
                     data_2=bundle(8h80, 7b0,lw_axi_w.last, 8hff, 40h0) };
         }
+        if (apb_request.psel) {
+            dprintf_req[6] <= {valid=1, address=240,
+                    data_0=bundle(40h41_50_52_3a_80, 7b0,apb_request.pwrite, 16h_20_87), // APB:%x %08x %08x (pwrite paddr pwdata)
+                    data_1=bundle(apb_request.paddr, 32h20000087),
+                    data_2=bundle(apb_request.pwdata, 8hff, 24h0) };
+        }
+        if (csr_request.valid) {
+            dprintf_req[7] <= {valid=1, address=280,
+                    data_0=bundle(40h43_53_52_3a_80, 7b0,csr_request.read_not_write, 16h_20_83), // CSR:%x %04x %04x %08x (read_not_write select address data)
+                    data_1=bundle(csr_request.select,  48h200000000083),
+                    data_2=bundle(csr_request.address, 48h200000000087),
+                    data_3=bundle(csr_request.data,    8hff, 24h0) };
+        }
     }
 
     /*b Dprintf multiplexing */
@@ -305,20 +322,27 @@ module hps_fpga_debug( clock clk,
                                csr_request => csr_request,
                                csr_response <= csr_response_r );
 
+        apb_request_sel = apb_request.paddr[4;16]; // 1MB of address space, top 4 bits as select
         timer_apb_request   = apb_request;
         gpio_apb_request    = apb_request;
         dprintf_apb_request = apb_request;
         csr_apb_request     = apb_request;
-        timer_apb_request.psel   = apb_request.psel && (apb_request.paddr[4;28]==0);
-        gpio_apb_request.psel    = apb_request.psel && (apb_request.paddr[4;28]==1);
-        dprintf_apb_request.psel = apb_request.psel && (apb_request.paddr[4;28]==2);
-        csr_apb_request.psel     = apb_request.psel && (apb_request.paddr[4;28]==3);
-        csr_apb_request.paddr[4;28] = 0; // map to CSR space
 
-        apb_response = timer_apb_response;
-        if (apb_request.paddr[4;28]==1) { apb_response = gpio_apb_response; }
-        if (apb_request.paddr[4;28]==2) { apb_response = dprintf_apb_response; }
-        if (apb_request.paddr[4;28]==3) { apb_response = csr_apb_response; }
+        timer_apb_request.paddr    = apb_request.paddr >> 2;
+        dprintf_apb_request.paddr  = apb_request.paddr >> 2;
+        gpio_apb_request.paddr     = apb_request.paddr >> 2;
+
+        timer_apb_request.psel   = apb_request.psel && (apb_request_sel==0);
+        gpio_apb_request.psel    = apb_request.psel && (apb_request_sel==1);
+        dprintf_apb_request.psel = apb_request.psel && (apb_request_sel==2);
+        csr_apb_request.psel     = apb_request.psel && (apb_request_sel==3);
+        csr_apb_request.paddr[16;16] = bundle(12b0,apb_request.paddr[4;12]);
+        csr_apb_request.paddr[16;0]  = bundle( 6b0,apb_request.paddr[10;2]);
+
+        apb_response = timer_apb_response; // defaulting to timer is good - it is always ready even if not selected...
+        if (apb_request_sel==1) { apb_response = gpio_apb_response; }
+        if (apb_request_sel==2) { apb_response = dprintf_apb_response; }
+        if (apb_request_sel==3) { apb_response = csr_apb_response; }
     }
 
     /*b Dprintf/framebuffer */
@@ -344,12 +368,18 @@ module hps_fpga_debug( clock clk,
                                   csr_response => tt_framebuffer_csr_response
             );
 
+        csr_target_timeout csr_timeout(clk <- lw_axi_clock_clk,
+                                       reset_n <= reset_n,
+                                       csr_request <= csr_request,
+                                       csr_response => timeout_csr_response,
+                                       csr_timeout <= 16h100 );
+
         if (0) {
             de1_cl_lcd <= {*=0};
             de1_vga.vs <= video_bus.vsync;
             de1_vga.hs <= video_bus.hsync;
             de1_vga.blank_n <= video_bus.display_enable;
-            de1_vga.sync_n  <= video_bus.vsync | video_bus.hsync;
+            de1_vga.sync_n  <= !(video_bus.vsync | video_bus.hsync);
             de1_vga.red     <= bundle(video_bus.red  [8;0],2b0);
             de1_vga.green   <= bundle(video_bus.green[8;0],2b0);
             de1_vga.blue    <= bundle(video_bus.blue [8;0],2b0);
@@ -364,7 +394,9 @@ module hps_fpga_debug( clock clk,
             de1_cl_lcd.backlight <= 1;
         }
 
-        csr_response_r <= tt_framebuffer_csr_response;
+        csr_response  = tt_framebuffer_csr_response;
+        csr_response |= timeout_csr_response;
+        csr_response_r <= csr_response;
                         
     }
 
