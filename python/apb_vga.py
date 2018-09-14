@@ -19,7 +19,7 @@ csr_display_v_porch = csr_select["vga_rom"] |  8
 csr_dprintf_address        = csr_select["dprintf"] |  0
 csr_dprintf_data           = csr_select["dprintf"] |  32
 csr_dprintf_address_commit = csr_select["dprintf"] |  64
-csr_dprintf_data_commit    = csr_select["dprintf"] | 128
+csr_dprintf_data_commit    = csr_select["dprintf"] |  96
 
 h_porches    = (display["h"][0]-1) | ((display["h"][2]-1)<<16) # back porch in low, front porch in high
 v_porches    = (display["v"][0]-1) | ((display["v"][2]-1)<<16) # 
@@ -49,7 +49,8 @@ program["code"] = []
 #                     (apb_rom.rom.op_req("write_arg_inc",h_porches),),
 #                     (apb_rom.rom.op_req("write_arg_inc",v_porches),),
 #                     ]
-program["code"] += [ (apb_rom.rom.op_set("address",csr_dprintf_data),),
+program["code"] += [ (apb_rom.rom.op_set("increment",4),),
+                     (apb_rom.rom.op_set("address",csr_dprintf_data),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[0]),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[1]),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[2]),),

@@ -32,7 +32,7 @@ include "csr_interface.h"
  */
 typedef enum[3] {
     opcode_class_alu           = 0 "ALU operation - add, and, xor, bic, or",
-    opcode_class_set_parameter = 1 "Set the APB address, the processor's accumulator, or repeat count",
+    opcode_class_set_parameter = 1 "Set the APB address, the processor's accumulator, repeat count, or increment",
     opcode_class_apb_request   = 2 "Request an APB access - write or read with optional autoincrement",
     opcode_class_branch        = 3 "Branch to a different location in ROM, possibly conditionally",
     opcode_class_wait          = 4 "Wait for a number of cycles, as a delay - uses the @a accumulator as a down-counter",
@@ -54,6 +54,7 @@ typedef enum[3] {
     rom_op_set_address     = 0 "For Set parameter operations, APB address = ROM data[32;0]",
     rom_op_set_repeat      = 1 "For Set parameter operations, repeat count = ROM data[32;0]",
     rom_op_set_accumulator = 2 "For Set parameter operations, accumulator = ROM data[32;0]",
+    rom_op_set_increment   = 3 "For Set parameter operations, increment = ROM data[32;0]",
 
     rom_op_branch = 0          "For Branch operations, branch always to ROM data[32;0]",
     rom_op_beq = 1             "For Branch operations, branch if accumulator is zero to ROM data[32;0]",
@@ -149,6 +150,7 @@ typedef struct {
     t_processor_fsm_state fsm_state   "Processor FSM state machine state";
     bit[32] address                   "Address to be used for APB requests, set using a 'set parameter' opcode";
     bit[32] accumulator               "Program's accumulator, used for calculations, stores read data, and can be used for writes";
+    bit[32] increment                 "Amount to increment by with auto-increment operations";
     bit[32] repeat_count              "Repeat count for program looping";
 } t_processor_state;
 
@@ -290,7 +292,7 @@ accepts an APB response back, including @a pready.
     comb t_rom_combs           rom_combs       "Combinatorial decode of ROM state";
     clocked t_rom_state        rom_state={*=0}                                      "State of the ROM-side; request and ROM access";
     comb t_processor_combs     processor_combs                                      "Combinatorial decode of the processor state, to determine processor action";
-    clocked t_processor_state  processor_state={*=0, fsm_state=processor_fsm_idle}  "Processor state, including FSM and accumulator";
+    clocked t_processor_state  processor_state={*=0, increment=1, fsm_state=processor_fsm_idle}  "Processor state, including FSM and accumulator";
     comb t_apb_combs           apb_combs                                            "Combinatorial decode of APB state and APB response";
     clocked t_apb_state        apb_state={*=0, fsm_state=apb_fsm_idle}              "APB state, including FSM";
 
@@ -394,7 +396,7 @@ accepts an APB response back, including @a pready.
         full_switch (processor_state.fsm_state) {
         case processor_fsm_idle: {
             full_switch (processor_combs.opcode_class) {
-            case opcode_class_set_parameter: { // address, repeat count
+            case opcode_class_set_parameter: { // address, repeat count, increment
                 processor_combs.action = processor_action_set_parameter;
             }
             case opcode_class_apb_request: {
@@ -439,6 +441,7 @@ accepts an APB response back, including @a pready.
             case rom_op_set_address:     {  processor_state.address      <= processor_combs.arg_data; }
             case rom_op_set_repeat:      {  processor_state.repeat_count <= processor_combs.arg_data; }
             case rom_op_set_accumulator: {  processor_state.accumulator  <= processor_combs.arg_data; }
+            case rom_op_set_increment:   {  processor_state.increment    <= processor_combs.arg_data; }
             }
             processor_combs.completes_op = 1;
             processor_state.fsm_state <= processor_fsm_idle;
@@ -461,7 +464,7 @@ accepts an APB response back, including @a pready.
         case processor_action_pending_request: {
             if (apb_combs.completing_request) {
                 if (processor_combs.opcode_subclass[2]) {
-                    processor_state.address <= processor_state.address + 1;
+                    processor_state.address <= processor_state.address + processor_state.increment;
                 }
                 if (!apb_request.pwrite) {
                     processor_state.accumulator <= apb_response.prdata;

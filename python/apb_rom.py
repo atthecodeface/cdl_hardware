@@ -19,6 +19,7 @@ class rom(object):
         "rom_op_set_address": 0,
         "rom_op_set_repeat": 1,
         "rom_op_set_accumulator": 2,
+        "rom_op_set_increment": 3,
 
         "rom_op_branch": 0,
         "rom_op_beq": 1,
