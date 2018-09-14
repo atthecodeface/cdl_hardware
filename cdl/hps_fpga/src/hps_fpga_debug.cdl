@@ -35,6 +35,9 @@ include "leds.h"
 include "teletext.h"
 include "framebuffer.h"
 
+/*a Constants */
+constant integer num_dprintf_requesters=12;
+
 /*a Types */
 /*a Module
  */
@@ -112,8 +115,13 @@ module hps_fpga_debug( clock clk,
     comb bit[16]  gpio_input;
     net bit     gpio_input_event;
 
-    net  t_dprintf_req_4 dprintf_req;
-    net  bit             dprintf_ack;
+    net  t_dprintf_req_4 apb_dprintf_req "Dprintf request from APB target";
+    comb bit             apb_dprintf_ack "Ack for dprintf request from APB target";
+
+    net bit[num_dprintf_requesters]                 dprintf_ack;
+    clocked t_dprintf_req_4[num_dprintf_requesters] dprintf_req={*=0};
+    net bit[num_dprintf_requesters-1]               mux_dprintf_ack "Ack for dprintf request after multiplexing";
+    net t_dprintf_req_4[num_dprintf_requesters-1]   mux_dprintf_req "Dprintf request after multiplexing";
     net t_dprintf_byte dprintf_byte;
 
     net t_csr_request   csr_request;
@@ -194,6 +202,76 @@ module hps_fpga_debug( clock clk,
                                apb_response <= apb_response );
     }
 
+    /*b Dprintf requesting */
+    dprintf_requesting : {
+        for (i; num_dprintf_requesters) {
+            if (dprintf_ack[i]) {
+                dprintf_req[i].valid <= 0;
+            }
+        }
+        dprintf_req[0] <= apb_dprintf_req;
+        apb_dprintf_ack = dprintf_ack[0];
+
+        if (lw_axi_ar.valid) {
+            dprintf_req[1] <= {valid=1, address=40,
+                    data_0=bundle(36h41_52_3a_83_0, lw_axi_ar.id, 16h_20_87), // AR:%04x %08x %x %x %x (id/address/len/size/burst)
+                    data_1=bundle(lw_axi_ar.addr, 16h2080, 4b0,lw_axi_ar.len, 8h20),
+                    data_2=bundle(8h80, 5b0,lw_axi_ar.size, 16h2080, 6b0,lw_axi_ar.burst, 8hff, 16h0) };
+        }
+        if (lw_axi_aw.valid) {
+            dprintf_req[2] <= {valid=1, address=80,
+                    data_0=bundle(36h41_57_3a_83_0, lw_axi_aw.id, 16h_20_87), // AW:%04x %08x %x %x %x (id/address/len/size/burst)
+                    data_1=bundle(lw_axi_aw.addr, 16h2080, 4b0,lw_axi_aw.len, 8h20),
+                    data_2=bundle(8h80, 5b0,lw_axi_aw.size, 16h2080, 6b0,lw_axi_aw.burst, 8hff, 16h0) };
+        }
+        if (lw_axi_w.valid) {
+            dprintf_req[3] <= {valid=1, address=120,
+                    data_0=bundle(36h20_57_3a_83_0, lw_axi_w.id, 16h_20_87), //  W:%04x %08x %x %x (id/data/strb/last)
+                    data_1=bundle(lw_axi_w.data, 16h2080, 4b0,lw_axi_w.strb, 8h20),
+                    data_2=bundle(8h80, 7b0,lw_axi_w.last, 8hff, 40h0) };
+        }
+        if (lw_axi_b.valid) {
+            dprintf_req[4] <= {valid=1, address=160,
+                    data_0=bundle(36h20_42_3a_83_0, lw_axi_b.id, 16h_20_80), //  B:%04x %x (id/resp)
+                    data_1=bundle(6b0,lw_axi_b.resp, 8hff, 48h0) };
+        }
+        if (lw_axi_r.valid) {
+            dprintf_req[5] <= {valid=1, address=200,
+                    data_0=bundle(36h20_52_3a_83_0, lw_axi_b.id, 16h_20_87), //  R:%04x %08x %x %x (id/data/resp/last)
+                    data_1=bundle(lw_axi_r.data, 16h2080, 6b0,lw_axi_r.resp, 8h20),
+                    data_2=bundle(8h80, 7b0,lw_axi_w.last, 8hff, 40h0) };
+        }
+    }
+
+    /*b Dprintf multiplexing */
+    dprintf_multiplexing """
+    mux[n-2] = req[n-2] * req[n-1]
+    mux[n-3] = req[n-2] * mux[n-2]
+    mux[2]   = req[2] * mux[3]
+    mux[1]   = req[1] * mux[2]
+    mux[0]   = req[0] * mux[1]
+    """: {
+        dprintf_4_mux tdm_n( clk <- clk,
+                             reset_n <= reset_n,
+                             req_a <= dprintf_req[num_dprintf_requesters-2],
+                             ack_a => dprintf_ack[num_dprintf_requesters-2],
+                             req_b <= dprintf_req[num_dprintf_requesters-1],
+                             ack_b => dprintf_ack[num_dprintf_requesters-1],
+                             req => mux_dprintf_req[num_dprintf_requesters-2],
+                             ack <= mux_dprintf_ack[num_dprintf_requesters-2] );
+
+        for (i; num_dprintf_requesters-2) {
+            dprintf_4_mux tdm[i]( clk <- clk, reset_n <= reset_n,
+                                  req_a <= dprintf_req[i],
+                                  ack_a => dprintf_ack[i],
+                                  req_b <= mux_dprintf_req[i+1],
+                                  ack_b => mux_dprintf_ack[i+1],
+                                  req => mux_dprintf_req[i],
+                                  ack <= mux_dprintf_ack[i] );
+        }
+
+    }
+
     /*b APB targets */
     apb_target_instances: {
 
@@ -201,8 +279,8 @@ module hps_fpga_debug( clock clk,
                                     reset_n <= reset_n,
                                     apb_request  <= dprintf_apb_request,
                                     apb_response => dprintf_apb_response,
-                                    dprintf_req => dprintf_req,
-                                    dprintf_ack <= dprintf_ack );
+                                    dprintf_req => apb_dprintf_req,
+                                    dprintf_ack <= apb_dprintf_ack );
 
         apb_target_timer timer( clk <- lw_axi_clock_clk,
                                 reset_n <= reset_n,
@@ -247,8 +325,8 @@ module hps_fpga_debug( clock clk,
     dprintf_framebuffer_instances: {
         dprintf dprintf( clk <- lw_axi_clock_clk,
                          reset_n <= reset_n,
-                         dprintf_req <= dprintf_req,
-                         dprintf_ack => dprintf_ack,
+                         dprintf_req <= mux_dprintf_req[0],
+                         dprintf_ack => mux_dprintf_ack[0],
                          dprintf_byte => dprintf_byte
             );
 
@@ -296,10 +374,10 @@ module hps_fpga_debug( clock clk,
         if (de1_switches[3;2]==0) {
             counter <= counter + 1;
         }
-        if ((de1_switches[3;2]==1) && (dprintf_req.valid)) {
+        if ((de1_switches[3;2]==1) && (mux_dprintf_req[0].valid)) {
             counter <= counter + 1;
         }
-        if ((de1_switches[3;2]==2) && (dprintf_ack)) {
+        if ((de1_switches[3;2]==2) && (mux_dprintf_ack[0])) {
             counter <= counter + 1;
         }
         if ((de1_switches[3;2]==3) && (apb_request.psel)) {
