@@ -17,6 +17,7 @@
  */
 
 /*a Includes */
+include "apb.h"
 include "riscv.h"
 include "riscv_internal_types.h"
 include "srams.h"
@@ -106,6 +107,23 @@ module riscv_i32c_pipeline3( clock clk,
     timing comb input riscv_config, coproc_response;
     timing comb output ifetch_req, coproc_controls;
     timing from rising clock clk trace;
+}
+
+/*a Interfaces */
+/*m riscv_i32_minimal_apb */
+extern
+module riscv_i32_minimal_apb( clock clk,
+                              input bit reset_n,
+                              input  t_riscv_mem_access_req  data_access_req,
+                              output t_riscv_mem_access_resp data_access_resp,
+                              output t_apb_request apb_request,
+                              input  t_apb_response apb_response
+)
+{
+    timing comb input  apb_response, data_access_req;
+    timing comb output data_access_resp;
+    timing to   rising clock clk data_access_req, apb_response;
+    timing from rising clock clk data_access_resp, apb_request;
 }
 
 /*a Trace, debug */

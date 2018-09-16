@@ -50,13 +50,13 @@ module tb_riscv_i32_minimal( clock clk,
      */
     net bit[32] sram_ctrl;
     net t_sram_access_req sram_access_req;
-    comb t_riscv_mem_access_resp data_access_resp;
+    net t_riscv_mem_access_resp data_access_resp;
     comb t_riscv_config riscv_config;
     default clock clk;
     default reset active_low reset_n;
     comb t_apb_request  th_apb_request;
-    clocked t_apb_request data_access_apb_request={*=0};
-    net t_apb_request  mux_apb_request;
+    net t_apb_request   data_access_apb_request;
+    net t_apb_request   mux_apb_request;
     comb t_apb_request  timer_apb_request;
     comb t_apb_request  sram_apb_request;
     net  t_apb_response timer_apb_response;
@@ -76,40 +76,26 @@ module tb_riscv_i32_minimal( clock clk,
         riscv_config.i32c  = !i32c_force_disable;
         irqs = {*=0};
         th_apb_request = {*=0};
-        data_access_resp = {*=0};
-        if (data_access_apb_request.psel) {
-            data_access_resp.wait = 1;
-            data_access_apb_request.penable <= 1;
-            if (data_access_apb_request.penable && data_access_apb_response.pready) {
-                data_access_apb_request.psel <= 0;
-                data_access_apb_request.penable <= 0;
-                data_access_resp.read_data = data_access_apb_response.prdata;
-                data_access_resp.wait = 0;
-            }
-        } else {
-            if (data_access_req.read_enable || data_access_req.write_enable) {
-                data_access_resp.wait = 1;
-                data_access_apb_request.psel <= 1;
-                data_access_apb_request.penable <= 0;
-                data_access_apb_request.paddr <= bundle(16b0,data_access_req.address[16;2]);
-                data_access_apb_request.pwrite <= data_access_req.write_enable;
-                data_access_apb_request.pwdata <= data_access_req.write_data;
-            }
-        }
+        riscv_i32_minimal_apb rv_apb( clk <- clk,
+                                      reset_n <= reset_n,
+                                      data_access_req  <= data_access_req,
+                                      data_access_resp => data_access_resp,
+                                      apb_request  => data_access_apb_request,
+                                      apb_response <= data_access_apb_response );
     }
     apb_peripherals:
     {
 
         apb_master_mux apbmux( clk <- clk,
-                        reset_n <= reset_n,
-                        apb_request_0  <= data_access_apb_request,
-                        apb_response_0 => data_access_apb_response,
+                               reset_n <= reset_n,
+                               apb_request_0  <= data_access_apb_request,
+                               apb_response_0 => data_access_apb_response,
 
-                        apb_request_1 <= th_apb_request,
-                        apb_response_1 => th_apb_response,
+                               apb_request_1 <= th_apb_request,
+                               apb_response_1 => th_apb_response,
 
-                        apb_request => mux_apb_request,
-                        apb_response <= mux_apb_response
+                               apb_request => mux_apb_request,
+                               apb_response <= mux_apb_response
             );
 
         sram_apb_request  = mux_apb_request;

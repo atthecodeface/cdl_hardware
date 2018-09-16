@@ -80,6 +80,7 @@ cdl cdl/cpu/riscv/src    riscv_i32c_decode    inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_trace      inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_alu        inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_csrs_minimal   inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_minimal_apb   inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_minimal   inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32c_pipeline  inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32c_pipeline2 inc:cdl/inc
