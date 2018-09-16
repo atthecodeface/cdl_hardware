@@ -22,7 +22,7 @@ include "riscv_internal_types.h"
 include "srams.h"
 
 /*a Implementations */
-/*m riscv_minimal
+/*m riscv_i32_minimal
 
  riscv_config should be HARDWIRED (not off registers) to force logic to be
  discarded at synthesis
@@ -34,6 +34,7 @@ include "srams.h"
 extern
 module riscv_i32_minimal( clock clk,
                            input bit reset_n,
+                           input bit proc_reset_n,
                            input t_riscv_irqs             irqs               "Interrupts in to the CPU",
                            output t_riscv_mem_access_req  data_access_req,
                            input  t_riscv_mem_access_resp data_access_resp,

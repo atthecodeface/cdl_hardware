@@ -1,0 +1,223 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_target_timer.cdl
+ * @brief  Simple timer target for an APB bus
+ *
+ * CDL implementation of a simple timer target on an APB bus, derived
+ * from an original GIP version.
+ *
+ */
+/*a Includes
+ */
+include "apb.h"
+include "srams.h"
+
+/*a Types */
+/*t t_apb_address
+ *
+ * APB address map, used to decode paddr
+ *
+ * Each data or windowed access invokes a single sram access request
+ *
+ * This only supports 32-bit SRAM accesses.
+ *
+ */
+typedef enum [8] {
+    apb_address_address   = 0,
+    apb_address_data      = 1,
+    apb_address_control   = 2,
+    apb_address_data_inc  = 4, // up to 128
+    apb_address_windowed  = 128
+} t_apb_address;
+
+/*t t_access
+ *
+ * APB access that is in progress; a decode of psel and paddr
+ */
+typedef enum [4] {
+    access_none,
+    access_write_address,
+    access_read_address,
+    access_write_control,
+    access_read_control,
+    access_read_data,
+    access_read_data_inc,
+    access_read_data_windowed,
+    access_write_data,
+    access_write_data_inc,
+    access_write_data_windowed,
+} t_access;
+
+/*t t_req_resp_state
+ *
+ * Timer comparator state; a 31-bit comparator with a single bit that
+ * indicates if the timer value has incremented up to the comparator
+ * value.
+ */
+typedef struct
+{
+    t_access access  "Access being performed";
+    bit[32] address  "32 bit SRAM address";
+    bit[32] control  "32 control bits to go to the SRAM";
+    bit[32] data     "Data returned by SRAM read";
+    bit     in_progress;
+    bit     data_valid;
+} t_req_resp_state;
+
+/*a Module */
+module apb_target_sram_interface( clock clk         "System clock",
+                                  input bit reset_n "Active low reset",
+
+                                  input  t_apb_request  apb_request  "APB request",
+                                  output t_apb_response apb_response "APB response",
+
+                                  output bit[32] sram_ctrl "SRAM control data, for whatever purpose",
+
+                                  output t_sram_access_req  sram_access_req  "SRAM access request",
+                                  input  t_sram_access_resp sram_access_resp "SRAM access response"
+    )
+"""
+Generate SRAM read/write requests
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Decode APB interface */
+    comb t_access access   "Access being performed by APB, combinatorial decode - only not none in first cycle";
+
+    /*b Req/response state */
+    clocked t_req_resp_state req_resp_state = {*=0};
+    clocked t_sram_access_req  sram_access_req = {*=0, byte_enable=8h0f};
+
+    /*b APB interface */
+    apb_interface_logic """
+    The APB interface is decoded to @a access when @p psel is asserted
+    and @p penable is deasserted - this is the first cycle of an APB
+    access. This permits the access type to be registered, so that the
+    APB @p prdata can be driven from registers, and so that writes
+    will occur correctly when @p penable is asserted.
+
+    The APB read data @p prdata can then be generated based on @a
+    access.
+    """ : {
+        /*b Decode access */
+        access = access_none;
+        if (apb_request.paddr[8;0] & apb_address_windowed) {
+            access = apb_request.pwrite ? access_write_data_windowed : access_read_data_windowed;
+        } else {
+            part_switch (apb_request.paddr[7;0]) {
+            case apb_address_address: {
+                access = apb_request.pwrite ? access_write_address : access_read_address;
+            }
+            case apb_address_data: {
+                access = apb_request.pwrite ? access_write_data : access_read_data;
+            }
+            case apb_address_control: {
+                access = apb_request.pwrite ? access_write_control : access_read_control;
+            }
+            default: {
+                access = apb_request.pwrite ? access_write_data_inc : access_read_data_inc;
+            }
+            }
+        }
+        if (!apb_request.psel || apb_request.penable) {
+            access = access_none;
+        }
+
+        /*b Handle APB read data */
+        sram_ctrl = req_resp_state.control;
+        apb_response = {*=0, pready=1};
+        part_switch (req_resp_state.access) {
+        case access_read_address: {
+            apb_response.prdata = req_resp_state.address;
+        }
+        case access_read_control: {
+            apb_response.prdata = req_resp_state.control;
+        }
+        case access_read_data, access_read_data_inc, access_read_data_windowed: {
+            apb_response.prdata = req_resp_state.data;
+            apb_response.pready = req_resp_state.data_valid;
+        }
+        case access_write_data, access_write_data_inc, access_write_data_windowed: {
+            apb_response.pready = !req_resp_state.in_progress;
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b Handle SRAM requests */
+    sram_request_logic """
+    """: {
+        sram_access_req.id <= 0;
+        sram_access_req.byte_enable <= 8h0f;
+        if (req_resp_state.in_progress) {
+            if (sram_access_req.valid && sram_access_resp.ack) {
+                sram_access_req.valid <= 0;
+            }
+            if (sram_access_resp.valid) {
+                req_resp_state.in_progress <= 0;
+                req_resp_state.data <= sram_access_resp.data[32;0];
+                req_resp_state.data_valid <= 1;
+            }
+        } else {
+            if (access!=access_none) {
+                req_resp_state.access <= access;
+            }
+            part_switch (access) {
+            case access_write_address: {
+                req_resp_state.address <= apb_request.pwdata;
+            }
+            case access_write_control: {
+                req_resp_state.control <= apb_request.pwdata;
+            }
+            case access_read_data, access_read_data_inc, access_read_data_windowed: {
+                sram_access_req.valid <= 1;
+                sram_access_req.read_not_write <= 1;
+                sram_access_req.address <= req_resp_state.address;
+                req_resp_state.in_progress <= 1;
+                req_resp_state.data_valid <= 0;
+            }
+            case access_write_data, access_write_data_inc, access_write_data_windowed: {
+                sram_access_req.valid <= 1;
+                sram_access_req.read_not_write <= 0;
+                sram_access_req.address <= req_resp_state.address;
+                sram_access_req.write_data <= bundle(32b0, apb_request.pwdata);
+                req_resp_state.in_progress <= 1;
+                req_resp_state.data_valid <= 0;
+            }
+            }
+            if ( (access == access_write_data_windowed) || (access == access_read_data_windowed)) {
+                sram_access_req.address[7;0] <= apb_request.paddr[7;0];
+            }
+            if ( (access == access_write_data_inc) || (access == access_read_data_inc)) {
+                req_resp_state.address <= req_resp_state.address + 1;
+            }
+        }
+
+
+    }
+
+    /*b Done
+     */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/
