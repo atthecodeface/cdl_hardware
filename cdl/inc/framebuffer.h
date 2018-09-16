@@ -66,12 +66,13 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
                              input bit reset_n,
                              input t_bbc_display_sram_write display_sram_write,
                              output t_video_bus video_bus,
+                             input bit[16] csr_select_in "Tie to zero for default",
                              input t_csr_request csr_request,
                              output t_csr_response csr_response
     )
 {
     timing to   rising clock sram_clk   display_sram_write;
-    timing to   rising clock csr_clk    csr_request;
+    timing to   rising clock csr_clk    csr_select_in, csr_request;
     timing from rising clock csr_clk    csr_response;
     timing from rising clock video_clk  video_bus;
 }

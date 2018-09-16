@@ -47,6 +47,7 @@ include "teletext.h"
 /*a Constants */
 constant integer cfg_downsize_x=0;
 constant integer cfg_downsize_y=1;
+constant bit[16] csr_select_default = bbc_csr_select_framebuffer;
 
 /*a Types */
 /*t t_display_fsm */
@@ -147,13 +148,14 @@ typedef struct {
 /*a Module
  */
 module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
-                    clock sram_clk  "SRAM write clock, with frame buffer data",
-                    clock video_clk "Video clock, used to generate vsync, hsync, data out, etc",
-                    input bit reset_n,
-                    input t_bbc_display_sram_write display_sram_write,
-                    output t_video_bus video_bus,
-                    input t_csr_request csr_request,
-                    output t_csr_response csr_response
+                             clock sram_clk  "SRAM write clock, with frame buffer data",
+                             clock video_clk "Video clock, used to generate vsync, hsync, data out, etc",
+                             input bit reset_n,
+                             input t_bbc_display_sram_write display_sram_write,
+                             output t_video_bus video_bus,
+                             input bit[16] csr_select_in,
+                             input t_csr_request csr_request,
+                             output t_csr_response csr_response
     )
 """
 """
@@ -161,6 +163,7 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
     /*b State etc in CSR domain */
     default reset active_low reset_n;
     default clock csr_clk;
+    clocked bit[16] csr_select = csr_select_default;
     clocked t_csrs csrs = {*=0,
                            sram_words_per_line=40,
                            video={h_back_porch  = 40-1,
@@ -447,13 +450,17 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
     csr_interface_logic """
     Basic CSRS - it should all be writable...
     """: {
+        if (csr_select_in!=0) {
+            csr_select <= csr_select_in;
+        }
+
         csr_target_csr csri( clk <- csr_clk,
                                 reset_n <= reset_n,
                                 csr_request <= csr_request,
                                 csr_response => csr_response,
                                 csr_access => csr_access,
                                 csr_access_data <= csr_read_data,
-                                csr_select <= bbc_csr_select_framebuffer );
+                                csr_select <= csr_select );
         csrs <= csrs;
         if (csr_access.valid && !csr_access.read_not_write) {
             part_switch (csr_access.address[4;0]) {

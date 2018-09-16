@@ -38,7 +38,7 @@ include "framebuffer.h"
 include "riscv_modules.h"
 
 /*a Constants */
-constant integer num_dprintf_requesters=12;
+constant integer num_dprintf_requesters=16;
 
 /*a Types */
 /*a Module
@@ -69,6 +69,7 @@ module hps_fpga_debug( clock clk,
                        output bit de1_cl_led_data_pin,
 
                        clock de1_cl_lcd_clock,
+                       input bit de1_cl_lcd_reset_n,
                        output t_de1_cl_lcd de1_cl_lcd,
                        output t_de1_leds de1_leds,
 
@@ -142,10 +143,12 @@ module hps_fpga_debug( clock clk,
     net t_csr_request   csr_request;
     comb t_csr_response csr_response;
     clocked t_csr_response csr_response_r = {*=0};
-    net t_csr_response tt_framebuffer_csr_response;
+    net t_csr_response tt_lcd_framebuffer_csr_response;
+    net t_csr_response tt_vga_framebuffer_csr_response;
     net t_csr_response timeout_csr_response;
     comb t_bbc_display_sram_write tt_display_sram_write;
-    net t_video_bus video_bus;
+    net t_video_bus vga_video_bus;
+    net t_video_bus lcd_video_bus;
 
     clocked t_apb_processor_request  apb_processor_request={*=0};
     clocked bit apb_processor_completed = 0;
@@ -162,6 +165,8 @@ module hps_fpga_debug( clock clk,
     net t_sram_access_req sram_access_req;
 
     clocked bit[32] divider=0;
+    clocked bit divider_reset=0;
+    clocked bit[8]  seconds=0;
     clocked bit[16] counter=0;
 
     net bit[7][6]de1_hex_leds;
@@ -170,7 +175,14 @@ module hps_fpga_debug( clock clk,
     default clock de1_vga_clock;
     default reset active_low de1_vga_reset_n;
     clocked t_adv7123 de1_vga={*=0};
+    clocked bit[4] vga_seconds_sr = 0;
+    clocked bit[32][4] vga_counters={*=0};
+
+    default clock de1_cl_lcd_clock;
+    default reset active_low de1_cl_lcd_reset_n;
     clocked t_de1_cl_lcd de1_cl_lcd={*=0};
+    clocked bit[4] lcd_seconds_sr = 0;
+    clocked bit[32][4] lcd_counters={*=0};
 
     /*b RISC-V */
     riscv_instance: {
@@ -209,9 +221,6 @@ module hps_fpga_debug( clock clk,
         if (apb_processor_response.acknowledge) {
             apb_processor_request.valid   <= 0;
             apb_processor_completed <= 1;
-        }
-        if (divider[24;0]==0) { // 16M @ 50MHz = 3 times per second
-            //apb_processor_completed <= 0;
         }
 
         apb_processor apbp( clk <- clk,
@@ -371,6 +380,20 @@ module hps_fpga_debug( clock clk,
                     data_1=bundle(riscv_apb_request.paddr, 32h20000087),
                     data_2=bundle(riscv_apb_request.pwdata, 8hff, 24h0) };
         }
+        if (divider_reset) {
+            dprintf_req[11] <= {valid=1, address=440,
+                    data_0=bundle(32h56_47_41_3a, 32h_00_00_00_87), // VGA:%08x %08x %08x (cnts0/1/2)
+                    data_1=bundle(vga_counters[0], 32h20000087),
+                    data_2=bundle(vga_counters[1], 32h20000087),
+                    data_3=bundle(vga_counters[2], 8hff, 24h0) };
+        }
+        if (divider_reset) {
+            dprintf_req[12] <= {valid=1, address=480,
+                    data_0=bundle(32h4c_43_44_3a, 32h_00_00_00_87), // LCD:%08x %08x %08x (cnts0/1/2)
+                    data_1=bundle(lcd_counters[0], 32h20000087),
+                    data_2=bundle(lcd_counters[1], 32h20000087),
+                    data_3=bundle(lcd_counters[2], 8hff, 24h0) };
+        }
     }
 
     /*b Dprintf multiplexing */
@@ -458,14 +481,26 @@ module hps_fpga_debug( clock clk,
                                  address = dprintf_byte.address,
                                  data = bundle(40b0, dprintf_byte.data) };
 
-        framebuffer_teletext ftb( csr_clk <- lw_axi_clock_clk,
-                                  sram_clk <- lw_axi_clock_clk,
-                                  video_clk <- de1_vga_clock,
-                                  reset_n <= reset_n,
-                                  video_bus => video_bus,
-                                  display_sram_write <= tt_display_sram_write,
-                                  csr_request <= csr_request,
-                                  csr_response => tt_framebuffer_csr_response
+        framebuffer_teletext ftb_lcd( csr_clk <- lw_axi_clock_clk,
+                                      sram_clk <- lw_axi_clock_clk,
+                                      video_clk <- de1_cl_lcd_clock,
+                                      reset_n <= reset_n,
+                                      video_bus => lcd_video_bus,
+                                      display_sram_write <= tt_display_sram_write,
+                                      csr_select_in <= 16h3,
+                                      csr_request <= csr_request,
+                                      csr_response => tt_lcd_framebuffer_csr_response
+            );
+
+        framebuffer_teletext ftb_vga( csr_clk <- lw_axi_clock_clk,
+                                      sram_clk <- lw_axi_clock_clk,
+                                      video_clk <- de1_vga_clock,
+                                      reset_n <= reset_n,
+                                      video_bus => vga_video_bus,
+                                      display_sram_write <= tt_display_sram_write,
+                                      csr_select_in <= 16h4,
+                                      csr_request <= csr_request,
+                                      csr_response => tt_vga_framebuffer_csr_response
             );
 
         csr_target_timeout csr_timeout(clk <- lw_axi_clock_clk,
@@ -474,35 +509,73 @@ module hps_fpga_debug( clock clk,
                                        csr_response => timeout_csr_response,
                                        csr_timeout <= 16h100 );
 
-        if (0) {
-            de1_cl_lcd <= {*=0};
-            de1_vga.vs <= video_bus.vsync;
-            de1_vga.hs <= video_bus.hsync;
-            de1_vga.blank_n <= video_bus.display_enable;
-            de1_vga.sync_n  <= !(video_bus.vsync | video_bus.hsync);
-            de1_vga.red     <= bundle(video_bus.red  [8;0],2b0);
-            de1_vga.green   <= bundle(video_bus.green[8;0],2b0);
-            de1_vga.blue    <= bundle(video_bus.blue [8;0],2b0);
-        } else {
-            de1_vga <= {*=0};
-            de1_cl_lcd.vsync_n <= !video_bus.vsync;
-            de1_cl_lcd.hsync_n <= !video_bus.hsync;
-            de1_cl_lcd.display_enable <= video_bus.display_enable;
-            de1_cl_lcd.red   <= video_bus.red  [6;2];
-            de1_cl_lcd.green <= video_bus.green[7;1];
-            de1_cl_lcd.blue  <= video_bus.blue [6;2];
-            de1_cl_lcd.backlight <= 1;
-        }
-
-        csr_response  = tt_framebuffer_csr_response;
+        csr_response  = tt_vga_framebuffer_csr_response;
+        csr_response |= tt_lcd_framebuffer_csr_response;
         csr_response |= timeout_csr_response;
         csr_response_r <= csr_response;
+
+        de1_vga.vs <= vga_video_bus.vsync;
+        de1_vga.hs <= vga_video_bus.hsync;
+        de1_vga.blank_n <= vga_video_bus.display_enable;
+        de1_vga.sync_n  <= !(vga_video_bus.vsync | vga_video_bus.hsync);
+        de1_vga.red     <= bundle(vga_video_bus.red  [8;0],2b0);
+        de1_vga.green   <= bundle(vga_video_bus.green[8;0],2b0);
+        de1_vga.blue    <= bundle(vga_video_bus.blue [8;0],2b0);
+
+        if (vga_video_bus.vsync) {
+            vga_counters[0] <= vga_counters[0]+1;
+        }
+        if (vga_video_bus.hsync) {
+            vga_counters[1] <= vga_counters[1]+1;
+        }
+        if (vga_video_bus.display_enable) {
+            vga_counters[2] <= vga_counters[2]+1;
+        }
+        vga_seconds_sr <= bundle(seconds[0], vga_seconds_sr[3;1]);
+        if (vga_seconds_sr[0]!=vga_seconds_sr[1]) {
+            vga_counters[0] <= 0;
+            vga_counters[1] <= 0;
+            vga_counters[2] <= 0;
+            vga_counters[3] <= 0;
+        }
+
+        lcd_seconds_sr <= bundle(seconds[0], lcd_seconds_sr[3;1]);
+        de1_cl_lcd.vsync_n <= !lcd_video_bus.vsync;
+        de1_cl_lcd.hsync_n <= !lcd_video_bus.hsync;
+        de1_cl_lcd.display_enable <= lcd_video_bus.display_enable;
+        de1_cl_lcd.red   <= lcd_video_bus.red  [6;2];
+        de1_cl_lcd.green <= lcd_video_bus.green[7;1];
+        de1_cl_lcd.blue  <= lcd_video_bus.blue [6;2];
+        de1_cl_lcd.backlight <= 1;
+
+        lcd_seconds_sr <= bundle(seconds[0], lcd_seconds_sr[3;1]);
+        if (lcd_video_bus.vsync) {
+            lcd_counters[0] <= lcd_counters[0]+1;
+        }
+        if (lcd_video_bus.hsync) {
+            lcd_counters[1] <= lcd_counters[1]+1;
+        }
+        if (lcd_video_bus.display_enable) {
+            lcd_counters[2] <= lcd_counters[2]+1;
+        }
+        if (lcd_seconds_sr[0]!=lcd_seconds_sr[1]) {
+            lcd_counters[0] <= 0;
+            lcd_counters[1] <= 0;
+            lcd_counters[2] <= 0;
+            lcd_counters[3] <= 0;
+        }
                         
     }
 
     /*b Stub out unused outputs and all done */
     stubs : {
         divider <= divider+1;
+        divider_reset <= 0;
+        if (divider==50*1000*1000) {
+            divider <= 0;
+            divider_reset <= 1;
+            seconds <= seconds + 1;
+        }
         if (de1_switches[3;2]==0) {
             counter <= counter + 1;
         }

@@ -3,29 +3,42 @@ import subprocess
 import apb_rom
 import sys
 
+# VGA  640x480 @ 60Hz: 25.175MHz clk 640+16+ 96+48 = 800  480+10+2+33 = 525
+# VGA  800x600 @ 60Hz: 40MHz clk     800+40+128+88 =1076  600+ 1+4+23 = 628
 displays = {}
 displays["lcd_480x272"] = {"h":(40,480,5),
                            "v":(8,272,8)
                            }
-
-display = displays["lcd_480x272"]
+displays["vga_640x480"] = {"h":(144,640,16),
+                           "v":(35,480,10)
+                           }
+displays["vga_800x600"] = {"h":(216,800,40),
+                           "v":(27,600,1)
+                           }
 
 csr_select = {}
-csr_select["vga_rom"] = 0x00034000 # for HPS FPGA frame buffer OR framebuffer_teletext
+csr_select["vga_fb"]  = 0x00034000 # for HPS FPGA VGA frame buffer
+csr_select["lcd_fb"]  = 0x00033000 # for HPS FPGA LCD frame buffer
 csr_select["dprintf"] = 0x00020000 # for HPS FPGA dprintf
-csr_display_size    = csr_select["vga_rom"] |  0
-csr_display_h_porch = csr_select["vga_rom"] |  4
-csr_display_v_porch = csr_select["vga_rom"] |  8
 csr_dprintf_address        = csr_select["dprintf"] |  0
 csr_dprintf_data           = csr_select["dprintf"] |  32
 csr_dprintf_address_commit = csr_select["dprintf"] |  64
 csr_dprintf_data_commit    = csr_select["dprintf"] |  96
 
-h_porches    = (display["h"][0]-1) | ((display["h"][2]-1)<<16) # back porch in low, front porch in high
-v_porches    = (display["v"][0]-1) | ((display["v"][2]-1)<<16) # 
-display_size = (display["h"][1]-1) | ((display["v"][1]-1)<<16) # h size in low, v size in high
+def code_display_parameters(csr_base, display):
+    h_porches    = (display["h"][0]-1) | ((display["h"][2]-1)<<16) # back porch in low, front porch in high
+    v_porches    = (display["v"][0]-1) | ((display["v"][2]-1)<<16) # 
+    display_size = (display["h"][1]-1) | ((display["v"][1]-1)<<16) # h size in low, v size in high
 
-porches = [(65536-170+16-3*i) | (((65536-68)<<16)) for i in range(16)]
+    csr_display_size    = csr_base |  0
+    csr_display_h_porch = csr_base |  4
+    csr_display_v_porch = csr_base |  8
+
+    return [ (apb_rom.rom.op_set("address",csr_display_size),),
+             (apb_rom.rom.op_req("write_arg_inc",display_size),),
+             (apb_rom.rom.op_req("write_arg_inc",h_porches),),
+             (apb_rom.rom.op_req("write_arg_inc",v_porches),),
+             ]
 
 # data is bigendian in dprintf
 # dprintf data is 0-skip; 1->127 character; 128-143 1 to 16 hex nybbles; 192-195 1-4 byte unpadded decimal; 192+(pad<<2)+(nbytes) is 1-4 nbytes decimal with padding of field to (pad+1)
@@ -44,11 +57,7 @@ dprintf_data[5] = (((cs>> 0)&0xff) << 24) | 0xffffff
 dprintf_data[6] = 0xffffffff
 program = {}
 program["code"] = []
-#program["code"] += [ (apb_rom.rom.op_set("address",csr_display_size),),
-#                     (apb_rom.rom.op_req("write_arg_inc",display_size),),
-#                     (apb_rom.rom.op_req("write_arg_inc",h_porches),),
-#                     (apb_rom.rom.op_req("write_arg_inc",v_porches),),
-#                     ]
+program["code"] += code_display_parameters(csr_select["vga_fb"],displays["vga_640x480"])
 program["code"] += [ (apb_rom.rom.op_set("increment",4),),
                      (apb_rom.rom.op_set("address",csr_dprintf_data),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[0]),),
