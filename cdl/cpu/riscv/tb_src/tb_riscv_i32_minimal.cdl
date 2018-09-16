@@ -103,6 +103,8 @@ module tb_riscv_i32_minimal( clock clk,
 
         timer_apb_request.psel = mux_apb_request.psel && (mux_apb_request.paddr[4;12]==0);
         sram_apb_request.psel  = mux_apb_request.psel && (mux_apb_request.paddr[4;12]==1);
+        timer_apb_request.paddr = mux_apb_request.paddr >> 2;
+        sram_apb_request.paddr = mux_apb_request.paddr >> 2;
 
         mux_apb_response = timer_apb_response;
         if (sram_apb_request.psel) { mux_apb_response = sram_apb_response; }
