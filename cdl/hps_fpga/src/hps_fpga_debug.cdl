@@ -164,6 +164,9 @@ module hps_fpga_debug( clock clk,
     clocked bit[32] divider=0;
     clocked bit[16] counter=0;
 
+    net bit[7][6]de1_hex_leds;
+    clocked bit[32] riscv_last_pc=0;
+
     default clock de1_vga_clock;
     default reset active_low de1_vga_reset_n;
     clocked t_adv7123 de1_vga={*=0};
@@ -523,8 +526,18 @@ module hps_fpga_debug( clock clk,
         }
 
         gpio_input = {*=0};
-        de1_leds = {*=0};
         de1_leds.leds = counter[10;0];
+        if (riscv_trace.instr_valid) { riscv_last_pc<=riscv_trace.instr_pc; }
+        for (i; 6) {
+            led_seven_segment h[i](hex <= riscv_last_pc[4;4*i], leds=>de1_hex_leds[i] );
+        }
+        de1_leds.h0 = de1_hex_leds[0];
+        de1_leds.h1 = de1_hex_leds[1];
+        de1_leds.h2 = de1_hex_leds[2];
+        de1_leds.h3 = de1_hex_leds[3];
+        de1_leds.h4 = de1_hex_leds[4];
+        de1_leds.h5 = de1_hex_leds[5];
+
         de1_cl_led_data_pin = 0;
         de1_cl_inputs_control = {*=0};
         de1_ps2_out = {*=0};
