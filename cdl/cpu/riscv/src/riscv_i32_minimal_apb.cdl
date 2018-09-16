@@ -99,7 +99,7 @@ module riscv_i32_minimal_apb( clock clk,
             if (data_access_req.read_enable || data_access_req.write_enable) {
                 apb_request.psel <= 1;
                 apb_request.penable <= 0;
-                apb_request.paddr <= bundle(16b0,data_access_req.address[16;2]);
+                apb_request.paddr <= bundle(2b0,data_access_req.address[30;2]);
                 apb_request.pwrite <= data_access_req.write_enable;
                 apb_request.pwdata <= data_access_req.write_data;
                 data_access_resp.wait = 1;
