@@ -177,8 +177,6 @@ extern module apb_target_dprintf( clock clk         "System clock",
     timing from rising clock clk dprintf_req;
     timing to   rising clock clk dprintf_ack;
 
-    timing comb input  apb_request;
-    timing comb output apb_response; // since response depends on request address usually
 }
 
 /*a Editor preferences and notes

@@ -44,13 +44,13 @@ module tb_riscv_i32_minimal( clock clk,
     /*b Nets
      */
     net t_sram_access_resp sram_access_resp;
+    net t_sram_access_req sram_access_req;
+    net t_riscv_mem_access_resp data_access_resp;
     net t_riscv_mem_access_req data_access_req;
 
     /*b State and comb
      */
     net bit[32] sram_ctrl;
-    net t_sram_access_req sram_access_req;
-    net t_riscv_mem_access_resp data_access_resp;
     comb t_riscv_config riscv_config;
     default clock clk;
     default reset active_low reset_n;

@@ -23,8 +23,8 @@ import simple_tb
 class c_rom_th(simple_tb.base_th, apb_rom.rom):
     pass
 
-#c c_test_one
-class c_test_one(c_rom_th):
+#c c_axi_test_base
+class c_axi_test_base(simple_tb.base_th):
     #f simple_write
     def simple_write(self, address, data, req_id=0, size=32, byte_enables=None, wait_fn=None):
         if byte_enables is None:
@@ -82,16 +82,6 @@ class c_test_one(c_rom_th):
             pass
         self.axi_rresp.dequeue()
         return (self.axi_rresp.get("resp"), self.axi_rresp.get("data"))
-    #f execute
-    def execute(self, address):
-        self.ios.apb_processor_request__valid.drive(1)
-        self.ios.apb_processor_request__address.drive(address)
-        self.bfm_tick(1)
-        while self.ios.apb_processor_response__acknowledge.value()==0:
-            self.bfm_tick(1)
-            pass
-        self.ios.apb_processor_request__valid.drive(0)
-        pass
     #f run_start
     def run_start(self):
         simple_tb.base_th.run_start(self)
@@ -102,6 +92,19 @@ class c_test_one(c_rom_th):
         self.axi_bfm.axi_write_response("axi_wresp")
         self.axi_bfm.axi_read_response("axi_rresp")
         self.bfm_wait(20) # wait for reset to go away
+
+#c c_test_one
+class c_test_one(c_axi_test_base, c_rom_th):
+    #f execute
+    def execute(self, address):
+        self.ios.apb_processor_request__valid.drive(1)
+        self.ios.apb_processor_request__address.drive(address)
+        self.bfm_tick(1)
+        while self.ios.apb_processor_response__acknowledge.value()==0:
+            self.bfm_tick(1)
+            pass
+        self.ios.apb_processor_request__valid.drive(0)
+        pass
     #f run
     def run(self):
         self.run_start()

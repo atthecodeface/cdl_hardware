@@ -62,11 +62,22 @@ class hps_debug_fpga_hw(simple_tb.cdl_test_hw):
         pass
 
 #c c_test_one
-class c_test_one(simple_tb.base_th):
+import axi
+class c_test_one(axi.c_axi_test_base):
     #f run
     def run(self):
-        simple_tb.base_th.run_start(self)
-        self.bfm_wait(10)
+        axi.c_axi_test_base.run_start(self)
+        self.bfm_wait(100)
+        (resp, timer) = self.simple_read(address=0)
+        print "Response to write", self.simple_write(address=16, data=timer+30)
+        print "Response to read", self.simple_read(address=16)
+        print "Response to read", self.simple_read(address=16)
+        print "Response to read", self.simple_read(address=16)
+
+        print "Write RISC-V SRAM address to 0", self.simple_write(address=0x40000, data=0)
+        print "Write RISC-V SRAM code at 0", self.simple_write(address=0x40004, data=0x12345678)
+        print "Write RISC-V SRAM code at 1", self.simple_write(address=0x40004, data=0x12345678)
+        print "Start RISC-V", self.simple_write(address=0x40008, data=1)
         self.finishtest(0,"")
         pass
 

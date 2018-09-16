@@ -35,6 +35,7 @@ include "input_devices.h"
 include "leds.h"
 include "teletext.h"
 include "framebuffer.h"
+include "riscv_modules.h"
 
 /*a Constants */
 constant integer num_dprintf_requesters=12;
@@ -85,37 +86,49 @@ module hps_fpga_debug( clock clk,
                        output bit de1_irda_txd
     )
 {
+    /*b Clock and reset */
     default clock clk;
     default reset active_low reset_n;
 
+    /*b Nets */
     net bit             lw_axi_arready;
     net bit             lw_axi_awready;
     net bit             lw_axi_wready;
     net t_axi_write_response lw_axi_b;
     net t_axi_read_response lw_axi_r;
 
-    net t_apb_request     apb_request;
 
-    net t_apb_response timer_apb_response;
-    net t_apb_response gpio_apb_response;
-    net t_apb_response dprintf_apb_response;
-    net bit[3] timer_equalled;
-    comb t_apb_response            apb_response;
+    net  t_apb_request riscv_apb_request;
+    net  t_apb_request axi_apb_request;
+    net  t_apb_request proc_apb_request;
+
+    net t_apb_request  rp_apb_request;
+    net t_apb_request  apb_request;
+    comb bit[4]        apb_request_sel;
     comb t_apb_request timer_apb_request;
     comb t_apb_request gpio_apb_request;
     comb t_apb_request dprintf_apb_request;
     comb t_apb_request csr_apb_request;
-    net t_apb_response csr_apb_response;
-    net  t_apb_request axi_apb_request;
-    net  t_apb_request proc_apb_request;
-    net  t_apb_response axi_apb_response;
-    net  t_apb_response proc_apb_response;
-    comb bit[4] apb_request_sel;
+    comb t_apb_request sram_apb_request;
 
+    net t_apb_response  timer_apb_response;
+    net t_apb_response  gpio_apb_response;
+    net t_apb_response  dprintf_apb_response;
+    net t_apb_response  csr_apb_response;
+    net t_apb_response  sram_apb_response;
+    comb t_apb_response apb_response;
+
+    net t_apb_response rp_apb_response;
+    net t_apb_response axi_apb_response;
+    net t_apb_response proc_apb_response;
+    net t_apb_response riscv_apb_response;
+
+    net bit[3] timer_equalled;
     net bit[16] gpio_output;
     net bit[16] gpio_output_enable;
     comb bit[16]  gpio_input;
     net bit     gpio_input_event;
+    net bit[32] sram_ctrl;
 
     net  t_dprintf_req_4 apb_dprintf_req "Dprintf request from APB target";
     comb bit             apb_dprintf_ack "Ack for dprintf request from APB target";
@@ -140,6 +153,14 @@ module hps_fpga_debug( clock clk,
     net t_apb_rom_request         apb_rom_request;
     net bit[40]                   apb_rom_data;
 
+    comb t_riscv_config riscv_config;
+    net t_riscv_i32_trace riscv_trace;
+    comb t_riscv_irqs       irqs;
+    net t_riscv_mem_access_resp data_access_resp;
+    net t_riscv_mem_access_req data_access_req;
+    net t_sram_access_resp sram_access_resp;
+    net t_sram_access_req sram_access_req;
+
     clocked bit[32] divider=0;
     clocked bit[16] counter=0;
 
@@ -148,9 +169,38 @@ module hps_fpga_debug( clock clk,
     clocked t_adv7123 de1_vga={*=0};
     clocked t_de1_cl_lcd de1_cl_lcd={*=0};
 
+    /*b RISC-V */
+    riscv_instance: {
+        riscv_config = {*=0};
+        riscv_config.e32   = 0;
+        riscv_config.i32c  = 1;
+        irqs = {*=0};
 
-    /*b AXI to APB master, APB  */
-    apb_instances: {
+        riscv_i32_minimal riscv( clk <- lw_axi_clock_clk,
+                               proc_reset_n <= reset_n & sram_ctrl[0],
+                               reset_n <= reset_n,
+                               irqs <= irqs,
+                               data_access_req => data_access_req,
+                               data_access_resp <= data_access_resp,
+                               sram_access_req <= sram_access_req,
+                               sram_access_resp => sram_access_resp,
+                               riscv_config <= riscv_config,
+                               trace => riscv_trace
+                         );
+        riscv_i32_trace trace(clk <- lw_axi_clock_clk,
+                              reset_n <= reset_n,
+                              trace <= riscv_trace );
+
+        riscv_i32_minimal_apb rv_apb( clk <- lw_axi_clock_clk,
+                                      reset_n <= reset_n,
+                                      data_access_req  <= data_access_req,
+                                      data_access_resp => data_access_resp,
+                                      apb_request  => riscv_apb_request,
+                                      apb_response <= riscv_apb_response );
+    }
+
+    /*b AXI to APB master, APB processor */
+    apb_master_instances: {
         apb_processor_request.address <= 0;
         apb_processor_request.valid   <= !apb_processor_completed;
         if (apb_processor_response.acknowledge) {
@@ -194,16 +244,57 @@ module hps_fpga_debug( clock clk,
                         apb_request =>  axi_apb_request,
                         apb_response <= axi_apb_response );
 
-        apb_master_mux apbmux( clk <- lw_axi_clock_clk,
+    }
+
+    /*b APB master multiplexing and decode */
+    apb_multiplexing_decode: {
+        apb_master_mux apb_mux_rp( clk <- lw_axi_clock_clk,
                                reset_n <= reset_n,
-                               apb_request_0 <= axi_apb_request,
+                               apb_request_0 <= riscv_apb_request,
                                apb_request_1 <= proc_apb_request,
 
-                               apb_response_0 => axi_apb_response,
+                               apb_response_0 => riscv_apb_response,
                                apb_response_1 => proc_apb_response,
+
+                               apb_request =>  rp_apb_request,
+                               apb_response <= rp_apb_response );
+
+        apb_master_mux apb_mux_ap( clk <- lw_axi_clock_clk,
+                               reset_n <= reset_n,
+                               apb_request_0 <= axi_apb_request,
+                               apb_request_1 <= rp_apb_request,
+
+                               apb_response_0 => axi_apb_response,
+                               apb_response_1 => rp_apb_response,
 
                                apb_request =>  apb_request,
                                apb_response <= apb_response );
+
+        apb_request_sel = apb_request.paddr[4;16]; // 1MB of address space, top 4 bits as select
+        timer_apb_request   = apb_request;
+        gpio_apb_request    = apb_request;
+        dprintf_apb_request = apb_request;
+        csr_apb_request     = apb_request;
+        sram_apb_request    = apb_request;
+
+        timer_apb_request.paddr    = apb_request.paddr >> 2;
+        dprintf_apb_request.paddr  = apb_request.paddr >> 2;
+        gpio_apb_request.paddr     = apb_request.paddr >> 2;
+        sram_apb_request.paddr     = apb_request.paddr >> 2;
+
+        timer_apb_request.psel   = apb_request.psel && (apb_request_sel==0);
+        gpio_apb_request.psel    = apb_request.psel && (apb_request_sel==1);
+        dprintf_apb_request.psel = apb_request.psel && (apb_request_sel==2);
+        csr_apb_request.psel     = apb_request.psel && (apb_request_sel==3);
+        sram_apb_request.psel    = apb_request.psel && (apb_request_sel==4);
+        csr_apb_request.paddr[16;16] = bundle(12b0,apb_request.paddr[4;12]);
+        csr_apb_request.paddr[16;0]  = bundle( 6b0,apb_request.paddr[10;2]);
+
+        apb_response = timer_apb_response; // defaulting to timer is good - it is always ready even if not selected...
+        if (apb_request_sel==1) { apb_response = gpio_apb_response; }
+        if (apb_request_sel==2) { apb_response = dprintf_apb_response; }
+        if (apb_request_sel==3) { apb_response = csr_apb_response; }
+        if (apb_request_sel==4) { apb_response = sram_apb_response; }
     }
 
     /*b Dprintf requesting */
@@ -258,6 +349,19 @@ module hps_fpga_debug( clock clk,
                     data_2=bundle(csr_request.address, 48h200000000087),
                     data_3=bundle(csr_request.data,    8hff, 24h0) };
         }
+        if (sram_access_req.valid) {
+            dprintf_req[8] <= {valid=1, address=320,
+                    data_0=bundle(40h53_52_4d_3a_83, 4b0,sram_access_req.id,16h_20_80), // SRM:%x %x %08x %08x %x (id read_not_write address data be)
+                    data_1=bundle(7b0,sram_access_req.read_not_write,  56h20000000000087),
+                    data_2=bundle(sram_access_req.address,    32h20000087),
+                    data_3=bundle(sram_access_req.write_data[32;0], 16h2080, sram_access_req.byte_enable, 8hff) };
+        }
+        if (riscv_trace.instr_valid) {
+            dprintf_req[9] <= {valid=1, address=360,
+                    data_0=bundle(32h52_56_49_3a, 32h_00_00_00_87), // RVI:%08x %08x (pc inst)
+                    data_1=bundle(riscv_trace.instr_pc,  32h200087),
+                    data_2=bundle(riscv_trace.instruction.data, 8hff, 24h000000) };
+        }
     }
 
     /*b Dprintf multiplexing */
@@ -292,6 +396,14 @@ module hps_fpga_debug( clock clk,
     /*b APB targets */
     apb_target_instances: {
 
+        apb_target_sram_interface sram_if( clk <- clk,
+                                           reset_n <= reset_n,
+                                           apb_request  <= sram_apb_request,
+                                           apb_response => sram_apb_response,
+                                           sram_ctrl    => sram_ctrl,
+                                           sram_access_req => sram_access_req,
+                                           sram_access_resp <= sram_access_resp );
+
         apb_target_dprintf apb_dprintf( clk <- lw_axi_clock_clk,
                                     reset_n <= reset_n,
                                     apb_request  <= dprintf_apb_request,
@@ -322,27 +434,6 @@ module hps_fpga_debug( clock clk,
                                csr_request => csr_request,
                                csr_response <= csr_response_r );
 
-        apb_request_sel = apb_request.paddr[4;16]; // 1MB of address space, top 4 bits as select
-        timer_apb_request   = apb_request;
-        gpio_apb_request    = apb_request;
-        dprintf_apb_request = apb_request;
-        csr_apb_request     = apb_request;
-
-        timer_apb_request.paddr    = apb_request.paddr >> 2;
-        dprintf_apb_request.paddr  = apb_request.paddr >> 2;
-        gpio_apb_request.paddr     = apb_request.paddr >> 2;
-
-        timer_apb_request.psel   = apb_request.psel && (apb_request_sel==0);
-        gpio_apb_request.psel    = apb_request.psel && (apb_request_sel==1);
-        dprintf_apb_request.psel = apb_request.psel && (apb_request_sel==2);
-        csr_apb_request.psel     = apb_request.psel && (apb_request_sel==3);
-        csr_apb_request.paddr[16;16] = bundle(12b0,apb_request.paddr[4;12]);
-        csr_apb_request.paddr[16;0]  = bundle( 6b0,apb_request.paddr[10;2]);
-
-        apb_response = timer_apb_response; // defaulting to timer is good - it is always ready even if not selected...
-        if (apb_request_sel==1) { apb_response = gpio_apb_response; }
-        if (apb_request_sel==2) { apb_response = dprintf_apb_response; }
-        if (apb_request_sel==3) { apb_response = csr_apb_response; }
     }
 
     /*b Dprintf/framebuffer */
