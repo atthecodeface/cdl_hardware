@@ -74,8 +74,8 @@ class c_dump(object):
         offset = address&3
         address = address/4
         if offset!=0:
-            self.add_data(data<<(8*offset),address*4,base_address=0)
-            self.add_data(data>>(32-8*offset),address*4+4,base_address=0)
+            self.add_data((data<<(8*offset))&0xffffffff,address*4,base_address=0)
+            self.add_data((data>>(32-8*offset))&0xffffffff,address*4+4,base_address=0)
             return
         if address in self.data:
             data = data | self.data[address]
@@ -116,6 +116,23 @@ class c_dump(object):
                 pass
             print >>f, r
             pass
+        pass
+    #f write_c_data
+    def write_c_data(self, f):
+        print >>f, "static uint32_t data[] = {"
+        addresses = self.data.keys()
+        addresses.sort()
+        r = ""
+        for a in addresses:
+            r += " %d, 0x%08x,"%(a,self.data[a])
+            if (len(r)>50):
+                print >>f, r
+                r = ""
+                pass
+            pass
+        r += " -1, -1"
+        print >>f, r
+        print >>f, "};"
         pass
     #f All done
     pass

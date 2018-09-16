@@ -75,8 +75,13 @@ class c_test_one(axi.c_axi_test_base):
         print "Response to read", self.simple_read(address=16)
 
         print "Write RISC-V SRAM address to 0", self.simple_write(address=0x40000, data=0)
-        print "Write RISC-V SRAM code at 0", self.simple_write(address=0x40004, data=0x12345678)
-        print "Write RISC-V SRAM code at 1", self.simple_write(address=0x40004, data=0x12345678)
+        print "Write RISC-V SRAM code at 0", self.simple_write(address=0x40010, data=0x12345678), 0x12345678
+        print "Write RISC-V SRAM code at 1", self.simple_write(address=0x40010, data=0xfeedcafe), 0xfeedcafe
+        print "Write RISC-V SRAM address to 0", self.simple_write(address=0x40000, data=0)
+        print "Response to read", self.simple_read(address=0x40010)
+        print "Response to read", self.simple_read(address=0x40010)
+        print "Response to read", self.simple_read(address=0x40010)
+        print "Response to read", self.simple_read(address=0x40010)
         print "Start RISC-V", self.simple_write(address=0x40008, data=1)
         self.finishtest(0,"")
         pass

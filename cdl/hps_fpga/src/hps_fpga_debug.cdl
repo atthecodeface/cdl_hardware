@@ -362,6 +362,12 @@ module hps_fpga_debug( clock clk,
                     data_1=bundle(riscv_trace.instr_pc,  32h200087),
                     data_2=bundle(riscv_trace.instruction.data, 8hff, 24h000000) };
         }
+        if (riscv_apb_request.psel) {
+            dprintf_req[10] <= {valid=1, address=400,
+                    data_0=bundle(40h41_50_42_3a_80, 7b0,riscv_apb_request.pwrite, 16h_20_87), // APB:%x %08x %08x (pwrite paddr pwdata)
+                    data_1=bundle(riscv_apb_request.paddr, 32h20000087),
+                    data_2=bundle(riscv_apb_request.pwdata, 8hff, 24h0) };
+        }
     }
 
     /*b Dprintf multiplexing */
