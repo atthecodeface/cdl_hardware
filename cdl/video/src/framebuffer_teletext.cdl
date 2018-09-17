@@ -115,7 +115,6 @@ typedef struct {
 typedef struct {
     bit[16] sram_base_address;
     bit[16] sram_words_per_line;
-    t_video_csrs video;
 } t_csrs;
 
 /*a Module
@@ -138,13 +137,7 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
     default clock csr_clk;
     clocked bit[16] csr_select = csr_select_default;
     clocked t_csrs csrs = {*=0,
-                           sram_words_per_line=40,
-                           video={h_back_porch  = 40-1,
-                                  h_display     = 480-1, // for 480x272 display
-                                  h_front_porch = 5-1,
-                                  v_back_porch  = 8-1,
-                                  v_display     = 272-1, // for 480x272 display
-                                  v_front_porch = 8-1 }
+                           sram_words_per_line=40
     };
     net t_csr_response     local_csr_response;
     net t_csr_response     timing_csr_response "Pipelined CSR response interface to control the module";
