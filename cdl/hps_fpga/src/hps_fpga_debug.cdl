@@ -332,6 +332,7 @@ module hps_fpga_debug( clock clk,
         if (apb_request_sel==3) { apb_response = csr_apb_response; }
         if (apb_request_sel==4) { apb_response = sram_apb_response; }
         if (apb_request_sel==5) { apb_response = led_chain_apb_response; }
+        if (apb_request_sel==6) { apb_response = inputs_apb_response; }
     }
 
     /*b Dprintf requesting */
@@ -648,7 +649,7 @@ module hps_fpga_debug( clock clk,
         de1_leds.h4 = de1_hex_leds[4];
         de1_leds.h5 = de1_hex_leds[5];
 
-        de1_cl_led_data_pin = led_chain;
+        de1_cl_led_data_pin = !led_chain;
 
         de1_cl_controls input_ctls(clk <- clk,
                                           reset_n <= reset_n,
