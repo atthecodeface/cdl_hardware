@@ -24,6 +24,7 @@ include "apb.h"
 include "axi.h"
 include "dprintf.h"
 include "srams.h"
+include "de1_cl.h"
 
 /*a Modules */
 /*a Modules - see also csr_target_apb, csr_master_apb in csr_interface.h */
@@ -197,6 +198,24 @@ module apb_target_led_ws2812( clock clk         "System clock",
 
     timing from rising clock clk led_chain;
     timing to   rising clock clk divider_400ns_in;
+    
+}
+
+/*m apb_target_de1_cl_inputs */
+extern
+module apb_target_de1_cl_inputs( clock clk         "System clock",
+                                 input bit reset_n "Active low reset",
+
+                                 input  t_apb_request  apb_request  "APB request",
+                                 output t_apb_response apb_response "APB response",
+
+                                 input t_de1_cl_user_inputs    user_inputs
+    )
+{
+    timing to   rising clock clk apb_request;
+    timing from rising clock clk apb_response;
+
+    timing to   rising clock clk user_inputs;
     
 }
 

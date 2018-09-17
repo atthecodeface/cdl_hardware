@@ -48,6 +48,7 @@ include "riscv_modules.h"
 /*a Constants */
 constant integer num_dprintf_requesters=16;
 constant bit[8] divider_400ns = 19; // 2.5MHz
+constant bit[8] sr_divider    = 49; // 1MHz
 
 /*a Types */
 /*a Module
@@ -118,6 +119,7 @@ module hps_fpga_debug( clock clk,
     comb t_apb_request timer_apb_request;
     comb t_apb_request gpio_apb_request;
     comb t_apb_request led_chain_apb_request;
+    comb t_apb_request inputs_apb_request;
     comb t_apb_request dprintf_apb_request;
     comb t_apb_request csr_apb_request;
     comb t_apb_request sram_apb_request;
@@ -125,6 +127,7 @@ module hps_fpga_debug( clock clk,
     net t_apb_response  timer_apb_response;
     net t_apb_response  gpio_apb_response;
     net t_apb_response  led_chain_apb_response;
+    net t_apb_response  inputs_apb_response;
     net t_apb_response  dprintf_apb_response;
     net t_apb_response  csr_apb_response;
     net t_apb_response  sram_apb_response;
@@ -135,11 +138,14 @@ module hps_fpga_debug( clock clk,
     net t_apb_response proc_apb_response;
     net t_apb_response riscv_apb_response;
 
-net bit led_chain;
+    net t_de1_cl_inputs_control de1_cl_inputs_control "Signals to the shift register etc on the DE1 CL daughterboard";
+    net t_de1_cl_user_inputs    de1_cl_user_inputs    "";
+
+    net bit led_chain;
     net bit[3] timer_equalled;
     net bit[16] gpio_output;
     net bit[16] gpio_output_enable;
-    comb bit[16]  gpio_input;
+    clocked bit[16]  gpio_input=0;
     net bit     gpio_input_event;
     net bit[32] sram_ctrl;
 
@@ -298,14 +304,16 @@ net bit led_chain;
         timer_apb_request      = apb_request;
         gpio_apb_request       = apb_request;
         led_chain_apb_request  = apb_request;
+        inputs_apb_request     = apb_request;
         dprintf_apb_request    = apb_request;
         csr_apb_request        = apb_request;
         sram_apb_request       = apb_request;
 
         timer_apb_request.paddr      = apb_request.paddr >> 2;
-        dprintf_apb_request.paddr    = apb_request.paddr >> 2;
         gpio_apb_request.paddr       = apb_request.paddr >> 2;
         led_chain_apb_request.paddr  = apb_request.paddr >> 2;
+        inputs_apb_request.paddr     = apb_request.paddr >> 2;
+        dprintf_apb_request.paddr    = apb_request.paddr >> 2;
         sram_apb_request.paddr       = apb_request.paddr >> 2;
 
         timer_apb_request.psel       = apb_request.psel && (apb_request_sel==0);
@@ -314,6 +322,7 @@ net bit led_chain;
         csr_apb_request.psel         = apb_request.psel && (apb_request_sel==3);
         sram_apb_request.psel        = apb_request.psel && (apb_request_sel==4);
         led_chain_apb_request.psel   = apb_request.psel && (apb_request_sel==5);
+        inputs_apb_request.psel      = apb_request.psel && (apb_request_sel==6);
         csr_apb_request.paddr[16;16] = bundle(12b0,apb_request.paddr[4;12]);
         csr_apb_request.paddr[16;0]  = bundle( 6b0,apb_request.paddr[10;2]);
 
@@ -482,6 +491,12 @@ net bit led_chain;
                                           divider_400ns_in <= divider_400ns,
                                           led_chain => led_chain );
 
+        apb_target_de1_cl_inputs de1_cl_inputs( clk <- lw_axi_clock_clk,
+                                                reset_n <= reset_n,
+                                                apb_request  <= inputs_apb_request,
+                                                apb_response => inputs_apb_response,
+                                                user_inputs <= de1_cl_user_inputs );
+
         csr_master_apb master( clk <- clk,
                                reset_n <= reset_n,
                                apb_request <= csr_apb_request,
@@ -621,7 +636,6 @@ net bit led_chain;
             counter <= counter + 1;
         }
 
-        gpio_input = {*=0};
         de1_leds.leds = counter[10;0];
         if (riscv_trace.instr_valid) { riscv_last_pc<=riscv_trace.instr_pc; }
         for (i; 6) {
@@ -634,8 +648,20 @@ net bit led_chain;
         de1_leds.h4 = de1_hex_leds[4];
         de1_leds.h5 = de1_hex_leds[5];
 
-        de1_cl_led_data_pin = 0;
-        de1_cl_inputs_control = {*=0};
+        de1_cl_led_data_pin = led_chain;
+
+        de1_cl_controls input_ctls(clk <- clk,
+                                          reset_n <= reset_n,
+                                          inputs_control => de1_cl_inputs_control,
+                                          inputs_status <= de1_cl_inputs_status,
+                                          user_inputs   => de1_cl_user_inputs,
+                                          sr_divider <= sr_divider );
+
+        gpio_input <= {*=0};
+        gpio_input[4;0]  <= de1_keys;
+        gpio_input[10;4] <= de1_switches;
+        gpio_input[14]   <= de1_irda_rxd;
+
         de1_ps2_out = {*=0};
         de1_ps2b_out = {*=0};
         de1_irda_txd = 0;

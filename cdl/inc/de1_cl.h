@@ -80,7 +80,7 @@ typedef struct {
 
 /*t t_de1_cl_user_inputs */
 typedef struct {
-    bit updated_switches;
+    bit updated_switches "Asserted if diamond, joystick, touchpanel_irq, temperature_alarm, and dial pressed bits have been updated";
     t_de1_cl_diamond  diamond;
     t_de1_cl_joystick joystick;
     t_de1_cl_rotary   left_dial;
