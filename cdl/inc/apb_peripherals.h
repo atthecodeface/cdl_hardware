@@ -179,6 +179,27 @@ extern module apb_target_dprintf( clock clk         "System clock",
 
 }
 
+/*m apb_target_led_ws2812 */
+extern
+module apb_target_led_ws2812( clock clk         "System clock",
+                              input bit reset_n "Active low reset",
+
+                              input  t_apb_request  apb_request  "APB request",
+                              output t_apb_response apb_response "APB response",
+
+                              input bit[8] divider_400ns_in "Default value for divider_400ns",
+
+                              output bit led_chain
+    )
+{
+    timing to   rising clock clk apb_request;
+    timing from rising clock clk apb_response;
+
+    timing from rising clock clk led_chain;
+    timing to   rising clock clk divider_400ns_in;
+    
+}
+
 /*a Editor preferences and notes
 mode: c ***
 c-basic-offset: 4 ***

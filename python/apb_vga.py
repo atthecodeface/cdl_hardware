@@ -35,6 +35,7 @@ def code_display_parameters(csr_base, display):
     csr_display_v_porch = csr_base |  8
 
     return [ (apb_rom.rom.op_set("address",csr_display_size),),
+             (apb_rom.rom.op_set("increment",4),),
              (apb_rom.rom.op_req("write_arg_inc",display_size),),
              (apb_rom.rom.op_req("write_arg_inc",h_porches),),
              (apb_rom.rom.op_req("write_arg_inc",v_porches),),
