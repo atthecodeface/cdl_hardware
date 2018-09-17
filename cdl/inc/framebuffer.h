@@ -38,6 +38,7 @@ typedef struct {
     bit display_required    "Asserted for scanlines being displayed, up to the end of the horizontal displayed area - permits prefetching of pixel data";
     bit will_display_enable "Asserted if the next clock will have @a display_enable asserted";
     bit display_enable      "Asserted if pixels should be presented to the output (i.e. outside the front and back porches both horizontally and vertically)";
+    bit v_frame_last_line   "Asserted if ";
 } t_video_timing;
 
 /*a Modules */

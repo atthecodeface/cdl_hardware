@@ -17,9 +17,11 @@ displays["vga_800x600"] = {"h":(216,800,40),
                            }
 
 csr_select = {}
-csr_select["vga_fb"]  = 0x00034000 # for HPS FPGA VGA frame buffer
-csr_select["lcd_fb"]  = 0x00033000 # for HPS FPGA LCD frame buffer
-csr_select["dprintf"] = 0x00020000 # for HPS FPGA dprintf
+csr_select["lcd_tt"]   = 0x00032000 # for HPS FPGA LCD teletext frame buffer (start / bytes per line)
+csr_select["lcd_fbt"]  = 0x00033000 # for HPS FPGA LCD frame buffer timing
+csr_select["vga_tt"]   = 0x00034000 # for HPS FPGA VGA teletext frame buffer (start / bytes per line)
+csr_select["vga_fbt"]  = 0x00035000 # for HPS FPGA VGA frame buffer timing
+csr_select["dprintf"]  = 0x00020000 # for HPS FPGA dprintf
 csr_dprintf_address        = csr_select["dprintf"] |  0
 csr_dprintf_data           = csr_select["dprintf"] |  32
 csr_dprintf_address_commit = csr_select["dprintf"] |  64
@@ -58,7 +60,7 @@ dprintf_data[5] = (((cs>> 0)&0xff) << 24) | 0xffffff
 dprintf_data[6] = 0xffffffff
 program = {}
 program["code"] = []
-program["code"] += code_display_parameters(csr_select["vga_fb"],displays["vga_640x480"])
+program["code"] += code_display_parameters(csr_select["vga_fbt"],displays["vga_640x480"])
 program["code"] += [ (apb_rom.rom.op_set("increment",4),),
                      (apb_rom.rom.op_set("address",csr_dprintf_data),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[0]),),

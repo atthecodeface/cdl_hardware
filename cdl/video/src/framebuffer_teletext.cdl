@@ -40,6 +40,7 @@
  */
 /*a Includes */
 include "bbc_micro_types.h" // for t_bbc_display_sram_write
+include "framebuffer.h"
 include "csr_interface.h"
 include "srams.h"
 include "teletext.h"
@@ -57,36 +58,8 @@ typedef fsm {
     state_front_porch;
 } t_display_fsm;
 
-/*t t_video_combs */
-typedef struct {
-    bit h_line_start;
-    bit h_line_end;
-    bit h_back_porch_end;
-    bit h_display_end;
-    bit h_will_be_displaying;
-    bit h_displaying;
-
-    bit v_frame_start;
-    bit v_back_porch_last_line;
-    bit v_display_last_line;
-    bit v_frame_last_line;
-    bit v_displaying;
-
-    bit will_display_pixels;
-} t_video_combs;
-
 /*t t_video_state */
 typedef struct {
-    bit h_sync;
-    bit v_sync;
-    bit display_enable;
-    t_display_fsm h_state;
-    bit[10] h_pixel;
-    t_display_fsm v_state;
-    bit[10] v_line;
-
-    bit pixel_data_required;
-
     bit[8] red;
     bit[8] green;
     bit[8] blue;
@@ -173,9 +146,11 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
                                   v_display     = 272-1, // for 480x272 display
                                   v_front_porch = 8-1 }
     };
-    net t_csr_response     csr_response;
+    net t_csr_response     local_csr_response;
+    net t_csr_response     timing_csr_response "Pipelined CSR response interface to control the module";
     net t_csr_access       csr_access;
     comb t_csr_access_data csr_read_data;
+    net t_video_timing video_timing;
 
     /*b State in SRAM domain */
     default reset active_low reset_n;
@@ -187,7 +162,6 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
     default clock video_clk;
     clocked t_teletext_timings tt_timings={*=0};
     clocked t_video_state video_state={*=0};
-    comb    t_video_combs video_combs;
     clocked t_pixel_state pixel_state={*=0};
     comb    t_pixel_combs pixel_combs;
     net t_teletext_rom_access  tt_rom_access;
@@ -198,121 +172,24 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
     /*b Video bus out */
     video_bus_out """
     """ : {
-        video_bus.vsync = video_state.v_sync;
-        video_bus.hsync = video_state.h_sync;
-        video_bus.display_enable = video_state.display_enable;
+        video_bus.vsync = video_timing.v_sync;
+        video_bus.hsync = video_timing.h_sync;
+        video_bus.display_enable = video_timing.display_enable;
         video_bus.red   = video_state.red;
         video_bus.green = video_state.green;
         video_bus.blue  = video_state.blue;
-    }
-    
-    /*b Video output logic */
-    video_output_logic """
-    The video output logic operates by first a timing machine that
-    generates horizontal and vertical timing. 
 
-    The video output pixel data is generated from a shift register;
-    the shift register is filled from a pixel data buffer, that in
-    turn is filled by reading the SRAM.
-
-    At the start of every line a 'data required' signal is set, and
-    the pixel data buffer is invalidated.
-
-    Whenever the pixel data buffer is going to be invalid and data is
-    required the frame buffer SRAM is read from the next appropriate
-    location.
-    """: {
-        /*b Timing decode */
-        video_combs.h_line_start     = video_state.h_sync;
-        video_combs.h_back_porch_end = ((video_state.h_state==state_back_porch)  && (video_state.h_pixel==csrs.video.h_back_porch));
-        video_combs.h_display_end    = ((video_state.h_state==state_display)     && (video_state.h_pixel==csrs.video.h_display));
-        video_combs.h_line_end       = ((video_state.h_state==state_front_porch) && (video_state.h_pixel==csrs.video.h_front_porch));
-        video_combs.h_displaying     = (video_state.h_state==state_display);
-        video_combs.h_will_be_displaying = (video_combs.h_back_porch_end ||
-                                            (video_combs.h_displaying && !video_combs.h_display_end));
-
-        video_combs.v_frame_start       = video_state.v_sync && video_state.h_sync;
-        video_combs.v_back_porch_last_line = ((video_state.v_state==state_back_porch)  && (video_state.v_line==csrs.video.v_back_porch));
-        video_combs.v_display_last_line    = ((video_state.v_state==state_display)     && (video_state.v_line==csrs.video.v_display));
-        video_combs.v_frame_last_line      = ((video_state.v_state==state_front_porch) && (video_state.v_line==csrs.video.v_front_porch));
-        video_combs.v_displaying           = (video_state.v_state==state_display);
-
-        video_combs.will_display_pixels = video_combs.v_displaying && video_combs.h_will_be_displaying;
-
-        /*b Pixel state and pixel data */
-        video_state.display_enable <= 0;
-        if (video_combs.will_display_pixels) {
-            video_state.display_enable <= 1;
+        if (video_timing.will_display_enable) {
             video_state.red   <= pixel_combs.red;
             video_state.green <= pixel_combs.green;
             video_state.blue  <= pixel_combs.blue;
         }
-
-        /*b Horizontal state */
-        video_state.h_pixel <= video_state.h_pixel+1;
-        video_state.h_sync <= 0;
-        full_switch (video_state.h_state) {
-            case state_back_porch: {
-                if (video_combs.h_back_porch_end) {
-                    video_state.h_pixel <= 0;
-                    video_state.h_state <= state_display;
-                }
-            }
-            case state_display: {
-                if (video_combs.h_display_end) {
-                    video_state.h_pixel <= 0;
-                    video_state.h_state <= state_front_porch;
-                    video_state.pixel_data_required <= 0;
-                }
-            }
-            case state_front_porch: {
-                if (video_combs.h_line_end) {
-                    video_state.h_pixel <= 0;
-                    video_state.h_state <= state_back_porch;
-                    video_state.h_sync <= 1;
-                    video_state.pixel_data_required <= (video_combs.v_back_porch_last_line ||
-                                                        (video_combs.v_displaying && !video_combs.v_display_last_line));
-                }
-            }
-        }
-
-        /*b Vertical state */
-        video_state.v_line <= video_state.v_line+1;
-        video_state.v_sync <= 0;
-        full_switch (video_state.v_state) {
-            case state_back_porch: {
-                if (video_combs.v_back_porch_last_line) {
-                    video_state.v_line <= 0;
-                    video_state.v_state <= state_display;
-                }
-            }
-            case state_display: {
-                if (video_combs.v_display_last_line) {
-                    video_state.v_line <= 0;
-                    video_state.v_state <= state_front_porch;
-                }
-            }
-            case state_front_porch: {
-                if (video_combs.v_frame_last_line) {
-                    video_state.v_line <= 0;
-                    video_state.v_state <= state_back_porch;
-                    video_state.v_sync <= 1;
-                }
-            }
-        }
-        if (!video_combs.h_line_end) {
-            video_state.v_sync  <= video_state.v_sync;
-            video_state.v_line  <= video_state.v_line;
-            video_state.v_state <= video_state.v_state;
-        }
-
-        /*b All done */
     }
-
+    
     /*b Pixel data buffer, shift register, and sram request */
     pixel_data_logic """
     The pixel data shift register is consumed on
-    'video_combs.will_display_pixels' When it becomes empty, it
+    'video_timing.will_display_pixels' When it becomes empty, it
     attempts to load from the pixel buffer.
 
     The pixel data buffer
@@ -325,14 +202,14 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
         if (pixel_state.num_valid==0) {
             pixel_combs.next_num_valid = 0;
         }
-        if (!video_combs.will_display_pixels) {
+        if (!video_timing.will_display_enable) {
             pixel_combs.next_num_valid = pixel_state.num_valid;
         }
 
         pixel_combs.sram_address_next_line  = pixel_state.sram_address_line_start + csrs.sram_words_per_line[14;0];
         pixel_combs.load_shift_register     = (pixel_state.data_buffer_full && (pixel_combs.next_num_valid==0));
-        pixel_combs.sram_request            = (video_combs.v_displaying &&
-                                               !video_state.h_sync && // hold off start of line for 1 tick
+        pixel_combs.sram_request            = (video_timing.v_displaying &&
+                                               !video_timing.h_sync && // hold off start of line for 1 tick
                                                !pixel_state.data_buffer_full &&
                                                !pixel_state.request_outstanding);
 
@@ -355,7 +232,7 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
         if (tt_pixels.valid) {
             pixel_state.request_outstanding <= 0;
         }
-        if (video_combs.will_display_pixels) {
+        if (video_timing.will_display_enable) {
             pixel_state.shift.red  [11;1] <= pixel_state.shift.red  [11;0];
             pixel_state.shift.green[11;1] <= pixel_state.shift.green[11;0];
             pixel_state.shift.blue [11;1] <= pixel_state.shift.blue [11;0];
@@ -378,10 +255,10 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
             pixel_state.data_buffer_full <= 1;
             pixel_state.sram_address <= pixel_state.sram_address+1;
         }
-        if (video_combs.h_line_end) {
+        if (video_timing.will_h_sync) {
             pixel_state.data_buffer_full <= 0;            
             pixel_state.num_valid        <= 0;
-            if (video_combs.v_displaying) {
+            if (video_timing.v_displaying) {
                 pixel_state.sram_address            <= pixel_state.sram_address_line_start;
                 pixel_state.sram_address_line_start <= pixel_state.sram_address_line_start;
                 if (tt_pixels.last_scanline) {
@@ -389,7 +266,7 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
                     pixel_state.sram_address_line_start <= pixel_combs.sram_address_next_line;
                 }
             }
-            if (video_combs.v_frame_last_line) {
+            if (video_timing.v_frame_last_line) {
                 pixel_state.sram_address            <= csrs.sram_base_address[14;0];
                 pixel_state.sram_address_line_start <= csrs.sram_base_address[14;0];
             }
@@ -426,8 +303,8 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
     """: {
         tt_timings.interpolate_vertical  <= cfg_downsize_y ? tvi_even_scanlines : tvi_all_scanlines;
         tt_timings.first_scanline_of_row <= 0;
-        tt_timings.end_of_scanline       <= video_state.h_sync;
-        tt_timings.restart_frame         <= video_state.v_sync;
+        tt_timings.end_of_scanline       <= video_timing.h_sync;
+        tt_timings.restart_frame         <= video_timing.v_sync;
         tt_timings.smoothe               <= 1;
         teletext tt( clk        <- video_clk,
                      reset_n    <= reset_n,
@@ -457,10 +334,20 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
         csr_target_csr csri( clk <- csr_clk,
                                 reset_n <= reset_n,
                                 csr_request <= csr_request,
-                                csr_response => csr_response,
+                                csr_response => local_csr_response,
                                 csr_access => csr_access,
                                 csr_access_data <= csr_read_data,
-                                csr_select <= csr_select );
+                             csr_select <= csr_select );
+
+        framebuffer_timing fbt(csr_clk <- csr_clk,
+                                  video_clk <- video_clk,
+                                  reset_n <= reset_n,
+                                  video_timing => video_timing,
+                                  csr_request <= csr_request,
+                                  csr_response => timing_csr_response,
+                                  csr_select <= csr_select+1 );
+        csr_response = local_csr_response;
+        csr_response |= timing_csr_response;
         csrs <= csrs;
         if (csr_access.valid && !csr_access.read_not_write) {
             part_switch (csr_access.address[4;0]) {

@@ -510,7 +510,7 @@ net bit led_chain;
                                       reset_n <= reset_n,
                                       video_bus => lcd_video_bus,
                                       display_sram_write <= tt_display_sram_write,
-                                      csr_select_in <= 16h3,
+                                      csr_select_in <= 16h2, // uses 2 selects
                                       csr_request <= csr_request,
                                       csr_response => tt_lcd_framebuffer_csr_response
             );
@@ -521,7 +521,7 @@ net bit led_chain;
                                       reset_n <= reset_n,
                                       video_bus => vga_video_bus,
                                       display_sram_write <= tt_display_sram_write,
-                                      csr_select_in <= 16h4,
+                                      csr_select_in <= 16h4, // uses 2 selects
                                       csr_request <= csr_request,
                                       csr_response => tt_vga_framebuffer_csr_response
             );

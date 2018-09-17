@@ -245,6 +245,7 @@ framebuffer, using configurable timings.
         video_timing.display_required    = video_state.pixel_data_required;
         video_timing.display_enable      = video_state.display_enable;
         video_timing.will_display_enable = video_combs.will_display_pixels;
+        video_timing.v_frame_last_line   = video_combs.v_frame_last_line;
     }
     
     /*b CSR interface */
