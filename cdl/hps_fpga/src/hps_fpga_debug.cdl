@@ -192,6 +192,8 @@ module hps_fpga_debug( clock clk,
 
     default clock de1_vga_clock;
     default reset active_low de1_vga_reset_n;
+    clocked bit[4]  vga_vsync_counter=0;
+    clocked bit[12] vga_hsync_counter=0;
     clocked t_adv7123 de1_vga={*=0};
     clocked bit[4] vga_seconds_sr = 0;
     clocked bit[32][4] vga_counters={*=0};
@@ -553,10 +555,27 @@ module hps_fpga_debug( clock clk,
         csr_response |= timeout_csr_response;
         csr_response_r <= csr_response;
 
-        de1_vga.vs <= vga_video_bus.vsync;
-        de1_vga.hs <= vga_video_bus.hsync;
+        de1_vga.hs <= 1;
+        if (vga_hsync_counter!=0) {
+            de1_vga.hs <= 0;
+            vga_hsync_counter <= vga_hsync_counter-1;
+        }
+        if (vga_video_bus.hsync) {
+            de1_vga.hs <= 0;
+            vga_hsync_counter <= 110; // 128 for 64MHz officially, 96 for 25MHz
+            de1_vga.vs <= 1;
+            if (vga_vsync_counter!=0) {
+                de1_vga.vs <= 0;
+                vga_vsync_counter <= vga_vsync_counter-1;
+            }
+        }
+        if (vga_video_bus.vsync) {
+            de1_vga.vs <= 0;
+            vga_vsync_counter <= 1;
+        }
+        
         de1_vga.blank_n <= vga_video_bus.display_enable;
-        de1_vga.sync_n  <= !(vga_video_bus.vsync | vga_video_bus.hsync);
+        de1_vga.sync_n  <= de1_vga.vs & de1_vga.hs;
         de1_vga.red     <= bundle(vga_video_bus.red  [8;0],2b0);
         de1_vga.green   <= bundle(vga_video_bus.green[8;0],2b0);
         de1_vga.blue    <= bundle(vga_video_bus.blue [8;0],2b0);
