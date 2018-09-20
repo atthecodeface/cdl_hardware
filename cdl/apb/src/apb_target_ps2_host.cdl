@@ -178,7 +178,7 @@ module apb_target_ps2_host( clock clk         "System clock",
             } else {
                 ps2_state.full <= 0;
                 ps2_state.fifo_rptr <= ps2_state.fifo_rptr + 1;
-                if (ps2_state.fifo_rptr == ps2_state.fifo_wptr) {
+                if ((ps2_state.fifo_rptr+1) == ps2_state.fifo_wptr) {
                     ps2_state.empty <= 1;
                 }
             }

@@ -620,6 +620,9 @@ module hps_fpga_debug( clock clk,
         
         de1_vga.blank_n <= vga_video_bus.display_enable;
         de1_vga.sync_n  <= de1_vga.vs & de1_vga.hs;
+        if (de1_switches[9]) {
+            de1_vga.sync_n  <= de1_switches[8];
+        }
         de1_vga.red     <= bundle(vga_video_bus.red  [8;0],2b0);
         de1_vga.green   <= bundle(vga_video_bus.green[8;0],2b0);
         de1_vga.blue    <= bundle(vga_video_bus.blue [8;0],2b0);
