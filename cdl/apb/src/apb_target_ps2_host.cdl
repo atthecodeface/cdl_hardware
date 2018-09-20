@@ -1,0 +1,216 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_target_timer.cdl
+ * @brief  Simple timer target for an APB bus
+ *
+ * CDL implementation of a simple timer target on an APB bus, derived
+ * from an original GIP version.
+ *
+ */
+/*a Includes
+ */
+include "apb.h"
+include "de1_cl.h"
+
+constant integer fifo_size=8;
+constant integer lg_fifo_size=sizeof(fifo_size);
+
+/*a Types */
+/*t t_apb_address
+ *
+ * APB address map, used to decode paddr
+ */
+typedef enum [5] {
+    apb_address_state = 0,
+    apb_address_fifo = 1,
+} t_apb_address;
+
+/*t t_access
+ *
+ * APB access that is in progress; a decode of psel and paddr
+ */
+typedef bit[8] t_byte;
+typedef enum [3] {
+    access_none,
+    access_write_state,
+    access_read_state,
+    access_read_fifo,
+} t_access;
+
+/*t t_input_state
+ *
+ * Clock divider and LED contents
+ *
+ */
+typedef struct
+{
+    bit full;
+    bit empty;
+    bit underflow;
+    bit overflow;
+    bit protocol_error;
+    bit parity_error;
+    bit timeout;
+    bit[3] fifo_rptr;
+    bit[3] fifo_wptr;
+    t_byte rx_data;
+    bit[16] divider_3us;
+} t_ps2_state;
+
+/*a Module */
+module apb_target_ps2_host( clock clk         "System clock",
+                                 input bit reset_n "Active low reset",
+
+                                 input  t_apb_request  apb_request  "APB request",
+                                 output t_apb_response apb_response "APB response",
+
+                                 input t_ps2_pins ps2_in   "Pin values from the outside",
+                                 output t_ps2_pins ps2_out "Pin values to drive - 1 means float high, 0 means pull low"
+    )
+"""
+
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Decode APB interface */
+    clocked t_access access=access_none   "Access being performed by APB";
+
+    /*b Timer state */
+    net t_ps2_pins ps2_out;
+    net t_ps2_rx_data ps2_rx_data;
+    clocked t_ps2_state ps2_state={*=0, empty=1};
+    clocked t_byte[fifo_size] fifo={*=0};
+
+    /*b APB interface */
+    apb_interface_logic """
+    The APB interface is decoded to @a access when @p psel is asserted
+    and @p penable is deasserted - this is the first cycle of an APB
+    access. This permits the access type to be registered, so that the
+    APB @p prdata can be driven from registers, and so that writes
+    will occur correctly when @p penable is asserted.
+
+    The APB read data @p prdata can then be generated based on @a
+    access.
+    """ : {
+        /*b Decode access */
+        access <= access_none;
+        part_switch (apb_request.paddr[3;0]) {
+        case apb_address_state: {
+            access <= apb_request.pwrite ? access_write_state : access_read_state;
+        }
+        case apb_address_fifo: {
+            access <= apb_request.pwrite ? access_none : access_read_fifo;
+        }
+        }
+        if (!apb_request.psel || apb_request.penable) {
+            access <= access_none;
+        }
+
+        /*b Handle APB read data */
+        apb_response = {*=0, pready=1};
+        part_switch (access) {
+        case access_read_state: {
+            apb_response.prdata = bundle( ps2_state.divider_3us,
+                                          1b0, ps2_state.fifo_wptr,
+                                          1b0, ps2_state.fifo_rptr,
+                                          2b0,
+                                          ps2_state.full,
+                                          ps2_state.empty,
+                                          ps2_state.overflow,
+                                          ps2_state.timeout,
+                                          ps2_state.protocol_error,
+                                          ps2_state.parity_error
+                );
+        }
+        case access_read_fifo: {
+            apb_response.prdata = bundle( ps2_state.empty,
+                                          23b0,
+                                          ps2_state.rx_data);
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b Handle the input state */
+    input_logic """
+    """: {
+        ps2_host ps2_if( clk <- clk,
+                         reset_n <= reset_n,
+                         ps2_in <= ps2_in,
+                         ps2_out => ps2_out,
+                         ps2_rx_data => ps2_rx_data,
+                         divider <= ps2_state.divider_3us );
+
+        if (access==access_write_state) {
+            ps2_state.divider_3us <= apb_request.pwdata[16;16];
+            ps2_state.fifo_rptr <= 0;
+            ps2_state.fifo_wptr <= 0;
+            ps2_state.full <= 0;
+            ps2_state.empty <= 1;
+        }
+
+        if ((access==access_read_state) || (access==access_write_state)){
+            ps2_state.parity_error <= 0;
+            ps2_state.protocol_error <= 0;
+            ps2_state.timeout <= 0;
+            ps2_state.overflow <= 0;
+            ps2_state.underflow <= 0;
+        }
+
+        if (access==access_read_fifo) {
+            if (ps2_state.empty) {
+                ps2_state.underflow <= 1;
+            } else {
+                ps2_state.full <= 0;
+                ps2_state.fifo_rptr <= ps2_state.fifo_rptr + 1;
+                if (ps2_state.fifo_rptr == ps2_state.fifo_wptr) {
+                    ps2_state.empty <= 1;
+                }
+            }
+        }
+
+        if (ps2_rx_data.valid) {
+            if (ps2_rx_data.parity_error)   { ps2_state.parity_error <= 1; }
+            if (ps2_rx_data.protocol_error) { ps2_state.protocol_error <= 1; }
+            if (ps2_rx_data.timeout)        { ps2_state.timeout <= 1; }
+            if (!ps2_rx_data.parity_error && 
+                !ps2_rx_data.protocol_error &&
+                !ps2_rx_data.timeout) {
+                if (ps2_state.full) {
+                    ps2_state.overflow <= 1;
+                } else {
+                    fifo[ps2_state.fifo_wptr] <= ps2_rx_data.data;
+                    ps2_state.fifo_wptr <= ps2_state.fifo_wptr + 1;
+                    ps2_state.empty <= 0;
+                    ps2_state.full <= ((ps2_state.fifo_wptr + 1) == ps2_state.fifo_rptr);
+                }
+            }
+        }
+        ps2_state.rx_data <= fifo[ps2_state.fifo_rptr];
+    }
+
+    /*b Done
+     */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/

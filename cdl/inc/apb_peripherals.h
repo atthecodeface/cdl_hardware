@@ -219,6 +219,25 @@ module apb_target_de1_cl_inputs( clock clk         "System clock",
     
 }
 
+/*m apb_target_ps2_host */
+extern
+module apb_target_ps2_host( clock clk         "System clock",
+                            input bit reset_n "Active low reset",
+
+                            input  t_apb_request  apb_request  "APB request",
+                            output t_apb_response apb_response "APB response",
+
+                            input t_ps2_pins ps2_in   "Pin values from the outside",
+                            output t_ps2_pins ps2_out "Pin values to drive - 1 means float high, 0 means pull low"
+    )
+{
+    timing to   rising clock clk apb_request;
+    timing from rising clock clk apb_response;
+
+    timing to   rising clock clk ps2_in;
+    timing from rising clock clk ps2_out;
+}
+
 /*a Editor preferences and notes
 mode: c ***
 c-basic-offset: 4 ***
