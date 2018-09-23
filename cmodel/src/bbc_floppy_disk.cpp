@@ -126,7 +126,7 @@ int c_bbc_floppy_disk::format_disk(int max_tracks, int max_sectors_per_track, in
         return -1;
     }
 
-    memset(tracks,data_size,0);
+    memset(tracks,0,data_size);
 
     sectors = (t_sector_data *)&tracks[max_tracks];
     for (int t=0; t<max_tracks; t++) {

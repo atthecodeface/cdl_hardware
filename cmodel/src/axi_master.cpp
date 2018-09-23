@@ -720,14 +720,14 @@ c_axi_master::clock( void )
     /*b Handle write response
      */
     if (outputs.bready && write_response.valid) {
-        wresp_fifo->enqueue(&write_response, NULL);
+        wresp_fifo->enqueue(&write_response, 0);
     }
     outputs.bready = !wresp_fifo->is_full();
 
     /*b Handle read response
      */
     if (outputs.bready && read_response.valid) {
-        rresp_fifo->enqueue(&read_response, NULL);
+        rresp_fifo->enqueue(&read_response, 0);
     }
     outputs.rready = !rresp_fifo->is_full();
 
