@@ -274,16 +274,16 @@ framebuffer, using configurable timings.
             }
         }
         case csr_address_h_porch: {
-            csr_read_data = bundle( 6b0, csrs.h_back_porch,
-                                    6b0, csrs.h_front_porch );
+            csr_read_data = bundle( 6b0, csrs.h_front_porch,
+                                    6b0, csrs.h_back_porch );
             if (csr_access.valid && !csr_access.read_not_write) {
                 csrs.h_back_porch   <= csr_access.data[10;0];
                 csrs.h_front_porch  <= csr_access.data[10;16];
             }
         }
         case csr_address_v_porch: {
-            csr_read_data = bundle( 6b0, csrs.v_back_porch,
-                                    6b0, csrs.v_front_porch );
+            csr_read_data = bundle( 6b0, csrs.v_front_porch,
+                                    6b0, csrs.v_back_porch );
             if (csr_access.valid && !csr_access.read_not_write) {
                 csrs.v_back_porch   <= csr_access.data[10;0];
                 csrs.v_front_porch  <= csr_access.data[10;16];
