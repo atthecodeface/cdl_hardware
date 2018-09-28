@@ -277,7 +277,7 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
         }
 
         se_sram_mrw_2_16384x8 display(sram_clock_0     <- sram_clk,
-                                       select_0         <= sram_state.write_request.enable && (sram_state.write_request.address[2;14]==0),
+                                       select_0         <= sram_state.write_request.enable,
                                        read_not_write_0 <= 0,
                                        address_0        <= sram_state.write_request.address[14;0],
                                        write_data_0     <= sram_state.write_request.data[8;0],
