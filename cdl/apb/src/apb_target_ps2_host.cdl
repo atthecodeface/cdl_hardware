@@ -79,6 +79,26 @@ module apb_target_ps2_host( clock clk         "System clock",
                                  output t_ps2_pins ps2_out "Pin values to drive - 1 means float high, 0 means pull low"
     )
 """
+Before use, the clock divider must be set up with a write to the state
+
+The state register is
+  16;16 = ps2_state.divider_3us (number of ticks to get approx 3us)
+     15 = 0
+   3;12 = fifo_wptr
+     11 = 0
+    3;8 = fifo_rptr
+    2;6 = 0
+      5 = fifo full
+      4 = fifo empty
+      3 = fifo overflow occurred since last read
+      2 = PS2 timeout occurred since last read
+      1 = PS2 protocol error occurred since last read
+      0 = PS2 parity error occurred since last read
+
+The fifo register is:
+     31 = Fifo empty (data invalid)
+  23; 8 = 0
+   8; 0 = PS2 Rx data
 
 """
 {
@@ -91,7 +111,7 @@ module apb_target_ps2_host( clock clk         "System clock",
 
     /*b Timer state */
     net t_ps2_pins ps2_out;
-    net t_ps2_rx_data ps2_rx_data;
+    net t_ps2_rx_data ps2_rx_data_host;
     clocked t_ps2_state ps2_state={*=0, empty=1};
     clocked t_byte[fifo_size] fifo={*=0};
 
@@ -147,13 +167,14 @@ module apb_target_ps2_host( clock clk         "System clock",
     }
 
     /*b Handle the input state */
+    comb t_ps2_rx_data ps2_rx_data;
     input_logic """
     """: {
         ps2_host ps2_if( clk <- clk,
                          reset_n <= reset_n,
                          ps2_in <= ps2_in,
                          ps2_out => ps2_out,
-                         ps2_rx_data => ps2_rx_data,
+                         ps2_rx_data => ps2_rx_data_host,
                          divider <= ps2_state.divider_3us );
 
         if (access==access_write_state) {
@@ -184,6 +205,11 @@ module apb_target_ps2_host( clock clk         "System clock",
             }
         }
 
+        ps2_rx_data = ps2_rx_data_host;
+        // For debug purposes, one can inject PS2 key presses (ps2 0x3a = M)
+        //if (ps2_state.empty && access==access_read_state) {
+        //    ps2_rx_data = {*=0, valid=1, data=0x3a};
+        //}
         if (ps2_rx_data.valid) {
             if (ps2_rx_data.parity_error)   { ps2_state.parity_error <= 1; }
             if (ps2_rx_data.protocol_error) { ps2_state.protocol_error <= 1; }

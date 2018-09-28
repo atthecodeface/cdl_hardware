@@ -66,30 +66,33 @@ shm_vnc: ${SHM_VNC_OBJS}
 	${Q}${LINKASBIN} shm_vnc $(SHM_VNC_OBJS) ${LOCAL_LINKLIBS}
 
 #a Test targets
+RP = 
+REGRESS_ALL = ${RP} ./regress_all
+
 .PHONY: regression
 regression: non_bbc_roms
 	$(MAKE) clean ALL
-	./regress_all
+	${REGRESS_ALL}
 
 .PHONY: regression_unclean
 regression_unclean: non_bbc_roms
-	./regress_all
+	${REGRESS_ALL}
 
 test_python_6502: ${TARGET_DIR}/py_engine.so
 	echo "Currently fails one test test_atc_test_6502_brk_rti"
 	./python/test6502.py
 
 test_regress_6502: ${TARGET_DIR}/py_engine.so
-	./regress_all regression.base6502
+	${REGRESS_ALL} regression.base6502
 
 test_6502_adc: ${TARGET_DIR}/py_engine.so
-	./regress_all regression.base6502.Regress6502_Test6502_ALU.test_atc_test_6502_adc
+	${REGRESS_ALL} regression.base6502.Regress6502_Test6502_ALU.test_atc_test_6502_adc
 
 test_regress: ${TARGET_DIR}/py_engine.so
-	./regress_all regression.${SUITE}
+	${REGRESS_ALL} regression.${SUITE}
 
 test_regress_riscv: ${TARGET_DIR}/py_engine.so
-	./regress_all regression.riscv_minimal
+	${REGRESS_ALL} regression.riscv_minimal
 
 #a Operational targets
 .PHONY: non_bbc_roms
@@ -104,15 +107,15 @@ roms: non_bbc_roms
 	python python/rom_to_mif.py
 
 bbc_run: ${TARGET_DIR}/py_engine.so
-	BBC=1 ./regress_all
+	BBC=1 ${REGRESS_ALL}
 
 bbc_waves: ${TARGET_DIR}/py_engine.so
-	WAVES=1 BBC=1 ./regress_all
+	WAVES=1 BBC=1 ${REGRESS_ALL}
 
 riscv_flows: ${TARGET_DIR}/py_engine.so
-	./regress_all regression.riscv_minimal.riscv_i32c_pipeline3.${TEST}
+	${REGRESS_ALL} regression.riscv_minimal.riscv_i32c_pipeline3.${TEST}
 	./python/rv_flow.py > min_pipe3_${TEST}.flow
-	./regress_all regression.riscv_minimal.riscv_minimal.${TEST}
+	${REGRESS_ALL} regression.riscv_minimal.riscv_minimal.${TEST}
 	./python/rv_flow.py > min_min_${TEST}.flow
 	diff min_pipe3_${TEST}.flow min_min_${TEST}.flow
 
@@ -137,7 +140,9 @@ help:
 	@echo "To convert other disk images to appropriate MIF format (which includes disk track descriptors,"
 	@echo "not just the data - the 'SSD' format is just 40 track, 10 265 byte sectors) use the python/disk_to_mif"
 	@echo ""
-	@echo "To run a regression, use 'make regression'"
+	@echo "To run a regression, use 'make regression'; to do so without a build use 'make regression_unclean'"
+	@echo ""
+	@echo "The RISC-V regression requires tools and some prebuilt 'binaries'; the latter can be handled by cloning https://github.com/atthecodeface/riscv_tests_built.git in the parent. The former requires https://github.com/atthecodeface/riscv-atcf-tests.git to be cloned in the parent, plus building the tests with LLVM and GNU binutils, which is more laborious"
 	@echo ""
 	@echo "To run a specific subset of the regression, use 'make SUITE=<suite> test_regress'"
 	@echo "with suite being base6502, riscv_minimal, or any other .py file from the regression directory"
@@ -147,6 +152,9 @@ help:
 	@echo "and to view its instruction trace do"
 	@echo "PYTHONPATH=`pwd`/../cdl:\${DOLLAR}PYTHONPATH ./python/rv_trace.py --logfile=itrace.log"
 	@echo ""
+	@echo "To run a suite with valgrind use make RP='PYTHONMALLOC=malloc valgrind python' SUITE=<suite> test_regress"
+	@echo ""
+
 	@echo "To run the JTAG apb timer with OpenOcd (to demonstrate JTAG running remotely)"
 	@echo "use 'make SUITE=jtag.jtag_apb_timer.openocd test_regress'"
 	@echo "In another termina run 'openocd scripts/bitbang.cfg'"

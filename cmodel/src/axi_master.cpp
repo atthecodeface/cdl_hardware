@@ -121,6 +121,7 @@ public:
     t_sl_error_level prepreclock( void );
     t_sl_error_level preclock(void);
     t_sl_error_level clock( void );
+    t_sl_error_level reset( int pass );
     t_sl_error_level message( t_se_message *message );
     void add_exec_file_enhancements(void);
     class c_axi_queue<t_axi_request> *wreq_fifo;
@@ -174,6 +175,15 @@ axi_master_delete_fn( void *handle )
     result = mod->delete_instance();
     delete( mod );
     return result;
+}
+
+/*f axi_master_reset_fn
+*/
+static t_sl_error_level axi_master_reset_fn( void *handle, int pass )
+{
+    c_axi_master *mod;
+    mod = (c_axi_master *)handle;
+    return mod->reset( pass );
 }
 
 /*f axi_master_prepreclock_fn */
@@ -240,6 +250,7 @@ c_axi_master::c_axi_master( class c_engine *eng, void *eng_handle )
     engine_handle = eng_handle;
 
     engine->register_delete_function( engine_handle, (void *)this, axi_master_delete_fn );
+    engine->register_reset_function( engine_handle, (void *)this, axi_master_reset_fn );
     engine->register_message_function( engine_handle, (void *)this, axi_master_message );
 
     verbose       = engine->get_option_int( engine_handle, "verbose", 0 );
@@ -736,6 +747,18 @@ c_axi_master::clock( void )
     return error_level_okay;
 }
 
+/*f c_axi_master::reset
+*/
+t_sl_error_level c_axi_master::reset( int pass )
+{
+    awready = 0;
+    arready = 0;
+    wready  = 0;
+    memset(&write_response, 0, sizeof(write_response));
+    memset(&read_response, 0, sizeof(read_response));
+    memset(&outputs, 0, sizeof(outputs));
+    return error_level_okay;
+}
 /*a Initialization functions */
 /*f axi_master__init */
 /**

@@ -226,6 +226,7 @@ module picoriscv( clock clk                   "Clock, divided down for CPU",
                                   reset_n <= video_reset_n,
                                   video_bus => video_bus,
                                   display_sram_write <= tt_display_sram_write,
+                                  csr_select_in <= 0, // uses 2 selects, from the default
                                   csr_request <= csr_request,
                                   csr_response => tt_csr_response
             );

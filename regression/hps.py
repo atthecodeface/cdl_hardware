@@ -51,6 +51,8 @@ class hps_debug_fpga_hw(simple_tb.cdl_test_hw):
     module_name = "tb_hps_fpga_debug"
     teletext_rom_mif = "roms/teletext.mif"
     apb_vga_rom_mif  = "roms/apb_vga_rom.mif"
+    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.dut.trace "),},
+               }
     #f __init__
     def __init__(self, test ):
         self.th_forces = { "dut.ftb.character_rom.filename":self.teletext_rom_mif,
@@ -63,10 +65,16 @@ class hps_debug_fpga_hw(simple_tb.cdl_test_hw):
 
 #c c_test_one
 import axi
+import dump
 class c_test_one(axi.c_axi_test_base):
+    dump_filename = "../riscv-atcf-tests/build/dump/hps_ps2_term2.dump"
     #f run
     def run(self):
         axi.c_axi_test_base.run_start(self)
+        d = dump.c_dump()
+        f = open(self.dump_filename)
+        d.load(f, base_address=0, address_mask=0x7fffffff)
+        f.close()
         self.bfm_wait(100)
         (resp, timer) = self.simple_read(address=0)
         print "Response to write", self.simple_write(address=16, data=timer+30)
@@ -74,10 +82,15 @@ class c_test_one(axi.c_axi_test_base):
         print "Response to read", self.simple_read(address=16)
         print "Response to read", self.simple_read(address=16)
 
-        print "Write RISC-V SRAM address to 0", self.simple_write(address=0x40000, data=0)
-        print "Write RISC-V SRAM code at 0", self.simple_write(address=0x40010, data=0x12345678), 0x12345678
-        print "Write RISC-V SRAM code at 1", self.simple_write(address=0x40010, data=0xfeedcafe), 0xfeedcafe
-        print "Write RISC-V SRAM address to 0", self.simple_write(address=0x40000, data=0)
+        for (base, data) in d.package_data():
+            print "Write RISC-V SRAM address to %08x"%base, self.simple_write(address=0x40000, data=base)
+            n = 0
+            for d in data:
+                print "Write RISC-V SRAM code at %08x to %08x"%((base+n), d)
+                self.simple_write(address=0x4000c, data=d)
+                n += 1
+                pass
+            pass
         print "Response to read", self.simple_read(address=0x40010)
         print "Response to read", self.simple_read(address=0x40010)
         print "Response to read", self.simple_read(address=0x40010)
@@ -86,12 +99,11 @@ class c_test_one(axi.c_axi_test_base):
         self.finishtest(0,"")
         pass
 
-
 #c hps_debug_fpga_blah
 class hps_debug_fpga_blah(simple_tb.base_test):
     def test_(self):
         test = c_test_one()
         hw = hps_debug_fpga_hw(test)
-        self.do_test_run(hw, 10*1000)
+        #self.do_test_run(hw, 200*1000)
     pass
 

@@ -36,8 +36,9 @@ typedef struct {
  *
  * Timing values (display + (right border / front porch) + sync pulse + (back porch / left border))
  *
- *  640x480 @ 60Hz: 25.175MHz clk 640+16+ 96+48 = 800  480+10+2+33 = 525
- *  800x600 @ 60Hz: 40MHz clk     800+40+128+88 =1076  600+ 1+4+23 = 628
+ *  640x480 @ 60Hz: 25.175MHz clk 640+16+ 96+48 = 800  480+10+2+33 = 525 -syncs
+ *  800x600 @ 60Hz: 40MHz clk     800+40+128+88 =1076  600+ 1+4+23 = 628 +syncs
+ * 1024x768 @ 60Hz: 65MHz clk    1024+24+136+160=1344  768+ 3+6+29 = 806 -syncs
  *
  */
 typedef struct {

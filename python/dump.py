@@ -87,6 +87,26 @@ class c_dump(object):
         if label not in self.labels:
             raise Exception("Unable to find label '%s'"%label)
         return self.labels[label]
+    #f package_data
+    def package_data(self, max_per_base=1024):
+        """
+        Package data in to a list of (base, [data*])
+        """
+        package = []
+        addresses = self.data.keys()
+        addresses.sort()
+        while len(addresses)>0:
+            base = addresses[0]
+            data = []
+            i = base
+            while (len(addresses)>0) and (i==addresses[0]) and (len(data)<max_per_base):
+                data.append(self.data[i])
+                addresses.pop(0)
+                i += 1
+                pass
+            package.append((base,data))
+            pass
+        return package
     #f write_mif
     def write_mif(self, f):
         labels = self.labels.keys()
