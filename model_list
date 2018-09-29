@@ -144,6 +144,7 @@ cdl cdl/apb/src  apb_master_mux   inc:cdl/inc
 cdl cdl/apb/src  apb_master_axi   inc:cdl/inc
 cdl cdl/apb/src  apb_target_gpio   inc:cdl/inc
 cdl cdl/apb/src  apb_target_timer  inc:cdl/inc
+cdl cdl/apb/src  apb_target_rv_timer  inc:cdl/inc
 cdl cdl/apb/src  apb_target_dprintf  inc:cdl/inc
 cdl cdl/apb/src  apb_target_led_ws2812  inc:cdl/inc
 cdl cdl/apb/src  apb_target_de1_cl_inputs  inc:cdl/inc

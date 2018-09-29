@@ -1,0 +1,302 @@
+/** @copyright (C) 2016-2018,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_target_timer.cdl
+ * @brief  Simple timer target for an APB bus
+ *
+ * CDL implementation of a simple timer target on an APB bus, derived
+ * from an original GIP version.
+ *
+ */
+/*a Includes
+ */
+include "apb.h"
+
+/*a Types */
+/*t t_apb_address
+ *
+ * APB address map, used to decode paddr
+ */
+typedef enum [4] {
+    apb_address_timer_lower  = 0,
+    apb_address_timer_upper = 1,
+    apb_address_comparator_lower  = 2,
+    apb_address_comparator_upper = 3,
+} t_apb_address;
+
+/*t t_access
+ *
+ * APB access that is in progress; a decode of psel and paddr
+ */
+typedef enum [4] {
+    access_none,
+    access_write_timer_lower,
+    access_write_timer_upper,
+    access_read_timer_lower,
+    access_read_timer_upper,
+    access_write_comparator_lower,
+    access_write_comparator_upper,
+    access_read_comparator_lower,
+    access_read_comparator_upper
+} t_access;
+
+/*t t_timer_state
+ *
+ */
+typedef struct {
+    bit[32] lower_t_minus_c;
+    bit[32] upper_t_minus_c;
+    bit fractional_bonus "Carry in to timer fractional bonus adder, depending on numer/denom";
+    bit[9] fractional_sum "Result of fractional addition, including fractional_bonus";
+    bit[33] lower_sum     "Result of integer part of timer, lower bits, summing with timer integer add and fractional overflow";
+    bit[32] upper_sum     "Result of upper timer addition - actually an increment based on result of lower_sum carry";
+} t_timer_combs;
+typedef struct {
+    bit[4]  bonus_subfraction_step;
+    bit[8]  fraction;
+    bit[32] timer_lower;
+    bit[32] timer_upper;
+    bit[32] comparator_lower;
+    bit[32] comparator_upper;
+    bit     upper_eq;
+    bit     upper_gt;
+    bit     lower_gt;
+    bit     comparator_exceeded;
+} t_timer_state;
+typedef struct {
+    bit    reset_counter;
+    bit    enable_counter;
+    bit    block_writes;
+    bit[4] bonus_subfraction_numer;
+    bit[4] bonus_subfraction_denom "If zero then no subfractional add";
+    bit[8] fractional_adder;
+    bit[8] integer_adder;
+} t_timer_control;
+typedef struct {
+    bit     irq   "Asserted if comparator >= timer value";
+    bit[64] value "64-bit timer value";
+} t_timer_value;
+
+/*a Module */
+module apb_target_rv_timer( clock clk             "System clock",
+                            input bit reset_n     "Active low reset",
+                            input t_timer_control timer_control "Control of the timer", 
+
+                            input  t_apb_request  apb_request  "APB request",
+                            output t_apb_response apb_response "APB response",
+
+                            output t_timer_value  timer_value
+    )
+"""
+RISC-V compatible timer with an APB interface.
+
+This is a monotonically increasing 64-bit timer with a 64-bit comparator.
+
+The timer has a fractional component to permit, for example, a
+'nanosecond' timer that is clocked at, say, 600MHz; in this case the
+timer is ticked every 1.666ns, and so an addition in each cycle of
+0xaa to an 8-bit fractional component and a 1 integer component. The
+timer_control has, therfore, a fixed-point adder value with a 4-digit
+fractional component.
+
+However, this would actually lead to a timer that would be only 99.61% accurate.
+
+Hence a further subfraction capability is supported; this permits a
+further 1/256th of a nanosecond (or whatever the timer unit is) to be
+added for M out of every N cycles.
+
+In the case of 600MHz a bonus 1/256th should be added for 2 out of
+every 3 cycles. This is set using a bonus_subfraction_numer of 0 and a
+bonus_subfraction_denom of 2 (meaning for 2 out of every 3 cycles add
+a further 1/256th).
+
+Hence every three cycles the timer will have 0x1.ab, 0x1.ab, 0x1.aa
+added to it - hence the timer will have gone up by an integer value of
+5ns, which is correct for 3 600MHz clock cycles.
+
+If the control values are tied off to zero then the extra fractional
+logic will be optimized out.
+
+Some example values for 1ns timer values:
+
+Clock   Period   Adder (Int/fraction)   Subfraction Numer/Denom
+1GHz      1ns          1 / 0x00             0 / 0
+800MHz  1.25ns         1 / 0x40             0 / 0
+600MHz  1.66ns         1 / 0xaa             0 / 2
+
+The period should be
+subfraction numer/denum=0/x: (Int + fraction/256)
+subfraction numer/denum=M/N: (Int + (fraction+(N-M-1)/N)/256) 
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Decode APB interface */
+    clocked t_access access=access_none   "Access being performed by APB";
+
+    /*b Timer state */
+    clocked t_timer_state timer_state= {*=0};
+    comb t_timer_combs timer_combs;
+
+    /*b APB interface */
+    apb_interface_logic """
+    The APB interface is decoded to @a access when @p psel is asserted
+    and @p penable is deasserted - this is the first cycle of an APB
+    access. This permits the access type to be registered, so that the
+    APB @p prdata can be driven from registers, and so that writes
+    will occur correctly when @p penable is asserted.
+
+    The APB read data @p prdata can then be generated based on @a
+    access.
+    """ : {
+        /*b Decode access */
+        access <= access_none;
+        part_switch (apb_request.paddr[4;0]) {
+        case apb_address_timer_lower: {
+            access <= apb_request.pwrite ? access_write_timer_lower : access_read_timer_lower;
+        }
+        case apb_address_timer_upper: {
+            access <= apb_request.pwrite ? access_write_timer_upper : access_read_timer_upper;
+        }
+        case apb_address_comparator_lower: {
+            access <= apb_request.pwrite ? access_write_comparator_lower : access_read_comparator_lower;
+        }
+        case apb_address_comparator_upper: {
+            access <= apb_request.pwrite ? access_write_comparator_upper : access_read_comparator_upper;
+        }
+        }
+        if (!apb_request.psel || apb_request.penable) {
+            access <= access_none;
+        }
+
+        /*b Handle APB read data */
+        apb_response = {*=0, pready=1};
+        part_switch (access) {
+        case access_read_timer_lower: {
+            apb_response.prdata = timer_state.timer_lower;
+        }
+        case access_read_timer_upper: {
+            apb_response.prdata = timer_state.timer_upper;
+        }
+        case access_read_comparator_lower: {
+            apb_response.prdata = timer_state.comparator_lower;
+        }
+        case access_read_comparator_upper: {
+            apb_response.prdata = timer_state.comparator_upper;
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b Handle the timer and comparator */
+    timer_logic """
+    The @a timer value can be reset or it may count on a tick, or it
+    may just hold its value. Furthermore, it may be writable (the
+    RISC-V spec seems to require this, but it defeats the purpose of a
+    global clock if there are many of these in a system that are 
+
+    @a timers are compared with the @a timer_value, and if they are
+    equal they the @a timers' @a equalled bit is set. Id the
+    comparator is being read, then the @a equalled bit is cleared -
+    with lower priority than the comparison. Finally, the @a timers
+    can be written with a @a comparator value, which clears the @a
+    equalled bit.
+    """: {
+        /*b Comparison logic */
+        timer_combs.lower_t_minus_c = timer_state.timer_lower - timer_state.comparator_lower;
+        timer_combs.upper_t_minus_c = timer_state.timer_upper - timer_state.comparator_upper;
+        timer_state.upper_gt <= (timer_combs.upper_t_minus_c[31]);
+        timer_state.upper_eq <= (timer_combs.upper_t_minus_c==0);
+        timer_state.lower_gt <= (timer_combs.lower_t_minus_c[31]);
+        timer_state.comparator_exceeded <= 0;
+        if (timer_state.upper_gt) {
+            timer_state.comparator_exceeded <= 1;
+        } elsif (timer_state.upper_eq) {
+            timer_state.comparator_exceeded <= timer_state.lower_gt;
+        }
+
+        /*b Tick / reset timer */
+        timer_combs.fractional_bonus = 0;
+        if (timer_state.bonus_subfraction_step > timer_control.bonus_subfraction_numer) {
+            timer_combs.fractional_bonus = 1;
+        }
+        timer_combs.fractional_sum = ( bundle(1b0, timer_state.fraction)    +
+                                       bundle(1b0, timer_control.fractional_adder) +
+                                       (timer_combs.fractional_bonus ? 1: 0)
+            );
+        timer_combs.lower_sum      = ( bundle(1b0, timer_state.timer_lower) +
+                                       bundle(25b0, timer_control.integer_adder) +
+                                       (timer_combs.fractional_sum[8]?1:0)
+            );
+        timer_combs.upper_sum      = timer_state.timer_upper;
+        if (timer_combs.lower_sum[32]) {
+            timer_combs.upper_sum      = timer_state.timer_upper + 1;
+        }
+        
+        if (timer_control.enable_counter) {
+            if (timer_control.bonus_subfraction_denom==0) {
+                timer_state.bonus_subfraction_step <= 0;
+            } else {
+                timer_state.bonus_subfraction_step <= timer_state.bonus_subfraction_step + 1;
+                if (timer_state.bonus_subfraction_step>=timer_control.bonus_subfraction_denom) {
+                    timer_state.bonus_subfraction_step <= 0;
+                }
+            }
+            timer_state.fraction    <= timer_combs.fractional_sum[8;0];
+            timer_state.timer_lower <= timer_combs.lower_sum[32;0];
+            timer_state.timer_upper <= timer_combs.upper_sum;
+        }
+        if (timer_control.reset_counter) {
+            timer_state.bonus_subfraction_step <= 0;
+            timer_state.fraction <= 0;
+            timer_state.timer_lower <= 0;
+            timer_state.timer_upper <= 0;
+        }
+
+        /*b Write to timer value */
+        if (!timer_control.block_writes) {
+            if (access==access_write_timer_lower) {
+                timer_state.timer_lower <= apb_request.pwdata;
+                timer_state.fraction    <= 0;
+            }
+            if (access==access_write_timer_upper) {
+                timer_state.timer_upper <= apb_request.pwdata;
+            }
+        }
+
+        /*b Write to comparator and timer value */
+        if (access==access_write_comparator_lower) {
+            timer_state.comparator_lower <= apb_request.pwdata;
+        }
+        if (access==access_write_comparator_upper) {
+            timer_state.comparator_upper <= apb_request.pwdata;
+        }
+
+        /*b Drive outputs */
+        timer_value.irq = timer_state.comparator_exceeded;
+        timer_value.value = bundle(timer_state.timer_upper, timer_state.timer_lower);
+    }
+
+    /*b Done
+     */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/
