@@ -1,0 +1,51 @@
+include "de2.h"
+include "video.h"
+/*m hps_fpga_debug
+ *
+ * Debug module for testing out HPS in the Cyclone-V FPGA
+ *
+ */
+module picorisc_de2( clock clk,
+                     input bit reset_n,
+
+                     clock de2_audio_bclk,
+                     input  t_de2_audio de2_audio_adc,
+                     output t_de2_audio de2_audio_dac,
+
+                     output t_i2c de2_eep_i2c,
+                     output t_i2c de2_i2c,
+
+                     input t_de2_inputs de2_inputs,
+                     output t_de2_leds de2_leds,
+                     output t_de2_lcd  de2_lcd,
+
+                     input t_ps2_pins   de2_ps2_in,
+                     output t_ps2_pins  de2_ps2_out,
+                     input t_ps2_pins   de2_ps2b_in,
+                     output t_ps2_pins  de2_ps2b_out,
+
+                     clock de2_vga_clock,
+                     input bit de2_vga_reset_n,
+                     output t_adv7123 de2_vga,
+
+                     input t_uart_in   de2_uart_in,
+                     output t_uart_out de2_uart_out
+    )
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+    
+    tieoffs: {
+        de2_audio_dac = {*=0};
+        de2_eep_i2c = {*=1};
+        de2_i2c = {*=1};
+        de2_leds = {*=0};
+        de2_lcd = {*=0};
+        de2_vga = {*=0};
+        de2_uart_out = {*=0};
+
+        de2_ps2_out = {*=0};
+        de2_ps2b_out = {*=0};
+    }
+}
