@@ -21,6 +21,7 @@
 
 /*a Includes */
 include "apb.h"
+include "timer.h"
 include "axi.h"
 include "dprintf.h"
 include "srams.h"
@@ -119,6 +120,22 @@ extern module apb_target_timer( clock clk         "System clock",
     timing comb output apb_response; // since response depends on request address usually
 }
 
+/*m apb_target_rv_timer */
+extern
+module apb_target_rv_timer( clock clk             "System clock",
+                            input bit reset_n     "Active low reset",
+                            input t_timer_control timer_control "Control of the timer", 
+
+                            input  t_apb_request  apb_request  "APB request",
+                            output t_apb_response apb_response "APB response",
+
+                            output t_timer_value  timer_value
+    )
+{
+    timing to   rising clock clk apb_request, timer_control;
+    timing from rising clock clk apb_response, timer_value;
+}
+
 /*m apb_target_gpio */
 extern module apb_target_gpio( clock clk         "System clock",
                                input bit reset_n "Active low reset",
@@ -136,9 +153,6 @@ extern module apb_target_gpio( clock clk         "System clock",
     timing from rising clock clk apb_response;
     timing from rising clock clk gpio_output, gpio_output_enable, gpio_input_event;
     timing to   rising clock clk gpio_input;
-
-    //timing comb input  apb_request;
-    //timing comb output apb_response; // since response depends on request address usually
 }
 
 /*m apb_target_sram_interface */

@@ -17,6 +17,7 @@ import pycdl
 import sys, os, unittest
 import apb_rom
 import simple_tb
+import structs
 
 #a Test classes
 #c c_rom_th
@@ -114,6 +115,200 @@ class c_test_one(c_rom_th):
         self.finishtest(0,"")
         pass
 
+#c apb_target_rv_timer_test_base
+class apb_target_rv_timer_test_base(simple_tb.base_th):
+    #f timer_control
+    def timer_control(self, mode="enable", mult=1, div=1, lock=False):
+        reset = (mode == "reset")
+        enable = (mode == "enable")
+        add_per_tick = (16 * mult) / div
+        rem_per_tick = (16 * mult) % div
+        self.ios.timer_control__reset_counter.drive(reset)
+        self.ios.timer_control__enable_counter.drive(enable)
+        self.ios.timer_control__block_writes.drive(lock)
+        self.ios.timer_control__integer_adder.drive(add_per_tick/16)
+        self.ios.timer_control__fractional_adder.drive(add_per_tick%16)
+        if rem_per_tick==0:
+            self.ios.timer_control__bonus_subfraction_numer.drive(0)
+            self.ios.timer_control__bonus_subfraction_denom.drive(0)
+            pass
+        else:
+            self.ios.timer_control__bonus_subfraction_numer.drive(div-rem_per_tick-1)
+            self.ios.timer_control__bonus_subfraction_denom.drive(div-1)
+            pass
+        pass
+    #f apb_request
+    def apb_request(self, address, write_data=None):
+        pwrite = 1
+        pwdata = write_data
+        if write_data is None:
+            pwrite = 0
+            pwdata = 0
+            pass
+        self.ios.apb_request__paddr.drive(address)
+        self.ios.apb_request__penable.drive(0)
+        self.ios.apb_request__psel.drive(1)
+        self.ios.apb_request__pwrite.drive(pwrite)
+        self.ios.apb_request__pwdata.drive(pwdata)
+        self.bfm_wait(1)
+        self.ios.apb_request__penable.drive(1)
+        self.bfm_wait(1)
+        while self.ios.apb_response__pready.value()==0:
+            self.bfm_wait(1)
+            pass
+        read_data = self.ios.apb_response__prdata.value()
+        err       = self.ios.apb_response__perr.value()
+        return (err, read_data)
+    #f apb_read_no_error
+    def apb_read_no_error(self, address):
+        (err, data) = self.apb_request(address)
+        if err:
+            self.failtest(0,"Expected apb error response of 0")
+            pass
+        return data
+    #f apb_write_no_error
+    def apb_write_no_error(self, address, data):
+        (err, data) = self.apb_request(address, data)
+        if err:
+            self.failtest(0,"Expected apb error response of 0")
+            pass
+        pass
+    #f read_timer
+    def read_timer(self):
+        timer = self.apb_read_no_error(0)
+        timer = (self.apb_read_no_error(1)<<32) | timer
+        return timer
+    #f read_comparator
+    def read_comparator(self):
+        comparator = self.apb_read_no_error(2)
+        comparator = (self.apb_read_no_error(3)<<32) | comparator
+        return comparator
+    #f write_timer
+    def write_timer(self, timer):
+        self.apb_write_no_error(0, (timer >> 0) & 0xffffffff)
+        self.apb_write_no_error(1, (timer >> 32) & 0xffffffff)
+        pass
+    #f write_comparator
+    def write_comparator(self, comparator):
+        self.apb_write_no_error(2, (comparator >> 0) & 0xffffffff)
+        self.apb_write_no_error(3, (comparator >> 32) & 0xffffffff)
+        pass
+    #f check_timer
+    def check_timer(self, exp_timer, skip_value_check=False):
+        timer = self.read_timer()
+        if timer!=exp_timer:
+            self.failtest(0,"Unexpected timer value %d expected %d (exp-actual=%d)"%(timer,exp_timer,exp_timer-timer))
+            pass
+        if skip_value_check: return
+        timer = (self.ios.timer_value__value.value() & 0xffffffffffffffff)
+        if timer!=exp_timer:
+            self.failtest(0,"Unexpected timer value on timer_value.timer_value %d expected %d (exp-actual=%d)"%(timer,exp_timer,exp_timer-timer))
+            pass
+        pass
+    #f check_comparator
+    def check_comparator(self, exp_comparator):
+        comparator = self.read_comparator()
+        if comparator!=exp_comparator:
+            self.failtest(0,"Unexpected comparator value %d expected %d (exp-actual=%d)"%(comparator,exp_comparator,exp_comparator-comparator))
+            pass
+        pass
+    #f run
+    def run(self):
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(10)
+        self.sim_msg = self.sim_message()
+        print self.apb_request(0)
+        self.finishtest(0,"")
+        pass
+    pass
+
+#c apb_target_rv_timer_test_mult_div
+class apb_target_rv_timer_test_mult_div(apb_target_rv_timer_test_base):
+    mult_divs = [ (1,1), (10,1), (1,10), (17,13), (13,17),
+                  (10,6), # 1ns @ 600MHz
+                  (10,8), # 1ns @ 800MHz
+                  (50,1), # 1ns @ 50MHz
+    ]
+    ticks_to_wait = 1000
+    #f check_mult_div
+    def check_mult_div(self, mult, div):
+        self.timer_control(mode="reset")
+        self.bfm_wait(5)
+        timer_r = self.read_timer()
+        if (timer_r!=0):
+            self.failtest(0,"Expected timer to be 0 at reset got %d"%(timer_r))
+            pass
+        self.timer_control(mode="hold", mult=mult, div=div, lock=False)
+        self.apb_write_no_error(0, 0xfffffff0 )
+        timer0 = self.read_timer()
+        self.timer_control(mode="enable", mult=mult, div=div, lock=False)
+        self.bfm_wait(self.ticks_to_wait)
+        self.timer_control(mode="hold", mult=mult, div=div, lock=False)
+        timer1 = self.read_timer()
+        delta = timer1-timer0
+        exp_delta = self.ticks_to_wait * mult / div
+        diff = delta - exp_delta
+        print "Delta %d for %d ticks with mult %d and div %d"%(delta, self.ticks_to_wait, mult, div)
+        if (diff<-1) or (diff>1):
+            self.failtest(0,"Expected delta %d got delta %d; diff of %d out of range [-1,1]"%(exp_delta,delta,diff))
+            pass
+        pass
+    #f run
+    def run(self):
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(10)
+        self.sim_msg = self.sim_message()
+        for (m,d) in self.mult_divs:
+            self.check_mult_div(m,d)
+            pass
+        self.finishtest(0,"")
+        pass
+
+#c apb_target_rv_timer_test_comparator
+class apb_target_rv_timer_test_comparator(apb_target_rv_timer_test_base):
+    idle = 10
+    comparison_values = [(0,0), # Note the test checks both a,b and b,
+                         (1,0),
+                         (0xffffffff,0),
+                         (0xffffffff,0xffffffff),
+                         (0xffffffffffffffff,0),
+                         (0xffffffff00000000,0),
+                         (0xffffffff00000000,0xffffffff00000000),
+                         (0xffffffff00000000,0xfffffffffffffffe),
+                         (0x100000000,0),
+                         (0x100000000,0xffffffff),
+                         (0x100000000,0x100000000),
+                         (0xffffffff00000000,0x100000000),
+                         (0xffffffffffffffff,0x100000000),
+                         ]
+                            
+    #f check_comparison
+    def check_comparison(self, timer, comparator):
+        self.timer_control(mode="hold", lock=False)
+        self.bfm_wait(self.idle)
+        self.write_timer(timer)
+        self.write_comparator(comparator)
+        self.bfm_wait(self.idle)
+        self.check_timer(timer)
+        self.check_comparator(comparator)
+        expected_irq = 0
+        if (timer>comparator): expected_irq=1
+        irq = self.ios.timer_value__irq.value()
+        if expected_irq!=irq:
+            self.failtest(0,"Mismatch in expected irq comparison (got %d expected %d) for %x v %x"%(irq,expected_irq,timer,comparator))
+        pass
+    #f run
+    def run(self):
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(10)
+        self.sim_msg = self.sim_message()
+        for (t,c) in self.comparison_values:
+            self.check_comparison(t,c)
+            self.check_comparison(c,t)
+            pass
+        self.finishtest(0,"")
+        pass
+
 #a Hardware classes
 #c apb_processor_hw
 class apb_processor_hw(simple_tb.cdl_test_hw):
@@ -132,12 +327,49 @@ class apb_processor_hw(simple_tb.cdl_test_hw):
     module_name = "tb_apb_processor"
     pass
 
+#c apb_target_rv_timer_hw
+class apb_target_rv_timer_hw(simple_tb.cdl_test_hw):
+    """
+    Simple instantiation of APB target timer hw
+    """
+    
+    apb_request   = pycdl.wirebundle(structs.apb_request)
+    apb_response  = pycdl.wirebundle(structs.apb_response)
+    timer_control = pycdl.wirebundle(structs.timer_control)
+    timer_value   = pycdl.wirebundle(structs.timer_value)
+    th_forces = { "th.clock":"clk",
+                  "th.inputs":(" ".join(apb_response._name_list("apb_response")) + " " +
+                               " ".join(timer_value._name_list("timer_value")) + " " +
+                               ""),
+                  "th.outputs":(" ".join(apb_request._name_list("apb_request")) + " " +
+                               " ".join(timer_control._name_list("timer_control")) + " " +
+                               ""),
+                  }
+    module_name = "tb_apb_target_rv_timer"
+    pass
+
 #a Simulation test classes
 #c apb_processor
 class apb_processor(simple_tb.base_test):
     def test_one(self):
         test = c_test_one()
         hw = apb_processor_hw(test=test)
+        self.do_test_run(hw,
+                         num_cycles=100*1000)
+        pass
+    pass
+
+#c apb_target_rv_timer
+class apb_target_rv_timer(simple_tb.base_test):
+    def test_mult_div(self):
+        test = apb_target_rv_timer_test_mult_div()
+        hw = apb_target_rv_timer_hw(test=test)
+        self.do_test_run(hw,
+                         num_cycles=100*1000)
+        pass
+    def test_comparator(self):
+        test = apb_target_rv_timer_test_comparator()
+        hw = apb_target_rv_timer_hw(test=test)
         self.do_test_run(hw,
                          num_cycles=100*1000)
         pass

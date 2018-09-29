@@ -1,0 +1,72 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_apb_processor.cdl
+ * @brief Testbench for APB processor (ROM-based APB trasanctions)
+ *
+ * This is a simple testbench for the ROM-based APB transaction processor
+ */
+/*a Includes */
+include "srams.h"
+include "apb.h"
+include "apb_peripherals.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk,
+                               output t_apb_request  apb_request,
+                               input t_apb_response  apb_response,
+                               output t_timer_control timer_control,
+                               input t_timer_value timer_value
+    )
+{
+    timing from rising clock clk apb_request, timer_control;
+    timing to   rising clock clk apb_response, timer_value;
+}
+
+/*a Module */
+module tb_apb_target_rv_timer( clock clk,
+                               input bit reset_n
+)
+{
+
+    /*b Nets */
+    net t_apb_request    apb_request;
+    comb t_apb_response  apb_response;
+    net t_timer_control  timer_control;
+    net t_timer_value    timer_value;
+    comb t_apb_request   timer_apb_request;
+    net t_apb_response   timer_apb_response;
+
+    /*b Instantiations */
+    instantiations: {
+        se_test_harness th( clk <- clk,
+                            apb_request => apb_request,
+                            apb_response <= apb_response,
+                            timer_control => timer_control,
+                            timer_value <= timer_value );
+
+        apb_target_rv_timer timer( clk <- clk,
+                                   reset_n <= reset_n,
+                                   apb_request  <= timer_apb_request,
+                                   apb_response => timer_apb_response,
+                                   timer_control  <= timer_control,
+                                   timer_value => timer_value );
+        timer_apb_request = apb_request;
+        timer_apb_request.psel = apb_request.psel && (apb_request.paddr[4;28]==0);
+        apb_response = timer_apb_response;
+        if (apb_request.paddr[4;28]!=0) { apb_response = {*=0}; }
+    }
+
+    /*b All done */
+}

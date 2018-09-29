@@ -19,6 +19,7 @@
  */
 /*a Includes */
 include "dprintf.h"
+include "dprintf_modules.h"
 include "teletext.h"
 
 /*a External modules */
