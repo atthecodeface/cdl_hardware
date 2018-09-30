@@ -1,17 +1,8 @@
 var searchData=
 [
-  ['saa5050',['saa5050',['../bbc__submodules_8h.html#a3c21850528b579e7b800510ee80a7785',1,'saa5050():&#160;bbc_submodules.h'],['../group__saa5050.html#ga9721ca748bce4ba87149dcb6428f59d8',1,'saa5050::saa5050()']]],
-  ['se_5fsram_5fmrw_5f2_5f16384x48',['se_sram_mrw_2_16384x48',['../srams_8h.html#ac1d2ec5af44918fd5cd5203585e3371a',1,'srams.h']]],
-  ['se_5fsram_5fmrw_5f2_5f16384x8',['se_sram_mrw_2_16384x8',['../srams_8h.html#a357f3a9e6c5e00c6d8b12e45cea87753',1,'srams.h']]],
-  ['se_5fsram_5fsrw_5f128x45',['se_sram_srw_128x45',['../srams_8h.html#ab60977d0776a7dae0218083c34c9e4d8',1,'srams.h']]],
-  ['se_5fsram_5fsrw_5f128x64',['se_sram_srw_128x64',['../srams_8h.html#a1c2794156e87b2bb280c1caf923313d6',1,'srams.h']]],
-  ['se_5fsram_5fsrw_5f16384x32',['se_sram_srw_16384x32',['../srams_8h.html#afa37e75b33f9ca1374a34c7219384c45',1,'srams.h']]],
-  ['se_5fsram_5fsrw_5f16384x40',['se_sram_srw_16384x40',['../srams_8h.html#a4f9c282211a45f3f3106e44caebe5a93',1,'srams.h']]],
-  ['se_5fsram_5fsrw_5f16384x8',['se_sram_srw_16384x8',['../srams_8h.html#a7ce7ccd642478b412eda46de10d86502',1,'srams.h']]],
-  ['se_5fsram_5fsrw_5f256x40',['se_sram_srw_256x40',['../srams_8h.html#af2519ffc0219cbbefffb3f4501351424',1,'srams.h']]],
-  ['se_5fsram_5fsrw_5f256x7',['se_sram_srw_256x7',['../srams_8h.html#a165063c9a07d766b1ec138daa23edce9',1,'srams.h']]],
-  ['se_5fsram_5fsrw_5f32768x32',['se_sram_srw_32768x32',['../srams_8h.html#a69e0eadcd4c919a1719ff0cd6282c90f',1,'srams.h']]],
-  ['se_5fsram_5fsrw_5f32768x64',['se_sram_srw_32768x64',['../srams_8h.html#a6570a2f36fd4361ad19da5851874ac04',1,'srams.h']]],
-  ['se_5fsram_5fsrw_5f65536x32',['se_sram_srw_65536x32',['../srams_8h.html#a0a60ffe9ae9ac11d995e99fabd74e4e3',1,'srams.h']]],
-  ['se_5fsram_5fsrw_5f65536x8',['se_sram_srw_65536x8',['../srams_8h.html#a7d21ab3e513377deae32a7b11f05ef53',1,'srams.h']]]
+  ['picoriscv',['picoriscv',['../picoriscv_8h.html#af0962b081bcba963a365e0f81bd290dc',1,'picoriscv():&#160;picoriscv.h'],['../group__picoriscv.html#ga9a14922d911c82ecd360b7a47dd37956',1,'picoriscv::picoriscv()']]],
+  ['picoriscv_5fclocking',['picoriscv_clocking',['../picoriscv__submodules_8h.html#a74580664101d640e586cb00339941918',1,'picoriscv_clocking():&#160;picoriscv_submodules.h'],['../group__picoriscv__clocking.html#ga83204da0c07c9d08ce2e01fb8c927279',1,'picoriscv_clocking::picoriscv_clocking()']]],
+  ['picoriscv_5fde1_5fcl',['picoriscv_de1_cl',['../group__picoriscv__de1__cl.html#ga781e005c1aaca34d67a1ba44462727fe',1,'picoriscv_de1_cl']]],
+  ['ps2_5fhost',['ps2_host',['../input__devices_8h.html#a763a3310336fd68b13c1a5ee917a15e6',1,'ps2_host():&#160;input_devices.h'],['../group__ps2__host.html#gace6ea349f224f59c63f156276710fe39',1,'ps2_host::ps2_host()']]],
+  ['ps2_5fhost_5fkeyboard',['ps2_host_keyboard',['../input__devices_8h.html#a89f62f536357380e0492a9ccc18ab6b8',1,'ps2_host_keyboard():&#160;input_devices.h'],['../group__ps2__host__keyboard.html#ga08d346d613514154de0b9e2acb85bdce',1,'ps2_host_keyboard::ps2_host_keyboard()']]]
 ];

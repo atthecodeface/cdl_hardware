@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['led_5fseven_5fsegment',['led_seven_segment',['../group__led__seven__segment.html',1,'']]],
-  ['led_5fws2812_5fchain',['led_ws2812_chain',['../group__led__ws2812__chain.html',1,'']]]
+  ['jtag_5fapb',['jtag_apb',['../group__jtag__apb.html',1,'']]],
+  ['jtag_5ftap',['jtag_tap',['../group__jtag__tap.html',1,'']]]
 ];

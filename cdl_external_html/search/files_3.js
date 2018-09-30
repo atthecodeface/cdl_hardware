@@ -5,5 +5,6 @@ var searchData=
   ['dprintf_2ecdl',['dprintf.cdl',['../dprintf_8cdl.html',1,'']]],
   ['dprintf_2eh',['dprintf.h',['../dprintf_8h.html',1,'']]],
   ['dprintf_5f2_5fmux_2ecdl',['dprintf_2_mux.cdl',['../dprintf__2__mux_8cdl.html',1,'']]],
-  ['dprintf_5f4_5fmux_2ecdl',['dprintf_4_mux.cdl',['../dprintf__4__mux_8cdl.html',1,'']]]
+  ['dprintf_5f4_5fmux_2ecdl',['dprintf_4_mux.cdl',['../dprintf__4__mux_8cdl.html',1,'']]],
+  ['dprintf_5fmodules_2eh',['dprintf_modules.h',['../dprintf__modules_8h.html',1,'']]]
 ];

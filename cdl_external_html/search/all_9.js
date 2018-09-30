@@ -1,5 +1,31 @@
 var searchData=
 [
-  ['jim',['jim',['../group__bbc__micro.html#a424a46567316e12e0b5bb26475019257',1,'bbc_micro::t_address_map_decoded']]],
-  ['joystick',['joystick',['../de1__cl_8h.html#a29da0c0c022bcd6f762c48f1f21a3714',1,'t_de1_cl_shift_register::joystick()'],['../de1__cl_8h.html#a799a836612193d107f41c18d5d63df96',1,'t_de1_cl_user_inputs::joystick()']]]
+  ['jalr',['jalr',['../group__riscv__i32c__pipeline3.html#a4c58f6c0e523d7ea9eaea028bff1effa',1,'riscv_i32c_pipeline3::t_alu_combs']]],
+  ['jim',['jim',['../group__bbc__micro.html#a424a46567316e12e0b5bb26475019257',1,'bbc_micro::t_address_map_decoded::jim()'],['../group__picoriscv.html#a3bdfaa777b3483db14f565b4c334f25d',1,'picoriscv::t_address_map_decoded::jim()']]],
+  ['joystick',['joystick',['../de1__cl_8h.html#a29da0c0c022bcd6f762c48f1f21a3714',1,'t_de1_cl_shift_register::joystick()'],['../de1__cl_8h.html#a799a836612193d107f41c18d5d63df96',1,'t_de1_cl_user_inputs::joystick()']]],
+  ['jtag_2eh',['jtag.h',['../jtag_8h.html',1,'']]],
+  ['jtag_5faddr_5fapb_5faccess',['jtag_addr_apb_access',['../group__riscv__jtag__apb__dm.html#gga34e2e41e97af1c00a581b5c26cc96aeea0209f92d882f98d9695814806cfdd49f',1,'riscv_jtag_apb_dm::jtag_addr_apb_access()'],['../group__jtag__apb.html#gga8c43fccf22bfcea57e32a591a1c7e417a65d6a9bb90edc4093666bd848cfec97e',1,'jtag_apb::jtag_addr_apb_access()']]],
+  ['jtag_5faddr_5fapb_5fcontrol',['jtag_addr_apb_control',['../group__riscv__jtag__apb__dm.html#gga34e2e41e97af1c00a581b5c26cc96aeea2c0827e7d203cebe46825199cefb795b',1,'riscv_jtag_apb_dm::jtag_addr_apb_control()'],['../group__jtag__apb.html#gga8c43fccf22bfcea57e32a591a1c7e417a6d121311cc1583ad053724974e6379ca',1,'jtag_apb::jtag_addr_apb_control()']]],
+  ['jtag_5faddr_5fidcode',['jtag_addr_idcode',['../group__riscv__jtag__apb__dm.html#gga34e2e41e97af1c00a581b5c26cc96aeeacebb8d382679c64edc8aee3073038e20',1,'riscv_jtag_apb_dm::jtag_addr_idcode()'],['../group__jtag__apb.html#gga8c43fccf22bfcea57e32a591a1c7e417a23d7c3b3e5dd2ba72e0e411699f3ab1f',1,'jtag_apb::jtag_addr_idcode()']]],
+  ['jtag_5fapb',['jtag_apb',['../namespacejtag__apb.html',1,'jtag_apb'],['../jtag_8h.html#a56840849b1d41b510130fe67e222c7e2',1,'jtag_apb(clock jtag_tck, input bit reset_n, input bit[5]ir, input t_jtag_action dr_action, input bit[50]dr_in, output bit[50]dr_tdi_mask, output bit[50]dr_out, clock apb_clock, output t_apb_request apb_request, input t_apb_response apb_response):&#160;jtag.h'],['../group__jtag__apb.html#ga494e10822d148aeb8e85bcf98a616ef7',1,'jtag_apb::jtag_apb()'],['../group__jtag__apb.html',1,'(Global Namespace)']]],
+  ['jtag_5fapb_2ecdl',['jtag_apb.cdl',['../jtag__apb_8cdl.html',1,'']]],
+  ['jtag_5fidcode',['jtag_idcode',['../group__riscv__jtag__apb__dm.html#ga1d11fa5063655ce57e341a10029ba83d',1,'riscv_jtag_apb_dm::jtag_idcode()'],['../group__jtag__apb.html#gafc66970571a65aa093e56f3977d7158a',1,'jtag_apb::jtag_idcode()']]],
+  ['jtag_5fstate_5fcapture_5fdr',['jtag_state_capture_dr',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a1e17894aba16550cd8e3764d31f82ff9',1,'jtag_tap']]],
+  ['jtag_5fstate_5fcapture_5fir',['jtag_state_capture_ir',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a346aed21a699ac292808f27844806e7e',1,'jtag_tap']]],
+  ['jtag_5fstate_5fexit1_5fdr',['jtag_state_exit1_dr',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5ac3edd8ee00a09c197854630d27972176',1,'jtag_tap']]],
+  ['jtag_5fstate_5fexit1_5fir',['jtag_state_exit1_ir',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5ae7bf96c6655bdd87cf500db6a38327ff',1,'jtag_tap']]],
+  ['jtag_5fstate_5fexit2_5fdr',['jtag_state_exit2_dr',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a77b5064d3d7279260fbb602d2407590f',1,'jtag_tap']]],
+  ['jtag_5fstate_5fexit2_5fir',['jtag_state_exit2_ir',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a43aee332a78a5bbe27fd16f93b4b1135',1,'jtag_tap']]],
+  ['jtag_5fstate_5fidle',['jtag_state_idle',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5aea885f4af166c208573d340c9d2a61e9',1,'jtag_tap']]],
+  ['jtag_5fstate_5fpause_5fdr',['jtag_state_pause_dr',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a83de7fc78f7ce1353472162c6d27fb1f',1,'jtag_tap']]],
+  ['jtag_5fstate_5fpause_5fir',['jtag_state_pause_ir',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a6d065b9bbe98286080a9f1e7c5587c78',1,'jtag_tap']]],
+  ['jtag_5fstate_5fselect_5fdr_5fscan',['jtag_state_select_dr_scan',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a786462149a174156baff41198f776227',1,'jtag_tap']]],
+  ['jtag_5fstate_5fselect_5fir_5fscan',['jtag_state_select_ir_scan',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a2c6ba87a161b56078a42ef4762c5295e',1,'jtag_tap']]],
+  ['jtag_5fstate_5fshift_5fdr',['jtag_state_shift_dr',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a440746c56446ff3229386723b44e20f6',1,'jtag_tap']]],
+  ['jtag_5fstate_5fshift_5fir',['jtag_state_shift_ir',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a90f3b2bfd45f4cc3c47fa8f8b7300539',1,'jtag_tap']]],
+  ['jtag_5fstate_5ftest_5flogic_5freset',['jtag_state_test_logic_reset',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a6b87ae4279082e8cb6e98b13acf3a291',1,'jtag_tap']]],
+  ['jtag_5fstate_5fupdate_5fdr',['jtag_state_update_dr',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a31fe375510ea52b4743f9e2ab3493e2c',1,'jtag_tap']]],
+  ['jtag_5fstate_5fupdate_5fir',['jtag_state_update_ir',['../group__jtag__tap.html#ggaf201cf8feaf541ae36a88797689692f5a232ed1c91f6a93962e59af89df0b962a',1,'jtag_tap']]],
+  ['jtag_5ftap',['jtag_tap',['../namespacejtag__tap.html',1,'jtag_tap'],['../jtag_8h.html#af8b4236b49922c3bd90fa80397d20edb',1,'jtag_tap(clock jtag_tck, input bit reset_n, input t_jtag jtag, output bit tdo, output bit[5]ir, output t_jtag_action dr_action, output bit[50]dr_in, input bit[50]dr_tdi_mask, input bit[50]dr_out):&#160;jtag.h'],['../group__jtag__tap.html#ga49b61fdfcc18f7f936488869368aa5d4',1,'jtag_tap::jtag_tap()'],['../group__jtag__tap.html',1,'(Global Namespace)']]],
+  ['jtag_5ftap_2ecdl',['jtag_tap.cdl',['../jtag__tap_8cdl.html',1,'']]]
 ];

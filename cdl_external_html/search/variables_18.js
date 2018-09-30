@@ -1,5 +1,4 @@
 var searchData=
 [
-  ['z',['z',['../group__cpu6502.html#aa9d0ceda437f1b2e5cecefc40d70657b',1,'cpu6502::t_flags']]],
-  ['zero',['zero',['../group__cpu6502.html#ae6eb05767fa643b51e7754a58ab10827',1,'cpu6502::t_alu_result']]]
+  ['y',['y',['../group__cpu6502.html#af9c001545fe7df58152af3cd18ff771c',1,'cpu6502::t_state::y()'],['../de1__cl_8h.html#a9fb4e3900af2a7f5cee2982ebca82bfe',1,'t_de1_cl_diamond::y()']]]
 ];
