@@ -17,26 +17,8 @@
  *
  */
 
-/*a Types */
-/*t t_sram_access_req
- */
-typedef struct {
-    bit     valid;
-    bit[4]  id;
-    bit     read_not_write;
-    bit[8]  byte_enable;
-    bit[32] address;
-    bit[64] write_data;
-} t_sram_access_req;
-
-/*t t_sram_access_resp
- */
-typedef struct {
-    bit     ack;
-    bit     valid;
-    bit[4]  id;
-    bit[64] data;
-} t_sram_access_resp;
+/*a Includes */
+include "sram.h"
 
 /*a Modules */
 /*m se_sram_srw_128x64 */

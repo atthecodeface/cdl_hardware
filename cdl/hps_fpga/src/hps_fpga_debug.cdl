@@ -170,8 +170,7 @@ module hps_fpga_debug( clock clk,
     net t_csr_response tt_lcd_framebuffer_csr_response;
     net t_csr_response tt_vga_framebuffer_csr_response;
     net t_csr_response timeout_csr_response;
-    comb t_bbc_display_sram_write tt_display_sram_write;
-    comb t_bbc_display_sram_write fb_display_sram_write;
+    comb t_sram_access_req tt_display_sram_access_req;
     net t_video_bus vga_video_bus;
     net t_video_bus lcd_video_bus;
 
@@ -560,13 +559,11 @@ module hps_fpga_debug( clock clk,
                          dprintf_byte => dprintf_byte
             );
 
-        tt_display_sram_write = {enable = dprintf_byte.valid,
-                                 address = dprintf_byte.address,
-                                 data = bundle(40b0, dprintf_byte.data) };
+        tt_display_sram_access_req = {*=0,
+                                      valid = dprintf_byte.valid,
+                                      address = bundle(16b0, dprintf_byte.address),
+                                      write_data = bundle(56b0, dprintf_byte.data) };
 
-        fb_display_sram_write = {enable  = fb_sram_access_req.valid && !fb_sram_access_req.read_not_write,
-                                 address = fb_sram_access_req.address[16;0],
-                                 data = bundle(40b0, fb_sram_access_req.write_data[8;0]) };
         fb_sram_access_resp = {*=0};
         fb_sram_access_resp.ack   = fb_sram_access_req.valid;
         fb_sram_access_resp.valid = fb_sram_access_req.valid;
@@ -577,7 +574,7 @@ module hps_fpga_debug( clock clk,
                                       video_clk <- de1_cl_lcd_clock,
                                       reset_n <= reset_n,
                                       video_bus => lcd_video_bus,
-                                      display_sram_write <= tt_display_sram_write,
+                                      display_sram_write <= tt_display_sram_access_req,
                                       csr_select_in <= 16h2, // uses 2 selects
                                       csr_request <= csr_request,
                                       csr_response => tt_lcd_framebuffer_csr_response
@@ -588,7 +585,7 @@ module hps_fpga_debug( clock clk,
                                       video_clk <- de1_vga_clock,
                                       reset_n <= reset_n,
                                       video_bus => vga_video_bus,
-                                      display_sram_write <= fb_display_sram_write,
+                                      display_sram_write <= fb_sram_access_req,
                                       csr_select_in <= 16h4, // uses 2 selects
                                       csr_request <= csr_request,
                                       csr_response => tt_vga_framebuffer_csr_response
@@ -705,7 +702,7 @@ module hps_fpga_debug( clock clk,
         if ((de1_switches[3;2]==5) && (apb_processor_response.acknowledge)) {
             counter <= counter + 1;
         }
-        if ((de1_switches[3;2]==6) && (tt_display_sram_write.enable)) {
+        if ((de1_switches[3;2]==6) && (tt_display_sram_access_req.valid)) {
             counter <= counter + 1;
         }
 

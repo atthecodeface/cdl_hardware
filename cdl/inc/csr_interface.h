@@ -115,6 +115,19 @@ typedef struct {
 typedef bit[32] t_csr_access_data;
 
 
+/*t t_bbc_csr_select */
+/**
+ * This enumeration matches the C, and it is used to select the CSR
+ * target (the 'select' field of csr_request's).
+ */
+typedef enum[16] {
+    bbc_csr_select_clocks = 0,
+    bbc_csr_select_display = 1,
+    bbc_csr_select_floppy = 2,
+    bbc_csr_select_keyboard = 3,
+    bbc_csr_select_framebuffer = 4,
+} t_bbc_csr_select;
+
 /*a Modules */
 /*m csr_target_apb
  *

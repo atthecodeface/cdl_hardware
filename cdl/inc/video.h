@@ -32,6 +32,22 @@
 /*a Includes */
 
 /*a Types */
+/*t t_video_timing
+ *
+ * Timing controls from a framebuffer_timing module, to control a
+ * framebuffer video driver
+ */
+typedef struct {
+    bit v_sync              "Asserted for the whole of the first scanline or a frame";
+    bit h_sync              "Asserted for a single clock at the start of every scanline";
+    bit will_h_sync         "Asserted if the next clock will be an @a h_sync";
+    bit v_displaying        "Asserted for a scanline if the scanline will display data";
+    bit display_required    "Asserted for scanlines being displayed, up to the end of the horizontal displayed area - permits prefetching of pixel data";
+    bit will_display_enable "Asserted if the next clock will have @a display_enable asserted";
+    bit display_enable      "Asserted if pixels should be presented to the output (i.e. outside the front and back porches both horizontally and vertically)";
+    bit v_frame_last_line   "Asserted if ";
+} t_video_timing;
+
 /*t t_video_bus */
 typedef struct {
     bit    vsync "Asserted for one whole line at start of back porch of frame, simultaneous with hsync";

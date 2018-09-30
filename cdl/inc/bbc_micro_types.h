@@ -337,19 +337,6 @@ typedef struct {
     bit[64] read_data     "Read data from an SRAM request, valid with read_data_valid, zero in all other cycles";
 } t_bbc_micro_sram_response;
 
-/*t t_bbc_csr_select */
-/**
- * This enumeration matches the C, and it is used to select the CSR
- * target (the 'select' field of csr_request's).
- */
-typedef enum[16] {
-    bbc_csr_select_clocks = 0,
-    bbc_csr_select_display = 1,
-    bbc_csr_select_floppy = 2,
-    bbc_csr_select_keyboard = 3,
-    bbc_csr_select_framebuffer = 4,
-} t_bbc_csr_select;
-
 /*t t_bbc_sram_select */
 /**
  * This enumeration matches the C, and it is used to select the SRAM

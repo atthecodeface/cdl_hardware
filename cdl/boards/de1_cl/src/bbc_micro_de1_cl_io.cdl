@@ -110,7 +110,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
     net bit[num_dprintf_requesters-1]           dprintf_mux_ack;
     net t_dprintf_req_4[num_dprintf_requesters-1] dprintf_mux_req;
     net t_dprintf_byte dprintf_byte;
-    comb t_bbc_display_sram_write tt_display_sram_write;
+    comb t_sram_access_req tt_display_sram_access_req;
 
     comb t_debug_combs debug_combs;
     clocked clock clk reset active_low reset_n t_debug_state debug_state={*=0};
@@ -350,16 +350,17 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                          dprintf_byte => dprintf_byte
             );
 
-        tt_display_sram_write = {enable = dprintf_byte.valid,
-                                 address = dprintf_byte.address,
-                                 data = bundle(40b0, dprintf_byte.data) };
+        tt_display_sram_access_req = {*=0,
+                                      valid = dprintf_byte.valid,
+                                      address = bundle(16b0, dprintf_byte.address),
+                                      write_data = bundle(56b0, dprintf_byte.data) };
 
         framebuffer_teletext ftb( csr_clk <- clk,
                                   sram_clk <- clk,
                                   video_clk <- video_clk,
                                   reset_n <= framebuffer_reset_n,
                                   video_bus => video_bus,
-                                  display_sram_write <= tt_display_sram_write,
+                                  display_sram_write <= tt_display_sram_access_req,
                                   csr_select_in <= 0, // uses 2 selects, from the default
                                   csr_request <= csr_request,
                                   csr_response => tt_framebuffer_csr_response

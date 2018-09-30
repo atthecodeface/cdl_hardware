@@ -118,6 +118,7 @@ module bbc_micro_de1_cl_bbc( clock clk          "50MHz clock from DE1 clock gene
     }
 
     /*b SRAMs for floppy and framebuffers */
+    comb t_sram_access_req display_sram_access_req;
     floppy_and_framebuffer: {
         se_sram_srw_32768x32 floppy(sram_clock <- clk_cpu,
                                     select         <= floppy_sram_request_r.enable && !floppy_sram_reading,
@@ -132,12 +133,16 @@ module bbc_micro_de1_cl_bbc( clock clk          "50MHz clock from DE1 clock gene
         floppy_sram_response.read_data_valid <= floppy_sram_reading;
         floppy_sram_response.read_data       <= floppy_sram_read_data;
 
+        display_sram_access_req = {*=0};
+        display_sram_access_req.valid      = display_sram_write.enable;
+        display_sram_access_req.address    = bundle(16b0,display_sram_write.address);
+        display_sram_access_req.write_data = bundle(16b0,display_sram_write.data);
         framebuffer fb( csr_clk <- clk_cpu,
                         sram_clk <- clk_2MHz_video_clock,
                         video_clk <- video_clk,
                         reset_n <= framebuffer_reset_n,
                         video_bus => video_bus,
-                        display_sram_write <= display_sram_write,
+                        display_sram_write <= display_sram_access_req,
                         csr_request <= csr_request,
                         csr_response => framebuffer_csr_response
             );

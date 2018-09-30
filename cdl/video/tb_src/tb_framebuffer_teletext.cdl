@@ -25,7 +25,7 @@ include "framebuffer.h"
 /*a External modules */
 extern module se_test_harness( clock clk "Clock for CSR reads/writes",
                                input bit reset_n,
-                               output t_bbc_display_sram_write display_sram_write,
+                               output t_sram_access_req display_sram_write,
                                input t_video_bus video_bus,
                                output t_csr_request csr_request,
                                input t_csr_response csr_response
@@ -45,7 +45,7 @@ module tb_framebuffer_teletext( clock clk,
 {
 
     /*b Nets */
-    net t_bbc_display_sram_write display_sram_write;
+    net t_sram_access_req display_sram_write;
     net t_video_bus video_bus;
     net t_csr_request csr_request;
     net t_csr_response csr_response;
