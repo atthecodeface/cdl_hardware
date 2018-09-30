@@ -146,7 +146,8 @@ module hps_fpga_debug( clock clk,
     net t_de1_cl_user_inputs    de1_cl_user_inputs    "";
 
     net bit led_chain;
-    net bit[3] timer_equalled;
+    comb t_timer_control timer_control;
+    net  t_timer_value timer_value;
     net bit[16] gpio_output;
     net bit[16] gpio_output_enable;
     clocked bit[16]  gpio_input=0;
@@ -222,6 +223,10 @@ module hps_fpga_debug( clock clk,
         riscv_config.e32   = 0;
         riscv_config.i32c  = 1;
         irqs = {*=0};
+        irqs.mtip = timer_value.irq;
+        timer_control = {*=0};
+        timer_control.enable_counter = 1;
+        timer_control.integer_adder = 20; // 50MHz
 
         riscv_i32_minimal riscv( clk <- lw_axi_clock_clk,
                                proc_reset_n <= reset_n & rv_sram_ctrl[0],
@@ -499,11 +504,12 @@ module hps_fpga_debug( clock clk,
                                     dprintf_req => apb_dprintf_req,
                                     dprintf_ack <= apb_dprintf_ack );
 
-        apb_target_timer timer( clk <- lw_axi_clock_clk,
-                                reset_n <= reset_n,
-                                apb_request  <= timer_apb_request,
-                                apb_response => timer_apb_response,
-                                timer_equalled => timer_equalled );
+        apb_target_rv_timer timer( clk <- lw_axi_clock_clk,
+                                   reset_n <= reset_n,
+                                   timer_control <= timer_control,
+                                   apb_request  <= timer_apb_request,
+                                   apb_response => timer_apb_response,
+                                   timer_value => timer_value );
 
         apb_target_gpio gpio( clk <- lw_axi_clock_clk,
                               reset_n <= reset_n,

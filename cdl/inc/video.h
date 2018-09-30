@@ -17,6 +17,16 @@
  *
  * Header file for the types and CDL modules for input devices
  *
+ * From Martin Hinner's collection of data:
+ *
+ * Timing values (display + (right border / front porch) + sync pulse + (back porch / left border))
+ *
+ *  640x480  @ 60Hz:  25.175MHz clk 640+16+ 96+48 = 800  480+10+2+33 = 525 -syncs
+ *  800x600  @ 60Hz:  40MHz clk     800+40+128+88 =1076  600+ 1+4+23 = 628 +syncs
+ * 1024x768  @ 60Hz:  65MHz clk    1024+24+136+160=1344  768+ 3+6+29 = 806 -syncs
+ * 1280x1024 @ 60Hz: 108MHz clk    1280+48+112+248=1688 1024+ 1+3+38 =1066 +syncs
+ * 1600x1200 @ 60Hz: 162MHz clk    1600+64+192+304=2160 1200+ 1+3+46 =1250 +syncs
+ *
  */
 
 /*a Includes */
@@ -33,12 +43,6 @@ typedef struct {
 } t_video_bus;
 
 /*t t_adv7123
- *
- * Timing values (display + (right border / front porch) + sync pulse + (back porch / left border))
- *
- *  640x480 @ 60Hz: 25.175MHz clk 640+16+ 96+48 = 800  480+10+2+33 = 525 -syncs
- *  800x600 @ 60Hz: 40MHz clk     800+40+128+88 =1076  600+ 1+4+23 = 628 +syncs
- * 1024x768 @ 60Hz: 65MHz clk    1024+24+136+160=1344  768+ 3+6+29 = 806 -syncs
  *
  */
 typedef struct {
