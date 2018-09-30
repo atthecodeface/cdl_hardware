@@ -546,9 +546,12 @@ class framebuffer_teletext_hw(simple_tb.cdl_test_hw):
                                "csr_request__select[16] "+
                                "csr_request__read_not_write "+
                                "csr_request__valid "+
-                               "display_sram_write__address[16] "+
-                               "display_sram_write__data[48] "+
-                               "display_sram_write__enable "+
+                               "display_sram_write__address[32] "+
+                               "display_sram_write__write_data[64] "+
+                               "display_sram_write__valid "+
+                               "display_sram_write__read_not_write "+
+                               "display_sram_write__byte_enable[8] "+
+                               "display_sram_write__id[4] "+
                                 ""),
                   }
 
