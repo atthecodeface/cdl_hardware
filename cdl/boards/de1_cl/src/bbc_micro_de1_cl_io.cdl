@@ -28,6 +28,7 @@ include "leds.h"
 include "teletext.h"
 include "dprintf.h"
 include "dprintf_modules.h"
+include "de1.h"
 include "de1_cl.h"
 include "apb.h"
 include "apb_peripherals.h"
@@ -72,8 +73,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                             input bit reset_n  "hard reset from a pin - a key on DE1",
                             input bit bbc_reset_n,
                             input bit framebuffer_reset_n,
-                            input bit[4] keys,
-                            input bit[10] switches,
+                            input t_de1_inputs de1_inputs,
                             input t_bbc_clock_control clock_control,
                             output t_bbc_keyboard bbc_keyboard,
                             output t_video_bus video_bus,
@@ -84,7 +84,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                             input  t_de1_cl_inputs_status   inputs_status  "DE1 CL daughterboard shifter register etc status",
                             output t_de1_cl_inputs_control  inputs_control "DE1 CL daughterboard shifter register control",
                             output bit lcd_source,
-                            output bit[10] leds,
+                            output t_de1_leds de1_leds,
                             output bit led_chain
     )
 {
@@ -132,10 +132,10 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
         if (clock_control.enable_1MHz_rising)  {debug_state.rising_1MHz_ticks <= debug_state.rising_1MHz_ticks+1;}
         if (clock_control.enable_1MHz_falling) {debug_state.falling_1MHz_ticks <= debug_state.falling_1MHz_ticks+1;}
 
-        if (clock_control.debug[0] && !switches[4]) { debug_state.counter_0 <= debug_state.counter_0+1; }
-        if (clock_control.debug[1] && !switches[4]) { debug_state.counter_1 <= debug_state.counter_1+1; }
-        if (clock_control.debug[2] &&  switches[4]) { debug_state.counter_0 <= debug_state.counter_0+1; }
-        if (clock_control.debug[3] &&  switches[4]) { debug_state.counter_1 <= debug_state.counter_1+1; }
+        if (clock_control.debug[0] && !de1_inputs.switches[4]) { debug_state.counter_0 <= debug_state.counter_0+1; }
+        if (clock_control.debug[1] && !de1_inputs.switches[4]) { debug_state.counter_1 <= debug_state.counter_1+1; }
+        if (clock_control.debug[2] &&  de1_inputs.switches[4]) { debug_state.counter_0 <= debug_state.counter_0+1; }
+        if (clock_control.debug[3] &&  de1_inputs.switches[4]) { debug_state.counter_1 <= debug_state.counter_1+1; }
 
         if (debug_combs.timer_10ms) {
             debug_state.update <= 0;
@@ -195,7 +195,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
         } else {
             key_state.fn_keys_down <= 0;
         }
-        lcd_source = switches[3];
+        lcd_source = de1_inputs.switches[3];
     }
 
     /*b LED chain logic */
@@ -259,7 +259,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                                       ps2_key <= ps2_key,
                                       keyboard => bbc_ps2_keyboard );
 
-        keys_r <= keys;
+        keys_r <= de1_inputs.keys;
         bbc_keyboard.reset_pressed = 0;
         bbc_keyboard.keys_down_cols_0_to_7 = bbc_ps2_keyboard.keys_down_cols_0_to_7;
         bbc_keyboard.keys_down_cols_8_to_9 = bbc_ps2_keyboard.keys_down_cols_8_to_9;
@@ -388,11 +388,12 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
             apb_processor_request.valid = 1;
         }
 
-        leds[0] = apb_processor_request.valid;
-        leds[1] = apb_processor_response.acknowledge;
-        leds[2] = apb_processor_response.rom_busy;
-        leds[3] = csr_request.valid;
-        leds[4] = csr_response_r.acknowledge;
+        de1_leds = {*=0};
+        de1_leds.leds[0] = apb_processor_request.valid;
+        de1_leds.leds[1] = apb_processor_response.acknowledge;
+        de1_leds.leds[2] = apb_processor_response.rom_busy;
+        de1_leds.leds[3] = csr_request.valid;
+        de1_leds.leds[4] = csr_response_r.acknowledge;
         combined_csr_response = csr_response;
         combined_csr_response |= tt_framebuffer_csr_response;
         csr_response_r <= csr_response;

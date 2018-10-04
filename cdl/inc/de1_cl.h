@@ -20,6 +20,7 @@
  */
 
 /*a Includes */
+include "de1.h"
 include "bbc_micro_types.h"
 include "csr_interface.h"
 include "input_devices.h"
@@ -118,17 +119,6 @@ extern module de1_cl_controls( clock clk          "system clock - not the shift 
     timing from  rising clock clk inputs_control, user_inputs;
 }
 
-/*t t_de1_leds */
-typedef struct {
-    bit[10] leds;
-    bit[7] h0;
-    bit[7] h1;
-    bit[7] h2;
-    bit[7] h3;
-    bit[7] h4;
-    bit[7] h5;
-} t_de1_leds;
-
 /*a Modules */
 /*m bbc_micro_de1_cl_bbc */
 extern
@@ -157,8 +147,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                             input bit reset_n  "hard reset from a pin - a key on DE1",
                             input bit bbc_reset_n,
                             input bit framebuffer_reset_n,
-                            input bit[4] keys,
-                            input bit[10] switches,
+                            input t_de1_inputs de1_inputs,
                             input t_bbc_clock_control clock_control,
                             output t_bbc_keyboard bbc_keyboard,
                             output t_video_bus video_bus,
@@ -168,14 +157,14 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                             output t_ps2_pins ps2_out "PS2 output pin driver open collector",
                             input  t_de1_cl_inputs_status   inputs_status  "DE1 CL daughterboard shifter register etc status",
                             output t_de1_cl_inputs_control  inputs_control "DE1 CL daughterboard shifter register control",
-                            output bit[10] leds,
+                            output t_de1_leds de1_leds,
                             output bit lcd_source,
                             output bit led_chain
     )
 {
     timing to   rising clock clk clock_control;
-    timing to   rising clock clk keys, switches;
-    timing from rising clock clk lcd_source, leds;
+    timing to   rising clock clk de1_inputs;
+    timing from rising clock clk lcd_source, de1_leds;
     timing from rising clock clk bbc_keyboard, csr_request;
     timing to   rising clock clk csr_response;
     timing from rising clock video_clk video_bus;

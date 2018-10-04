@@ -130,7 +130,7 @@ cdl cdl/boards/de1_cl/src          bbc_micro_de1_cl      inc:cdl/inc
 cdl cdl/boards/de1_cl/src          de1_cl_controls       inc:cdl/inc
 cdl cdl/boards/de1_cl/tb_src       tb_de1_cl_controls    inc:cdl/inc
 
-cdl cdl/boards/de1_cl/src          riscv_adjunct_de1_cl      inc:cdl/inc
+#cdl cdl/boards/de1_cl/src          riscv_adjunct_de1_cl      inc:cdl/inc
 
 cdl cdl/boards/de2/src/            picorisc_de2 inc:cdl/inc
 

@@ -20,7 +20,6 @@
  */
 
 /*a Includes */
-include "csr_interface.h"
 include "input_devices.h"
 
 /*a Types */
