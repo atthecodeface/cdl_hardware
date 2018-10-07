@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 def convert_rom(rom_filename):
-    in_file  = open("../roms/"+rom_filename)
+    in_file  = open("roms/"+rom_filename)
     out_file =  open("roms/"+rom_filename+".mif", "w")
     address = 0
     r = "%04x: "%address    
