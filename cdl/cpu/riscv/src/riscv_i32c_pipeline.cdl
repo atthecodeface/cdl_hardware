@@ -76,9 +76,24 @@ constant integer coproc_force_disable=0;
  * Combinatorials for the instruction fetch
  */
 typedef struct {
-    bit request;
-    bit[32] address;
+    bit[32] pc_plus_4;
+    bit[32] pc_plus_2;
 } t_ifetch_combs;
+
+/*t t_ifetch_state
+ *
+ * Combinatorials for the instruction fetch
+ */
+typedef fsm {
+    ifetch_fsm_idle;
+    ifetch_fsm_restarting;
+    ifetch_fsm_fetching;
+} t_ifetch_fsm;
+typedef struct {
+    t_ifetch_fsm state;
+    bit running;
+    bit[32]      pc    "PC to start fetching from";
+} t_ifetch_state;
 
 /*t t_decexecrfw_state */
 typedef struct {
@@ -99,11 +114,6 @@ typedef struct {
 
     t_riscv_word   rs1;
     t_riscv_word   rs2;
-    bit[32] pc_plus_4;
-    bit[32] pc_plus_2;
-    bit[32] pc_plus_inst;
-    bit[32] next_pc;
-    bit     fetch_sequential;
 
     bit[2]  word_offset;
     bit[32] branch_target;
@@ -163,7 +173,10 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
 
     clocked t_riscv_word[32] registers={*=0} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
 
+    comb t_riscv_pipeline_response pipeline_response;
+    //comb t_riscv_pipeline_control  pipeline_control;
     comb    t_ifetch_combs         ifetch_combs;
+    clocked t_ifetch_state         ifetch_state = {*=0, state=ifetch_fsm_idle};
     net     t_riscv_i32_decode     decexecrfw_idecode_i32;
     net     t_riscv_i32_decode     decexecrfw_idecode_i32c;
     clocked t_decexecrfw_state     decexecrfw_state={*=0, pc=INITIAL_PC};
@@ -174,9 +187,9 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
     net t_riscv_csr_data csr_data;
     net t_riscv_csrs_minimal csrs;
 
-    /*b Ifetch request
+    /*b Pipeline control
      */
-    instruction_fetch_request
+    pipeline_control_logic
     """
     The instruction fetch request derives from the
     decode/execute stage (the instruction address that is required
@@ -190,16 +203,52 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
     valid instruction to decode) then the current PC is requested.
     """:
     {
-        ifetch_combs.address        = decexecrfw_combs.next_pc;
-        if (!decexecrfw_state.valid && decexecrfw_state.enable) {
-            ifetch_combs.address   = decexecrfw_state.pc;
+        if (!ifetch_state.running) { // AND if run from boot time
+            ifetch_state.running <= 1;
+            ifetch_state.pc <= INITIAL_PC;
         }
-        ifetch_combs.request = decexecrfw_state.enable;
 
         ifetch_req             = {*=0};
-        ifetch_req.valid       = ifetch_combs.request;
-        ifetch_req.sequential  = decexecrfw_combs.fetch_sequential;
-        ifetch_req.address     = ifetch_combs.address;
+        ifetch_req.valid       = 0;
+        ifetch_req.sequential  = 0;
+        ifetch_req.address     = ifetch_state.pc;
+        ifetch_combs.pc_plus_4      = pipeline_response.decode.pc + 4;
+        ifetch_combs.pc_plus_2      = pipeline_response.decode.pc + 2;
+        full_switch (ifetch_state.state) {
+        case ifetch_fsm_idle: {
+            if (ifetch_state.running) {
+                ifetch_state.state <= ifetch_fsm_restarting;
+            }
+        }
+        case ifetch_fsm_restarting: {
+            ifetch_req.valid   = 1;
+            ifetch_req.address = ifetch_state.pc;
+            if (ifetch_resp.valid) {
+                ifetch_state.state <= ifetch_fsm_fetching;
+            }
+        }
+        case ifetch_fsm_fetching: { // present request, decode should be valid, pipeline not empty
+            ifetch_req.valid = 1;
+            ifetch_req.sequential = 1;
+            if (pipeline_response.exec.action == rv_pipe_epc_flush) {
+                ifetch_req.address = pipeline_response.exec.flush_target;
+                ifetch_req.sequential = 0;
+            } elsif (pipeline_response.decode.action==rv_pipe_dpc_flush) { // cannot happen on one-stage pipeline
+            } elsif (pipeline_response.decode.action==rv_pipe_dpc_ret)   { // cannot happen on one-stage pipeline
+            } elsif (pipeline_response.decode.action==rv_pipe_dpc_predict_branch) {  // cannot happen on one-stage pipeline
+            } elsif (pipeline_response.decode.action==rv_pipe_dpc_sequential) {
+                ifetch_req.sequential = 1;
+                ifetch_req.address = ifetch_combs.pc_plus_4;
+                if (pipeline_response.decode.is_compressed) {
+                    ifetch_req.address = ifetch_combs.pc_plus_2;
+                }
+            }
+            if (pipeline_response.exec.trap) {
+                ifetch_req.address = pipeline_response.exec.mtvec;
+                ifetch_req.sequential = 0;
+            }
+        }
+        }
     }
 
     /*b Decode, RFR, execute and RFW stage - single stage execution
@@ -227,9 +276,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
             decexecrfw_state.illegal_pc <= 0;
             decexecrfw_state.valid_legal <= 1;
             decexecrfw_state.valid <= 1;
-        }
-        if (decexecrfw_state.valid) {
-            decexecrfw_state.pc <= decexecrfw_combs.next_pc;
+            decexecrfw_state.pc <= ifetch_req.address;
         }
 
         /*b Decode instruction */
@@ -343,19 +390,27 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
             decexecrfw_combs.trap_cause = riscv_trap_cause_illegal_instruction;
             decexecrfw_combs.trap_value = decexecrfw_state.instruction.data;
         }
-        decexecrfw_combs.pc_plus_4      = decexecrfw_state.pc + 4;
-        decexecrfw_combs.pc_plus_2      = decexecrfw_state.pc + 2;
-        decexecrfw_combs.pc_plus_inst   = decexecrfw_combs.idecode.is_compressed ? decexecrfw_combs.pc_plus_2 : decexecrfw_combs.pc_plus_4;
-        decexecrfw_combs.next_pc = decexecrfw_combs.pc_plus_inst;
-        decexecrfw_combs.fetch_sequential = 1;
+
+        pipeline_response.decode.pc = decexecrfw_state.pc;
+        pipeline_response.decode.is_compressed = decexecrfw_combs.idecode.is_compressed;
+        pipeline_response.decode.action        = rv_pipe_dpc_sequential;
+        pipeline_response.decode.branch_target = decexecrfw_combs.branch_target; // used only if predict_branch - i.e. never in this pipeline
+
+        pipeline_response.exec.trap = 0;
+        pipeline_response.exec.trap_vector = 0;
+        pipeline_response.exec.trap_vector = 0;
+        pipeline_response.exec.is_compressed = decexecrfw_combs.idecode.is_compressed;
+        pipeline_response.exec.pc            = decexecrfw_state.pc;
+        pipeline_response.exec.action        = rv_pipe_epc_predicted; // Normal action is Exec follows whatever was decoded (if there was anything)
+        pipeline_response.exec.flush_target = decexecrfw_combs.branch_target;
         if (decexecrfw_combs.branch_taken) {
-            decexecrfw_combs.next_pc = decexecrfw_combs.branch_target;
-            decexecrfw_combs.fetch_sequential = 0;
+            pipeline_response.exec.action = rv_pipe_epc_flush;
         }
+        pipeline_response.exec.mtvec = csrs.mtvec;
         if (decexecrfw_combs.trap) {
-            decexecrfw_combs.next_pc = csrs.mtvec;
-            decexecrfw_combs.fetch_sequential = 0;
+            pipeline_response.exec.trap = 1;
         }
+
         csr_controls.trap_cause = decexecrfw_combs.trap_cause;
         csr_controls.trap       = 0;
         csr_controls.trap_pc    = decexecrfw_state.pc;
