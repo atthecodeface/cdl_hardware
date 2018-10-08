@@ -97,7 +97,6 @@ typedef struct {
 
 /*t t_decexecrfw_state */
 typedef struct {
-    bit enable                     "Asserted if execution is enabled, deasserted at reset";
     t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
     bit valid                      "Asserted if @instr_data is a valid fetched instruction, whether misaligned or not";
     bit valid_legal                "Asserted if @instr_data is a valid fetched instruction on a valid alignment";
@@ -116,7 +115,6 @@ typedef struct {
     t_riscv_word   rs2;
 
     bit[2]  word_offset;
-    bit[32] branch_target;
     bit branch_taken;
     bit trap;
     t_riscv_trap_cause trap_cause;
@@ -174,7 +172,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
     clocked t_riscv_word[32] registers={*=0} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
 
     comb t_riscv_pipeline_response pipeline_response;
-    //comb t_riscv_pipeline_control  pipeline_control;
+    comb t_riscv_pipeline_control  pipeline_control;
     comb    t_ifetch_combs         ifetch_combs;
     clocked t_ifetch_state         ifetch_state = {*=0, state=ifetch_fsm_idle};
     net     t_riscv_i32_decode     decexecrfw_idecode_i32;
@@ -243,12 +241,24 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
                     ifetch_req.address = ifetch_combs.pc_plus_2;
                 }
             }
-            if (pipeline_response.exec.trap) {
-                ifetch_req.address = pipeline_response.exec.mtvec;
+            if (pipeline_response.exec.trap) { // vector interrupts if required
+                ifetch_req.address = bundle(pipeline_response.exec.mtvec.base, 2b0);
                 ifetch_req.sequential = 0;
             }
         }
         }
+
+        pipeline_control = {*=0};
+        pipeline_control.valid = ifetch_req.valid && ifetch_resp.valid;
+        pipeline_control.pc    = ifetch_req.address;
+        pipeline_control.data  = ifetch_resp.data;
+        pipeline_control.mode  = rv_mode_machine;
+        // handle wfi_mode[] too
+        //        machine_mode_int_req = 0;
+        //if ((csrs.mip & csrs.mie)!=0) {
+        //   machine_mode_int_req = mstatus.mie; // and only if mode==machine/super/user mode
+        //}
+
     }
 
     /*b Decode, RFR, execute and RFW stage - single stage execution
@@ -269,14 +279,16 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
 
     """: {
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
-        decexecrfw_state.enable <= 1;
         decexecrfw_state.valid <= 0;
-        if (ifetch_req.valid && ifetch_resp.valid) {
-            decexecrfw_state.instruction <= {data=ifetch_resp.data, mode=rv_mode_machine};
+        if (pipeline_control.valid) {
+            decexecrfw_state.instruction <= {
+                data = pipeline_control.data,
+                mode = pipeline_control.mode };
             decexecrfw_state.illegal_pc <= 0;
             decexecrfw_state.valid_legal <= 1;
             decexecrfw_state.valid <= 1;
-            decexecrfw_state.pc <= ifetch_req.address;
+            decexecrfw_state.pc <= pipeline_control.pc;
+
         }
 
         /*b Decode instruction */
@@ -295,6 +307,12 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
                 decexecrfw_combs.idecode = decexecrfw_idecode_i32c;
             }
         }
+
+        /*b Pipeline response from decode */
+        pipeline_response.decode.pc            = decexecrfw_state.pc;
+        pipeline_response.decode.is_compressed = decexecrfw_combs.idecode.is_compressed;
+        pipeline_response.decode.action        = rv_pipe_dpc_sequential;
+        pipeline_response.decode.branch_target = decexecrfw_alu_result.branch_target; // used only if predict_branch - i.e. never in this pipeline
 
         /*b Register read */
         decexecrfw_combs.rs1 = registers[decexecrfw_combs.idecode.rs1]; // note that register 0 is ALWAYS 0 anyway
@@ -360,11 +378,18 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         dmem_access_req.write_data = decexecrfw_combs.rs2 << (bundle(decexecrfw_combs.word_offset,3b0));
 
         /*b Determine whether branch would be taken and find next PC */
+        pipeline_response.exec.trap = 0;
+        pipeline_response.exec.trap_vector = 0;
+        pipeline_response.exec.is_compressed = decexecrfw_combs.idecode.is_compressed;
+        pipeline_response.exec.pc            = decexecrfw_state.pc;
+        pipeline_response.exec.mtvec         = csrs.mtvec;
+        pipeline_response.exec.action        = rv_pipe_epc_predicted; // Normal action is Exec follows whatever was decoded (if there was anything)
+        pipeline_response.exec.flush_target = decexecrfw_alu_result.branch_target;
+
         decexecrfw_combs.trap = 0;
         decexecrfw_combs.trap_cause = 0;
         decexecrfw_combs.trap_value = 0;
         decexecrfw_combs.branch_taken = 0;
-        decexecrfw_combs.branch_target = decexecrfw_alu_result.branch_target;
         part_switch (decexecrfw_combs.idecode.op) {
         case riscv_op_branch:   { decexecrfw_combs.branch_taken = decexecrfw_alu_result.branch_condition_met; }
         case riscv_op_jal:      { decexecrfw_combs.branch_taken=1; }
@@ -372,7 +397,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         case riscv_op_system:   {
             if (decexecrfw_combs.idecode.subop==riscv_subop_mret) {
                 decexecrfw_combs.branch_taken=1;
-                decexecrfw_combs.branch_target = csrs.mepc;
+                pipeline_response.exec.flush_target = csrs.mepc;
             }
             if (decexecrfw_combs.idecode.subop==riscv_subop_ecall) {
                 decexecrfw_combs.trap = 1;
@@ -385,32 +410,21 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
             }
         }
         }
+        if (decexecrfw_combs.branch_taken) {
+            pipeline_response.exec.action = rv_pipe_epc_flush;
+        }
+
         if (decexecrfw_combs.idecode.illegal) {
             decexecrfw_combs.trap = 1;
             decexecrfw_combs.trap_cause = riscv_trap_cause_illegal_instruction;
             decexecrfw_combs.trap_value = decexecrfw_state.instruction.data;
         }
 
-        pipeline_response.decode.pc = decexecrfw_state.pc;
-        pipeline_response.decode.is_compressed = decexecrfw_combs.idecode.is_compressed;
-        pipeline_response.decode.action        = rv_pipe_dpc_sequential;
-        pipeline_response.decode.branch_target = decexecrfw_combs.branch_target; // used only if predict_branch - i.e. never in this pipeline
-
-        pipeline_response.exec.trap = 0;
-        pipeline_response.exec.trap_vector = 0;
-        pipeline_response.exec.trap_vector = 0;
-        pipeline_response.exec.is_compressed = decexecrfw_combs.idecode.is_compressed;
-        pipeline_response.exec.pc            = decexecrfw_state.pc;
-        pipeline_response.exec.action        = rv_pipe_epc_predicted; // Normal action is Exec follows whatever was decoded (if there was anything)
-        pipeline_response.exec.flush_target = decexecrfw_combs.branch_target;
-        if (decexecrfw_combs.branch_taken) {
-            pipeline_response.exec.action = rv_pipe_epc_flush;
-        }
-        pipeline_response.exec.mtvec = csrs.mtvec;
         if (decexecrfw_combs.trap) {
             pipeline_response.exec.trap = 1;
         }
 
+        /*b CSR controls */
         csr_controls.trap_cause = decexecrfw_combs.trap_cause;
         csr_controls.trap       = 0;
         csr_controls.trap_pc    = decexecrfw_state.pc;
@@ -485,7 +499,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         trace.rfw_data       = decexecrfw_combs.rfw_write_data;
         trace.branch_taken   = decexecrfw_combs.branch_taken;
         trace.trap           = decexecrfw_combs.trap;
-        trace.branch_target  = decexecrfw_combs.branch_target;
+        trace.branch_target  = pipeline_response.exec.flush_target;
     }
 
     /*b All done */

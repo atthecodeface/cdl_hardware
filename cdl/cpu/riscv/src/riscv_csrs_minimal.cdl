@@ -26,7 +26,6 @@ constant integer mimpid = 0;
 constant integer misa = 0;
 constant integer mvendorid = 0;
 constant integer mhartid = 0;
-constant integer mstatus = 0;
 
 /*a Types */
 /*t t_csr_write */
@@ -128,6 +127,8 @@ WFI may always be a NOP.
 
     /*b CSR read/write
      */
+    comb bit[32] mstatus;
+    comb bit[32] mtvec;
     csr_read_write """
     CSR_ADDR_MSTATUS
     CSR_ADDR_MISA
@@ -140,6 +141,29 @@ WFI may always be a NOP.
         /*b Decode read data and 'illegal_access' for the CSR access */
         csr_data = {*=0};
         csr_data.illegal_access = 1;
+        mstatus = bundle(csrs.mstatus.sd,
+                         8b0,
+                         csrs.mstatus.tsr,
+                         csrs.mstatus.tw,
+                         csrs.mstatus.tvm,
+                         csrs.mstatus.mxr,
+                         csrs.mstatus.sum,
+                         csrs.mstatus.mprv,
+                         csrs.mstatus.xs,
+                         csrs.mstatus.fs,
+                         csrs.mstatus.mpp,
+                         2b0,
+                         csrs.mstatus.spp,
+                         csrs.mstatus.mpie,
+                         1b0,
+                         csrs.mstatus.spie,
+                         csrs.mstatus.upie,
+                         csrs.mstatus.mie,
+                         1b0,
+                         csrs.mstatus.sie,
+                         csrs.mstatus.uie
+            );
+        mtvec = bundle(csrs.mtvec.base, 1b0, csrs.mtvec.vectored);
         part_switch (csr_access.address) {
         case CSR_ADDR_CYCLE     : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;0]; }
         case CSR_ADDR_CYCLEH    : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;32]; }
@@ -160,7 +184,7 @@ WFI may always be a NOP.
         case CSR_ADDR_MEPC      : { csr_data.illegal_access=0; csr_data.read_data = csrs.mepc; }
         case CSR_ADDR_MCAUSE    : { csr_data.illegal_access=0; csr_data.read_data = csrs.mcause; }
         case CSR_ADDR_MTVAL     : { csr_data.illegal_access=0; csr_data.read_data = csrs.mtval; }
-        case CSR_ADDR_MTVEC     : { csr_data.illegal_access=0; csr_data.read_data = csrs.mtvec; } // can be hardwired to any value, or read/write; tests require read-write
+        case CSR_ADDR_MTVEC     : { csr_data.illegal_access=0; csr_data.read_data = mtvec; } // can be hardwired to any value, or read/write; tests require read-write
             // basic RISC-V tests require the following to not be illegal to write to
         case CSR_ADDR_MEDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
         case CSR_ADDR_MIDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
@@ -209,6 +233,34 @@ WFI may always be a NOP.
             csrs.instret[32;32] <= csr_write.data;
         }
 
+        /*b Handle interrupt pending/enable state */
+        csrs.mip.meip <= irqs.meip;
+        csrs.mip.mtip <= irqs.mtip;
+        csrs.mip.msip <= irqs.msip;
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_MIE)) {
+            csrs.mie.meip <= csr_write.data[11];
+            csrs.mie.mtip <= csr_write.data[7];
+            csrs.mie.msip <= csr_write.data[3];
+        }
+
+        /*b Handle mstatus */
+        if (csr_controls.trap) {
+            csrs.mstatus.mpp  <= 2b11; //rv_mode_machine; // Since this is all that is supported; actually 'current mode'
+            csrs.mstatus.mpie <= csrs.mstatus.mie;
+            csrs.mstatus.mie  <= 0;
+        } else {
+            if (csr_controls.mret) { // note, should enter mode 'csrs.mstatus.mpp'
+                csrs.mstatus.mpp  <= 2b11; //rv_mode_machine;
+                csrs.mstatus.mpie <= 1;
+                csrs.mstatus.mie  <= csrs.mstatus.mpie;
+            }
+            if (csr_write.enable && (csr_access.address==CSR_ADDR_MSTATUS)) {
+                csrs.mstatus.mpp  <= csr_write.data[2;11];
+                csrs.mstatus.mpie <= csr_write.data[7];
+                csrs.mstatus.mie  <= csr_write.data[3];
+            }
+        }
+
         /*b Handle MEPC state */
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MEPC)) {
             csrs.mepc <= csr_write.data;
@@ -219,7 +271,8 @@ WFI may always be a NOP.
 
         /*b Handle MTVEC state */
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MTVEC)) {
-            csrs.mtvec <= csr_write.data;
+            csrs.mtvec.base     <= csr_write.data[30;2];
+            csrs.mtvec.vectored <= csr_write.data[0];
         }
 
         /*b Handle MTVAL state */
@@ -252,6 +305,34 @@ WFI may always be a NOP.
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MSCRATCH)) {
             csrs.mscratch <= csr_write.data;
         }
+
+        /*b Tie-offs */
+        csrs.mstatus.sd     <= 0;
+        csrs.mstatus.tsr     <= 0;
+        csrs.mstatus.tw     <= 0;
+        csrs.mstatus.tvm     <= 0;
+        csrs.mstatus.mxr     <= 0;
+        csrs.mstatus.sum     <= 0;
+        csrs.mstatus.mprv     <= 0;
+        csrs.mstatus.xs     <= 0;
+        csrs.mstatus.fs     <= 0;
+        csrs.mstatus.spp     <= 0;
+        csrs.mstatus.spie     <= 0;
+        csrs.mstatus.upie     <= 0;
+        csrs.mstatus.sie     <= 0;
+        csrs.mstatus.uie     <= 0;
+        csrs.mip.seip     <= 0;
+        csrs.mip.ueip     <= 0;
+        csrs.mip.stip     <= 0;
+        csrs.mip.utip     <= 0;
+        csrs.mip.ssip     <= 0;
+        csrs.mip.usip     <= 0;
+        csrs.mie.seip     <= 0;
+        csrs.mie.ueip     <= 0;
+        csrs.mie.stip     <= 0;
+        csrs.mie.utip     <= 0;
+        csrs.mie.ssip     <= 0;
+        csrs.mie.usip     <= 0;
 
         /*b All done */
     }

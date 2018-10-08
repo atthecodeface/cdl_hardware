@@ -644,7 +644,7 @@ An example implementation of could be
         }
         if (alu_combs.trap) {
             alu_combs.flush_pipeline = 1;
-            alu_combs.next_pc = csrs.mtvec;
+            alu_combs.next_pc = bundle(csrs.mtvec.base, 2b0);
         }
         if (!alu_state.valid || alu_combs.cannot_complete) {
             alu_combs.flush_pipeline = 0;

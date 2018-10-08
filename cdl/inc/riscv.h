@@ -79,8 +79,8 @@ typedef struct {
     bit meip;
     bit seip;
     bit ueip;
-    bit mtip;
-    bit msip;
+    bit mtip          "Timer interrupt, set by memory-mapped timer";
+    bit msip          "Read-write in a memory-mapped register";
     bit[64] time      "Global time concept; may be tied low if user time CSR is not required";
 } t_riscv_irqs;
 

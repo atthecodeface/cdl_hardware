@@ -43,63 +43,6 @@ typedef enum[5] {
     riscv_abi_sp   = 2
 } t_riscv_abi;
 
-/*a RISC-V pipeline control interaction */
-/*t t_riscv_pipeline_decode_pc_action
- */
-typedef enum[3] {
-    rv_pipe_dpc_sequential     "Sequential fetch (no branch or not a predicted branch)",
-    rv_pipe_dpc_predict_branch "Predict a branch to be taken (conditional or unconditional; fetch from branch_target)",
-    rv_pipe_dpc_ret            "Return to register; will flush",
-    rv_pipe_dpc_flush          "Flush any after this instruction; MUST cause a flush at execute (unless itself is flushed before exec"
-} t_riscv_pipeline_decode_pc_action;
-
-/*t t_riscv_pipeline_response_decode
- */
-typedef struct {
-    t_riscv_pipeline_decode_pc_action action;
-    bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
-    bit[32]  pc              "Actual PC of execution instruction";
-    bit[32]  branch_target   "Used if predict_branch";
-} t_riscv_pipeline_response_decode;
-
-/*t t_riscv_pipeline_exec_pc_action
- */
-typedef enum[3] {
-    rv_pipe_epc_predicted,
-    rv_pipe_epc_flush,
-} t_riscv_pipeline_exec_pc_action;
-
-/*t t_riscv_pipeline_response_exec
- */
-typedef struct {
-    t_riscv_pipeline_exec_pc_action action;
-    bit      trap;
-    bit[4]   trap_vector;
-    bit[32]  flush_target    "Next PC if action is flush (ret or conditional branch)";
-    bit[32]  mtvec           "machine trap vector";
-    bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
-    bit[32]  pc              "Actual PC of execution instruction";
-} t_riscv_pipeline_response_exec;
-
-/*t t_riscv_pipeline_response
- */
-typedef struct {
-    t_riscv_pipeline_response_decode decode;
-    t_riscv_pipeline_response_exec   exec;
-} t_riscv_pipeline_response;
-
-/*t t_riscv_pipeline_control
- */
-typedef bit[2] t_riscv_pipeline_tag;
-typedef struct {
-    bit      valid;
-    bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
-    bit[32]  data;
-    t_riscv_mode mode;
-    bit          error;
-    t_riscv_pipeline_tag tag;
-} t_riscv_pipeline_control;
-
 /*a RISC-V instruction decode types */
 /*t t_riscv_opc (I32) enumeration - from inst[5;2] - see table 19.1 in RISC-V spec v2.2
  */
@@ -395,6 +338,7 @@ typedef struct {
     bit[64] timer_value;
     bit interrupt;
     bit trap;
+    bit mret;
     t_riscv_trap_cause trap_cause;
     bit[32] trap_pc;
     bit[32] trap_value;
@@ -563,15 +507,15 @@ typedef struct {
  * 
  */
 typedef struct {
-    bit meie "Enable for machine-external interrupt pending";
-    bit seie "Enable for system-external interrupt pending";
-    bit ueie "Enable for user-external interrupt pending";
-    bit mtie "Enable for machine timer interrupt pending";
-    bit stie "Enable for system timer interrupt pending";
-    bit utie "Enable for user timer interrupt pending";
-    bit msie "Enable for machine system interrupt pending";
-    bit ssie "Enable for system software interrupt pending";
-    bit usie "Enable for user software interrupt pending";
+    bit meip "Enable for machine-external interrupt pending";
+    bit seip "Enable for system-external interrupt pending";
+    bit ueip "Enable for user-external interrupt pending";
+    bit mtip "Enable for machine timer interrupt pending";
+    bit stip "Enable for system timer interrupt pending";
+    bit utip "Enable for user timer interrupt pending";
+    bit msip "Enable for machine system interrupt pending";
+    bit ssip "Enable for system software interrupt pending";
+    bit usip "Enable for user software interrupt pending";
 } t_riscv_csr_mie;
 
 /*t t_riscv_csrs_minimal
@@ -596,6 +540,10 @@ typedef struct {
  *
  */
 typedef struct {
+    bit[30] base;
+    bit     vectored;
+} t_riscv_csr_mtvec;
+typedef struct {
     bit[64] cycles    "Number of cycles since reset";
     bit[64] instret   "Number of instructions retired";
     bit[64] time      "Mirror of irqs.time - may be tied to 0 if only machine mode is supported";
@@ -604,8 +552,71 @@ typedef struct {
     bit[32] mepc      "PC at last exception";
     bit[32] mcause    "Cause of last exception";
     bit[32] mtval     "Value associated with last exception";
-    bit[32] mtvec     "Trap vector, can be hardwired or writable";
+    t_riscv_csr_mtvec mtvec     "Trap vector, can be hardwired or writable";
+    t_riscv_csr_mstatus mstatus     "";
+    t_riscv_csr_mie     mip         "";
+    t_riscv_csr_mie     mie         "";
 } t_riscv_csrs_minimal;
+
+/*a RISC-V pipeline control interaction */
+/*t t_riscv_pipeline_decode_pc_action
+ */
+typedef enum[3] {
+    rv_pipe_dpc_sequential     "Sequential fetch (no branch or not a predicted branch)",
+    rv_pipe_dpc_predict_branch "Predict a branch to be taken (conditional or unconditional; fetch from branch_target)",
+    rv_pipe_dpc_ret            "Return to register; will flush",
+    rv_pipe_dpc_flush          "Flush any after this instruction; MUST cause a flush at execute (unless itself is flushed before exec"
+} t_riscv_pipeline_decode_pc_action;
+
+/*t t_riscv_pipeline_response_decode
+ */
+typedef struct {
+    t_riscv_pipeline_decode_pc_action action;
+    bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
+    bit[32]  pc              "Actual PC of execution instruction";
+    bit[32]  branch_target   "Used if predict_branch";
+} t_riscv_pipeline_response_decode;
+
+/*t t_riscv_pipeline_exec_pc_action
+ */
+typedef enum[3] {
+    rv_pipe_epc_predicted,
+    rv_pipe_epc_flush,
+} t_riscv_pipeline_exec_pc_action;
+
+/*t t_riscv_pipeline_response_exec
+ */
+typedef struct {
+    // add in csrs? Need interrupt
+    t_riscv_pipeline_exec_pc_action action;
+    bit      trap;
+    bit[4]   trap_vector;
+    bit[32]  flush_target    "Next PC if action is flush (ret or conditional branch)";
+    t_riscv_csr_mtvec  mtvec           "machine trap vector";
+    bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
+    bit[32]  pc              "Actual PC of execution instruction";
+} t_riscv_pipeline_response_exec;
+
+/*t t_riscv_pipeline_response
+ */
+typedef struct {
+    t_riscv_pipeline_response_decode decode;
+    t_riscv_pipeline_response_exec   exec;
+} t_riscv_pipeline_response;
+
+/*t t_riscv_pipeline_control
+ */
+typedef bit[2] t_riscv_pipeline_tag;
+typedef struct {
+    // add in exec_wfi_continues, and exec_take_interrupt
+    bit      valid;
+    bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
+    bit[32]  pc;
+    bit[32]  data;
+    t_riscv_mode mode;
+    bit          error;
+    t_riscv_pipeline_tag tag;
+} t_riscv_pipeline_control;
 
 /*a I32 types */
 /*t t_riscv_i32_inst
