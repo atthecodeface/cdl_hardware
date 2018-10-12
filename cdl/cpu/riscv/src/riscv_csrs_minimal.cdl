@@ -243,7 +243,7 @@ WFI may always be a NOP.
             csrs.mie.msip <= csr_write.data[3];
         }
 
-        /*b Handle mstatus */
+        /*b Handle MSTATUS */
         if (csr_controls.trap) {
             csrs.mstatus.mpp  <= 2b11; //rv_mode_machine; // Since this is all that is supported; actually 'current mode'
             csrs.mstatus.mpie <= csrs.mstatus.mie;
@@ -266,6 +266,7 @@ WFI may always be a NOP.
             csrs.mepc <= csr_write.data;
         }
         if (csr_controls.trap) {
+            // should use interrupt_to_mode if supporting more than machine mode
             csrs.mepc <= csr_controls.trap_pc;
         }
 
@@ -306,7 +307,10 @@ WFI may always be a NOP.
             csrs.mscratch <= csr_write.data;
         }
 
-        /*b Tie-offs */
+        /*b Tie-offs for machine mode only */
+        //csrs.mtvec.base[;]  <= 0;
+        //csrs.mtvec.vectored <= 0;
+        csrs.mstatus.mpp    <= 2b11; // only machine mode supported
         csrs.mstatus.sd     <= 0;
         csrs.mstatus.tsr     <= 0;
         csrs.mstatus.tw     <= 0;

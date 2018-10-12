@@ -283,7 +283,7 @@ typedef enum[8] {
 
 /*t t_riscv_trap_cause
  */
-typedef enum[4] {
+typedef enum[5] {
     riscv_trap_cause_instruction_misaligned = 0,
     riscv_trap_cause_instruction_fault      = 1,
     riscv_trap_cause_illegal_instruction    = 2,
@@ -296,6 +296,7 @@ typedef enum[4] {
     riscv_trap_cause_secall                 = 9,
     riscv_trap_cause_hecall                 = 10,
     riscv_trap_cause_mecall                 = 11,
+    riscv_trap_cause_interrupt              = 16,
 } t_riscv_trap_cause;
 
 /*a CSR types */
@@ -336,8 +337,8 @@ typedef struct {
     bit timer_clear;
     bit timer_load;
     bit[64] timer_value;
-    bit interrupt;
     bit trap;
+    t_riscv_mode trap_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
     bit mret;
     t_riscv_trap_cause trap_cause;
     bit[32] trap_pc;
@@ -554,7 +555,7 @@ typedef struct {
     bit[32] mtval     "Value associated with last exception";
     t_riscv_csr_mtvec mtvec     "Trap vector, can be hardwired or writable";
     t_riscv_csr_mstatus mstatus     "";
-    t_riscv_csr_mie     mip         "";
+    t_riscv_csr_mip     mip         "";
     t_riscv_csr_mie     mie         "";
 } t_riscv_csrs_minimal;
 
@@ -616,6 +617,8 @@ typedef struct {
     t_riscv_mode mode;
     bit          error;
     t_riscv_pipeline_tag tag;
+    bit interrupt_req;
+    t_riscv_mode interrupt_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
 } t_riscv_pipeline_control;
 
 /*a I32 types */
