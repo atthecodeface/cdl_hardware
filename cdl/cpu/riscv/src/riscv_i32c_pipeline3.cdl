@@ -500,7 +500,7 @@ An example implementation of could be
                                  reset_n <= reset_n,
                                  irqs <= irqs,
                                  csr_access     <= alu_combs.csr_access,
-                                 csr_write_data <= alu_state.idecode.illegal ? bundle(27b0, alu_state.idecode.rs1) : alu_combs.rs1,
+                                 csr_write_data <= alu_state.idecode.immediate_valid ? bundle(27b0, alu_state.idecode.rs1) : alu_combs.rs1,
                                  csr_data       => csr_data,
                                  csr_controls   <= csr_controls,
                                  csrs => csrs);

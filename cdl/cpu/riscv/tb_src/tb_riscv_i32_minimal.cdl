@@ -64,7 +64,8 @@ module tb_riscv_i32_minimal( clock clk,
     comb t_apb_response mux_apb_response;
     net  t_apb_response data_access_apb_response;
     net  t_apb_response th_apb_response;
-    net bit[3] timer_equalled;
+    comb t_timer_control timer_control;
+    net t_timer_value timer_value;
 
     /*b Instantiate RISC-V
      */
@@ -75,6 +76,7 @@ module tb_riscv_i32_minimal( clock clk,
         riscv_config.e32   = 0;
         riscv_config.i32c  = !i32c_force_disable;
         irqs = {*=0};
+        irqs.mtip = timer_value.irq;
         th_apb_request = {*=0};
         riscv_i32_minimal_apb rv_apb( clk <- clk,
                                       reset_n <= reset_n,
@@ -86,6 +88,10 @@ module tb_riscv_i32_minimal( clock clk,
     apb_peripherals:
     {
 
+        timer_control = {*=0};
+        timer_control.enable_counter = 1;
+        timer_control.fractional_adder = 2;
+        timer_control.integer_adder    = 0;
         apb_master_mux apbmux( clk <- clk,
                                reset_n <= reset_n,
                                apb_request_0  <= data_access_apb_request,
@@ -109,11 +115,12 @@ module tb_riscv_i32_minimal( clock clk,
         mux_apb_response = timer_apb_response;
         if (sram_apb_request.psel) { mux_apb_response = sram_apb_response; }
 
-        apb_target_timer timer( clk <- clk,
-                                reset_n <= reset_n,
-                                apb_request  <= timer_apb_request,
-                                apb_response => timer_apb_response,
-                                timer_equalled => timer_equalled );
+        apb_target_rv_timer timer( clk <- clk,
+                                   reset_n <= reset_n,
+                                   timer_control <= timer_control,
+                                   apb_request  <= timer_apb_request,
+                                   apb_response => timer_apb_response,
+                                   timer_value => timer_value );
 
         apb_target_sram_interface sram_if( clk <- clk,
                                            reset_n <= reset_n,

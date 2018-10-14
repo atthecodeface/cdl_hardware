@@ -390,7 +390,7 @@ class riscv_base(simple_tb.base_test):
 
 #c riscv_i32_minimal
 class riscv_i32_minimal(riscv_base):
-    supports = ["apb_timer"]
+    supports = ["rv_timer"]
     hw = riscv_i32_minimal_test_hw
     test_memory = "dut.mem"
     cycles_scale = 1.0
@@ -427,6 +427,7 @@ class old_riscv_minimal_single_memory(riscv_base):
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[]),
                                "traps":("traps.dump",10*1000,[]),
+                               "timer_irqs":("timer_irqs.dump",40*1000,["rv_timer"]),
                                #"data_access":("data_access.dump",10*1000,["apb_timer"]),
                                "data":("data.dump",10*1000,[]),
                                "c_dprintf":("c_dprintf.dump",10*1000,["compressed"]),

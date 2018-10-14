@@ -617,7 +617,8 @@ typedef struct {
     t_riscv_mode mode;
     bit          error;
     t_riscv_pipeline_tag tag;
-    bit interrupt_req;
+    bit    interrupt_req;
+    bit[4] interrupt_number;
     t_riscv_mode interrupt_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
 } t_riscv_pipeline_control;
 

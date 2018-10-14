@@ -299,6 +299,7 @@ WFI may always be a NOP.
             case riscv_trap_cause_secall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_secall); }
             case riscv_trap_cause_hecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_hecall); }
             case riscv_trap_cause_mecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_mecall); }
+            default:                                      { csrs.mcause <= bundle(1b1, 23b0, 4b0, csr_controls.trap_cause[4;0]); } // interrupts
             }
         }
 
