@@ -4,6 +4,7 @@ build/*/sim
 build/*/*o
 build/*/*cdlh
 build/*/*cpp
+build/*/*v
 doc/html
 doc/latex
 doc/cdl_html

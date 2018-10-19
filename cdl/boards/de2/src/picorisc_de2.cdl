@@ -1,6 +1,6 @@
 include "de2.h"
 include "video.h"
-/*m hps_fpga_debug
+/*m picorisc_de2
  *
  * Debug module for testing out HPS in the Cyclone-V FPGA
  *
@@ -12,8 +12,8 @@ module picorisc_de2( clock clk,
                      input  t_de2_audio de2_audio_adc,
                      output t_de2_audio de2_audio_dac,
 
-                     output t_i2c de2_eep_i2c,
-                     output t_i2c de2_i2c,
+                     input  t_i2c de2_i2c_in,
+                     output t_i2c de2_i2c_out,
 
                      input t_de2_inputs de2_inputs,
                      output t_de2_leds de2_leds,
@@ -21,15 +21,29 @@ module picorisc_de2( clock clk,
 
                      input t_ps2_pins   de2_ps2_in,
                      output t_ps2_pins  de2_ps2_out,
-                     input t_ps2_pins   de2_ps2b_in,
-                     output t_ps2_pins  de2_ps2b_out,
 
-                     clock de2_vga_clock,
+                     clock de2_td_clk,
+                     output bit de2_td_reset_n,
+                     input t_adv7180 de2_td,
+
+                     input t_uart_in   de2_uart_in,
+                     output t_uart_out de2_uart_out,
+
+                     clock de2_vga_clk,
                      input bit de2_vga_reset_n,
                      output t_adv7123 de2_vga,
 
-                     input t_uart_in   de2_uart_in,
-                     output t_uart_out de2_uart_out
+                     clock de2_sdr_clk,
+                     output t_sdram_16_12_2_out de2_sdr_out,
+                     input  t_sdram_16_12_2_in  de2_sdr_in,
+
+                     output t_asram_16_18_out de2_sram_out,
+                     input  t_asram_16_18_in  de2_sram_in,
+
+                     output t_flash_8_22_out de2_flash_out,
+                     input  t_flash_8_22_in  de2_flash_in,
+
+                     input t_de2_gpio de2_gpio_in
     )
 {
     /*b Clock and reset */
@@ -38,14 +52,17 @@ module picorisc_de2( clock clk,
     
     tieoffs: {
         de2_audio_dac = {*=0};
-        de2_eep_i2c = {*=1};
-        de2_i2c = {*=1};
+        de2_i2c_out = {*=1};
         de2_leds = {*=0};
         de2_lcd = {*=0};
         de2_vga = {*=0};
         de2_uart_out = {*=0};
 
         de2_ps2_out = {*=0};
-        de2_ps2b_out = {*=0};
+
+        de2_td_reset_n = 0;
+        de2_sdr_out = {*=0};
+        de2_sram_out = {*=0};
+        de2_flash_out = {*=0};
     }
 }

@@ -24,19 +24,26 @@ include "csr_interface.h"
 include "input_devices.h"
 
 /*a Types */
-/*t t_de2_lcd */
+/*t t_de2_inputs */
 typedef struct {
     bit[4]  keys;
     bit[18] switches;
+    bit     irda_rxd;
 } t_de2_inputs;
+
+/*t t_de2_audio */
 typedef struct {
     bit data;
     bit lrc;
 } t_de2_audio;
+
+/*t t_i2c */
 typedef struct {
     bit sclk   "Open collector output";
     bit sdat   "Open collector output";
 } t_i2c;
+
+/*t t_de2_lcd */
 typedef struct {
     bit backlight;
     bit on;
@@ -45,14 +52,19 @@ typedef struct {
     bit enable;
     bit[8] data;
 } t_de2_lcd;
+
+/*t t_uart_in */
 typedef struct {
     bit rxd;
     bit rts;
 } t_uart_in;
+
+/*t t_uart_out */
 typedef struct {
     bit txd;
     bit cts;
 } t_uart_out;
+
 /*t t_de2_leds */
 typedef struct {
     bit[10] ledg;
@@ -67,3 +79,66 @@ typedef struct {
     bit[7] h7;
 } t_de2_leds;
 
+/*t t_adv7180 */
+typedef struct {
+    bit hs;
+    bit vs;
+    bit[8] data;
+} t_adv7180;
+
+/*t t_de2_gpio */
+typedef struct {
+    bit[18] gpio_0;
+    bit[18] gpio_1;
+} t_de2_gpio;
+
+/*t t_sdram_16_12_2_out */
+typedef struct {
+    bit cke;
+    bit cs_n;
+    bit ras_n;
+    bit cas_n;
+    bit we_n;
+    bit[2]  ba;
+    bit[12] addr;
+    bit[16] dq;
+    bit[2]  dqm;
+    bit dqe "Assert to drive dq out";
+} t_sdram_16_12_2_out;
+
+/*t t_sdram_16_12_2_in */
+typedef struct {
+    bit[16] dq;
+} t_sdram_16_12_2_in;
+
+/*t t_asram_16_18_out */
+typedef struct {
+    bit ce_n;
+    bit oe_n;
+    bit we_n;
+    bit[2] be_n;
+    bit[12] addr;
+    bit[16] dq;
+    bit dqe "Assert to drive dq out";
+} t_asram_16_18_out;
+
+/*t t_asram_16_18_in */
+typedef struct {
+    bit[16] dq;
+} t_asram_16_18_in;
+
+/*t t_flash_8_22_out */
+typedef struct {
+    bit reset_n;
+    bit ce_n;
+    bit oe_n;
+    bit we_n;
+    bit[22] addr;
+    bit[8] dq;
+    bit dqe "Assert to drive dq out";
+} t_flash_8_22_out;
+
+/*t t_flash_8_22_in */
+typedef struct {
+    bit[8] dq;
+} t_flash_8_22_in;
