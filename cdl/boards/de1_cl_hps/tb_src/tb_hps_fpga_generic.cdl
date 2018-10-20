@@ -19,7 +19,7 @@
 /*a Includes */
 include "types/axi.h"
 include "axi/axi_masters.h"
-include "hps.h"
+include "boards/de1_cl/de1_cl_hps.h"
 
 /*a External modules */
 /*a Module */
