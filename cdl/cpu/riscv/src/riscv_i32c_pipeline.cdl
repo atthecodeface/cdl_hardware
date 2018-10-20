@@ -355,9 +355,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         csr_controls.retire      = decexecrfw_state.valid_legal;
 
         decexecrfw_combs.csr_access = decexecrfw_combs.idecode.csr_access;
-        if (decexecrfw_combs.exec_cancelled) {
-            decexecrfw_combs.csr_access.access = riscv_csr_access_none;
-        }
+        decexecrfw_combs.csr_access.access_cancelled = decexecrfw_combs.exec_cancelled;
         riscv_csrs_minimal csrs( clk <- clk,
                                  reset_n <= reset_n,
                                  irqs <= irqs,

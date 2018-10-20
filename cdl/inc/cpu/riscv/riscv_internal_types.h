@@ -314,6 +314,7 @@ typedef enum[3] {
 /*t t_riscv_csr_access
  */
 typedef struct {
+    bit                     access_cancelled;
     t_riscv_csr_access_type access;
     bit[12]                 address;
 } t_riscv_csr_access;

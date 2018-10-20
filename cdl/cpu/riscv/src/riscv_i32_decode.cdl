@@ -174,6 +174,7 @@ then the instructions are decoded as illegal.
         idecode.op = riscv_op_illegal;
         idecode.illegal = 1;
         idecode.subop = riscv_subop_valid; // so only opc has to be set to 'valid'
+        idecode.csr_access = {*=0};
         idecode.csr_access.address = instruction.data[12;20];
         idecode.csr_access.access  = riscv_csr_access_none;
         combs.rs1_nonzero = (idecode.rs1 != 0);

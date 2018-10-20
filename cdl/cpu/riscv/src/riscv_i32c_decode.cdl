@@ -240,7 +240,7 @@ are from that specification)
         idecode.requires_machine_mode = 0;
         idecode.memory_read_unsigned = 0;
         idecode.memory_width         = mw_word;
-        idecode.csr_access.address = 0;
+        idecode.csr_access = {*=0};
         idecode.csr_access.access  = riscv_csr_access_none;
         idecode.op = riscv_op_illegal;;
         idecode.illegal = 1;
