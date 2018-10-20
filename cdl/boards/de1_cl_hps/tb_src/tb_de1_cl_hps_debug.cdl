@@ -17,5 +17,5 @@
  *
  */
 /*a Includes */
-include "tb_hps_fpga_generic.cdl"
+include "tb_de1_cl_hps_generic.cdl"
 

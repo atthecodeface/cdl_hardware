@@ -1,7 +1,7 @@
 include "types/axi.h"
 include "boards/de1_cl/de1_cl_types.h"
 extern
-module hps_fpga_generic( clock clk,
+module de1_cl_hps_generic( clock clk,
                          input bit reset_n,
 
                          clock lw_axi_clock_clk,

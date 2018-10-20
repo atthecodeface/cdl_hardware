@@ -58,12 +58,12 @@ constant bit[8] sr_divider    = 49; // 1MHz
 /*a Types */
 /*a Module
  */
-/*m hps_fpga_debug
+/*m de1_cl_hps_debug
  *
  * Debug module for testing out HPS in the Cyclone-V FPGA
  *
  */
-module hps_fpga_debug( clock clk,
+module de1_cl_hps_debug( clock clk,
                        input bit reset_n,
 
                        clock lw_axi_clock_clk,

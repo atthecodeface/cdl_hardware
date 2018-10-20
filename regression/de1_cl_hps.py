@@ -46,9 +46,9 @@ class cdl_test_th(pycdl.th):
             pass
         pass
 
-#c hps_debug_fpga_hw
-class hps_debug_fpga_hw(simple_tb.cdl_test_hw):
-    module_name = "tb_hps_fpga_debug"
+#c de1_cl_hps_debug_hw
+class de1_cl_hps_debug_hw(simple_tb.cdl_test_hw):
+    module_name = "tb_de1_cl_hps_debug"
     teletext_rom_mif = "roms/teletext.mif"
     apb_vga_rom_mif  = "roms/apb_vga_rom.mif"
     loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.dut.trace "),},
@@ -56,10 +56,10 @@ class hps_debug_fpga_hw(simple_tb.cdl_test_hw):
     #f __init__
     def __init__(self, test ):
         self.th_forces = { "dut.ftb.character_rom.filename":self.teletext_rom_mif,
-                      "dut.ftb.character_rom.verbose":0,
-                      "dut.apb_rom.filename":self.apb_vga_rom_mif,
-                      "dut.apb_rom.verbose":-1,
-                      }
+                           "dut.ftb.character_rom.verbose":0,
+                           "dut.apb_rom.filename":self.apb_vga_rom_mif,
+                           "dut.apb_rom.verbose":-1,
+                           }
         simple_tb.cdl_test_hw.__init__(self, test)
         pass
 
@@ -99,11 +99,11 @@ class c_test_one(axi.c_axi_test_base):
         self.finishtest(0,"")
         pass
 
-#c hps_debug_fpga_blah
-class hps_debug_fpga_blah(simple_tb.base_test):
+#c de1_cl_hps_debug_blah
+class de1_cl_hps_debug_blah(simple_tb.base_test):
     def test_(self):
         test = c_test_one()
-        hw = hps_debug_fpga_hw(test)
+        hw = de1_cl_hps_debug_hw(test)
         #self.do_test_run(hw, 200*1000)
     pass
 

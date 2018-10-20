@@ -21,9 +21,8 @@ include "types/axi.h"
 include "axi/axi_masters.h"
 include "boards/de1_cl/de1_cl_hps.h"
 
-/*a External modules */
 /*a Module */
-module tb_hps_fpga_generic( clock clk,
+module tb_de1_cl_hps_generic( clock clk,
                             input bit reset_n
 )
 {
@@ -83,7 +82,7 @@ module tb_hps_fpga_generic( clock clk,
 
             );
 
-        hps_fpga_generic dut( clk <- clk,
+        de1_cl_hps_generic dut( clk <- clk,
                  reset_n <= reset_n,
 
                  lw_axi_clock_clk <- clk,
