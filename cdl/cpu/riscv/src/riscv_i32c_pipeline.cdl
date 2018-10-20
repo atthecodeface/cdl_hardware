@@ -117,17 +117,13 @@ typedef struct {
     t_riscv_word   rs2;
 
     bit exec_cancelled;
-    bit[2]  word_offset;
     bit branch_taken;
     bit trap;
     t_riscv_trap_cause trap_cause;
     bit[32] trap_value;
     t_riscv_csr_access csr_access;
     t_riscv_word rfw_write_data;
-    t_riscv_word memory_data;
-    bit dmem_misaligned          "Asserted if the dmem address offset in a word does not match the size of the decoded access, whether the instruction is valid or not";
-    bit load_address_misaligned  "Asserted only for valid instructions, for loads not aligned to the alignment of the access";
-    bit store_address_misaligned "Asserted only for valid instructions, for stores not aligned to the alignment of the access";
+    t_riscv_i32_dmem_exec dmem_exec;
 } t_decexecrfw_combs;
 
 /*a Module
@@ -182,6 +178,8 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
     net     t_riscv_i32_decode     decexecrfw_idecode_i32c;
     clocked t_decexecrfw_state     decexecrfw_state={*=0, pc=INITIAL_PC};
     comb    t_decexecrfw_combs     decexecrfw_combs;
+    net     t_riscv_i32_dmem_request decexecrfw_dmem_request "Data memory request data";
+    net     t_riscv_word           decexecrfw_dmem_read_data;
     net     t_riscv_i32_alu_result decexecrfw_alu_result;
 
     comb t_riscv_csr_controls csr_controls;
@@ -366,38 +364,17 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
                                  csrs => csrs);
 
         /*b Memory access handling - must be valid before middle of cycle */
-        dmem_access_req.read_enable  = (decexecrfw_combs.idecode.op == riscv_op_load);
-        dmem_access_req.write_enable = (decexecrfw_combs.idecode.op == riscv_op_store);
-        if (decexecrfw_combs.exec_cancelled) {
-            dmem_access_req.read_enable  = 0;
-            dmem_access_req.write_enable = 0;
-        }
-        dmem_access_req.address         = decexecrfw_alu_result.arith_result;
-        decexecrfw_combs.word_offset    = decexecrfw_alu_result.arith_result[2;0];
-        decexecrfw_combs.dmem_misaligned = (decexecrfw_combs.word_offset!=0);
-        dmem_access_req.byte_enable  = 4hf << decexecrfw_combs.word_offset;
-        part_switch (decexecrfw_combs.idecode.memory_width) {
-        case mw_byte: {
-            dmem_access_req.byte_enable  = 4h1 << decexecrfw_combs.word_offset;
-            decexecrfw_combs.dmem_misaligned = 0;
-        }
-        case mw_half: {
-            dmem_access_req.byte_enable  = 4h3 << decexecrfw_combs.word_offset;
-            decexecrfw_combs.dmem_misaligned = decexecrfw_combs.word_offset[0];
-        }
-        default: {
-            decexecrfw_combs.dmem_misaligned = (decexecrfw_combs.word_offset!=0);
-        }
-        }
-        decexecrfw_combs.load_address_misaligned = 1;
-        decexecrfw_combs.store_address_misaligned = 1;
-        if (dmem_access_req.read_enable && decexecrfw_combs.dmem_misaligned) {
-            decexecrfw_combs.load_address_misaligned = 1;
-        }
-        if (dmem_access_req.write_enable && decexecrfw_combs.dmem_misaligned) {
-            decexecrfw_combs.store_address_misaligned = 1;
-        }
-        dmem_access_req.write_data = decexecrfw_combs.rs2 << (bundle(decexecrfw_combs.word_offset,3b0));
+        decexecrfw_combs.dmem_exec = { idecode = decexecrfw_combs.idecode,
+                                       arith_result   = decexecrfw_alu_result.arith_result, // address of access
+                                       rs2            = decexecrfw_combs.rs2,    // data for access (before rotation)
+                                       exec_cancelled = decexecrfw_combs.exec_cancelled,
+                                       is_second_cycle = 0
+        };
+        riscv_i32_dmem_request dmem_req( dmem_exec    <= decexecrfw_combs.dmem_exec,
+                                         dmem_request => decexecrfw_dmem_request );
+        dmem_access_req = decexecrfw_dmem_request.access;
+        // should use illegal dmem access for trap
+        // should use 'needs second cycle'
 
         /*b Determine whether branch would be taken and find next PC */
         //pipeline_response.exec.valid = decexecrfw_state.valid;
@@ -473,27 +450,19 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         }
 
         /*b Memory read handling - way late in the second half of the cycle */
-        decexecrfw_combs.memory_data = dmem_access_resp.read_data;
-        part_switch (decexecrfw_combs.idecode.memory_width) {
-        case mw_byte: {
-            decexecrfw_combs.memory_data = (dmem_access_resp.read_data >> (bundle(decexecrfw_combs.word_offset,3b0))) & 0xff;
-            if (!decexecrfw_combs.idecode.memory_read_unsigned && decexecrfw_combs.memory_data[7]) { decexecrfw_combs.memory_data[24;8] = -1; }
-        }
-        case mw_half: {
-            decexecrfw_combs.memory_data = (dmem_access_resp.read_data >> (bundle(decexecrfw_combs.word_offset,3b0))) & 0xffff;
-            if (!decexecrfw_combs.idecode.memory_read_unsigned && decexecrfw_combs.memory_data[15]) { decexecrfw_combs.memory_data[16;16] = -1; }
-        }
-        }
+        riscv_i32_dmem_read_data dmem_data( dmem_request <= decexecrfw_dmem_request,
+                                            last_data <= 0, // only for unaligned reads
+                                            dmem_access_resp <= dmem_access_resp,
+                                            dmem_read_data => decexecrfw_dmem_read_data);
 
+        /*b Register write
+         */
         decexecrfw_combs.rfw_write_data = decexecrfw_alu_result.result | coproc_response.result;
         if (coproc_force_disable || riscv_config.coproc_disable) {
             decexecrfw_combs.rfw_write_data = decexecrfw_alu_result.result;
         }
-
-        /*b Register write
-         */
         if (dmem_access_req.read_enable) {
-            decexecrfw_combs.rfw_write_data =  decexecrfw_combs.memory_data;
+            decexecrfw_combs.rfw_write_data =  decexecrfw_dmem_read_data;
         }
         if (decexecrfw_combs.idecode.csr_access.access != riscv_csr_access_none) {
             decexecrfw_combs.rfw_write_data = csr_data.read_data;

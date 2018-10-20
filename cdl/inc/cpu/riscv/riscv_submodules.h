@@ -80,6 +80,26 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
     timing comb output alu_result;
 }
 
+/*m riscv_i32_dmem_request */
+extern module riscv_i32_dmem_request( input  t_riscv_i32_dmem_exec     dmem_exec,
+                                      output t_riscv_i32_dmem_request  dmem_request
+    )
+{
+    timing comb input  dmem_exec;
+    timing comb output dmem_request;
+}
+
+/*m riscv_i32_dmem_read_data */
+extern module riscv_i32_dmem_read_data( input t_riscv_i32_dmem_request dmem_request,
+                                 input t_riscv_word             last_data,
+                                 input t_riscv_mem_access_resp  dmem_access_resp,
+                                 output t_riscv_word            dmem_read_data
+    )
+{
+    timing comb input dmem_request, dmem_access_resp, last_data;
+    timing comb output dmem_read_data;
+}
+
 /*m riscv_csrs_minimal  */
 extern
 module riscv_csrs_minimal( clock clk                                   "RISC-V clock",

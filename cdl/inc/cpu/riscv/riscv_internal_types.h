@@ -714,3 +714,25 @@ typedef struct {
     // Needs tag
 } t_riscv_i32_trace;
 
+/*a Dmem access */
+typedef struct {
+    t_riscv_i32_decode      idecode "Exec stage idecode";
+    t_riscv_word            arith_result;
+    t_riscv_word            rs2;
+    bit                     exec_cancelled;
+    bit                     is_second_cycle;
+} t_riscv_i32_dmem_exec;
+
+typedef struct {
+    t_riscv_mem_access_req access;
+    bit load_address_misaligned  "Asserted only for valid instructions, for loads not aligned to the alignment of the access";
+    bit store_address_misaligned "Asserted only for valid instructions, for stores not aligned to the alignment of the access";
+    bit    reading;
+    bit[2] read_data_rotation;
+    bit[4] read_data_byte_clear;
+    bit[4] read_data_byte_enable;
+    bit    sign_extend_byte;
+    bit    sign_extend_half;
+    bit    multicycle;
+} t_riscv_i32_dmem_request;
+

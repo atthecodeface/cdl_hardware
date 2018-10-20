@@ -1,0 +1,78 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_alu.cdl
+ * @brief  ALU for i32 RISC-V implementation
+ *
+ * CDL implementation of RISC-V i32 ALU based on the RISC-V
+ * specification v2.1.
+ *
+ */
+
+/*a Includes
+ */
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+
+/*a Types
+ */
+/*t t_mem_combs */
+typedef struct {
+    bit[32] aligned_data;
+    bit[32] memory_data;
+} t_mem_combs;
+
+/*a Module
+ */
+module riscv_i32_dmem_read_data( input t_riscv_i32_dmem_request dmem_request,
+                                 input t_riscv_word             last_data,
+                                 input t_riscv_mem_access_resp  dmem_access_resp,
+                                 output t_riscv_word            dmem_read_data
+    )
+"""
+
+"""
+{
+    comb t_mem_combs mem_combs;
+    code : {
+        // Rotate the memory data in (right rotate by dmem_access_resp.read_data_rotation)
+        mem_combs.aligned_data = dmem_access_resp.read_data;
+        full_switch (dmem_request.read_data_rotation) {
+        case 2b00: {
+            mem_combs.aligned_data = dmem_access_resp.read_data;
+        }
+        case 2b01: {
+            mem_combs.aligned_data = bundle(dmem_access_resp.read_data[ 8;0], dmem_access_resp.read_data[24; 8]);
+        }
+        case 2b10: {
+            mem_combs.aligned_data = bundle(dmem_access_resp.read_data[16;0], dmem_access_resp.read_data[16;16]);
+        }
+        case 2b11: {
+            mem_combs.aligned_data = bundle(dmem_access_resp.read_data[24;0], dmem_access_resp.read_data[ 8;24]);
+        }
+        }
+
+        // Clear unnecessary bytes from last data and or in this data; ignore last_data if unaligned read/writes are not supported
+        mem_combs.memory_data = mem_combs.aligned_data;
+        for (i; 4) {
+            mem_combs.memory_data[8;8*i] = ( (dmem_request.read_data_byte_clear[i]  ? 8b0 : last_data[8;8*i]) |
+                                             (dmem_request.read_data_byte_enable[i] ? mem_combs.aligned_data[8;8*i] : 8b0) );
+        }
+
+        // Sign extend
+        dmem_read_data = mem_combs.memory_data;
+        if (dmem_request.sign_extend_byte && mem_combs.memory_data[7])  { dmem_read_data[24;8]  = -1; }
+        if (dmem_request.sign_extend_half && mem_combs.memory_data[15]) { dmem_read_data[16;16] = -1; }
+
+    }
+}

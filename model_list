@@ -80,8 +80,10 @@ cdl cdl/cpu/riscv/src    riscv_i32c_decode    inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_e32_decode     inc:cdl/inc inc:cdl/cpu/riscv/src dc:e32_force_enable=1 rmn:riscv_i32_decode=riscv_e32_decode
 cdl cdl/cpu/riscv/src    riscv_e32c_decode    inc:cdl/inc inc:cdl/cpu/riscv/src dc:e32_force_enable=1 rmn:riscv_i32c_decode=riscv_e32c_decode
 # These modules are suitable for i/e32[c][m]
-cdl cdl/cpu/riscv/src    riscv_i32_trace      inc:cdl/inc
-cdl cdl/cpu/riscv/src    riscv_i32_alu        inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_trace        inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_alu          inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_dmem_request inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_dmem_read_data    inc:cdl/inc
 # CSRs minimal does support minimal CSRs for just machine mode, but might be reduced in size with some constant definition
 cdl cdl/cpu/riscv/src    riscv_csrs_minimal   inc:cdl/inc
 # These modules are suitable for i/e32[c][m]
