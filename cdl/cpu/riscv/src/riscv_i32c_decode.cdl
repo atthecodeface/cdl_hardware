@@ -12,10 +12,10 @@
  *   limitations under the License.
  *
  * @file   riscv_i32c_decode.cdl
- * @brief  Instruction decoder for RISC-V implementation
+ * @brief  Compressed instruction decoder for RISC-V implementation
  *
- * CDL implementation of RISC-V instruction decode based on the RISC-V
- * specification v2.2.
+ * CDL implementation of RISC-V compressed instruction decode based on
+ * the RISC-V specification v2.2.
  *
  */
 

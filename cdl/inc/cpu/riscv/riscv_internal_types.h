@@ -333,9 +333,6 @@ typedef struct {
 typedef struct {
     t_riscv_mode exec_mode "Mode of instruction in the execution stage";
     bit retire;
-    bit timer_inc;
-    bit timer_clear;
-    bit timer_load;
     bit[64] timer_value;
     bit trap;
     t_riscv_mode trap_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";

@@ -21,47 +21,4 @@
 
 /*a Includes
  */
-include "cpu/riscv/riscv_internal_types.h"
-include "cpu/riscv/riscv_submodules.h"
-include "cpu/riscv/riscv.h"
-
-/*a Module
- */
-module riscv_e32_decode( input t_riscv_i32_inst    instruction,
-                         output t_riscv_i32_decode idecode,
-                         input  t_riscv_config     riscv_config
-)
-"""
-Instruction decoder for RISC-V RV32E instruction set.
-
-This is based on the RISC-V v2.1 specification (hence figure numbers
-are from that specification)
-"""
-{
-    net t_riscv_i32_decode rv32i_idecode;
-
-    /*b Basic instruction decode - RV32I
-     */
-    instruction_decode """
-    Decode the instruction
-    """: {
-        riscv_i32_decode rv32i_decode( instruction <= instruction,
-                                       idecode => rv32i_idecode,
-                                       riscv_config <= riscv_config );
-
-        idecode = rv32i_idecode;
-        if (rv32i_idecode.rs1_valid && rv32i_idecode.rs1[4]) {
-            idecode.illegal = 1;
-        }
-        if (rv32i_idecode.rs2_valid && rv32i_idecode.rs2[4]) {
-            idecode.illegal = 1;
-        }
-        if (rv32i_idecode.rd_written && rv32i_idecode.rd[4]) {
-            idecode.illegal = 1;
-        }
-
-        /*b All done */
-    }
-
-    /*b All done */
-}
+include "riscv_i32_decode.cdl"
