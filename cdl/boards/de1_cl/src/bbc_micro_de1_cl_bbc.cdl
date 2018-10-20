@@ -20,8 +20,10 @@
  *
  */
 /*a Includes */
-include "bbc_micro_types.h"
-include "bbc_submodules.h"
+include "microcomputers/bbc/bbc_types.h"
+include "microcomputers/bbc/bbc_submodules.h"
+include "srams.h"
+include "video/framebuffer_modules.h"
 
 /*a Module */
 module bbc_micro_de1_cl_bbc( clock clk          "50MHz clock from DE1 clock generator",

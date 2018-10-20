@@ -39,17 +39,18 @@
  * SRAM.
  */
 /*a Includes */
-include "framebuffer.h"
-include "csr_interface.h"
-include "sram.h"
-include "video.h"
+include "types/csr.h"
+include "types/sram.h"
+include "types/video.h"
+include "types/teletext.h"
+include "csr/csr_targets.h"
+include "video/framebuffer_modules.h"
 include "srams.h"
-include "teletext.h"
 
 /*a Constants */
 constant integer cfg_downsize_x=0;
 constant integer cfg_downsize_y=1;
-constant bit[16] csr_select_default = bbc_csr_select_framebuffer;
+constant bit[16] csr_select_default = 0;
 
 /*a Types */
 /*t t_display_fsm */

@@ -18,7 +18,8 @@
 
 /*a Includes
  */
-include "csr_interface.h"
+include "types/csr.h"
+include "csr/csr_targets.h"
 include "picoriscv_types.h"
 
 /*a Types

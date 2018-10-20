@@ -21,8 +21,8 @@
  *
  */
 /*a Includes */
-include "de1_cl.h"
-include "utils.h"
+include "boards/de1_cl/de1_cl_types.h"
+include "input/hysteresis.h"
 
 /*a Constants */
 constant integer sr_length=16;

@@ -20,10 +20,10 @@
  */
 
 /*a Includes */
-include "csr_interface.h"
-include "teletext.h"
-include "sram.h"
-include "video.h"
+include "types/csr.h"
+include "types/teletext.h"
+include "types/sram.h"
+include "types/video.h"
 
 /*a Modules */
 /*m framebuffer_timing */

@@ -16,9 +16,6 @@
  *
  */
 
-/*a Includes */
-include "jtag.h"
-
 /*a Constants
  *
  * Constants for the RISC-V implementation; can be overridden in CDL
@@ -73,12 +70,17 @@ typedef struct {
 typedef bit[32] t_riscv_word;
 
 /*t t_riscv_irqs
+ *
+ * Note that USIP and SSIP are local to the RISC-V hart
+ *
+ * Note that meip, seip and ueip are effectively three separate interrupt pins to the RISC-V
+ *
  */
 typedef struct {
     bit nmi;
-    bit meip;
-    bit seip;
-    bit ueip;
+    bit meip          "External interrupt pending 'for machine mode'";
+    bit seip          "External interrupt pending 'for supervisor mode' - actually, it goes to machine mode";
+    bit ueip          "External interrupt pending 'for user mode' - actually, it goes to machine mode";
     bit mtip          "Timer interrupt, set by memory-mapped timer";
     bit msip          "Read-write in a memory-mapped register";
     bit[64] time      "Global time concept; may be tied low if user time CSR is not required";

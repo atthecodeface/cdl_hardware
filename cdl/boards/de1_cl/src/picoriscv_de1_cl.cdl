@@ -23,11 +23,10 @@
 /*a Includes */
 include "picoriscv_types.h"
 include "picoriscv.h"
-include "de1_cl.h"
-include "dprintf.h"
-include "input_devices.h"
-include "leds.h"
-include "de1_cl.h"
+//include "types/input.h"
+include "types/led.h"
+include "led/led_modules.h"
+include "boards/de1_cl/de1_cl_types.h"
 
 /*a Module */
 module picoriscv_de1_cl( clock clk          "50MHz clock from DE1 clock generator",

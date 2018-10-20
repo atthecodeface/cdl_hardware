@@ -19,20 +19,20 @@
  *
  */
 
-/*a Includes */
-include "input_devices.h"
-
 /*a Types */
-/*t t_de1_lcd */
+/*t t_de1_inuts */
 typedef struct {
     bit irda_rxd;
     bit[4]  keys;
     bit[10] switches;
 } t_de1_inputs;
+
+/*t t_de1_audio */
 typedef struct {
     bit data;
     bit lrc;
 } t_de1_audio;
+
 /*t t_de1_leds */
 typedef struct {
     bit[10] leds;

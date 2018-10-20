@@ -19,8 +19,8 @@
 /*a Includes
  */
 include "srams.h"
-include "riscv.h"
-include "riscv_modules.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_modules.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk, input bit a, output bit b )

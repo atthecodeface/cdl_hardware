@@ -17,7 +17,8 @@
  *
  */
 /*a Includes */
-include "axi.h"
+include "types/axi.h"
+include "axi/axi_masters.h"
 include "hps.h"
 
 /*a External modules */

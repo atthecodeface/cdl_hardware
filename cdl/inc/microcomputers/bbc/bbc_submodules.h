@@ -23,11 +23,12 @@
  */
 
 /*a Includes */
-include "csr_interface.h"
-include "srams.h"
-include "bbc_micro_types.h"
-include "framebuffer.h"
-include "input_devices.h"
+include "types/csr.h"
+include "types/sram.h"
+include "types/video.h"
+include "types/teletext.h"
+include "types/ps2.h"
+include "microcomputers/bbc/bbc_types.h"
 
 /*a Modules */
 /*m bbc_vidproc */

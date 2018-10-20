@@ -20,7 +20,8 @@
  * model.
  */
 /*a Includes */
-include "leds.h"
+include "types/led.h"
+include "led/led_modules.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk,

@@ -19,7 +19,7 @@
  * daughterboard devices.
  */
 /*a Includes */
-include "de1_cl.h"
+include "boards/de1_cl/de1_cl_types.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk          "system clock - not the shift register pin, something faster",
@@ -41,7 +41,7 @@ module tb_de1_cl_controls( clock clk,
 
     /*b Nets */
     net t_de1_cl_inputs_control  inputs_control;
-    net  t_de1_cl_inputs_status  inputs_status;
+    net t_de1_cl_inputs_status  inputs_status;
     net t_de1_cl_user_inputs     user_inputs;
     net bit[8]                   sr_divider;
 

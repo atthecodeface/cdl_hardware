@@ -23,8 +23,5 @@
  *  rmn:generic_valid_ack_mux=teletext_dprintf_4_mux
  *
  */
-/*a Includes */
-include "dprintf.h"
-
 /*a Module */
 include "generic_valid_ack_mux.cdl"

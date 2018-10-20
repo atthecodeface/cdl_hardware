@@ -19,10 +19,11 @@
 /*a Includes
  */
 include "srams.h"
-include "riscv.h"
-include "riscv_modules.h"
-include "apb.h"
-include "apb_peripherals.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_modules.h"
+include "types/apb.h"
+include "apb/apb_targets.h"
+include "apb/apb_masters.h"
 
 /*a Constants
  */

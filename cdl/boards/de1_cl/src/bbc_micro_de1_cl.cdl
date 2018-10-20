@@ -21,14 +21,11 @@
  *
  */
 /*a Includes */
-include "bbc_micro_types.h"
-include "bbc_submodules.h"
-include "de1_cl.h"
-include "dprintf.h"
-include "input_devices.h"
-include "leds.h"
-include "de1_cl.h"
-include "de1.h"
+include "microcomputers/bbc/bbc_submodules.h"
+include "types/ps2.h"
+include "types/led.h"
+include "boards/de1_cl/de1_cl_types.h"
+include "boards/de1.h"
 
 /*a Constants */
 

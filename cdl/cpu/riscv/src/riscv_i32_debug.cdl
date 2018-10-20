@@ -352,8 +352,8 @@ known value.
  */
 /*a Includes
  */
-include "apb.h"
-include "riscv.h"
+include "types/apb.h"
+include "cpu/riscv/riscv.h"
 
 /*a Constants
  */

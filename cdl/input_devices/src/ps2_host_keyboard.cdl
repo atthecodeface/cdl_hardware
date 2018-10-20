@@ -20,7 +20,7 @@
  */
 
 /*a Includes */
-include "input_devices.h"
+include "types/ps2.h"
 
 /*a Types */
 /*t t_key_action */

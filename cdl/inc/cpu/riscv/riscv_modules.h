@@ -17,9 +17,11 @@
  */
 
 /*a Includes */
-include "apb.h"
-include "riscv.h"
-include "riscv_internal_types.h"
+include "types/apb.h"
+include "types/jtag.h"
+include "utils/jtag_modules.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_internal_types.h"
 include "srams.h"
 
 /*a Implementations */

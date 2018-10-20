@@ -18,9 +18,10 @@
 
 /*a Includes
  */
-include "jtag.h"
-include "apb.h"
-include "apb_peripherals.h"
+include "types/jtag.h"
+include "types/apb.h"
+include "apb/apb_targets.h"
+include "utils/jtag_modules.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_enable, input bit tdo )

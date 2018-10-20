@@ -98,23 +98,3 @@ typedef struct {
     bit[4] user;
 } t_axi_read_response;
 
-/*a Modules - see also apb_master_axi in apb.h*/
-/*m axi_master */
-extern
-module axi_master(clock aclk,
-                  input bit areset_n,
-                  output t_axi_request ar,
-                  input bit awready,
-                  output t_axi_request aw,
-                  input bit arready,
-                  input bit wready,
-                  output t_axi_write_data w,
-                  output bit bready,
-                  input t_axi_write_response b,
-                  output bit rready,
-                  input t_axi_read_response r
-    )
-{
-    timing from rising clock aclk ar, aw, w, bready, rready;
-    timing to rising clock aclk awready, arready, wready, b, r;
-}

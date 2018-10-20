@@ -19,8 +19,8 @@
  */
 /*a Includes */
 include "srams.h"
-include "teletext.h"
-include "framebuffer.h"
+include "types/teletext.h"
+include "video/framebuffer_modules.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk "Clock for CSR reads/writes",
@@ -65,7 +65,7 @@ module tb_framebuffer_teletext( clock clk,
                                 reset_n <= reset_n,
                                 display_sram_write <= display_sram_write,
                                 video_bus => video_bus,
-                                csr_select_in <= 0, // uses 2 selects, from the default
+                                 csr_select_in <= 4,
                                 csr_request <= csr_request,
                                 csr_response => csr_response
             );

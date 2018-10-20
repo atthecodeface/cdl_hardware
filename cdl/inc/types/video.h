@@ -29,8 +29,6 @@
  *
  */
 
-/*a Includes */
-
 /*a Types */
 /*t t_video_timing
  *

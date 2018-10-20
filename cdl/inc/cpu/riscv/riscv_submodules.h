@@ -18,8 +18,8 @@
 
 /*a Includes
  */
-include "riscv.h"
-include "riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_internal_types.h"
 
 /*a Modules
  */

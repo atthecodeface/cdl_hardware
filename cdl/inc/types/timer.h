@@ -19,8 +19,6 @@
  *
  */
 
-/*a Includes */
-
 /*a Types */
 /*t t_timer_control
  */

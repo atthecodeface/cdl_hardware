@@ -20,9 +20,9 @@
 
 /*a Includes
  */
-include "riscv_internal_types.h"
-include "riscv.h"
-include "riscv_submodules.h"
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_submodules.h"
 
 /*a Constants
  */

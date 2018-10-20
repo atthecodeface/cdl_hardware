@@ -18,8 +18,9 @@
  * This is a simple testbench for the teletext decoder.
  */
 /*a Includes */
+include "types/teletext.h"
 include "srams.h"
-include "teletext.h"
+include "video/teletext_modules.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk,

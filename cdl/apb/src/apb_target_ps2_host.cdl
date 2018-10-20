@@ -20,8 +20,8 @@
  */
 /*a Includes
  */
-include "apb.h"
-include "de1_cl.h"
+include "types/apb.h"
+include "types/ps2.h"
 
 constant integer fifo_size=8;
 constant integer lg_fifo_size=sizeof(fifo_size);

@@ -59,8 +59,8 @@
 
 /*a Includes
  */
-include "riscv.h"
-include "riscv_modules.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_modules.h"
 include "srams.h"
 
 /*a Constants

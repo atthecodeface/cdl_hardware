@@ -19,9 +19,9 @@
 /*a Includes
  */
 include "srams.h"
-include "riscv.h"
-include "riscv_internal_types.h"
-include "riscv_submodules.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv_submodules.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk, output t_riscv_i32_coproc_controls  coproc_controls, input t_riscv_i32_coproc_response coproc_response, output t_riscv_config riscv_config)

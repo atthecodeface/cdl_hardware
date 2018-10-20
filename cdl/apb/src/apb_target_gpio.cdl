@@ -20,7 +20,7 @@
  */
 /*a Includes
  */
-include "apb.h"
+include "types/apb.h"
 
 /*a Types */
 /*t t_apb_address

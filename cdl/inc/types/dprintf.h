@@ -12,47 +12,44 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * @file   apb.h
- * @brief  Types for the APB bus
+ * @file   input_devices.h
+ * @brief  Input device header file for CDL modules
  *
- * Header file for the types for an APB bus, but no modules
+ * Header file for the types and CDL modules for input devices
  *
  */
 
-/*a Includes */
-
 /*a Types */
-/*t t_apb_request */
-typedef struct {
-    bit[32] paddr;
-    bit     penable;
-    bit     psel;
-    bit     pwrite;
-    bit[32] pwdata;
-} t_apb_request;
-
-/*t t_apb_response */
-typedef struct {
-    bit[32] prdata;
-    bit     pready;
-    bit     perr;
-} t_apb_response;
-
-/*t t_apb_processor_response */
-typedef struct {
-    bit acknowledge;
-    bit rom_busy;
-} t_apb_processor_response;
-
-/*t t_apb_processor_request */
+/*t t_dprintf_req_4 */
 typedef struct {
     bit valid;
     bit[16] address;
-} t_apb_processor_request;
+    bit[64] data_0;
+    bit[64] data_1;
+    bit[64] data_2;
+    bit[64] data_3;
+} t_dprintf_req_4;
 
-/*t t_apb_rom_request */
+/*t t_dprintf_req_2 */
 typedef struct {
-    bit enable;
+    bit valid;
     bit[16] address;
-} t_apb_rom_request;
+    bit[64] data_0;
+    bit[64] data_1;
+} t_dprintf_req_2;
+
+/*t t_dprintf_resp */
+typedef struct {
+    bit ack;
+} t_dprintf_resp;
+
+/*t t_dprintf_byte
+ *
+ * Validated byte with address; the output of the dprintf module
+ */
+typedef struct {
+    bit valid;
+    bit[8]  data;
+    bit[16] address;
+} t_dprintf_byte;
 

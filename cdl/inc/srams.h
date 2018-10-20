@@ -18,7 +18,7 @@
  */
 
 /*a Includes */
-include "sram.h"
+include "types/sram.h"
 
 /*a Modules */
 /*m se_sram_srw_128x64 */

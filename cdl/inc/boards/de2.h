@@ -20,8 +20,8 @@
  */
 
 /*a Includes */
-include "csr_interface.h"
-include "input_devices.h"
+include "types/csr.h"
+include "types/ps2.h"
 
 /*a Types */
 /*t t_de2_inputs */

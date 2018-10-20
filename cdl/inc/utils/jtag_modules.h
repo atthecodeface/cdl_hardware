@@ -1,18 +1,5 @@
-include "apb.h"
-
-typedef struct {
-    bit ntrst;
-    bit tms;
-    bit tdi;
-} t_jtag;
-
-typedef enum [2] {
-    action_idle,
-    action_capture,
-    action_shift,
-    action_update
-} t_jtag_action;
-
+include "types/apb.h"
+include "types/jtag.h"
 extern module jtag_tap( clock jtag_tck,
                  input bit reset_n,
                  input t_jtag jtag,

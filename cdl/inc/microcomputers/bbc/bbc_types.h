@@ -20,9 +20,6 @@
  *
  */
 
-/*a Includes */
-include "video.h"
-
 /*a Types */
 /*t t_bbc_keyboard */
 /**
@@ -356,3 +353,16 @@ typedef enum[8] {
     bbc_sram_select_cpu_rom_2 = 26,
     bbc_sram_select_cpu_rom_3 = 27,
 } t_bbc_sram_select;
+/*t t_bbc_csr_select */
+/**
+ * This enumeration matches the C, and it is used to select the CSR
+ * target (the 'select' field of csr_request's).
+ */
+typedef enum[16] {
+    bbc_csr_select_clocks = 0,
+    bbc_csr_select_display = 1,
+    bbc_csr_select_floppy = 2,
+    bbc_csr_select_keyboard = 3,
+    bbc_csr_select_framebuffer = 4,
+} t_bbc_csr_select;
+

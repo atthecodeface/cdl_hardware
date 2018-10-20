@@ -17,8 +17,11 @@
  *
  */
 /*a Includes */
-include "csr_interface.h"
-include "apb_peripherals.h"
+include "types/apb.h"
+include "types/csr.h"
+include "csr/csr_masters.h"
+include "csr/csr_targets.h"
+include "apb/apb_targets.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk,

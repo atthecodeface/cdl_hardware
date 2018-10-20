@@ -31,18 +31,23 @@
 
 /*a Includes
  */
+include "types/apb.h"
+include "types/dprintf.h"
+include "types/csr.h"
+include "types/ps2.h"
+include "types/led.h"
+include "types/teletext.h"
+include "types/video.h"
 include "srams.h"
-include "apb.h"
-include "csr_interface.h"
-include "apb_peripherals.h"
-include "dprintf_modules.h"
-include "input_devices.h"
-include "leds.h"
-include "teletext.h"
-include "framebuffer.h"
-include "riscv_modules.h"
-include "de2.h"
-include "video.h"
+include "csr/csr_masters.h"
+include "csr/csr_targets.h"
+include "apb/apb_targets.h"
+include "apb/apb_masters.h"
+include "utils/dprintf_modules.h"
+include "led/led_modules.h"
+include "video/framebuffer_modules.h"
+include "cpu/riscv/riscv_modules.h"
+include "boards/de2.h"
 
 /*a Constants */
 constant integer num_dprintf_requesters=16;

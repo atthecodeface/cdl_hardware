@@ -21,8 +21,8 @@
  */
 /*a Includes
  */
-include "apb.h"
-include "timer.h"
+include "types/apb.h"
+include "types/timer.h"
 
 /*a Types */
 /*t t_apb_address

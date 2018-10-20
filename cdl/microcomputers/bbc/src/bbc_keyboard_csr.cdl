@@ -39,8 +39,9 @@
  *
  */
 /*a Includes */
-include "bbc_submodules.h"
-include "bbc_micro_types.h"
+include "microcomputers/bbc/bbc_types.h"
+include "microcomputers/bbc/bbc_submodules.h"
+include "csr/csr_targets.h"
 
 /*a Types */
 /*t t_csrs */

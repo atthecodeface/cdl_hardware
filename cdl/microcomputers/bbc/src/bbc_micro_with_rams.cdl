@@ -20,9 +20,10 @@
  *
  */
 /*a Includes */
-include "sram.h"
-include "bbc_micro_types.h"
-include "bbc_submodules.h"
+include "microcomputers/bbc/bbc_types.h"
+include "microcomputers/bbc/bbc_submodules.h"
+include "video/framebuffer_modules.h"
+include "srams.h"
 
 /*a Module */
 module bbc_micro_with_rams( clock clk "4MHz clock in as a minimum",

@@ -23,7 +23,7 @@
  */
 /*a Includes */
 //include "bbc_csr_interface.h"
-include "bbc_micro_types.h"
+include "microcomputers/bbc/bbc_types.h"
 
 /*a Module
  */

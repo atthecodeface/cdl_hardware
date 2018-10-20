@@ -21,8 +21,8 @@
 
 /*a Includes
  */
-include "riscv_internal_types.h"
-include "riscv.h"
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
 
 /*a Constants - configuration */
 constant integer e32_force_enable=0;

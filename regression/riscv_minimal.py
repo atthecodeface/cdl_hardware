@@ -39,6 +39,7 @@ def bits_of_n(nbits, n):
 
 #a Globals
 import os
+riscv_zephyr_dir          = "../riscv_tests_built/"
 riscv_regression_dir      = "../riscv_tests_built/isa/"
 riscv_atcf_regression_dir = "../riscv-atcf-tests/build/dump/"
 if "RISCV_REGRESSION_DIR" in os.environ.keys():
@@ -127,6 +128,7 @@ class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
     base_address = 0x0000000
     memory_expectation = { "tohost":(1,),
                            }
+    memory_expectation = {}
     def __init__(self, dump_filename, test_memory="dmem", **kwargs):
         self.dump_filename = dump_filename
         self.test_memory = test_memory
@@ -425,6 +427,8 @@ class old_riscv_minimal_single_memory(riscv_base):
     pass
 
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
+riscv_atcf_zephyr = {"zephyr":("zephyr.dump",250*1000,[]),
+}
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[]),
                                "traps":("traps.dump",10*1000,[]),
                                "timer_irqs":("timer_irqs.dump",40*1000,["rv_timer"]),
@@ -489,7 +493,8 @@ riscv_regression_tests = {"or":("rv32ui-p-or.dump",3*1000,[]),
          "mulhu":("rv32um-p-mulhu.dump",3*3000,["muldiv"]),
          "mulhsu":("rv32um-p-mulhsu.dump",3*3000,["muldiv"]),
            }
-for (test_dir,tests) in [(riscv_regression_dir,riscv_regression_tests),
+for (test_dir,tests) in [(riscv_zephyr_dir,riscv_atcf_zephyr),
+                         (riscv_regression_dir,riscv_regression_tests),
                          (riscv_atcf_regression_dir,riscv_atcf_regression_tests)]:
     for tc in tests:
         (tf,num_cycles,tags) = tests[tc]

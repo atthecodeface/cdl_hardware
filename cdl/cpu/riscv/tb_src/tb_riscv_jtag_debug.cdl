@@ -18,10 +18,10 @@
 
 /*a Includes
  */
-include "jtag.h"
-include "apb.h"
-include "riscv.h"
-include "riscv_modules.h"
+include "types/jtag.h"
+include "types/apb.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_modules.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_enable, input bit tdo )

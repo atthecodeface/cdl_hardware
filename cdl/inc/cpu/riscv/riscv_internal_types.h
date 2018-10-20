@@ -18,7 +18,7 @@
 
 /*a Includes
  */
-include "riscv.h"
+include "cpu/riscv/riscv.h"
 
 /*a Constants
  */
@@ -494,6 +494,8 @@ typedef struct {
     bit meip "Machine-external interrupt pending, mirroring the input pin";
     bit seip "System-external interrupt pending, mirroring the input pin";
     bit ueip "User-external interrupt pending, mirroring the input pin";
+    bit seip_sw "System-external interrupt pending, mirroring the input pin";
+    bit ueip_sw "User-external interrupt pending, mirroring the input pin";
     bit mtip "Machine timer interrupt pending, set by memory-mapped machine timer comparator meeting mtime";
     bit stip "System timer interrupt pending, set by software";
     bit utip "User timer interrupt pending, set by software";
@@ -614,7 +616,7 @@ typedef struct {
     bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
     bit[32]  pc;
     bit[32]  data;
-    t_riscv_mode mode;
+    t_riscv_mode mode "Mode to fetch in";
     bit          error;
     t_riscv_pipeline_tag tag;
     bit    interrupt_req;

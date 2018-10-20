@@ -20,10 +20,11 @@
  */
 
 /*a Includes */
-include "de1.h"
-include "bbc_micro_types.h"
-include "csr_interface.h"
-include "input_devices.h"
+include "boards/de1.h"
+include "types/csr.h"
+include "types/ps2.h"
+include "microcomputers/bbc/bbc_types.h"
+include "types/video.h"
 
 /*a Types */
 /*t t_de1_cl_inputs_control */

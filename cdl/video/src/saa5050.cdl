@@ -21,9 +21,9 @@
  *
  */
 /*a Includes */
-include "bbc_micro_types.h"
+include "microcomputers/bbc/bbc_types.h"
+include "types/teletext.h"
 include "srams.h"
-include "teletext.h"
 
 /*a Types */
 typedef bit[3] t_color;

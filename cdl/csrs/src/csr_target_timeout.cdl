@@ -16,7 +16,7 @@
  *
  */
 /*a Includes */
-include "csr_interface.h"
+include "types/csr.h"
 
 /*a Module
  */

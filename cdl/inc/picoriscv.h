@@ -18,8 +18,8 @@
 
 /*a Includes
  */
-include "framebuffer.h"
-include "csr_interface.h"
+include "types/video.h"
+include "types/csr.h"
 include "picoriscv_types.h"
 
 /*a Modules

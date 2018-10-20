@@ -19,7 +19,7 @@
  */
 
 /*a Includes */
-include "riscv_internal_types.h"
+include "cpu/riscv/riscv_internal_types.h"
 
 /*a Constants that can be overridden */
 constant integer mimpid = 0;
@@ -326,12 +326,16 @@ WFI may always be a NOP.
         csrs.mstatus.upie     <= 0;
         csrs.mstatus.sie     <= 0;
         csrs.mstatus.uie     <= 0;
-        csrs.mip.seip     <= 0;
-        csrs.mip.ueip     <= 0;
-        csrs.mip.stip     <= 0;
-        csrs.mip.utip     <= 0;
-        csrs.mip.ssip     <= 0;
-        csrs.mip.usip     <= 0;
+
+        csrs.mip.seip     <= 0; // supervisor external interrupt pending from input pin
+        csrs.mip.seip_sw  <= 0; // supervisor external interrupt pending from machine mode write
+        csrs.mip.ueip     <= 0; // user external interrupt pending from input pin
+        csrs.mip.ueip_sw  <= 0; // user external interrupt pending from machine mode write
+        csrs.mip.stip     <= 0; // supervisor timer interrupt pending from machine mode write
+        csrs.mip.utip     <= 0; // user timer interrupt pending from machine/supervisor mode write
+        csrs.mip.ssip     <= 0; // supervisor software interrupt pending from machine/supervisor mode write
+        csrs.mip.usip     <= 0; // user software interrupt pending from machine/supervisor mode write
+
         csrs.mie.seip     <= 0;
         csrs.mie.ueip     <= 0;
         csrs.mie.stip     <= 0;
