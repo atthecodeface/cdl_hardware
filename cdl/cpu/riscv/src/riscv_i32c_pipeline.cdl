@@ -118,9 +118,7 @@ typedef struct {
 
     bit exec_cancelled;
     bit branch_taken;
-    bit trap;
-    t_riscv_trap_cause trap_cause;
-    bit[32] trap_value;
+    t_riscv_i32_trap trap;
     t_riscv_csr_access csr_access;
     t_riscv_word rfw_write_data;
     t_riscv_i32_dmem_exec dmem_exec;
@@ -262,7 +260,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
                     ifetch_req.address = ifetch_combs.pc_plus_2;
                 }
             }
-            if (pipeline_response.exec.trap) { // vector interrupts if required
+            if (pipeline_response.exec.trap.valid) { // vector interrupts if required
                 ifetch_req.address = bundle(pipeline_response.exec.mtvec.base, 2b0);
                 ifetch_req.sequential = 0;
                 // flush if pipeline exists
@@ -368,7 +366,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
                                        arith_result   = decexecrfw_alu_result.arith_result, // address of access
                                        rs2            = decexecrfw_combs.rs2,    // data for access (before rotation)
                                        exec_cancelled = decexecrfw_combs.exec_cancelled,
-                                       is_second_cycle = 0
+                                       first_cycle = 1
         };
         riscv_i32_dmem_request dmem_req( dmem_exec    <= decexecrfw_combs.dmem_exec,
                                          dmem_request => decexecrfw_dmem_request );
@@ -378,17 +376,14 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
 
         /*b Determine whether branch would be taken and find next PC */
         //pipeline_response.exec.valid = decexecrfw_state.valid;
-        pipeline_response.exec.trap = 0;
-        pipeline_response.exec.trap_vector = 0;
+        pipeline_response.exec.trap = {*=0};
         pipeline_response.exec.is_compressed = decexecrfw_combs.idecode.is_compressed;
         pipeline_response.exec.pc            = decexecrfw_state.pc;
         pipeline_response.exec.mtvec         = csrs.mtvec;
         pipeline_response.exec.action        = rv_pipe_epc_predicted; // Normal action is Exec follows whatever was decoded (if there was anything)
         pipeline_response.exec.flush_target = decexecrfw_alu_result.branch_target;
 
-        decexecrfw_combs.trap = 0;
-        decexecrfw_combs.trap_cause = 0;
-        decexecrfw_combs.trap_value = 0;
+        decexecrfw_combs.trap = {*=0};
         decexecrfw_combs.branch_taken = 0;
         part_switch (decexecrfw_combs.idecode.op) {
         case riscv_op_branch:   { decexecrfw_combs.branch_taken = decexecrfw_alu_result.branch_condition_met; }
@@ -397,17 +392,17 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         case riscv_op_system:   {
             if (decexecrfw_combs.idecode.subop==riscv_subop_mret) {
                 decexecrfw_combs.branch_taken=1;
-                csr_controls.mret = 1;
+                csr_controls.trap.mret = 1;
                 pipeline_response.exec.flush_target = csrs.mepc;
             }
             if (decexecrfw_combs.idecode.subop==riscv_subop_ecall) {
-                decexecrfw_combs.trap = 1;
-                decexecrfw_combs.trap_cause = riscv_trap_cause_mecall;
+                decexecrfw_combs.trap.valid = 1;
+                decexecrfw_combs.trap.cause = riscv_trap_cause_mecall;
             }
             if (decexecrfw_combs.idecode.subop==riscv_subop_ebreak) {
-                decexecrfw_combs.trap = 1;
-                decexecrfw_combs.trap_cause = riscv_trap_cause_breakpoint;
-                decexecrfw_combs.trap_value = decexecrfw_state.pc;
+                decexecrfw_combs.trap.valid = 1;
+                decexecrfw_combs.trap.cause = riscv_trap_cause_breakpoint;
+                decexecrfw_combs.trap.value = decexecrfw_state.pc;
             }
         }
         }
@@ -416,37 +411,37 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         }
 
         if (decexecrfw_combs.idecode.illegal) {
-            decexecrfw_combs.trap = 1;
-            decexecrfw_combs.trap_cause = riscv_trap_cause_illegal_instruction;
-            decexecrfw_combs.trap_value = decexecrfw_state.instruction.data;
+            decexecrfw_combs.trap.valid = 1;
+            decexecrfw_combs.trap.cause = riscv_trap_cause_illegal_instruction;
+            decexecrfw_combs.trap.value = decexecrfw_state.instruction.data;
         }
         if (!decexecrfw_state.valid) {
-            decexecrfw_combs.trap = 0;
+            decexecrfw_combs.trap.valid = 0;
         }
         // block interrupt_req if in second+ cycle of multicycle exec operation
         if (pipeline_control.interrupt_req) {
-            decexecrfw_combs.trap = 1;
-            decexecrfw_combs.trap_cause = riscv_trap_cause_interrupt;
+            decexecrfw_combs.trap.valid = 1;
+            decexecrfw_combs.trap.cause = riscv_trap_cause_interrupt;
         }
-        if (decexecrfw_combs.trap) {
-            pipeline_response.exec.trap = 1;
+        if (decexecrfw_combs.trap.valid) {
+            pipeline_response.exec.trap.valid = 1;
         }
 
         /*b CSR controls */
-        csr_controls.trap_cause   = decexecrfw_combs.trap_cause;
-        csr_controls.trap         = decexecrfw_combs.trap && decexecrfw_state.valid_legal;
-        csr_controls.trap_to_mode = rv_mode_machine;
-        csr_controls.trap_pc      = decexecrfw_state.pc;
-        csr_controls.trap_value   = decexecrfw_combs.trap_value;
+        csr_controls.trap.cause   = decexecrfw_combs.trap.cause;
+        csr_controls.trap.valid   = decexecrfw_combs.trap.valid && decexecrfw_state.valid_legal;
+        csr_controls.trap.to_mode = rv_mode_machine;
+        csr_controls.trap.pc      = decexecrfw_state.pc;
+        csr_controls.trap.value   = decexecrfw_combs.trap.value;
         if (decexecrfw_state.illegal_pc) {
-            csr_controls.trap_cause = riscv_trap_cause_instruction_misaligned;
-            csr_controls.trap       = 1;
-            csr_controls.trap_value = decexecrfw_state.pc;
+            csr_controls.trap.cause = riscv_trap_cause_instruction_misaligned;
+            csr_controls.trap.valid = 1;
+            csr_controls.trap.value = decexecrfw_state.pc;
         }
         if (pipeline_control.interrupt_req) {
-            csr_controls.trap_cause      = decexecrfw_combs.trap_cause;
-            csr_controls.trap_cause[4;0] = pipeline_control.interrupt_number;
-            csr_controls.trap         = 1;
+            csr_controls.trap.cause      = decexecrfw_combs.trap.cause;
+            csr_controls.trap.cause[4;0] = pipeline_control.interrupt_number;
+            csr_controls.trap.valid      = 1;
         }
 
         /*b Memory read handling - way late in the second half of the cycle */
@@ -503,7 +498,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         trace.rfw_rd         = decexecrfw_combs.idecode.rd;
         trace.rfw_data       = decexecrfw_combs.rfw_write_data;
         trace.branch_taken   = decexecrfw_combs.branch_taken;
-        trace.trap           = decexecrfw_combs.trap;
+        trace.trap           = decexecrfw_combs.trap.valid;
         trace.branch_target  = pipeline_response.exec.flush_target;
     }
 

@@ -246,12 +246,12 @@ WFI may always be a NOP.
         }
 
         /*b Handle MSTATUS */
-        if (csr_controls.trap) {
+        if (csr_controls.trap.valid) {
             csrs.mstatus.mpp  <= 2b11; //rv_mode_machine; // Since this is all that is supported; actually 'current mode'
             csrs.mstatus.mpie <= csrs.mstatus.mie;
             csrs.mstatus.mie  <= 0;
         } else {
-            if (csr_controls.mret) { // note, should enter mode 'csrs.mstatus.mpp'
+            if (csr_controls.trap.mret) { // note, should enter mode 'csrs.mstatus.mpp'
                 csrs.mstatus.mpp  <= 2b11; //rv_mode_machine;
                 csrs.mstatus.mpie <= 1;
                 csrs.mstatus.mie  <= csrs.mstatus.mpie;
@@ -267,9 +267,9 @@ WFI may always be a NOP.
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MEPC)) {
             csrs.mepc <= csr_write.data;
         }
-        if (csr_controls.trap) {
+        if (csr_controls.trap.valid) {
             // should use interrupt_to_mode if supporting more than machine mode
-            csrs.mepc <= csr_controls.trap_pc;
+            csrs.mepc <= csr_controls.trap.pc;
         }
 
         /*b Handle MTVEC state */
@@ -279,16 +279,16 @@ WFI may always be a NOP.
         }
 
         /*b Handle MTVAL state */
-        if (csr_controls.trap) {
-            csrs.mtval <= csr_controls.trap_value;
+        if (csr_controls.trap.valid) {
+            csrs.mtval <= csr_controls.trap.value;
         }
 
         /*b Handle MCAUSE state */
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MCAUSE)) {
             csrs.mcause <= csr_write.data;
         }
-        if (csr_controls.trap) {
-            full_switch (csr_controls.trap_cause) {
+        if (csr_controls.trap.valid) {
+            full_switch (csr_controls.trap.cause) {
             case riscv_trap_cause_instruction_misaligned: { csrs.mcause <= bundle(24b0, riscv_mcause_instruction_misaligned); }
             case riscv_trap_cause_instruction_fault:      { csrs.mcause <= bundle(24b0, riscv_mcause_instruction_fault); }
             case riscv_trap_cause_illegal_instruction:    { csrs.mcause <= bundle(24b0, riscv_mcause_illegal_instruction); }
@@ -301,7 +301,7 @@ WFI may always be a NOP.
             case riscv_trap_cause_secall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_secall); }
             case riscv_trap_cause_hecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_hecall); }
             case riscv_trap_cause_mecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_mecall); }
-            default:                                      { csrs.mcause <= bundle(1b1, 23b0, 4b0, csr_controls.trap_cause[4;0]); } // interrupts
+            default:                                      { csrs.mcause <= bundle(1b1, 23b0, 4b0, csr_controls.trap.cause[4;0]); } // interrupts
             }
         }
 

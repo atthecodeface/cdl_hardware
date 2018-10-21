@@ -329,18 +329,24 @@ typedef struct {
     bit             illegal_access;
 } t_riscv_csr_data;
 
+/*t t_riscv_i32_trap */
+typedef struct {
+    bit valid;
+    t_riscv_mode to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
+    t_riscv_trap_cause cause;
+    bit[32] pc;
+    bit[32] value;
+    bit mret;
+    bit vector;
+} t_riscv_i32_trap;
+
 /*t t_riscv_csr_controls
  */
 typedef struct {
     t_riscv_mode exec_mode "Mode of instruction in the execution stage";
     bit retire;
     bit[64] timer_value;
-    bit trap;
-    t_riscv_mode trap_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
-    bit mret;
-    t_riscv_trap_cause trap_cause;
-    bit[32] trap_pc;
-    bit[32] trap_value;
+    t_riscv_i32_trap trap;
 } t_riscv_csr_controls;
 
 /*t t_riscv_csr_addr
@@ -590,8 +596,7 @@ typedef enum[3] {
 typedef struct {
     // add in csrs? Need interrupt
     t_riscv_pipeline_exec_pc_action action;
-    bit      trap;
-    bit[4]   trap_vector;
+    t_riscv_i32_trap trap;
     bit[32]  flush_target    "Next PC if action is flush (ret or conditional branch)";
     t_riscv_csr_mtvec  mtvec           "machine trap vector";
     bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
@@ -659,6 +664,7 @@ typedef struct {
     bit          memory_read_unsigned  "if a memory read (op is riscv_opc_load), this indicates an unsigned read; otherwise ignored";
     t_riscv_mem_width  memory_width    "ignored unless @a memory_read or @a memory_write; indicates size of memory transfer";
     bit           illegal              "asserted if an illegal opcode";
+    bit           illegal_pc           "asserted if the PC was not legal (e.g. not word aligned if C mode not supported";
     bit           is_compressed        "asserted if from an i32-c decode, clear otherwise (effects link register)";
     t_riscv_i32_decode_ext ext         "extended decode, not used by the main pipeline";
 } t_riscv_i32_decode;
@@ -674,7 +680,6 @@ typedef struct {
     t_riscv_word branch_target;
     t_riscv_csr_access csr_access;
 } t_riscv_i32_alu_result;
-
 
 /*t t_riscv_i32_coproc_controls
  */
@@ -715,14 +720,16 @@ typedef struct {
 } t_riscv_i32_trace;
 
 /*a Dmem access */
+/*t t_riscv_i32_dmem_exec */
 typedef struct {
     t_riscv_i32_decode      idecode "Exec stage idecode";
     t_riscv_word            arith_result;
     t_riscv_word            rs2;
     bit                     exec_cancelled;
-    bit                     is_second_cycle;
+    bit                     first_cycle;
 } t_riscv_i32_dmem_exec;
 
+/*t t_riscv_i32_dmem_request */
 typedef struct {
     t_riscv_mem_access_req access;
     bit load_address_misaligned  "Asserted only for valid instructions, for loads not aligned to the alignment of the access";
@@ -736,3 +743,19 @@ typedef struct {
     bit    multicycle;
 } t_riscv_i32_dmem_request;
 
+/*t t_riscv_i32_control_data */
+typedef struct {
+    bit                     first_cycle;
+    t_riscv_i32_decode      idecode "Exec stage idecode";
+    t_riscv_word            pc;
+    t_riscv_i32_alu_result  alu_result;
+    t_riscv_csrs_minimal    csrs;
+} t_riscv_i32_control_data;
+
+/*t t_riscv_i32_control_flow */
+typedef struct {
+    bit branch_taken;
+    bit jalr;
+    t_riscv_word next_pc;
+    t_riscv_i32_trap trap;
+} t_riscv_i32_control_flow;

@@ -161,6 +161,7 @@ then the instructions are decoded as illegal.
     """: {
         /*b  Defaults */
         idecode.ext = {*=0};
+        idecode.illegal_pc = 0;
         idecode.is_compressed = 0;
         idecode.rs1_valid = 0;
         idecode.rs2_valid = 0;

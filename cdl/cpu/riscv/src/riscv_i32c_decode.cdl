@@ -230,6 +230,7 @@ are from that specification)
     """: {
         /*b Defaults */
         idecode.ext = {*=0};
+        idecode.illegal_pc = 0;
         idecode.is_compressed = 1;
         idecode.rd  = combs.rd_q0;
         idecode.rs1 = combs.rs1;

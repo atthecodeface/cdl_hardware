@@ -143,11 +143,8 @@ typedef struct {
     bit[4] read_data_byte_clear;
     bit[4] read_data_byte_enable;
     bit branch_taken;
-    bit trap;
-    bit mret;
+    t_riscv_i32_trap trap;
     bit jalr;
-    t_riscv_trap_cause trap_cause;
-    bit[32] trap_value;
     t_riscv_csr_access csr_access;
     t_riscv_word result_data;
     bit dmem_misaligned          "Asserted if the dmem address offset in a word does not match the size of the decoded access, whether the instruction is valid or not";
@@ -574,44 +571,42 @@ An example implementation of could be
             load or atomic/store
 
          */
-        alu_combs.trap = 0;
-        alu_combs.trap_cause = 0;
-        alu_combs.trap_value = 0;
+        alu_combs.trap = {*=0};
         part_switch (alu_state.idecode.op) {
         case riscv_op_system:   {
             if (alu_state.idecode.subop==riscv_subop_ecall) {
-                alu_combs.trap = 1;
-                alu_combs.trap_cause = riscv_trap_cause_mecall;
+                alu_combs.trap.valid = 1;
+                alu_combs.trap.cause = riscv_trap_cause_mecall;
             }
             if (alu_state.idecode.subop==riscv_subop_ebreak) {
-                alu_combs.trap = 1;
-                alu_combs.trap_cause = riscv_trap_cause_breakpoint;
-                alu_combs.trap_value = alu_state.pc; // WHY???
+                alu_combs.trap.valid = 1;
+                alu_combs.trap.cause = riscv_trap_cause_breakpoint;
+                alu_combs.trap.value = alu_state.pc; // WHY???
             }
         }
         }
         if (alu_state.idecode.illegal) {
-            alu_combs.trap = 1;
-            alu_combs.trap_cause = riscv_trap_cause_illegal_instruction;
-            alu_combs.trap_value = alu_state.debug_instruction.data; // OPTIONAL???
+            alu_combs.trap.valid = 1;
+            alu_combs.trap.cause = riscv_trap_cause_illegal_instruction;
+            alu_combs.trap.value = alu_state.debug_instruction.data; // OPTIONAL???
         }
         if (alu_state.illegal_pc) {
-            alu_combs.trap       = 1;
-            alu_combs.trap_cause = riscv_trap_cause_instruction_misaligned;
-            alu_combs.trap_value = alu_state.pc;
+            alu_combs.trap.valid       = 1;
+            alu_combs.trap.cause = riscv_trap_cause_instruction_misaligned;
+            alu_combs.trap.value = alu_state.pc;
         }
 
-        csr_controls.trap_cause = alu_combs.trap_cause;
-        csr_controls.trap       = 0;
-        csr_controls.trap_pc    = alu_state.pc;
-        csr_controls.trap_value = alu_combs.trap_value;
-        if (alu_combs.trap) {
-            csr_controls.trap       = alu_state.valid;
+        csr_controls.trap.cause = alu_combs.trap.cause;
+        csr_controls.trap.valid       = 0;
+        csr_controls.trap.pc    = alu_state.pc;
+        csr_controls.trap.value = alu_combs.trap.value;
+        if (alu_combs.trap.valid) {
+            csr_controls.trap.valid       = alu_state.valid;
         }
 
         /*b Determine whether branch would be taken and find next PC */
         alu_combs.branch_taken = 0;
-        alu_combs.mret = 0;
+        alu_combs.trap.mret = 0;
         alu_combs.jalr = 0;
         part_switch (alu_state.idecode.op) {
         case riscv_op_branch:   { alu_combs.branch_taken = alu_result.branch_condition_met; }
@@ -621,7 +616,7 @@ An example implementation of could be
         }
         case riscv_op_system:   {
             if (alu_state.idecode.subop==riscv_subop_mret) {
-                alu_combs.mret = 1;
+                alu_combs.trap.mret = 1;
             }
         }
         }
@@ -637,11 +632,11 @@ An example implementation of could be
             alu_combs.flush_pipeline = 1;
             alu_combs.next_pc = alu_result.arith_result;
         }
-        if (alu_combs.mret) { // must change mode and set interrupt enables appropriately!
+        if (alu_combs.trap.mret) { // must change mode and set interrupt enables appropriately!
             alu_combs.flush_pipeline = 1;
             alu_combs.next_pc = csrs.mepc;
         }
-        if (alu_combs.trap) {
+        if (alu_combs.trap.valid) {
             alu_combs.flush_pipeline = 1;
             alu_combs.next_pc = bundle(csrs.mtvec.base, 2b0);
         }
@@ -778,7 +773,7 @@ An example implementation of could be
         trace.rfw_rd         = rfw_state.rd;
         trace.rfw_data       = rfw_state.mem_result;
         trace.branch_taken   = alu_combs.branch_taken || alu_combs.jalr;
-        trace.trap           = alu_combs.trap;
+        trace.trap           = alu_combs.trap.valid;
         trace.branch_target  = alu_combs.next_pc;
     }
 
