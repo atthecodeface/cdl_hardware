@@ -137,18 +137,12 @@ typedef struct {
     bit[32] next_pc;
     t_riscv_word   rs1;
     t_riscv_word   rs2;
-    bit[2]  word_offset;
-    bit reading;
-    bit[2] read_data_rotation;
-    bit[4] read_data_byte_clear;
-    bit[4] read_data_byte_enable;
+    t_riscv_i32_dmem_exec dmem_exec;
     bit branch_taken;
     t_riscv_i32_trap trap;
     bit jalr;
     t_riscv_csr_access csr_access;
     t_riscv_word result_data;
-    bit dmem_misaligned          "Asserted if the dmem address offset in a word does not match the size of the decoded access, whether the instruction is valid or not";
-    bit dmem_multicycle          "Asserted if dmem_misaligned and it would take 2 transactions to satisfy the memory operation, whether the instruction is valid or not";
 } t_alu_combs;
 
 /*t t_mem_state */
@@ -158,12 +152,7 @@ typedef struct {
     bit rd_written              "Asserted if Rd is to be written to (with result of memory or ALU)";
     bit rd_from_mem             "Asserted if Rd is to be written to with result of memory - so a following instruction must wait until this one reaches RFW";
     bit[5] rd                   "Destination register used by the instruction (if valid and rd_written are asserted)";
-    bit reading                 "Asserted if the memory is reading and data should be merged with previous mem result";
-    bit[4] byte_clear           "Bytes of current rfw_state.mem_result to clear in merging with memory read data for memory result (for unaligned reads)";
-    bit[4] byte_enable          "Bytes of memory read data to be merged with current rfw_state.mem_result for memory result (for unaligned reads)";
-    bit[2] rotation             "Number of bytes to rotate memory read data right by to get it in to correct byte alignment before merging";
-    bit sign_extend_byte;
-    bit sign_extend_half;
+    t_riscv_i32_dmem_request dmem_request "Data memory request data";
 } t_mem_state;
 
 /*t t_mem_combs
@@ -171,8 +160,6 @@ typedef struct {
  * Combinatorials of the memory stage
  */
 typedef struct {
-    t_riscv_word aligned_data;
-    t_riscv_word memory_data;
     t_riscv_word result_data;
 } t_mem_combs;
 
@@ -274,6 +261,8 @@ An example implementation of could be
     comb t_riscv_csr_controls csr_controls;
     net t_riscv_csr_data csr_data;
     net t_riscv_csrs_minimal csrs;
+    net t_riscv_i32_dmem_request alu_combs_dmem_request "Data memory request data";
+    net t_riscv_word             mem_combs_dmem_read_data;
 
     /*b Ifetch request
      */
@@ -510,49 +499,16 @@ An example implementation of could be
             alu_combs.result_data = csr_data.read_data;
         }
 
-        /*b Memory access handling */
-        dmem_access_req.read_enable  = (alu_state.idecode.op == riscv_op_load);
-        dmem_access_req.write_enable = (alu_state.idecode.op == riscv_op_store);
-        if (!alu_state.valid) {
-            dmem_access_req.read_enable  = 0;
-            dmem_access_req.write_enable = 0;
-        }
-        alu_combs.reading = dmem_access_req.read_enable;
-
-        dmem_access_req.address   = alu_result.arith_result;
-        alu_combs.word_offset     = alu_result.arith_result[2;0];
-        alu_combs.dmem_misaligned = (alu_combs.word_offset!=0); // valid for words
-        alu_combs.dmem_multicycle = (alu_combs.word_offset!=0); // valid for words
-        alu_combs.read_data_rotation = alu_combs.word_offset;
-        alu_combs.read_data_byte_enable = 4hf;
-        alu_combs.read_data_byte_clear  = 4hf;
-        part_switch (alu_state.idecode.memory_width) {
-        case mw_byte: {
-            dmem_access_req.byte_enable  = 4h1 << alu_combs.word_offset;
-            alu_combs.read_data_byte_enable = 4h1;
-            alu_combs.dmem_misaligned = 0;
-            alu_combs.dmem_multicycle = 0;
-        }
-        case mw_half: {
-            dmem_access_req.byte_enable  = 4h3 << alu_combs.word_offset;
-            alu_combs.read_data_byte_enable = 4h3;
-            alu_combs.dmem_misaligned = alu_combs.word_offset[0];
-            alu_combs.dmem_multicycle = (alu_combs.word_offset==2b11);
-        }
-        default: {
-            dmem_access_req.byte_enable  = 4hf << alu_combs.word_offset;
-            alu_combs.dmem_misaligned = (alu_combs.word_offset!=0);
-            alu_combs.dmem_multicycle = (alu_combs.word_offset!=0);
-        }
-        }
-
-        dmem_access_req.write_data = alu_combs.rs2;
-        full_switch (alu_combs.word_offset) {
-        case 2b00: { dmem_access_req.write_data = alu_combs.rs2; }
-        case 2b01: { dmem_access_req.write_data = bundle(alu_combs.rs2[24; 0], alu_combs.rs2[ 8;24]); }
-        case 2b10: { dmem_access_req.write_data = bundle(alu_combs.rs2[16; 0], alu_combs.rs2[16;16]); }
-        case 2b11: { dmem_access_req.write_data = bundle(alu_combs.rs2[ 8; 0], alu_combs.rs2[24; 8]); }
-        }
+        /*b Memory access handling - must be valid before middle of cycle */
+        alu_combs.dmem_exec = { idecode        = alu_state.idecode,
+                                arith_result   = alu_result.arith_result, // address of access
+                                rs2            = alu_combs.rs2,    // data for access (before rotation)
+                                exec_cancelled = !alu_state.valid, // alu_combs.exec_cancelled,
+                                first_cycle = 1
+        };
+        riscv_i32_dmem_request dmem_req( dmem_exec    <= alu_combs.dmem_exec,
+                                         dmem_request => alu_combs_dmem_request );
+        dmem_access_req = alu_combs_dmem_request.access;
 
         /*b Determine whether to trap
 
@@ -664,56 +620,29 @@ An example implementation of could be
     """: {
         /*b State - tie some things down so that data path does not toggle so much */
         mem_state.valid        <= 0;
-        mem_state.reading      <= 0;
         mem_state.rd_written   <= 0;
         mem_state.rd_from_mem  <= 0;
-        mem_state.rotation     <= 0;
-        mem_state.byte_enable  <= 0;
-        mem_state.byte_clear   <= 4hf;
         if (alu_combs.valid_legal && !alu_combs.cannot_complete) {
-            mem_state.valid        <= 1;
-            mem_state.reading      <= alu_combs.reading;
-            mem_state.rotation     <= alu_combs.read_data_rotation;
-            mem_state.byte_enable  <= alu_combs.read_data_byte_enable;
-            mem_state.byte_clear   <= alu_combs.read_data_byte_clear;
-            mem_state.rd_written   <= alu_state.idecode.rd_written;
-            if (alu_combs.reading && alu_state.idecode.rd_written) {
+            mem_state.valid         <= 1;
+            mem_state.dmem_request  <= alu_combs_dmem_request;
+            if (alu_combs_dmem_request.reading && alu_state.idecode.rd_written) { // && does not require another cycle?
                 mem_state.rd_from_mem <= 1;
             }
+            mem_state.rd_written   <= alu_state.idecode.rd_written;
             mem_state.rd           <= alu_state.idecode.rd;
             mem_state.alu_result   <= alu_combs.result_data;
-            mem_state.sign_extend_half <= ((!alu_state.idecode.memory_read_unsigned) && (alu_state.idecode.memory_width== mw_half));
-            mem_state.sign_extend_byte <= ((!alu_state.idecode.memory_read_unsigned) && (alu_state.idecode.memory_width== mw_byte));
         }
 
         /*b Memory read handling */
-        mem_combs.aligned_data = dmem_access_resp.read_data;
-        full_switch (mem_state.rotation) {
-        case 2b00: {
-            mem_combs.aligned_data = dmem_access_resp.read_data;
-        }
-        case 2b01: {
-            mem_combs.aligned_data = bundle(dmem_access_resp.read_data[ 8;0], dmem_access_resp.read_data[24; 8]);
-        }
-        case 2b10: {
-            mem_combs.aligned_data = bundle(dmem_access_resp.read_data[16;0], dmem_access_resp.read_data[16;16]);
-        }
-        case 2b11: {
-            mem_combs.aligned_data = bundle(dmem_access_resp.read_data[24;0], dmem_access_resp.read_data[ 8;24]);
-        }
-        }
-        mem_combs.memory_data = mem_combs.aligned_data;
-        for (i; 4) {
-            mem_combs.memory_data[8;8*i] = ( (mem_state.byte_clear[i]?8b0:mem_state.alu_result[8;8*i]) |
-                                             (mem_state.byte_enable[i]?mem_combs.aligned_data[8;8*i]:8b0) );
-        }
-        if (mem_state.sign_extend_byte && mem_combs.memory_data[7])  { mem_combs.memory_data[24;8]  = -1; }
-        if (mem_state.sign_extend_half && mem_combs.memory_data[15]) { mem_combs.memory_data[16;16] = -1; }
+        riscv_i32_dmem_read_data dmem_data( dmem_request <= mem_state.dmem_request,
+                                            last_data <= mem_state.alu_result, // only for unaligned reads
+                                            dmem_access_resp <= dmem_access_resp,
+                                            dmem_read_data => mem_combs_dmem_read_data);
 
         /*b Memory result mux */
         mem_combs.result_data = mem_state.alu_result;
-        if (mem_state.reading) {
-            mem_combs.result_data = mem_combs.memory_data;
+        if (mem_state.dmem_request.reading) {
+            mem_combs.result_data = mem_combs_dmem_read_data;
         }
     }
 
