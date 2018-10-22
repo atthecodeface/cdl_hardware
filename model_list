@@ -90,6 +90,7 @@ cdl cdl/cpu/riscv/src    riscv_i32_control_flow  inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control  inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control_fetch_req  inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control_fetch_data  inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control_csr_trace  inc:cdl/inc
 # These modules are suitable for i/e32[c][m]
 cdl cdl/cpu/riscv/src    riscv_i32c_pipeline  inc:cdl/inc
 #cdl cdl/cpu/riscv/src    riscv_i32c_pipeline2 inc:cdl/inc

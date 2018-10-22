@@ -742,20 +742,35 @@ typedef struct {
  */
 typedef struct {
     bit valid;
+    bit cannot_start    "Asserted if the pipeline cannot start - not dependent on coprocessors (if any)";
+    bit cannot_complete "Asserted if the pipeline cannot complet - not dependent on coprocessors (if any)";
     bit interrupt_ack;
     bit branch_taken;
     t_riscv_i32_trap trap;
     bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
+    t_riscv_i32_inst instruction;
+    t_riscv_word rs1;
+    t_riscv_word rs2;
     bit[32]  pc              "Actual PC of execution instruction";
     bit          predicted_branch   "From pipeline_fetch_data associated with the decode of this instruction";
     t_riscv_word pc_if_mispredicted "From pipeline_fetch_data associated with the decode of this instruction";
 } t_riscv_pipeline_response_exec;
+
+/*t t_riscv_pipeline_response_rfw
+ */
+typedef struct {
+    bit valid;
+    bit rd_written;
+    bit[5] rd;
+    t_riscv_word data;
+} t_riscv_pipeline_response_rfw;
 
 /*t t_riscv_pipeline_response - mid cycle (dependent on control) to effect fetch request and hence fetch data
  */
 typedef struct {
     t_riscv_pipeline_response_decode decode;
     t_riscv_pipeline_response_exec   exec;
+    t_riscv_pipeline_response_rfw    rfw;
 } t_riscv_pipeline_response;
 
 /*t t_riscv_pipeline_fetch_data

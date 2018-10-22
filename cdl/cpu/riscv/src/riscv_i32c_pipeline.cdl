@@ -102,14 +102,11 @@ module riscv_i32c_pipeline( clock clk,
                             input t_riscv_pipeline_control     pipeline_control,
                             output t_riscv_pipeline_response   pipeline_response,
                             input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
-                            output t_riscv_i32_coproc_controls coproc_controls,
                             input t_riscv_i32_coproc_response  coproc_response,
                             output t_riscv_csr_access          csr_access,
                             input t_riscv_word                 csr_read_data,
-                            output t_riscv_csr_controls        csr_controls,
-                            input  t_riscv_config              riscv_config,
-                            output t_riscv_i32_trace           trace
-)
+                            input  t_riscv_config              riscv_config
+    )
 """
 This is just the processor pipeline, using a single stage for execution.
 
@@ -150,6 +147,7 @@ stage the multiply cannot support fused operations
     net     t_riscv_word           decexecrfw_dmem_read_data;
     net     t_riscv_i32_control_flow decexecrfw_control_flow;
     net     t_riscv_i32_alu_result decexecrfw_alu_result;
+    clocked t_riscv_pipeline_response_rfw rfw_state={*=0};
 
     /*b Decode, RFR, execute and RFW stage - single stage execution
      */
@@ -257,20 +255,21 @@ stage the multiply cannot support fused operations
         pipeline_response.decode.enable_branch_prediction = 0; // Disable branch prediction as we always use exec control flow
 
         /*b Pipeline response from exec */
-        pipeline_response.exec.valid         = decexecrfw_state.valid;
-        pipeline_response.exec.interrupt_ack = pipeline_control.interrupt_req;
-        pipeline_response.exec.is_compressed = decexecrfw_combs.idecode.is_compressed;
-        pipeline_response.exec.pc            = pipeline_control.decode_pc;
+        pipeline_response.exec.valid           = decexecrfw_state.valid;
+        pipeline_response.exec.cannot_start    = !decexecrfw_combs.exec_committed;
+        pipeline_response.exec.cannot_complete = !decexecrfw_combs.exec_committed;
+        pipeline_response.exec.interrupt_ack   = pipeline_control.interrupt_req;
+        pipeline_response.exec.is_compressed   = decexecrfw_combs.idecode.is_compressed;
+        pipeline_response.exec.pc              = pipeline_control.decode_pc;
+        pipeline_response.exec.instruction     = decexecrfw_state.instruction;
+        pipeline_response.exec.rs1             = decexecrfw_combs.rs1;
+        pipeline_response.exec.rs2             = decexecrfw_combs.rs2;
         pipeline_response.exec.predicted_branch   = 0;
         pipeline_response.exec.pc_if_mispredicted = decexecrfw_alu_result.branch_target; // correct for jalr and branch
         pipeline_response.exec.branch_taken       = decexecrfw_control_flow.branch_taken;
         pipeline_response.exec.trap               = decexecrfw_control_flow.trap;
 
-        /*b CSR controls - post trap detection */
-        csr_controls = {*=0};
-        csr_controls.retire       = decexecrfw_combs.exec_committed;
-        csr_controls.trap         = decexecrfw_control_flow.trap;
-        csr_controls.trap.to_mode = rv_mode_machine;
+        pipeline_response.rfw = rfw_state;
 
         /*b Memory read handling - post memory request and memory read - so way late in the second half of the cycle */
         riscv_i32_dmem_read_data dmem_data( dmem_request <= decexecrfw_dmem_request,
@@ -294,40 +293,11 @@ stage the multiply cannot support fused operations
             registers[decexecrfw_combs.idecode.rd] <= decexecrfw_combs.rfw_write_data;
         }
         registers[0] <= 0; // register 0 is always zero...
-    }
 
-    /*b Coprocessor interface */
-    coprocessor_interface """
-    Drive the coprocessor controls unless disabled; mirror the pipeline combs
-    """: {
-        coproc_controls = {*=0};
-        coproc_controls.dec_idecode_valid  = decexecrfw_state.valid && !pipeline_control.interrupt_req;
-        coproc_controls.dec_idecode        = decexecrfw_combs.idecode;
-        coproc_controls.dec_to_alu_blocked = coproc_response.cannot_complete; // If ALU can complete...
-        coproc_controls.alu_rs1 = decexecrfw_combs.rs1;
-        coproc_controls.alu_rs2 = decexecrfw_combs.rs2;
-        coproc_controls.alu_flush_pipeline = 0; // No pipeline to flush
-        coproc_controls.alu_cannot_start = coproc_response.cannot_start;       // ALU can always start itself; coprocessor can block it
-        coproc_controls.alu_cannot_complete = coproc_response.cannot_complete; // ALU can always complete (no unaligned transactions yet); coprocessor can block it
-        if (coproc_force_disable || riscv_config.coproc_disable) {
-            coproc_controls = {*=0};
-        }
-    }
-
-    /*b Logging */
-    logging """
-    """: {
-        trace = {*=0};
-        trace.instr_valid    = decexecrfw_combs.exec_committed;
-        trace.instr_pc       = pipeline_response.exec.pc;
-        trace.instruction    = decexecrfw_state.instruction;
-        trace.rfw_retire     = csr_controls.retire;
-        trace.rfw_data_valid = decexecrfw_combs.idecode.rd_written && decexecrfw_combs.exec_committed;
-        trace.rfw_rd         = decexecrfw_combs.idecode.rd;
-        trace.rfw_data       = decexecrfw_alu_result.result; // Cannot use decexecrfw_combs.rfw_write_data; as it depends on csr_read_data
-        trace.branch_taken   = decexecrfw_control_flow.branch_taken;
-        trace.trap           = decexecrfw_control_flow.trap.valid;
-        trace.branch_target  = pipeline_response.exec.pc_if_mispredicted;
+        rfw_state.valid      <= decexecrfw_combs.exec_committed;
+        rfw_state.rd_written <= decexecrfw_combs.exec_committed && decexecrfw_combs.idecode.rd_written;
+        rfw_state.rd         <= decexecrfw_combs.idecode.rd;
+        rfw_state.data       <= decexecrfw_combs.rfw_write_data;
     }
 
     /*b All done */

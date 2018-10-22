@@ -120,7 +120,6 @@ typedef struct {
     t_riscv_word   rs1;
     t_riscv_word   rs2;
     t_riscv_i32_dmem_exec dmem_exec;
-    t_riscv_i32_trap trap;
     t_riscv_csr_access csr_access;
     t_riscv_word result_data;
     t_riscv_i32_control_data control_data;
@@ -161,13 +160,10 @@ module riscv_i32c_pipeline3( clock clk,
                              input t_riscv_pipeline_control     pipeline_control,
                              output t_riscv_pipeline_response   pipeline_response,
                              input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
-                             output t_riscv_i32_coproc_controls  coproc_controls,
                              input t_riscv_i32_coproc_response   coproc_response,
                              output t_riscv_csr_access          csr_access,
                              input t_riscv_word                 csr_read_data,
-                             output t_riscv_csr_controls        csr_controls,
-                             input  t_riscv_config          riscv_config,
-                             output t_riscv_i32_trace       trace
+                             input  t_riscv_config          riscv_config
 )
 """
 This is just the processor pipeline, using thress stages for execution.
@@ -242,8 +238,6 @@ An example implementation of could be
     clocked t_rfw_state     rfw_state={*=0};
     comb t_riscv_i32_coproc_response   coproc_response_cfg "Coprocessor response masked out if configured off";
 
-    //comb t_riscv_csr_controls csr_controls;
-    //net t_riscv_csr_data csr_data;
     net t_riscv_i32_dmem_request alu_combs_dmem_request "Data memory request data";
     net t_riscv_word             mem_combs_dmem_read_data;
 
@@ -368,6 +362,10 @@ An example implementation of could be
     The ALU stage does data forwarding, ALU operation, conditional branches, CSR accesses, memory request
     """: {
         alu_combs.valid_legal = alu_state.valid && !alu_state.idecode.illegal;
+        coproc_response_cfg = coproc_response;
+        if (coproc_force_disable || riscv_config.coproc_disable) {
+            coproc_response_cfg = {*=0};
+        }
 
         /*b Data forwarding */
         alu_combs.rs1 = alu_state.rs1;
@@ -436,7 +434,7 @@ An example implementation of could be
                                    alu_result       = alu_result,
                                    interrupt_ack    = 1,
                                    valid            = alu_state.valid,
-                                   exec_committed   = alu_state.valid && !alu_combs.cannot_start,
+                                   exec_committed   = alu_state.valid && !alu_combs.blocked_by_mem,
                                    idecode          = alu_state.idecode,
                                    first_cycle = 1
         };
@@ -446,47 +444,24 @@ An example implementation of could be
 
 
         /*b Pipeline response from exec */
-        pipeline_response.exec.valid         = alu_state.valid;
-        pipeline_response.exec.interrupt_ack = pipeline_control.interrupt_req;
-        pipeline_response.exec.trap          = {*=0};
-        pipeline_response.exec.is_compressed = alu_state.idecode.is_compressed;
-        pipeline_response.exec.pc            = alu_state.pc;
-
+        pipeline_response.exec.valid           = alu_state.valid;
+        pipeline_response.exec.cannot_start    = alu_combs.blocked_by_mem;
+        pipeline_response.exec.cannot_complete = alu_combs.blocked_by_mem;
+        pipeline_response.exec.interrupt_ack   = pipeline_control.interrupt_req;
+        pipeline_response.exec.is_compressed   = alu_state.idecode.is_compressed;
+        pipeline_response.exec.pc              = alu_state.pc;
+        pipeline_response.exec.rs1             = alu_combs.rs1;
+        pipeline_response.exec.rs2             = alu_combs.rs2;
+        pipeline_response.exec.instruction     = alu_state.instruction;
         pipeline_response.exec.predicted_branch   = alu_state.predicted_branch;
         pipeline_response.exec.pc_if_mispredicted = alu_control_flow.jalr ? alu_result.branch_target : alu_state.pc_if_mispredicted;
         pipeline_response.exec.branch_taken       = alu_control_flow.branch_taken;
-        pipeline_response.exec.trap = alu_control_flow.trap;
+        pipeline_response.exec.trap               = alu_control_flow.trap;
 
-        /*b CSR controls - post trap detection */
-        csr_controls = {*=0};
-        csr_controls.retire       = alu_state.valid && !alu_combs.cannot_complete;
-        csr_controls.trap         = alu_control_flow.trap;
-        csr_controls.trap.to_mode = rv_mode_machine;
-
-        /*b Determine whether to trap
-
-          Trap sources are:
-
-          software interrupt (ecall)
-            epc <= address of instruction (even if it was a compressed inst)
-          debug 
-            lowest priority:  single step
-            next priority:    debugger requested
-            next priority:    ebreak with DCSR[ebreak*] set
-              epc <= address of instruction (even if it was a compressed inst)
-            highest priority: trigger with action=enter-debug-mode          
-          unaligned instruction fetch
-          unaligned data operation
-            load or atomic/store
-
-         */
-        alu_combs.trap = alu_control_flow.trap;
-
-        /*b CSR controls */
-        csr_controls = {*=0};
-        csr_controls.retire       = alu_combs.valid_legal;
-        csr_controls.trap         = alu_control_flow.trap;
-        csr_controls.trap.to_mode = rv_mode_machine;
+        pipeline_response.rfw.valid      = rfw_state.valid;
+        pipeline_response.rfw.rd_written = rfw_state.rd_written;
+        pipeline_response.rfw.rd         = rfw_state.rd;
+        pipeline_response.rfw.data       = rfw_state.mem_result;
 
     }
 
@@ -553,45 +528,6 @@ An example implementation of could be
             }
         }
         registers[0] <= 0; // register 0 is always zero...
-    }
-
-    /*b Coprocessor interface */
-    coprocessor_interface """
-    Drive the coprocessor controls unless disabled; mirror the pipeline combs
-    """: {
-        coproc_response_cfg = coproc_response;
-        if (coproc_force_disable || riscv_config.coproc_disable) {
-            coproc_response_cfg = {*=0};
-        }
-
-        coproc_controls = {*=0};
-        coproc_controls.dec_idecode_valid  = dec_state.valid;
-        coproc_controls.dec_idecode        = dec_combs.idecode;
-        coproc_controls.dec_to_alu_blocked = alu_combs.cannot_complete;
-        coproc_controls.alu_rs1 = alu_combs.rs1;
-        coproc_controls.alu_rs2 = alu_combs.rs2;
-        coproc_controls.alu_flush_pipeline  = 0;; //pipeline_fetch_data.dec_flush_pipeline;
-        coproc_controls.alu_cannot_start    = alu_combs.blocked_by_mem;
-        coproc_controls.alu_cannot_complete = alu_combs.cannot_complete;
-        if (coproc_force_disable || riscv_config.coproc_disable) {
-            coproc_controls = {*=0};
-        }
-    }
-
-    /*b Tracing */
-    logging """
-    """: {
-        trace = {*=0};
-        trace.instr_valid = alu_state.valid;
-        trace.instr_pc    = alu_state.pc;
-        trace.instruction = alu_state.instruction;
-        trace.rfw_retire     = rfw_state.valid;
-        trace.rfw_data_valid = rfw_state.rd_written;
-        trace.rfw_rd         = rfw_state.rd;
-        trace.rfw_data       = rfw_state.mem_result;
-        trace.branch_taken   = alu_control_flow.branch_taken;
-        trace.trap           = alu_combs.trap.valid;
-        trace.branch_target  = alu_result.branch_target; // not always correct?
     }
 
     /*b All done */

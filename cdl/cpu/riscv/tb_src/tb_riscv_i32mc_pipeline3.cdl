@@ -226,6 +226,15 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                                                              ifetch_req  <= rv_imem_access_req,
                                                              ifetch_resp <= rv_imem_access_resp,
                                                              pipeline_fetch_data => pipeline_fetch_data );
+        riscv_i32_pipeline_control_csr_trace pc_csr_trace( pipeline_control <= pipeline_control,
+                                                           pipeline_response <= pipeline_response,
+                                                           pipeline_fetch_data <= pipeline_fetch_data,
+                                                           riscv_config     <= riscv_config,
+                                                           coproc_response <= coproc_response,
+                                                           coproc_controls  => coproc_controls,
+                                                           csr_controls     => csr_controls,
+                                                           trace            => trace );
+        
         riscv_i32c_pipeline3 dut( clk <- riscv_clk,
                                   reset_n <= reset_n,
                                   pipeline_control <= pipeline_control,
@@ -233,14 +242,11 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                                   pipeline_fetch_data <= pipeline_fetch_data,
                                   dmem_access_req => dmem_access_req,
                                   dmem_access_resp <= dmem_access_resp,
-                                  coproc_controls => coproc_controls,
                                   coproc_response <= coproc_response,
                                      csr_access       => csr_access,
                                      csr_read_data    <= csr_data.read_data,
-                                     csr_controls     => csr_controls,
-                                  riscv_config <= riscv_config,
-                                     trace            => trace );
-
+                                  riscv_config <= riscv_config );
+        
         riscv_csrs_minimal csrs( clk <- clk,
                                  reset_n <= reset_n,
                                  irqs <= irqs,

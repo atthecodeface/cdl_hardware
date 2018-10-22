@@ -489,6 +489,15 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                                              ifetch_req <= ifetch_req,
                                                              ifetch_resp <= ifetch_resp,
                                                              pipeline_fetch_data => pipeline_fetch_data );
+        riscv_i32_pipeline_control_csr_trace pc_csr_trace( pipeline_control <= pipeline_control,
+                                                           pipeline_response <= pipeline_response,
+                                                           pipeline_fetch_data <= pipeline_fetch_data,
+                                                           riscv_config     <= riscv_config_pipe,
+                                                           coproc_response <= coproc_response,
+                                                           coproc_controls  => coproc_controls,
+                                                           csr_controls     => csr_controls,
+                                                           trace            => trace_pipe );
+        
         riscv_i32c_pipeline pipeline(clk              <- riscv_clk,
                                      reset_n          <= proc_reset_n,
                                      pipeline_control <= pipeline_control,
@@ -496,13 +505,10 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                      pipeline_response => pipeline_response,
                                      dmem_access_req  => dmem_access_req,
                                      dmem_access_resp <= dmem_access_resp,
-                                     coproc_controls  => coproc_controls,
                                      coproc_response  <= coproc_response,
                                      riscv_config     <= riscv_config_pipe,
                                      csr_access       => csr_access,
-                                     csr_read_data    <= csr_data.read_data,
-                                     csr_controls     => csr_controls,
-                                     trace            => trace_pipe );
+                                     csr_read_data    <= csr_data.read_data );
 
         riscv_csrs_minimal csrs( clk <- clk,
                                  reset_n <= reset_n,

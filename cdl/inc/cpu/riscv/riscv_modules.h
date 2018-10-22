@@ -99,6 +99,22 @@ extern module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_cont
     timing comb output pipeline_fetch_data;
 }
 
+/*m riscv_i32_pipeline_control_csr_trace
+ */
+extern module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_control    pipeline_control,
+                                                    input t_riscv_pipeline_response   pipeline_response,
+                                                    input t_riscv_pipeline_fetch_data pipeline_fetch_data,
+                                                    input  t_riscv_config             riscv_config,
+                                                    input t_riscv_i32_coproc_response   coproc_response,
+                                                    output t_riscv_i32_coproc_controls  coproc_controls,
+                                                    output t_riscv_csr_controls       csr_controls,
+                                                    output t_riscv_i32_trace          trace
+    )
+{
+    timing comb input  pipeline_control, pipeline_response, pipeline_fetch_data, riscv_config, coproc_response;
+    timing comb output coproc_controls, csr_controls, trace;
+}
+
 /*m riscv_i32c_pipeline
  */
 extern
@@ -109,23 +125,17 @@ module riscv_i32c_pipeline( clock clk,
                             input t_riscv_pipeline_control     pipeline_control,
                             output t_riscv_pipeline_response   pipeline_response,
                             input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
-                            output t_riscv_i32_coproc_controls coproc_controls,
                             input t_riscv_i32_coproc_response  coproc_response,
                             output t_riscv_csr_access          csr_access,
                             input t_riscv_word                 csr_read_data,
-                            output t_riscv_csr_controls        csr_controls,
-                            input  t_riscv_config              riscv_config,
-                            output t_riscv_i32_trace       trace
+                            input  t_riscv_config              riscv_config
 )
 {
-    timing from rising clock clk dmem_access_req, pipeline_response, coproc_controls, csr_controls, csr_access;
+    timing from rising clock clk dmem_access_req, pipeline_response, csr_access;
     timing to   rising clock clk dmem_access_resp, pipeline_control, coproc_response, csr_read_data;
     timing to   rising clock clk riscv_config;
-    timing from rising clock clk trace;
-    timing comb input riscv_config, pipeline_control, coproc_response;
-    timing comb output dmem_access_req, pipeline_response, coproc_controls, csr_access, csr_controls;
-    //timing comb input dmem_access_resp;
-    timing comb output trace;
+    timing comb input riscv_config, pipeline_control;
+    timing comb output dmem_access_req, pipeline_response, csr_access;
 }
 
 /*m riscv_i32c_pipeline3
@@ -138,21 +148,17 @@ module riscv_i32c_pipeline3( clock clk,
                              input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
                              output t_riscv_mem_access_req  dmem_access_req,
                              input  t_riscv_mem_access_resp dmem_access_resp,
-                             output t_riscv_i32_coproc_controls  coproc_controls,
                              input t_riscv_i32_coproc_response   coproc_response,
                              output t_riscv_csr_access          csr_access,
                              input t_riscv_word                 csr_read_data,
-                             output t_riscv_csr_controls        csr_controls,
-                             input  t_riscv_config          riscv_config,
-                             output t_riscv_i32_trace       trace
+                             input  t_riscv_config          riscv_config
 )
 {
-    timing from rising clock clk dmem_access_req, pipeline_response, coproc_controls, csr_access, csr_controls;
+    timing from rising clock clk dmem_access_req, pipeline_response, csr_access;
     timing to   rising clock clk dmem_access_resp, pipeline_control, pipeline_fetch_data, coproc_response, csr_read_data;
     timing to   rising clock clk riscv_config;
-    timing comb input riscv_config, pipeline_control, coproc_response;
-    timing comb output pipeline_response, coproc_controls, trace, csr_controls;
-    timing from rising clock clk trace;
+    timing comb input riscv_config, pipeline_control;
+    timing comb output pipeline_response;
 }
 
 /*a Interfaces */
