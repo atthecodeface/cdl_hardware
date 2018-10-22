@@ -169,6 +169,7 @@ module riscv_i32_pipeline_control( clock clk,
         }
 
         pipeline_control = {*=0};
+        pipeline_control.valid        = 1;
         pipeline_control.start_pc     = ifetch_state.pc;
         pipeline_control.fetch_action = ifetch_combs.fetch_action;
         pipeline_control.mode  = rv_mode_machine;
