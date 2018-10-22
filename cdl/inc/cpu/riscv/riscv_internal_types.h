@@ -610,6 +610,22 @@ typedef struct {
     t_riscv_pipeline_response_exec   exec;
 } t_riscv_pipeline_response;
 
+/*t t_riscv_pipeline_control_fetch_action
+ */
+typedef enum[2] {
+    rv_pc_fetch_action_idle,
+    rv_pc_fetch_action_restart_at_pc,
+    rv_pc_fetch_action_continue_fetching
+} t_riscv_pipeline_control_fetch_action;
+
+/*t t_riscv_pipeline_fetch_data
+ */
+typedef struct {
+    bit          valid;
+    t_riscv_word pc;
+    t_riscv_word data;
+} t_riscv_pipeline_fetch_data;
+
 /*t t_riscv_pipeline_control
  */
 typedef bit[2] t_riscv_pipeline_tag;
@@ -617,8 +633,8 @@ typedef struct {
     // add in exec_wfi_continues, and exec_take_interrupt
     bit      valid;
     bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
-    bit[32]  pc;
-    bit[32]  data;
+    t_riscv_pipeline_control_fetch_action fetch_action;
+    bit[32]  start_pc;
     t_riscv_mode mode "Mode to fetch in";
     bit          error;
     t_riscv_pipeline_tag tag;

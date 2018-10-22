@@ -128,7 +128,6 @@ class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
     base_address = 0x0000000
     memory_expectation = { "tohost":(1,),
                            }
-    memory_expectation = {}
     def __init__(self, dump_filename, test_memory="dmem", **kwargs):
         self.dump_filename = dump_filename
         self.test_memory = test_memory
@@ -427,7 +426,7 @@ class old_riscv_minimal_single_memory(riscv_base):
     pass
 
 #c Add tests to riscv_minimal and riscv_minimal_single_memory
-riscv_atcf_zephyr = {"zephyr":("zephyr.dump",250*1000,[]),
+riscv_atcf_zephyr = {#"zephyr":("zephyr.dump",250*1000,[]),
 }
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[]),
                                "traps":("traps.dump",10*1000,[]),

@@ -71,32 +71,6 @@ constant integer coproc_force_disable=0;
 
 /*a Types
  */
-/*t t_ifetch_combs
- *
- * Combinatorials for the instruction fetch
- */
-typedef struct {
-    bit[32] pc_plus_4;
-    bit[32] pc_plus_2;
-    bit interrupt_req;
-    bit[4] interrupt_number;
-} t_ifetch_combs;
-
-/*t t_ifetch_state
- *
- * Combinatorials for the instruction fetch
- */
-typedef fsm {
-    ifetch_fsm_idle;
-    ifetch_fsm_restarting;
-    ifetch_fsm_fetching;
-} t_ifetch_fsm;
-typedef struct {
-    t_ifetch_fsm state;
-    bit running;
-    bit[32]      pc    "PC to start fetching from";
-} t_ifetch_state;
-
 /*t t_decexecrfw_state */
 typedef struct {
     t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
@@ -129,14 +103,16 @@ typedef struct {
 module riscv_i32c_pipeline( clock clk,
                             input bit reset_n,
                             input t_riscv_irqs       irqs               "Interrupts in to the CPU",
-                            output t_riscv_mem_access_req  dmem_access_req,
-                            input  t_riscv_mem_access_resp dmem_access_resp,
-                            output t_riscv_fetch_req       ifetch_req,
-                            input  t_riscv_fetch_resp      ifetch_resp,
-                            output t_riscv_i32_coproc_controls  coproc_controls,
-                            input t_riscv_i32_coproc_response   coproc_response,
-                            input  t_riscv_config          riscv_config,
-                            output t_riscv_i32_trace       trace
+                            output t_riscv_mem_access_req      dmem_access_req,
+                            input  t_riscv_mem_access_resp     dmem_access_resp,
+                            input t_riscv_pipeline_control     pipeline_control,
+                            output t_riscv_pipeline_response   pipeline_response,
+                            input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
+                            output t_riscv_i32_coproc_controls coproc_controls,
+                            input t_riscv_i32_coproc_response  coproc_response,
+                            input  t_riscv_config              riscv_config,
+                            output t_riscv_csrs_minimal        csrs,
+                            output t_riscv_i32_trace           trace
 )
 """
 This is just the processor pipeline, using a single stage for execution.
@@ -156,7 +132,9 @@ A coprocessor is supported; this may be configured to be disabled, in
 which case the outputs are driven low and the inputs are coprocessor
 response is ignored.
 
-A coprocessor can implement, for example, the multiply for i32m (using riscv_i32_muldiv).
+A coprocessor can implement, for example, the multiply for i32m (using
+riscv_i32_muldiv).  Note that since there is not a separate decode
+stage the multiply cannot support fused operations
 
 """
 {
@@ -168,10 +146,6 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
 
     clocked t_riscv_word[32] registers={*=0} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
 
-    comb t_riscv_pipeline_response pipeline_response;
-    comb t_riscv_pipeline_control  pipeline_control;
-    comb    t_ifetch_combs         ifetch_combs;
-    clocked t_ifetch_state         ifetch_state = {*=0, state=ifetch_fsm_idle};
     net     t_riscv_i32_decode     decexecrfw_idecode_i32;
     net     t_riscv_i32_decode     decexecrfw_idecode_i32c;
     clocked t_decexecrfw_state     decexecrfw_state={*=0, pc=INITIAL_PC};
@@ -183,100 +157,6 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
     comb t_riscv_csr_controls csr_controls;
     net t_riscv_csr_data csr_data;
     net t_riscv_csrs_minimal csrs;
-
-    /*b Pipeline control
-     */
-    pipeline_control_logic
-    """
-    The instruction fetch request derives from the
-    decode/execute stage (the instruction address that is required
-    next) and presents that to the outside world.
-
-    This request may be for any 16-bit aligned address, and two
-    successive 16-bit words from that request must be presented,
-    aligned to bit 0.
-
-    If the decode/execute stage is invalid (i.e. it does not have a
-    valid instruction to decode) then the current PC is requested.
-    """:
-    {
-        if (!ifetch_state.running) { // AND if run from boot time
-            ifetch_state.running <= 1;
-            ifetch_state.pc <= INITIAL_PC;
-        }
-
-        // handle wfi_mode[] too
-        //        machine_mode_int_req = 0;
-        ifetch_combs.interrupt_req = 0;
-        ifetch_combs.interrupt_number = 0;
-        if (csrs.mip.mtip & csrs.mie.mtip) {
-           ifetch_combs.interrupt_req    = csrs.mstatus.mie; // and only if not in debug
-           ifetch_combs.interrupt_number = 7;
-        }
-        if (csrs.mip.msip & csrs.mie.msip) {
-           ifetch_combs.interrupt_req    = csrs.mstatus.mie; // and only if not in debug
-           ifetch_combs.interrupt_number = 3;
-        }
-        if (csrs.mip.meip & csrs.mie.meip) {
-           ifetch_combs.interrupt_req    = csrs.mstatus.mie; // and only if not in debug
-           ifetch_combs.interrupt_number = 11;
-        }
-
-        ifetch_req             = {*=0};
-        ifetch_req.valid       = 0;
-        ifetch_req.sequential  = 0;
-        ifetch_req.address     = ifetch_state.pc;
-        ifetch_combs.pc_plus_4      = pipeline_response.decode.pc + 4;
-        ifetch_combs.pc_plus_2      = pipeline_response.decode.pc + 2;
-        full_switch (ifetch_state.state) {
-        case ifetch_fsm_idle: {
-            if (ifetch_state.running) {
-                ifetch_state.state <= ifetch_fsm_restarting;
-            }
-        }
-        case ifetch_fsm_restarting: {
-            ifetch_req.valid   = 1;
-            ifetch_req.address = ifetch_state.pc;
-            if (ifetch_resp.valid) {
-                ifetch_state.state <= ifetch_fsm_fetching;
-            }
-        }
-            // on a flush NEXT cycle pipeline_response.exec.pc MUST equal ifetch_req.address
-            // it always will with this pipeline
-        case ifetch_fsm_fetching: { // present request, decode should be valid, pipeline not empty
-            ifetch_req.valid = 1;
-            ifetch_req.sequential = 1;
-            if (pipeline_response.exec.action == rv_pipe_epc_flush) {
-                ifetch_req.address = pipeline_response.exec.flush_target;
-                ifetch_req.sequential = 0;
-                // flush if pipeline exists
-            } elsif (pipeline_response.decode.action==rv_pipe_dpc_flush) { // cannot happen on one-stage pipeline
-            } elsif (pipeline_response.decode.action==rv_pipe_dpc_ret)   { // cannot happen on one-stage pipeline
-            } elsif (pipeline_response.decode.action==rv_pipe_dpc_predict_branch) {  // cannot happen on one-stage pipeline
-            } elsif (pipeline_response.decode.action==rv_pipe_dpc_sequential) {
-                ifetch_req.sequential = 1;
-                ifetch_req.address = ifetch_combs.pc_plus_4;
-                if (pipeline_response.decode.is_compressed) {
-                    ifetch_req.address = ifetch_combs.pc_plus_2;
-                }
-            }
-            if (pipeline_response.exec.trap.valid) { // vector interrupts if required
-                ifetch_req.address = bundle(pipeline_response.exec.mtvec.base, 2b0);
-                ifetch_req.sequential = 0;
-                // flush if pipeline exists
-            }
-        }
-        }
-
-        pipeline_control = {*=0};
-        pipeline_control.valid = ifetch_req.valid && ifetch_resp.valid;
-        pipeline_control.pc    = ifetch_req.address;
-        pipeline_control.data  = ifetch_resp.data;
-        pipeline_control.mode  = rv_mode_machine;
-        pipeline_control.interrupt_req     = ifetch_combs.interrupt_req;
-        pipeline_control.interrupt_number  = ifetch_combs.interrupt_number;
-        pipeline_control.interrupt_to_mode = rv_mode_machine;
-    }
 
     /*b Decode, RFR, execute and RFW stage - single stage execution
      */
@@ -297,15 +177,14 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
     """: {
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
         decexecrfw_state.valid <= 0;
-        if (pipeline_control.valid) {
+        if (pipeline_fetch_data.valid) {
             decexecrfw_state.instruction <= {
-                data = pipeline_control.data,
+                data = pipeline_fetch_data.data,
                 mode = pipeline_control.mode };
             decexecrfw_state.illegal_pc <= 0;
             decexecrfw_state.valid_legal <= 1;
             decexecrfw_state.valid <= 1;
-            decexecrfw_state.pc <= pipeline_control.pc;
-
+            decexecrfw_state.pc <= pipeline_fetch_data.pc;
         }
 
         /*b Decode instruction */
@@ -317,7 +196,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
                                        idecode      => decexecrfw_idecode_i32c,
                                        riscv_config <= riscv_config );
 
-        /*b Select decode */
+        /*b Select decode (from either i32 or i32c or possible debug) */
         decexecrfw_combs.idecode = decexecrfw_idecode_i32;
         if ((!i32c_force_disable) && riscv_config.i32c) {
             if (decexecrfw_state.instruction.data[2;0]!=2b11) {
@@ -326,27 +205,28 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         }
 
         /*b Pipeline response from decode */
+        // possible add in valid and illegal (if valid && illegal then pipeline will flush)
         pipeline_response.decode.pc            = decexecrfw_state.pc;
         pipeline_response.decode.is_compressed = decexecrfw_combs.idecode.is_compressed;
         pipeline_response.decode.action        = rv_pipe_dpc_sequential;
         pipeline_response.decode.branch_target = decexecrfw_alu_result.branch_target; // used only if predict_branch - i.e. never in this pipeline
+        decexecrfw_combs.exec_cancelled = 0;
+        if (!decexecrfw_state.valid_legal || decexecrfw_combs.idecode.illegal || pipeline_control.interrupt_req) {
+            decexecrfw_combs.exec_cancelled = 1;
+        }
 
-        /*b Register read */
+        /*b Register read - post decode, prior to ALU and CSRs */
         decexecrfw_combs.rs1 = registers[decexecrfw_combs.idecode.rs1]; // note that register 0 is ALWAYS 0 anyway
         decexecrfw_combs.rs2 = registers[decexecrfw_combs.idecode.rs2]; // note that register 0 is ALWAYS 0 anyway
 
-        /*b Execute ALU stage */
+        /*b Execute ALU stage - post register read, parallel with CSRs */
         riscv_i32_alu alu( idecode <= decexecrfw_combs.idecode,
                            pc  <= decexecrfw_state.pc,
                            rs1 <= decexecrfw_combs.rs1,
                            rs2 <= decexecrfw_combs.rs2,
                            alu_result => decexecrfw_alu_result );
-        decexecrfw_combs.exec_cancelled = 0;
-        if (!decexecrfw_state.valid_legal || decexecrfw_combs.idecode.illegal || pipeline_control.interrupt_req) {
-            decexecrfw_combs.exec_cancelled = 1;
-        }
     
-        /*b Minimal CSRs */
+        /*b Minimal CSRs - post register read, parallel with ALU */
         csr_controls = {*=0};
         csr_controls.retire      = decexecrfw_state.valid_legal;
 
@@ -361,7 +241,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
                                  csr_controls   <= csr_controls,
                                  csrs => csrs);
 
-        /*b Memory access handling - must be valid before middle of cycle */
+        /*b Memory access handling - post ALU - must be valid before middle of cycle */
         decexecrfw_combs.dmem_exec = { idecode = decexecrfw_combs.idecode,
                                        arith_result   = decexecrfw_alu_result.arith_result, // address of access
                                        rs2            = decexecrfw_combs.rs2,    // data for access (before rotation)
@@ -374,7 +254,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
         // should use illegal dmem access for trap
         // should use 'needs second cycle'
 
-        /*b Determine whether branch would be taken and find next PC */
+        /*b Control flow - post ALU for next PC & branch condition met, rest from decode */
         //pipeline_response.exec.valid = decexecrfw_state.valid;
         pipeline_response.exec.trap = {*=0};
         pipeline_response.exec.is_compressed = decexecrfw_combs.idecode.is_compressed;
@@ -427,7 +307,7 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
             pipeline_response.exec.trap.valid = 1;
         }
 
-        /*b CSR controls */
+        /*b CSR controls - post trap detection */
         csr_controls.trap.cause   = decexecrfw_combs.trap.cause;
         csr_controls.trap.valid   = decexecrfw_combs.trap.valid && decexecrfw_state.valid_legal;
         csr_controls.trap.to_mode = rv_mode_machine;
@@ -444,13 +324,13 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
             csr_controls.trap.valid      = 1;
         }
 
-        /*b Memory read handling - way late in the second half of the cycle */
+        /*b Memory read handling - post memory request and memory read - so way late in the second half of the cycle */
         riscv_i32_dmem_read_data dmem_data( dmem_request <= decexecrfw_dmem_request,
                                             last_data <= 0, // only for unaligned reads
                                             dmem_access_resp <= dmem_access_resp,
                                             dmem_read_data => decexecrfw_dmem_read_data);
 
-        /*b Register write
+        /*b Register write - post memory read
          */
         decexecrfw_combs.rfw_write_data = decexecrfw_alu_result.result | coproc_response.result;
         if (coproc_force_disable || riscv_config.coproc_disable) {

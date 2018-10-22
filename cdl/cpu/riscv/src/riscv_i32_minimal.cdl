@@ -149,6 +149,10 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     comb  t_riscv_config          riscv_config_pipe;
     net  t_riscv_mem_access_req  dmem_access_req;
     comb t_riscv_mem_access_resp dmem_access_resp;
+    net t_riscv_pipeline_control     pipeline_control;
+    net t_riscv_pipeline_response   pipeline_response;
+    net t_riscv_pipeline_fetch_data pipeline_fetch_data;
+    net t_riscv_csrs_minimal csrs;
     clocked bit[32] ifetch_reg = 0;
     clocked bit[16] ifetch_last16_reg = 0     "Only used if RV32IC is enabled and configured";
     clocked bit[32] data_access_read_reg = 0  "Only used if RV32IC is enabled and configured";
@@ -465,16 +469,33 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         coproc_response = {*=0};
         riscv_config_pipe = riscv_config;
         riscv_config_pipe.i32m = 0;
+        riscv_i32_pipeline_control pc(clk <- riscv_clk,
+                                                    reset_n          <= proc_reset_n,
+                                                    csrs <= csrs,
+                                                    pipeline_control => pipeline_control,
+                                                    pipeline_response <= pipeline_response,
+                                                    ifetch_resp <= ifetch_resp,
+                                                    riscv_config     <= riscv_config_pipe,
+                                                    trace            <= trace_pipe );
+        riscv_i32_pipeline_control_fetch_req pc_fetch_req( pipeline_control <= pipeline_control,
+                                                           pipeline_response <= pipeline_response,
+                                                           ifetch_req => ifetch_req );
+        riscv_i32_pipeline_control_fetch_data pc_fetch_data( pipeline_control <= pipeline_control,
+                                                             ifetch_req <= ifetch_req,
+                                                             ifetch_resp <= ifetch_resp,
+                                                             pipeline_fetch_data => pipeline_fetch_data );
         riscv_i32c_pipeline pipeline(clk              <- riscv_clk,
                                      reset_n          <= proc_reset_n,
                                      irqs             <= irqs,
-                                     ifetch_req       => ifetch_req,
-                                     ifetch_resp      <= ifetch_resp,
+                                     pipeline_control <= pipeline_control,
+                                     pipeline_fetch_data <= pipeline_fetch_data,
+                                     pipeline_response => pipeline_response,
                                      dmem_access_req  => dmem_access_req,
                                      dmem_access_resp <= dmem_access_resp,
                                      coproc_controls  => coproc_controls,
                                      coproc_response  <= coproc_response,
                                      riscv_config     <= riscv_config_pipe,
+                                                    csrs => csrs,
                                      trace            => trace_pipe );
         trace = trace_pipe;
         trace.instr_valid    = trace_pipe.instr_valid    && riscv_clk_enable;
