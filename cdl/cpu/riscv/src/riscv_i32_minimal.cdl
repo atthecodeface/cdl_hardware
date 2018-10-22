@@ -61,6 +61,7 @@
  */
 include "cpu/riscv/riscv.h"
 include "cpu/riscv/riscv_modules.h"
+include "cpu/riscv/riscv_submodules.h"
 include "srams.h"
 
 /*a Constants
@@ -146,6 +147,9 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     net t_riscv_i32_trace       trace_pipe;
     net t_riscv_i32_coproc_controls  coproc_controls;
     comb t_riscv_i32_coproc_response   coproc_response;
+    net t_riscv_csr_controls      csr_controls;
+    net t_riscv_csr_data          csr_data;
+    net t_riscv_csr_access        csr_access;
     comb  t_riscv_config          riscv_config_pipe;
     net  t_riscv_mem_access_req  dmem_access_req;
     comb t_riscv_mem_access_resp dmem_access_resp;
@@ -487,7 +491,6 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                                              pipeline_fetch_data => pipeline_fetch_data );
         riscv_i32c_pipeline pipeline(clk              <- riscv_clk,
                                      reset_n          <= proc_reset_n,
-                                     irqs             <= irqs,
                                      pipeline_control <= pipeline_control,
                                      pipeline_fetch_data <= pipeline_fetch_data,
                                      pipeline_response => pipeline_response,
@@ -496,8 +499,19 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                      coproc_controls  => coproc_controls,
                                      coproc_response  <= coproc_response,
                                      riscv_config     <= riscv_config_pipe,
-                                                    csrs => csrs,
+                                     csr_access       => csr_access,
+                                     csr_read_data    <= csr_data.read_data,
+                                     csr_controls     => csr_controls,
                                      trace            => trace_pipe );
+
+        riscv_csrs_minimal csrs( clk <- clk,
+                                 reset_n <= reset_n,
+                                 irqs <= irqs,
+                                 csr_access     <= csr_access,
+                                 csr_data       => csr_data,
+                                 csr_controls   <= csr_controls,
+                                 csrs => csrs);
+        
         trace = trace_pipe;
         trace.instr_valid    = trace_pipe.instr_valid    && riscv_clk_enable;
         trace.rfw_data_valid = trace_pipe.rfw_data_valid && riscv_clk_enable;

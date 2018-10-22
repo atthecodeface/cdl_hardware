@@ -105,7 +105,6 @@ extern module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_cont
 extern
 module riscv_i32c_pipeline( clock clk,
                             input bit reset_n,
-                           input t_riscv_irqs       irqs               "Interrupts in to the CPU",
                             output t_riscv_mem_access_req      dmem_access_req,
                             input  t_riscv_mem_access_resp     dmem_access_resp,
                             input t_riscv_pipeline_control     pipeline_control,
@@ -113,19 +112,20 @@ module riscv_i32c_pipeline( clock clk,
                             input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
                             output t_riscv_i32_coproc_controls coproc_controls,
                             input t_riscv_i32_coproc_response  coproc_response,
+                            output t_riscv_csr_access          csr_access,
+                            input t_riscv_word                 csr_read_data,
+                            output t_riscv_csr_controls        csr_controls,
                             input  t_riscv_config              riscv_config,
-                            output  t_riscv_csrs_minimal csrs,
                             output t_riscv_i32_trace       trace
 )
 {
-    timing from rising clock clk dmem_access_req, pipeline_response, coproc_controls;
-    timing to   rising clock clk dmem_access_resp, pipeline_control, coproc_response;
-    timing to   rising clock clk irqs;
+    timing from rising clock clk dmem_access_req, pipeline_response, coproc_controls, csr_controls, csr_access;
+    timing to   rising clock clk dmem_access_resp, pipeline_control, coproc_response, csr_read_data;
     timing to   rising clock clk riscv_config;
     timing from rising clock clk trace;
     timing comb input riscv_config, pipeline_control, coproc_response;
-    timing comb output dmem_access_req, pipeline_response, coproc_controls;
-    timing comb input dmem_access_resp;
+    timing comb output dmem_access_req, pipeline_response, coproc_controls, csr_access, csr_controls;
+    //timing comb input dmem_access_resp;
     timing comb output trace;
 }
 
