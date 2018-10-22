@@ -44,6 +44,13 @@ module tb_riscv_i32c_pipeline3( clock clk,
     comb t_riscv_fetch_req  imem_access_req;
     comb t_riscv_fetch_resp rv_imem_access_resp;
     comb t_riscv_config riscv_config;
+    net t_riscv_csr_controls      csr_controls;
+    net t_riscv_csr_data          csr_data;
+    net t_riscv_csr_access        csr_access;
+    net t_riscv_csrs_minimal csrs;
+    net t_riscv_pipeline_control     pipeline_control;
+    net t_riscv_pipeline_response   pipeline_response;
+    net t_riscv_pipeline_fetch_data  pipeline_fetch_data;
 
     /*b State and comb
      */
@@ -132,18 +139,49 @@ module tb_riscv_i32c_pipeline3( clock clk,
         irqs = {*=0};
         
         coproc_response = {*=0};
+
+        riscv_i32_pipeline_control pc(clk <- riscv_clk,
+                                      reset_n          <= reset_n,
+                                      csrs <= csrs,
+                                      pipeline_control => pipeline_control,
+                                      pipeline_response <= pipeline_response,
+                                      ifetch_resp <= rv_imem_access_resp,
+                                      riscv_config     <= riscv_config,
+                                      trace            <= trace );
+
+        riscv_i32_pipeline_control_fetch_req pc_fetch_req( csrs <= csrs,
+                                                           pipeline_control <= pipeline_control,
+                                                           pipeline_response <= pipeline_response,
+                                                           ifetch_req => rv_imem_access_req );
+
+        riscv_i32_pipeline_control_fetch_data pc_fetch_data( pipeline_control <= pipeline_control,
+                                                             ifetch_req  <= rv_imem_access_req,
+                                                             ifetch_resp <= rv_imem_access_resp,
+                                                             pipeline_fetch_data => pipeline_fetch_data );
         riscv_i32c_pipeline3 dut( clk <- riscv_clk,
                                   reset_n <= reset_n,
-                                  irqs <= irqs,
+                                  pipeline_control <= pipeline_control,
+                                  pipeline_response => pipeline_response,
+                                  pipeline_fetch_data <= pipeline_fetch_data,
                                   dmem_access_req => dmem_access_req,
                                   dmem_access_resp <= dmem_access_resp,
-                                  ifetch_req => rv_imem_access_req,
-                                  ifetch_resp <= rv_imem_access_resp,
                                   coproc_controls => coproc_controls,
                                   coproc_response <= coproc_response,
+                                  csr_access       => csr_access,
+                                  csr_read_data    <= csr_data.read_data,
+                                  csr_controls     => csr_controls,
                                   riscv_config <= riscv_config,
-                                  trace => trace
-                         );
+                                  trace            => trace );
+
+        riscv_csrs_minimal csrs( clk <- clk,
+                                 reset_n <= reset_n,
+                                 irqs <= irqs,
+                                 csr_access     <= csr_access,
+                                 csr_data       => csr_data,
+                                 csr_controls   <= csr_controls,
+                                 csrs => csrs
+            );
+
         riscv_i32_trace trace(clk <- riscv_clk,
                               reset_n <= reset_n,
                               trace <= trace );

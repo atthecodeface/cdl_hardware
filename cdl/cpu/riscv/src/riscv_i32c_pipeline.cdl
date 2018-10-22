@@ -242,6 +242,7 @@ stage the multiply cannot support fused operations
                                           pc = decexecrfw_state.pc,
                                           alu_result = decexecrfw_alu_result,
                                           interrupt_ack = 1,
+                                          valid            = decexecrfw_state.valid,
                                           exec_committed = decexecrfw_combs.exec_committed,
                                           idecode = decexecrfw_combs.idecode,
                                           first_cycle = 1
@@ -254,23 +255,20 @@ stage the multiply cannot support fused operations
         // possible add in valid and illegal (if valid && illegal then pipeline will flush)
         pipeline_response.decode.valid         = decexecrfw_state.valid;
         pipeline_response.decode.pc            = decexecrfw_state.pc;
-        pipeline_response.decode.is_compressed = decexecrfw_combs.idecode.is_compressed;
-        pipeline_response.decode.action        = rv_pipe_dpc_sequential;
-        pipeline_response.decode.branch_target = decexecrfw_alu_result.branch_target; // used only if predict_branch - i.e. never in this pipeline
+        pipeline_response.decode.idecode       = decexecrfw_combs.idecode;
+        pipeline_response.decode.branch_target = 0; // used only if predict_branch - i.e. never in this pipeline
+        pipeline_response.decode.disable_branch_prediction = 1; // Disable branch prediction as we always use exec control flow
 
         /*b Pipeline response from exec */
-        pipeline_response.exec.valid = decexecrfw_state.valid;
+        pipeline_response.exec.valid         = decexecrfw_state.valid;
         pipeline_response.exec.interrupt_ack = pipeline_control.interrupt_req;
-        pipeline_response.exec.trap = {*=0};
+        pipeline_response.exec.trap          = {*=0};
         pipeline_response.exec.is_compressed = decexecrfw_combs.idecode.is_compressed;
         pipeline_response.exec.pc            = decexecrfw_state.pc;
-        pipeline_response.exec.action        = rv_pipe_epc_predicted; // Normal action is Exec follows whatever was decoded (if there was anything)
-        pipeline_response.exec.flush_target = decexecrfw_alu_result.branch_target;
-
-        if (decexecrfw_control_flow.branch_taken) {
-            pipeline_response.exec.action = rv_pipe_epc_flush;
-        }
-        pipeline_response.exec.trap = decexecrfw_control_flow.trap;
+        pipeline_response.exec.predicted_branch   = 0;
+        pipeline_response.exec.pc_if_mispredicted = decexecrfw_alu_result.branch_target; // correct for jalr and branch
+        pipeline_response.exec.branch_taken       = decexecrfw_control_flow.branch_taken;
+        pipeline_response.exec.trap               = decexecrfw_control_flow.trap;
 
         /*b CSR controls - post trap detection */
         csr_controls = {*=0};
@@ -333,7 +331,7 @@ stage the multiply cannot support fused operations
         trace.rfw_data       = decexecrfw_alu_result.result; // Cannot use decexecrfw_combs.rfw_write_data; as it depends on csr_read_data
         trace.branch_taken   = decexecrfw_control_flow.branch_taken;
         trace.trap           = decexecrfw_control_flow.trap.valid;
-        trace.branch_target  = pipeline_response.exec.flush_target;
+        trace.branch_target  = pipeline_response.exec.pc_if_mispredicted;
     }
 
     /*b All done */

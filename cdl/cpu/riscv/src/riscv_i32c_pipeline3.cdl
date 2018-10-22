@@ -70,12 +70,9 @@ typedef struct {
 
 /*t t_dec_state */
 typedef struct {
-    bit enable                   "Asserted if execution is enabled, deasserted at reset";
     t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
     bit valid                    "Asserted if @instruction is a valid fetched instruction, whether misaligned or not";
-    bit illegal_pc               "Asserted if a valid @instruction is a fetched instruction from a badly aligned PC";
     bit[32] pc                   "PC of the fetched instruction";
-    bit     fetch_sequential     "Asserted if?";
 } t_dec_state;
 
 /*t t_dec_combs
@@ -87,16 +84,6 @@ typedef struct {
 
     t_riscv_word   rs1;
     t_riscv_word   rs2;
-
-    bit[32] pc_plus_4;
-    bit[32] pc_plus_2;
-    bit[32] pc_plus_inst;
-    bit[32] pc_branch_target;
-    bit predict_branch;
-
-    bit[32] fetch_next_pc;
-    bit[32] pc_if_mispredicted   "PC of the next instruction if branch prediction is incorrect";
-    bit     fetch_sequential;
 
     bit rs1_from_alu;
     bit rs1_from_mem;
@@ -111,7 +98,6 @@ typedef struct {
     bit first_cycle              "Asserted if first cycle of an instruction execution (so instruction can be interrupted)";
     t_riscv_i32_decode idecode;
     bit[32] pc                   "PC of the fetched instruction";
-    bit illegal_pc               "Asserted if a valid @instruction is a fetched instruction from a badly aligned PC";
     bit[32] pc_if_mispredicted   "PC of the next instruction if branch prediction is incorrect";
     bit predicted_branch         "Asserted if instruction decode predicted this is a taken branch";
     bit rs1_from_alu;
@@ -121,7 +107,7 @@ typedef struct {
     t_riscv_word   rs1;
     t_riscv_word   rs2;
 
-    t_riscv_i32_inst debug_instruction    "Decoded instruction, for trace only";
+    t_riscv_i32_inst instruction    "Instruction, for trace and illegal instruction trap only";
 } t_alu_state;
 
 /*t t_alu_combs
@@ -133,16 +119,13 @@ typedef struct {
     bit blocked_by_mem           "Must qualify with valid; asserted if the ALU instruction cannot start because it uses a result of the memory stage";
     bit cannot_start             "Asserted if the instruction is blocked from starting; ignored unless valid and first_cycle; can be because of blocked_by_mem or coprocessor not ready";
     bit cannot_complete          "Asserted if the ALU has a valid instruction that either cannot be started or cannot complete";
-    bit flush_pipeline;
-    bit[32] next_pc;
     t_riscv_word   rs1;
     t_riscv_word   rs2;
     t_riscv_i32_dmem_exec dmem_exec;
-    bit branch_taken;
     t_riscv_i32_trap trap;
-    bit jalr;
     t_riscv_csr_access csr_access;
     t_riscv_word result_data;
+    t_riscv_i32_control_data control_data;
 } t_alu_combs;
 
 /*t t_mem_state */
@@ -175,13 +158,16 @@ typedef struct {
  */
 module riscv_i32c_pipeline3( clock clk,
                              input bit reset_n,
-                             input t_riscv_irqs       irqs               "Interrupts in to the CPU",
                              output t_riscv_mem_access_req  dmem_access_req,
                              input  t_riscv_mem_access_resp dmem_access_resp,
-                             output t_riscv_fetch_req       ifetch_req,
-                             input  t_riscv_fetch_resp      ifetch_resp,
+                             input t_riscv_pipeline_control     pipeline_control,
+                             output t_riscv_pipeline_response   pipeline_response,
+                             input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
                              output t_riscv_i32_coproc_controls  coproc_controls,
                              input t_riscv_i32_coproc_response   coproc_response,
+                             output t_riscv_csr_access          csr_access,
+                             input t_riscv_word                 csr_read_data,
+                             output t_riscv_csr_controls        csr_controls,
                              input  t_riscv_config          riscv_config,
                              output t_riscv_i32_trace       trace
 )
@@ -244,13 +230,13 @@ An example implementation of could be
 
     clocked t_riscv_word[32] registers={*=-1} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
 
-    comb    t_ifetch_combs         ifetch_combs;
     net     t_riscv_i32_decode     idecode_i32;
     net     t_riscv_i32_decode     idecode_i32c;
     net     t_riscv_i32_alu_result alu_result;
 
     comb t_dec_combs dec_combs;
     comb t_alu_combs alu_combs;
+    net     t_riscv_i32_control_flow alu_control_flow;
     comb t_mem_combs mem_combs;
     clocked t_dec_state     dec_state={*=0, pc=INITIAL_PC};
     clocked t_alu_state     alu_state={*=0};
@@ -258,53 +244,10 @@ An example implementation of could be
     clocked t_rfw_state     rfw_state={*=0};
     comb t_riscv_i32_coproc_response   coproc_response_cfg "Coprocessor response masked out if configured off";
 
-    comb t_riscv_csr_controls csr_controls;
-    net t_riscv_csr_data csr_data;
-    net t_riscv_csrs_minimal csrs;
+    //comb t_riscv_csr_controls csr_controls;
+    //net t_riscv_csr_data csr_data;
     net t_riscv_i32_dmem_request alu_combs_dmem_request "Data memory request data";
     net t_riscv_word             mem_combs_dmem_read_data;
-
-    /*b Ifetch request
-     */
-    instruction_fetch_request
-    """
-    The instruction fetch request derives from the decode stage for
-    conditional branches (predicted taken if backwards) and for
-    unconditional branches.
-
-    If the decode stage is invalid (i.e. it does not have a
-    valid instruction to decode) then the current decode stage PC is requested.
-
-    However, if the execute stage is valid and
-    a trap is taken, or a forward conditional branch is taken or a
-    backward conditional branch is not taken or a jump table branch is
-    taken, then the execute stage result pc has to be used.
-
-    This request may be for any 16-bit aligned address, and two
-    successive 16-bit words from that request must be presented,
-    aligned to bit 0.
-
-    """:
-    {
-        ifetch_combs.address        = dec_combs.fetch_next_pc;
-        ifetch_combs.sequential     = dec_combs.fetch_sequential;
-        if (!dec_state.valid) {
-            ifetch_combs.address    = dec_state.pc;
-            ifetch_combs.sequential = dec_state.fetch_sequential;
-        }
-
-        if (alu_state.valid && alu_combs.flush_pipeline) {
-            ifetch_combs.address    = alu_combs.next_pc;
-            ifetch_combs.sequential = 0;
-        }
-
-        ifetch_combs.request = dec_state.enable;
-
-        ifetch_req             = {*=0};
-        ifetch_req.valid       = ifetch_combs.request;
-        ifetch_req.sequential  = ifetch_combs.sequential;
-        ifetch_req.address     = ifetch_combs.address;
-    }
 
     /*b Decode, RFR stage
      */
@@ -314,21 +257,18 @@ An example implementation of could be
     PC as far as decode is concerned), determines register forwarding
     required, reads the register file.
     """: {
-        /*b Enable operation (zeroed in reset) */
-        dec_state.enable <= 1;
-
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
         dec_state.valid <= 0;
-        if (alu_combs.cannot_complete && dec_state.valid) {
+        if (alu_state.valid && alu_combs.cannot_complete && dec_state.valid) {
             dec_state <= dec_state;
-        } elsif (ifetch_req.valid) {
-            if (ifetch_resp.valid) {
+        } else {
+            dec_state.pc <= pipeline_fetch_data.pc;
+            if (pipeline_fetch_data.valid) {
                 dec_state.valid <= 1;
-                dec_state.instruction <= {data=ifetch_resp.data, mode=rv_mode_machine};
-                dec_state.illegal_pc <= 0;
+                dec_state.instruction <= {
+                data = pipeline_fetch_data.data,
+                mode = pipeline_control.mode };
             }
-            dec_state.pc               <= ifetch_req.address;
-            dec_state.fetch_sequential <= ifetch_req.sequential;
         }
 
         /*b Decode instruction */
@@ -352,27 +292,13 @@ An example implementation of could be
         dec_combs.rs1 = registers[dec_combs.idecode.rs1]; // note that register 0 is ALWAYS 0 anyway
         dec_combs.rs2 = registers[dec_combs.idecode.rs2]; // note that register 0 is ALWAYS 0 anyway
 
-        /*b Detect unconditional branches and backward conditional branches */
-        dec_combs.pc_plus_4      = dec_state.pc + 4;
-        dec_combs.pc_plus_2      = dec_state.pc + 2;
-        dec_combs.pc_plus_inst   = dec_combs.idecode.is_compressed ? dec_combs.pc_plus_2 : dec_combs.pc_plus_4;
-        dec_combs.pc_branch_target  = dec_state.pc + dec_combs.idecode.immediate;
-        dec_combs.predict_branch = 0;
+        /*b Pipeline response from decode */
+        pipeline_response.decode.valid         = dec_state.valid;
+        pipeline_response.decode.pc            = dec_state.pc;
+        pipeline_response.decode.idecode       = dec_combs.idecode;
+        pipeline_response.decode.branch_target = dec_state.pc + dec_combs.idecode.immediate;
+        pipeline_response.decode.disable_branch_prediction = 0;
 
-        part_switch (dec_combs.idecode.op) {
-        case riscv_op_branch:   { dec_combs.predict_branch = dec_combs.idecode.immediate[31]; }
-        case riscv_op_jal:      { dec_combs.predict_branch = 1; }
-        }
-
-        dec_combs.fetch_next_pc      = dec_combs.pc_plus_inst;
-        dec_combs.fetch_sequential   = 1;
-        dec_combs.pc_if_mispredicted = dec_combs.pc_branch_target;
-        if (dec_combs.predict_branch) {
-            dec_combs.fetch_next_pc      = dec_combs.pc_branch_target;
-            dec_combs.fetch_sequential   = 0;
-            dec_combs.pc_if_mispredicted = dec_combs.pc_plus_inst;
-        }
-        
         /*b Register forwarding determination */
         dec_combs.rs1_from_alu = 0;
         dec_combs.rs1_from_mem = 0;
@@ -390,6 +316,8 @@ An example implementation of could be
         if ((alu_state.idecode.rd == dec_combs.idecode.rs2) && alu_state.idecode.rd_written) {
             dec_combs.rs2_from_alu = 1;
         }
+        assert(!mem_state.rd_written || mem_state.valid,          "Mem state rd_written must only be asserted if valid is too");
+        assert(!alu_state.idecode.rd_written || alu_state.valid,  "ALU state rd_written must only be asserted if valid is too");
     }
 
     /*b ALU (execute) stage registers (alu_state)
@@ -415,14 +343,15 @@ An example implementation of could be
             if (alu_state.rs2_from_mem) {
                 alu_state.rs2 <= rfw_state.mem_result;
             }
-        } elsif (dec_state.valid && !alu_combs.flush_pipeline) {
+        } elsif (pipeline_fetch_data.dec_flush_pipeline) {
+            alu_state.valid               <= 0;
+        } elsif (dec_state.valid) {
             alu_state.valid               <= 1;
             alu_state.first_cycle         <= 1;
-            alu_state.illegal_pc          <= dec_state.illegal_pc;
             alu_state.idecode             <= dec_combs.idecode;
             alu_state.pc                  <= dec_state.pc;
-            alu_state.pc_if_mispredicted  <= dec_combs.pc_if_mispredicted;
-            alu_state.predicted_branch    <= dec_combs.predict_branch;
+            alu_state.pc_if_mispredicted  <= pipeline_fetch_data.dec_pc_if_mispredicted;
+            alu_state.predicted_branch    <= pipeline_fetch_data.dec_predicted_branch;
             alu_state.rs1                 <= dec_combs.rs1;
             alu_state.rs2                 <= dec_combs.rs2;
             alu_state.rs1_from_alu        <= dec_combs.rs1_from_alu;
@@ -430,7 +359,7 @@ An example implementation of could be
             alu_state.rs2_from_alu        <= dec_combs.rs2_from_alu;
             alu_state.rs2_from_mem        <= dec_combs.rs2_from_mem;
 
-            alu_state.debug_instruction   <= dec_state.instruction;
+            alu_state.instruction   <= dec_state.instruction;
         }
     }
 
@@ -474,22 +403,13 @@ An example implementation of could be
                            alu_result => alu_result );
 
         /*b Minimal CSRs */
-        csr_controls = {*=0};
-        csr_controls.retire      = alu_combs.valid_legal;
-
         alu_combs.csr_access = alu_state.idecode.csr_access;
         if (!alu_combs.valid_legal) {
             alu_combs.csr_access.access = riscv_csr_access_none;
         }
         alu_combs.csr_access.access_cancelled = 0;
         alu_combs.csr_access.write_data       = alu_state.idecode.immediate_valid ? bundle(27b0, alu_state.idecode.rs1) : alu_combs.rs1;
-        riscv_csrs_minimal csrs( clk <- clk,
-                                 reset_n <= reset_n,
-                                 irqs <= irqs,
-                                 csr_access     <= alu_combs.csr_access,
-                                 csr_data       => csr_data,
-                                 csr_controls   <= csr_controls,
-                                 csrs => csrs);
+        csr_access = alu_combs.csr_access;
 
         /*b ALU stage result */
         alu_combs.result_data = alu_result.result | coproc_response_cfg.result;
@@ -497,7 +417,7 @@ An example implementation of could be
             alu_combs.result_data = coproc_response_cfg.result;
         }
         if (alu_state.idecode.csr_access.access != riscv_csr_access_none) {
-            alu_combs.result_data = csr_data.read_data;
+            alu_combs.result_data = csr_read_data;
         }
 
         /*b Memory access handling - must be valid before middle of cycle */
@@ -510,6 +430,44 @@ An example implementation of could be
         riscv_i32_dmem_request dmem_req( dmem_exec    <= alu_combs.dmem_exec,
                                          dmem_request => alu_combs_dmem_request );
         dmem_access_req = alu_combs_dmem_request.access;
+
+        /*b Control flow - depends on alu result */
+        alu_combs.control_data = { instruction_data = alu_state.instruction.data,
+                                   pc               = alu_state.pc,
+                                   alu_result       = alu_result,
+                                   interrupt_ack    = 1,
+                                   valid            = alu_state.valid,
+                                   exec_committed   = alu_state.valid && !alu_combs.cannot_start,
+                                   idecode          = alu_state.idecode,
+                                   first_cycle = 1
+        };
+        riscv_i32_control_flow control_flow( pipeline_control <= pipeline_control,
+                                             control_data <= alu_combs.control_data,
+                                             control_flow => alu_control_flow );
+
+
+        /*b Pipeline response from exec */
+        pipeline_response.exec.valid         = alu_state.valid;
+        pipeline_response.exec.interrupt_ack = pipeline_control.interrupt_req;
+        pipeline_response.exec.trap          = {*=0};
+        pipeline_response.exec.is_compressed = alu_state.idecode.is_compressed;
+        pipeline_response.exec.pc            = alu_state.pc;
+
+        // branch_target is correct for jalr and branch, but not otherwise
+        // However, in all other cases predicted_branch must equal branch_taken?
+        // What about ret?
+        // why not pc_if_mispredicted?
+        pipeline_response.exec.predicted_branch   = alu_state.predicted_branch;
+        pipeline_response.exec.pc_if_mispredicted = alu_result.branch_target;
+        pipeline_response.exec.branch_taken       = alu_control_flow.branch_taken;
+        // Not needed as jalr already has this in ALU pipeline_response.exec.pc_if_mispredicted = alu_result.arith_result; // for jalr
+        pipeline_response.exec.trap = alu_control_flow.trap;
+
+        /*b CSR controls - post trap detection */
+        csr_controls = {*=0};
+        csr_controls.retire       = alu_state.valid && !alu_combs.cannot_complete;
+        csr_controls.trap         = alu_control_flow.trap;
+        csr_controls.trap.to_mode = rv_mode_machine;
 
         /*b Determine whether to trap
 
@@ -528,78 +486,13 @@ An example implementation of could be
             load or atomic/store
 
          */
-        alu_combs.trap = {*=0};
-        part_switch (alu_state.idecode.op) {
-        case riscv_op_system:   {
-            if (alu_state.idecode.subop==riscv_subop_ecall) {
-                alu_combs.trap.valid = 1;
-                alu_combs.trap.cause = riscv_trap_cause_mecall;
-            }
-            if (alu_state.idecode.subop==riscv_subop_ebreak) {
-                alu_combs.trap.valid = 1;
-                alu_combs.trap.cause = riscv_trap_cause_breakpoint;
-                alu_combs.trap.value = alu_state.pc; // WHY???
-            }
-        }
-        }
-        if (alu_state.idecode.illegal) {
-            alu_combs.trap.valid = 1;
-            alu_combs.trap.cause = riscv_trap_cause_illegal_instruction;
-            alu_combs.trap.value = alu_state.debug_instruction.data; // OPTIONAL???
-        }
-        if (alu_state.illegal_pc) {
-            alu_combs.trap.valid       = 1;
-            alu_combs.trap.cause = riscv_trap_cause_instruction_misaligned;
-            alu_combs.trap.value = alu_state.pc;
-        }
+        alu_combs.trap = alu_control_flow.trap;
 
-        csr_controls.trap.cause = alu_combs.trap.cause;
-        csr_controls.trap.valid       = 0;
-        csr_controls.trap.pc    = alu_state.pc;
-        csr_controls.trap.value = alu_combs.trap.value;
-        if (alu_combs.trap.valid) {
-            csr_controls.trap.valid       = alu_state.valid;
-        }
-
-        /*b Determine whether branch would be taken and find next PC */
-        alu_combs.branch_taken = 0;
-        alu_combs.trap.mret = 0;
-        alu_combs.jalr = 0;
-        part_switch (alu_state.idecode.op) {
-        case riscv_op_branch:   { alu_combs.branch_taken = alu_result.branch_condition_met; }
-        case riscv_op_jal:      { alu_combs.branch_taken=1; }
-        case riscv_op_jalr:     {
-            alu_combs.jalr = 1;
-        }
-        case riscv_op_system:   {
-            if (alu_state.idecode.subop==riscv_subop_mret) {
-                alu_combs.trap.mret = 1;
-            }
-        }
-        }
-
-        alu_combs.flush_pipeline = 0;
-        alu_combs.next_pc        = alu_state.pc_if_mispredicted; // only used if flushing
-        if (alu_combs.branch_taken) { // branch IS to be taken - flush if a branch was not predicted
-            alu_combs.flush_pipeline = !alu_state.predicted_branch;
-        } else { // branch is NOT to be taken - flush if a branch was predicted
-            alu_combs.flush_pipeline = alu_state.predicted_branch;
-        }
-        if (alu_combs.jalr) {
-            alu_combs.flush_pipeline = 1;
-            alu_combs.next_pc = alu_result.arith_result;
-        }
-        if (alu_combs.trap.mret) { // must change mode and set interrupt enables appropriately!
-            alu_combs.flush_pipeline = 1;
-            alu_combs.next_pc = csrs.mepc;
-        }
-        if (alu_combs.trap.valid) {
-            alu_combs.flush_pipeline = 1;
-            alu_combs.next_pc = bundle(csrs.mtvec.base, 2b0);
-        }
-        if (!alu_state.valid || alu_combs.cannot_complete) {
-            alu_combs.flush_pipeline = 0;
-        }
+        /*b CSR controls */
+        csr_controls = {*=0};
+        csr_controls.retire       = alu_combs.valid_legal;
+        csr_controls.trap         = alu_control_flow.trap;
+        csr_controls.trap.to_mode = rv_mode_machine;
 
     }
 
@@ -683,7 +576,7 @@ An example implementation of could be
         coproc_controls.dec_to_alu_blocked = alu_combs.cannot_complete;
         coproc_controls.alu_rs1 = alu_combs.rs1;
         coproc_controls.alu_rs2 = alu_combs.rs2;
-        coproc_controls.alu_flush_pipeline = alu_combs.flush_pipeline;
+        coproc_controls.alu_flush_pipeline  = 0;; //pipeline_fetch_data.dec_flush_pipeline;
         coproc_controls.alu_cannot_start    = alu_combs.blocked_by_mem;
         coproc_controls.alu_cannot_complete = alu_combs.cannot_complete;
         if (coproc_force_disable || riscv_config.coproc_disable) {
@@ -697,14 +590,14 @@ An example implementation of could be
         trace = {*=0};
         trace.instr_valid = alu_state.valid;
         trace.instr_pc    = alu_state.pc;
-        trace.instruction = alu_state.debug_instruction;
+        trace.instruction = alu_state.instruction;
         trace.rfw_retire     = rfw_state.valid;
         trace.rfw_data_valid = rfw_state.rd_written;
         trace.rfw_rd         = rfw_state.rd;
         trace.rfw_data       = rfw_state.mem_result;
-        trace.branch_taken   = alu_combs.branch_taken || alu_combs.jalr;
+        trace.branch_taken   = alu_control_flow.branch_taken;
         trace.trap           = alu_combs.trap.valid;
-        trace.branch_target  = alu_combs.next_pc;
+        trace.branch_target  = alu_result.branch_target; // not always correct?
     }
 
     /*b All done */

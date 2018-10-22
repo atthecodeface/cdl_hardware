@@ -92,7 +92,7 @@ cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control_fetch_req  inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control_fetch_data  inc:cdl/inc
 # These modules are suitable for i/e32[c][m]
 cdl cdl/cpu/riscv/src    riscv_i32c_pipeline  inc:cdl/inc
-cdl cdl/cpu/riscv/src    riscv_i32c_pipeline2 inc:cdl/inc
+#cdl cdl/cpu/riscv/src    riscv_i32c_pipeline2 inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32c_pipeline3 inc:cdl/inc
 # These modules are i/e32[c] capable - they tie in the pipelines and no coprocessors, so they cannot support m
 cdl cdl/cpu/riscv/src    riscv_i32_minimal_apb   inc:cdl/inc

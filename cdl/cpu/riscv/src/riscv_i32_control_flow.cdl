@@ -43,7 +43,7 @@ module riscv_i32_control_flow( input  t_riscv_pipeline_control  pipeline_control
         part_switch (control_data.idecode.op) {
         case riscv_op_branch:   { control_flow.branch_taken = control_data.alu_result.branch_condition_met; }
         case riscv_op_jal:      { control_flow.branch_taken=1; }
-        case riscv_op_jalr:     { control_flow.branch_taken=1; }
+        case riscv_op_jalr:     { control_flow.branch_taken=1; control_flow.jalr=1; }
         case riscv_op_system:   {
             if (control_data.idecode.subop==riscv_subop_mret) {
                 control_flow.trap.mret = 1;
@@ -61,15 +61,16 @@ module riscv_i32_control_flow( input  t_riscv_pipeline_control  pipeline_control
         }
         if (!control_data.exec_committed) {
             control_flow.trap.valid = 0;
+            control_flow.trap.mret = 0;
             control_flow.branch_taken = 0;
         }
         
-        if (control_data.idecode.illegal) { // exec_committed will be zero
+        if (control_data.valid && control_data.idecode.illegal) { // exec_committed will be zero
             control_flow.trap.valid = 1;
             control_flow.trap.cause = riscv_trap_cause_illegal_instruction;
             control_flow.trap.value = control_data.instruction_data;
         }
-        if (control_data.idecode.illegal_pc) { // exec_committed will be zero
+        if (control_data.valid && control_data.idecode.illegal_pc) { // exec_committed will be zero
             control_flow.trap.valid = 1;
             control_flow.trap.cause = riscv_trap_cause_instruction_misaligned;
             control_flow.trap.value = control_data.pc;

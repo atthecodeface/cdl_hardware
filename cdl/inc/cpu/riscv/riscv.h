@@ -102,7 +102,9 @@ typedef struct {
     bit[32]  address;
     bit      sequential;
     t_riscv_mode mode;
-    bit          flush;
+    bit     predicted_branch   "Only used if branch prediction is supported - so not for single cycle pipeline";
+    bit[32] pc_if_mispredicted "Only used if branch prediction is supported - so not for single cycle pipeline";
+    bit     flush_pipeline;
     // will_take?
 } t_riscv_fetch_req;
 

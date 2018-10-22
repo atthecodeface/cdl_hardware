@@ -566,85 +566,6 @@ typedef struct {
     t_riscv_csr_mie     mie         "";
 } t_riscv_csrs_minimal;
 
-/*a RISC-V pipeline control interaction */
-/*t t_riscv_pipeline_decode_pc_action
- */
-typedef enum[3] {
-    rv_pipe_dpc_sequential     "Sequential fetch (no branch or not a predicted branch)",
-    rv_pipe_dpc_predict_branch "Predict a branch to be taken (conditional or unconditional; fetch from branch_target)",
-    rv_pipe_dpc_ret            "Return to register; will flush",
-    rv_pipe_dpc_flush          "Flush any after this instruction; MUST cause a flush at execute (unless itself is flushed before exec"
-} t_riscv_pipeline_decode_pc_action;
-
-/*t t_riscv_pipeline_response_decode
- */
-typedef struct {
-    bit      valid;
-    t_riscv_pipeline_decode_pc_action action;
-    bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
-    bit[32]  pc              "Actual PC of execution instruction";
-    bit[32]  branch_target   "Used if predict_branch";
-} t_riscv_pipeline_response_decode;
-
-/*t t_riscv_pipeline_exec_pc_action
- */
-typedef enum[3] {
-    rv_pipe_epc_predicted,
-    rv_pipe_epc_flush,
-} t_riscv_pipeline_exec_pc_action;
-
-/*t t_riscv_pipeline_response_exec
- */
-typedef struct {
-    bit valid;
-    bit interrupt_ack;
-    t_riscv_pipeline_exec_pc_action action;
-    t_riscv_i32_trap trap;
-    bit[32]  flush_target    "Next PC if action is flush (ret or conditional branch)";
-    bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
-    bit[32]  pc              "Actual PC of execution instruction";
-} t_riscv_pipeline_response_exec;
-
-/*t t_riscv_pipeline_response
- */
-typedef struct {
-    t_riscv_pipeline_response_decode decode;
-    t_riscv_pipeline_response_exec   exec;
-} t_riscv_pipeline_response;
-
-/*t t_riscv_pipeline_control_fetch_action
- */
-typedef enum[2] {
-    rv_pc_fetch_action_idle,
-    rv_pc_fetch_action_restart_at_pc,
-    rv_pc_fetch_action_continue_fetching
-} t_riscv_pipeline_control_fetch_action;
-
-/*t t_riscv_pipeline_fetch_data
- */
-typedef struct {
-    bit          valid;
-    t_riscv_word pc;
-    t_riscv_word data;
-} t_riscv_pipeline_fetch_data;
-
-/*t t_riscv_pipeline_control
- */
-typedef bit[2] t_riscv_pipeline_tag;
-typedef struct {
-    // add in exec_wfi_continues, and exec_take_interrupt
-    bit      valid;
-    bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
-    t_riscv_pipeline_control_fetch_action fetch_action;
-    bit[32]  start_pc;
-    t_riscv_mode mode "Mode to fetch in";
-    bit          error;
-    t_riscv_pipeline_tag tag;
-    bit    interrupt_req;
-    bit[4] interrupt_number;
-    t_riscv_mode interrupt_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
-} t_riscv_pipeline_control;
-
 /*a I32 types */
 /*t t_riscv_i32_inst
  */
@@ -764,6 +685,7 @@ typedef struct {
 /*t t_riscv_i32_control_data */
 typedef struct {
     bit                     interrupt_ack;
+    bit                     valid;
     bit                     exec_committed;
     bit                     first_cycle;
     t_riscv_i32_decode      idecode "Exec stage idecode";
@@ -779,3 +701,71 @@ typedef struct {
     t_riscv_word     next_pc;
     t_riscv_i32_trap trap;
 } t_riscv_i32_control_flow;
+
+/*a RISC-V pipeline control interaction */
+/*t t_riscv_pipeline_control_fetch_action
+ */
+typedef enum[2] {
+    rv_pc_fetch_action_idle,
+    rv_pc_fetch_action_restart_at_pc,
+    rv_pc_fetch_action_continue_fetching
+} t_riscv_pipeline_control_fetch_action;
+
+/*t t_riscv_pipeline_control - early in clock cycle to affect response
+ */
+typedef bit[2] t_riscv_pipeline_tag;
+typedef struct {
+    // add in exec_wfi_continues, and exec_take_interrupt
+    bit      valid;
+    bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
+    t_riscv_pipeline_control_fetch_action fetch_action;
+    bit[32]  start_pc;
+    t_riscv_mode mode "Mode to fetch in";
+    bit          error;
+    t_riscv_pipeline_tag tag;
+    bit    interrupt_req;
+    bit[4] interrupt_number;
+    t_riscv_mode interrupt_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
+} t_riscv_pipeline_control;
+
+/*t t_riscv_pipeline_response_decode
+ */
+typedef struct {
+    bit[32]  pc                "Actual PC of instruction being decoded (or would be if it were valid)";
+    bit      valid             "Asserted if branch_target and idecode are valid";
+    bit[32]  branch_target     "Used if predict_branch";
+    t_riscv_i32_decode idecode "Decode of instruction (if valid)";
+    bit disable_branch_prediction "Asserted if branch prediction (and hence branch_target) are not to be used";
+} t_riscv_pipeline_response_decode;
+
+/*t t_riscv_pipeline_response_exec
+ */
+typedef struct {
+    bit valid;
+    bit interrupt_ack;
+    bit branch_taken;
+    t_riscv_i32_trap trap;
+    bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
+    bit[32]  pc              "Actual PC of execution instruction";
+    bit          predicted_branch   "From pipeline_fetch_data associated with the decode of this instruction";
+    t_riscv_word pc_if_mispredicted "From pipeline_fetch_data associated with the decode of this instruction";
+} t_riscv_pipeline_response_exec;
+
+/*t t_riscv_pipeline_response - mid cycle (dependent on control) to effect fetch request and hence fetch data
+ */
+typedef struct {
+    t_riscv_pipeline_response_decode decode;
+    t_riscv_pipeline_response_exec   exec;
+} t_riscv_pipeline_response;
+
+/*t t_riscv_pipeline_fetch_data
+ */
+typedef struct {
+    bit          valid;
+    t_riscv_word pc;
+    t_riscv_word data;
+    bit          dec_flush_pipeline;
+    bit          dec_predicted_branch   "Not part of fetch - indicates that pipeline_control predicted a branch for the decode, so when the decode is executed this should match the execution - if not, a mispredict occurs";
+    t_riscv_word dec_pc_if_mispredicted;
+} t_riscv_pipeline_fetch_data;
+

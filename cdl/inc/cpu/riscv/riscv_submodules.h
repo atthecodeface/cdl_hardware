@@ -110,23 +110,6 @@ extern module riscv_i32_dmem_read_data( input t_riscv_i32_dmem_request dmem_requ
     timing comb output dmem_read_data;
 }
 
-/*m riscv_csrs_minimal  */
-extern
-module riscv_csrs_minimal( clock clk                                   "RISC-V clock",
-                           input bit reset_n                           "Active low reset",
-                           input t_riscv_irqs       irqs               "Interrupts in to the CPU",
-                           input t_riscv_csr_access csr_access         "RISC-V CSR access, combinatorially decoded",
-                           output t_riscv_csr_data csr_data            "CSR response (including take interrupt and read data), from the current @a csr_access",
-                           input t_riscv_csr_controls csr_controls     "Control signals to update the CSRs",
-                           output t_riscv_csrs_minimal csrs            "CSR values"
-    )
-{
-    timing to   rising clock clk csr_access, csr_controls, irqs;
-    timing from rising clock clk csr_data, csrs;
-    timing comb input csr_access;
-    timing comb output csr_data;
-}
-
 /*m riscv_i32_muldiv */
 extern module riscv_i32_muldiv( clock clk,
                          input bit reset_n,

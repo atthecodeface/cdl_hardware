@@ -134,23 +134,25 @@ module riscv_i32c_pipeline( clock clk,
 extern
 module riscv_i32c_pipeline3( clock clk,
                              input bit reset_n,
-                           input t_riscv_irqs       irqs               "Interrupts in to the CPU",
-                             output t_riscv_fetch_req       ifetch_req,
-                             input  t_riscv_fetch_resp      ifetch_resp,
+                             input t_riscv_pipeline_control     pipeline_control,
+                             output t_riscv_pipeline_response   pipeline_response,
+                             input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
                              output t_riscv_mem_access_req  dmem_access_req,
                              input  t_riscv_mem_access_resp dmem_access_resp,
                              output t_riscv_i32_coproc_controls  coproc_controls,
                              input t_riscv_i32_coproc_response   coproc_response,
+                             output t_riscv_csr_access          csr_access,
+                             input t_riscv_word                 csr_read_data,
+                             output t_riscv_csr_controls        csr_controls,
                              input  t_riscv_config          riscv_config,
                              output t_riscv_i32_trace       trace
 )
 {
-    timing from rising clock clk dmem_access_req, ifetch_req, coproc_controls;
-    timing to   rising clock clk dmem_access_resp, ifetch_resp, coproc_response;
-    timing to   rising clock clk irqs;
+    timing from rising clock clk dmem_access_req, pipeline_response, coproc_controls, csr_access, csr_controls;
+    timing to   rising clock clk dmem_access_resp, pipeline_control, pipeline_fetch_data, coproc_response, csr_read_data;
     timing to   rising clock clk riscv_config;
-    timing comb input riscv_config, coproc_response;
-    timing comb output ifetch_req, coproc_controls;
+    timing comb input riscv_config, pipeline_control, coproc_response;
+    timing comb output pipeline_response, coproc_controls, trace, csr_controls;
     timing from rising clock clk trace;
 }
 
@@ -249,5 +251,22 @@ module riscv_i32_trace( clock clk            "Clock for the CPU",
 )
 {
     timing to rising clock clk trace;
+}
+
+/*m riscv_csrs_minimal  */
+extern
+module riscv_csrs_minimal( clock clk                                   "RISC-V clock",
+                           input bit reset_n                           "Active low reset",
+                           input t_riscv_irqs       irqs               "Interrupts in to the CPU",
+                           input t_riscv_csr_access csr_access         "RISC-V CSR access, combinatorially decoded",
+                           output t_riscv_csr_data csr_data            "CSR response (including take interrupt and read data), from the current @a csr_access",
+                           input t_riscv_csr_controls csr_controls     "Control signals to update the CSRs",
+                           output t_riscv_csrs_minimal csrs            "CSR values"
+    )
+{
+    timing to   rising clock clk csr_access, csr_controls, irqs;
+    timing from rising clock clk csr_data, csrs;
+    timing comb input csr_access;
+    timing comb output csr_data;
 }
 

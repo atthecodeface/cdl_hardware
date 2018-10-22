@@ -88,5 +88,8 @@ module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_control    
         pipeline_fetch_data.valid = pipeline_control.valid && ifetch_req.valid && ifetch_resp.valid;
         pipeline_fetch_data.pc    = ifetch_req.address;
         pipeline_fetch_data.data  = ifetch_resp.data;
+        pipeline_fetch_data.dec_pc_if_mispredicted = ifetch_req.pc_if_mispredicted;
+        pipeline_fetch_data.dec_predicted_branch   = ifetch_req.predicted_branch;
+        pipeline_fetch_data.dec_flush_pipeline     = ifetch_req.flush_pipeline;
     }
 }
