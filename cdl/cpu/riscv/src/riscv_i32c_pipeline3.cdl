@@ -342,6 +342,8 @@ An example implementation of could be
             }
         } elsif (pipeline_fetch_data.dec_flush_pipeline) {
             alu_state.valid               <= 0;
+            alu_state.pc_if_mispredicted  <= pipeline_fetch_data.dec_pc_if_mispredicted;
+            alu_state.predicted_branch    <= pipeline_fetch_data.dec_predicted_branch;
         } elsif (dec_state.valid) {
             alu_state.valid               <= 1;
             alu_state.first_cycle         <= 1;
@@ -450,14 +452,9 @@ An example implementation of could be
         pipeline_response.exec.is_compressed = alu_state.idecode.is_compressed;
         pipeline_response.exec.pc            = alu_state.pc;
 
-        // branch_target is correct for jalr and branch, but not otherwise
-        // However, in all other cases predicted_branch must equal branch_taken?
-        // What about ret?
-        // why not pc_if_mispredicted?
         pipeline_response.exec.predicted_branch   = alu_state.predicted_branch;
-        pipeline_response.exec.pc_if_mispredicted = alu_result.branch_target;
+        pipeline_response.exec.pc_if_mispredicted = alu_control_flow.jalr ? alu_result.branch_target : alu_state.pc_if_mispredicted;
         pipeline_response.exec.branch_taken       = alu_control_flow.branch_taken;
-        // Not needed as jalr already has this in ALU pipeline_response.exec.pc_if_mispredicted = alu_result.arith_result; // for jalr
         pipeline_response.exec.trap = alu_control_flow.trap;
 
         /*b CSR controls - post trap detection */

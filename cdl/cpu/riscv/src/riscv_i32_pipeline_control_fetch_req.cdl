@@ -64,7 +64,7 @@ include "cpu/riscv/riscv_internal_types.h"
 /*a Constants
  */
 constant integer INITIAL_PC=0x0;
-constant integer i32_enable_branch_prediction=0;
+constant integer i32_enable_branch_prediction=1;
 
 /*a Types
  */
