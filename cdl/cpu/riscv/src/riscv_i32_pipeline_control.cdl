@@ -148,7 +148,7 @@ module riscv_i32_pipeline_control( clock clk,
            ifetch_combs.interrupt_number = 11;
         }
 
-        ifetch_combs.fetch_action   = rv_pc_fetch_action_continue_fetching;
+        ifetch_combs.fetch_action   = rv_pc_fetch_action_idle;
         full_switch (ifetch_state.state) {
         case ifetch_fsm_idle: {
             if (ifetch_state.running) {

@@ -39,7 +39,6 @@ module riscv_csrs_minimal( clock clk                                   "RISC-V c
                            input bit reset_n                           "Active low reset",
                            input t_riscv_irqs          irqs            "Interrupts in to the CPU",
                            input t_riscv_csr_access    csr_access      "RISC-V CSR access, combinatorially decoded",
-                           input t_riscv_word          csr_write_data  "Write data for the CSR access, later in the cycle than @csr_access possibly",
                            output t_riscv_csr_data     csr_data        "CSR respone (including read data), from the current @a csr_access",
                            input t_riscv_csr_controls  csr_controls    "Control signals to update the CSRs",
                            output t_riscv_csrs_minimal csrs            "CSR values"
@@ -193,13 +192,13 @@ WFI may always be a NOP.
 
         /*b Decode CSR writes */
         csr_write.enable = 0;
-        csr_write.data = csr_write_data;
+        csr_write.data = csr_access.write_data;
         if (!csr_access.access_cancelled) {
             part_switch (csr_access.access) {
                 case riscv_csr_access_write: { csr_write.enable=1; }
                 case riscv_csr_access_rw:    { csr_write.enable=1; }
                 case riscv_csr_access_rs:    { csr_write.enable=1; csr_write.data |= csr_data.read_data; }
-                case riscv_csr_access_rc:    { csr_write.enable=1; csr_write.data  = csr_data.read_data &~ csr_write_data; }
+                case riscv_csr_access_rc:    { csr_write.enable=1; csr_write.data  = csr_data.read_data &~ csr_access.write_data; }
             }
         }
 
@@ -354,7 +353,7 @@ WFI may always be a NOP.
         if (csr_write.enable) {
             if (csr_access.address == CSR_ADDR_DSCRATCH) {
                 log("Scratch debug write",
-                    "write_data", csr_write_data );
+                    "write_data", csr_access.write_data );
             }
         }
     }

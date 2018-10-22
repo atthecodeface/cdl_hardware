@@ -81,6 +81,16 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
 }
 
 /*m riscv_i32_dmem_request */
+extern module riscv_i32_control_flow( input  t_riscv_pipeline_control  pipeline_control,
+                               input  t_riscv_i32_control_data  control_data,
+                               output t_riscv_i32_control_flow  control_flow
+    )
+{
+    timing comb input pipeline_control, control_data;
+    timing comb output control_flow;
+}
+   
+/*m riscv_i32_dmem_request */
 extern module riscv_i32_dmem_request( input  t_riscv_i32_dmem_exec     dmem_exec,
                                       output t_riscv_i32_dmem_request  dmem_request
     )
@@ -106,13 +116,12 @@ module riscv_csrs_minimal( clock clk                                   "RISC-V c
                            input bit reset_n                           "Active low reset",
                            input t_riscv_irqs       irqs               "Interrupts in to the CPU",
                            input t_riscv_csr_access csr_access         "RISC-V CSR access, combinatorially decoded",
-                           input t_riscv_word       csr_write_data     "Write data for the CSR access, later in the cycle than @csr_access possibly",
                            output t_riscv_csr_data csr_data            "CSR response (including take interrupt and read data), from the current @a csr_access",
                            input t_riscv_csr_controls csr_controls     "Control signals to update the CSRs",
                            output t_riscv_csrs_minimal csrs            "CSR values"
     )
 {
-    timing to   rising clock clk csr_access, csr_write_data, csr_controls, irqs;
+    timing to   rising clock clk csr_access, csr_controls, irqs;
     timing from rising clock clk csr_data, csrs;
     timing comb input csr_access;
     timing comb output csr_data;

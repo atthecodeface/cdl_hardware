@@ -163,7 +163,7 @@ riscv_config = {"i32c":1,
 }
 
 #v i32_csr_access - signal widths for pycdl.wirebundle - must match implementation
-i32_csr_access = {"access":3, "address":12, "access_cancelled":1}
+i32_csr_access = {"access":3, "address":12, "access_cancelled":1, "write_data":32}
 
 #v i32_decode - signal widths for pycdl.wirebundle - must match implementation
 i32_decode = {"rs1":5,

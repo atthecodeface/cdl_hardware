@@ -86,6 +86,7 @@ cdl cdl/cpu/riscv/src    riscv_i32_dmem_request inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_dmem_read_data    inc:cdl/inc
 # CSRs minimal does support minimal CSRs for just machine mode, but might be reduced in size with some constant definition
 cdl cdl/cpu/riscv/src    riscv_csrs_minimal   inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_control_flow  inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control  inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control_fetch_req  inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control_fetch_data  inc:cdl/inc

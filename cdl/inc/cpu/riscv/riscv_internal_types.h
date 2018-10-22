@@ -317,6 +317,7 @@ typedef struct {
     bit                     access_cancelled;
     t_riscv_csr_access_type access;
     bit[12]                 address;
+    t_riscv_word            write_data     "Write data for the CSR access, later in the cycle than @csr_access possibly";
 } t_riscv_csr_access;
 
 /*t t_riscv_csr_data
@@ -578,6 +579,7 @@ typedef enum[3] {
 /*t t_riscv_pipeline_response_decode
  */
 typedef struct {
+    bit      valid;
     t_riscv_pipeline_decode_pc_action action;
     bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
     bit[32]  pc              "Actual PC of execution instruction";
@@ -594,11 +596,11 @@ typedef enum[3] {
 /*t t_riscv_pipeline_response_exec
  */
 typedef struct {
-    // add in csrs? Need interrupt
+    bit valid;
+    bit interrupt_ack;
     t_riscv_pipeline_exec_pc_action action;
     t_riscv_i32_trap trap;
     bit[32]  flush_target    "Next PC if action is flush (ret or conditional branch)";
-    t_riscv_csr_mtvec  mtvec           "machine trap vector";
     bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
     bit[32]  pc              "Actual PC of execution instruction";
 } t_riscv_pipeline_response_exec;
@@ -741,7 +743,7 @@ typedef struct {
     t_riscv_i32_decode      idecode "Exec stage idecode";
     t_riscv_word            arith_result;
     t_riscv_word            rs2;
-    bit                     exec_cancelled;
+    bit                     exec_committed;
     bit                     first_cycle;
 } t_riscv_i32_dmem_exec;
 
@@ -761,17 +763,19 @@ typedef struct {
 
 /*t t_riscv_i32_control_data */
 typedef struct {
+    bit                     interrupt_ack;
+    bit                     exec_committed;
     bit                     first_cycle;
     t_riscv_i32_decode      idecode "Exec stage idecode";
     t_riscv_word            pc;
+    t_riscv_word            instruction_data;
     t_riscv_i32_alu_result  alu_result;
-    t_riscv_csrs_minimal    csrs;
 } t_riscv_i32_control_data;
 
 /*t t_riscv_i32_control_flow */
 typedef struct {
-    bit branch_taken;
-    bit jalr;
-    t_riscv_word next_pc;
+    bit              branch_taken;
+    bit              jalr;
+    t_riscv_word     next_pc;
     t_riscv_i32_trap trap;
 } t_riscv_i32_control_flow;

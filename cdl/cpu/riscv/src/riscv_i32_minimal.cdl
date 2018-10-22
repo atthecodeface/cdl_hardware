@@ -477,7 +477,8 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                                     ifetch_resp <= ifetch_resp,
                                                     riscv_config     <= riscv_config_pipe,
                                                     trace            <= trace_pipe );
-        riscv_i32_pipeline_control_fetch_req pc_fetch_req( pipeline_control <= pipeline_control,
+        riscv_i32_pipeline_control_fetch_req pc_fetch_req( csrs <= csrs,
+                                                           pipeline_control <= pipeline_control,
                                                            pipeline_response <= pipeline_response,
                                                            ifetch_req => ifetch_req );
         riscv_i32_pipeline_control_fetch_data pc_fetch_data( pipeline_control <= pipeline_control,
