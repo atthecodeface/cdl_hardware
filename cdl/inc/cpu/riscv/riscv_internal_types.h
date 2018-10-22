@@ -719,7 +719,7 @@ typedef struct {
     bit      valid;
     bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
     t_riscv_pipeline_control_fetch_action fetch_action;
-    bit[32]  start_pc;
+    bit[32]  decode_pc "PC of current or next-to-be-fetched decode instruction";
     t_riscv_mode mode "Mode to fetch in";
     bit          error;
     t_riscv_pipeline_tag tag;
@@ -731,11 +731,11 @@ typedef struct {
 /*t t_riscv_pipeline_response_decode
  */
 typedef struct {
-    bit[32]  pc                "Actual PC of instruction being decoded (or would be if it were valid)";
     bit      valid             "Asserted if branch_target and idecode are valid";
+    bit      decode_blocked    "Asserted only if decode is valid, and it cannot progress";
     bit[32]  branch_target     "Used if predict_branch";
     t_riscv_i32_decode idecode "Decode of instruction (if valid)";
-    bit disable_branch_prediction "Asserted if branch prediction (and hence branch_target) are not to be used";
+    bit enable_branch_prediction "Asserted if branch prediction (and hence branch_target) is to be used";
 } t_riscv_pipeline_response_decode;
 
 /*t t_riscv_pipeline_response_exec

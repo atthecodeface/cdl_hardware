@@ -97,13 +97,13 @@ typedef struct {
 /*a Module
  */
 module riscv_i32_pipeline_control( clock clk,
-                                    input bit reset_n,
-                                    input t_riscv_csrs_minimal          csrs,
-                                    output t_riscv_pipeline_control     pipeline_control,
-                                    input t_riscv_pipeline_response   pipeline_response,
-                                    input  t_riscv_fetch_resp          ifetch_resp,
-                                    input  t_riscv_config              riscv_config,
-                                    input t_riscv_i32_trace           trace
+                                   input bit reset_n,
+                                   input t_riscv_csrs_minimal          csrs,
+                                   output t_riscv_pipeline_control     pipeline_control,
+                                   input t_riscv_pipeline_response     pipeline_response,
+                                   input t_riscv_pipeline_fetch_data   pipeline_fetch_data,
+                                   input  t_riscv_config               riscv_config,
+                                   input t_riscv_i32_trace             trace
 )
 {
     default clock clk;
@@ -157,7 +157,7 @@ module riscv_i32_pipeline_control( clock clk,
         }
         case ifetch_fsm_restarting: {
             ifetch_combs.fetch_action   = rv_pc_fetch_action_restart_at_pc;
-            if (ifetch_resp.valid) {
+            if (pipeline_fetch_data.valid) {
                 ifetch_state.state <= ifetch_fsm_fetching;
             }
         }
@@ -165,14 +165,17 @@ module riscv_i32_pipeline_control( clock clk,
             // it always will with this pipeline
         case ifetch_fsm_fetching: { // present request, decode should be valid, pipeline not empty
             ifetch_combs.fetch_action   = rv_pc_fetch_action_continue_fetching;
+            if (pipeline_fetch_data.valid && !pipeline_response.decode.decode_blocked) {
+                ifetch_state.pc <= pipeline_fetch_data.pc;
+            }
         }
         }
 
-        pipeline_control = {*=0};
-        pipeline_control.valid        = 1;
-        pipeline_control.start_pc     = ifetch_state.pc;
-        pipeline_control.fetch_action = ifetch_combs.fetch_action;
-        pipeline_control.mode  = rv_mode_machine;
+        pipeline_control                   = {*=0};
+        pipeline_control.valid             = 1;
+        pipeline_control.decode_pc         = ifetch_state.pc;
+        pipeline_control.fetch_action      = ifetch_combs.fetch_action;
+        pipeline_control.mode              = rv_mode_machine;
         pipeline_control.interrupt_req     = ifetch_combs.interrupt_req;
         pipeline_control.interrupt_number  = ifetch_combs.interrupt_number;
         pipeline_control.interrupt_to_mode = rv_mode_machine;

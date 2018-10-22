@@ -52,7 +52,6 @@ include "cpu/riscv/riscv_submodules.h"
 
 /*a Constants
  */
-constant integer INITIAL_PC=0x0;
 constant integer i32c_force_disable=0;
 constant integer coproc_force_disable=0;
 
@@ -72,7 +71,6 @@ typedef struct {
 typedef struct {
     t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
     bit valid                    "Asserted if @instruction is a valid fetched instruction, whether misaligned or not";
-    bit[32] pc                   "PC of the fetched instruction";
 } t_dec_state;
 
 /*t t_dec_combs
@@ -238,7 +236,7 @@ An example implementation of could be
     comb t_alu_combs alu_combs;
     net     t_riscv_i32_control_flow alu_control_flow;
     comb t_mem_combs mem_combs;
-    clocked t_dec_state     dec_state={*=0, pc=INITIAL_PC};
+    clocked t_dec_state     dec_state={*=0};
     clocked t_alu_state     alu_state={*=0};
     clocked t_mem_state     mem_state={*=0};
     clocked t_rfw_state     rfw_state={*=0};
@@ -259,10 +257,10 @@ An example implementation of could be
     """: {
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
         dec_state.valid <= 0;
-        if (alu_state.valid && alu_combs.cannot_complete && dec_state.valid) {
+        pipeline_response.decode.decode_blocked = alu_state.valid && alu_combs.cannot_complete && dec_state.valid;
+        if (pipeline_response.decode.decode_blocked) {
             dec_state <= dec_state;
         } else {
-            dec_state.pc <= pipeline_fetch_data.pc;
             if (pipeline_fetch_data.valid) {
                 dec_state.valid <= 1;
                 dec_state.instruction <= {
@@ -293,11 +291,10 @@ An example implementation of could be
         dec_combs.rs2 = registers[dec_combs.idecode.rs2]; // note that register 0 is ALWAYS 0 anyway
 
         /*b Pipeline response from decode */
-        pipeline_response.decode.valid         = dec_state.valid;
-        pipeline_response.decode.pc            = dec_state.pc;
-        pipeline_response.decode.idecode       = dec_combs.idecode;
-        pipeline_response.decode.branch_target = dec_state.pc + dec_combs.idecode.immediate;
-        pipeline_response.decode.disable_branch_prediction = 0;
+        pipeline_response.decode.valid                    = dec_state.valid;
+        pipeline_response.decode.idecode                  = dec_combs.idecode;
+        pipeline_response.decode.branch_target            = pipeline_control.decode_pc + dec_combs.idecode.immediate;
+        pipeline_response.decode.enable_branch_prediction = 1;
 
         /*b Register forwarding determination */
         dec_combs.rs1_from_alu = 0;
@@ -349,7 +346,7 @@ An example implementation of could be
             alu_state.valid               <= 1;
             alu_state.first_cycle         <= 1;
             alu_state.idecode             <= dec_combs.idecode;
-            alu_state.pc                  <= dec_state.pc;
+            alu_state.pc                  <= pipeline_control.decode_pc;
             alu_state.pc_if_mispredicted  <= pipeline_fetch_data.dec_pc_if_mispredicted;
             alu_state.predicted_branch    <= pipeline_fetch_data.dec_predicted_branch;
             alu_state.rs1                 <= dec_combs.rs1;

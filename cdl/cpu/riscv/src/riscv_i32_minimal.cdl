@@ -474,13 +474,13 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         riscv_config_pipe = riscv_config;
         riscv_config_pipe.i32m = 0;
         riscv_i32_pipeline_control pc(clk <- riscv_clk,
-                                                    reset_n          <= proc_reset_n,
-                                                    csrs <= csrs,
-                                                    pipeline_control => pipeline_control,
-                                                    pipeline_response <= pipeline_response,
-                                                    ifetch_resp <= ifetch_resp,
-                                                    riscv_config     <= riscv_config_pipe,
-                                                    trace            <= trace_pipe );
+                                      reset_n          <= proc_reset_n,
+                                      csrs <= csrs,
+                                      pipeline_control => pipeline_control,
+                                      pipeline_response <= pipeline_response,
+                                      pipeline_fetch_data <= pipeline_fetch_data,
+                                      riscv_config     <= riscv_config_pipe,
+                                      trace            <= trace_pipe );
         riscv_i32_pipeline_control_fetch_req pc_fetch_req( csrs <= csrs,
                                                            pipeline_control <= pipeline_control,
                                                            pipeline_response <= pipeline_response,

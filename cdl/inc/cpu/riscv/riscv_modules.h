@@ -62,14 +62,13 @@ module riscv_i32_minimal( clock clk,
 /*m riscv_i32_pipeline_control
  */
 extern module riscv_i32_pipeline_control( clock clk,
-                                    input bit reset_n,
-                                    input t_riscv_csrs_minimal         csrs,
-                                    output t_riscv_pipeline_control    pipeline_control,
-                                    input t_riscv_pipeline_response    pipeline_response,
-                                    input t_riscv_fetch_req            ifetch_req,
-                                    input  t_riscv_fetch_resp          ifetch_resp,
-                                    input  t_riscv_config              riscv_config,
-                                    input t_riscv_i32_trace            trace
+                                          input bit reset_n,
+                                          input t_riscv_csrs_minimal         csrs,
+                                          output t_riscv_pipeline_control    pipeline_control,
+                                          input t_riscv_pipeline_response    pipeline_response,
+                                          input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
+                                          input  t_riscv_config              riscv_config,
+                                          input t_riscv_i32_trace            trace
 )
 {
     timing comb input csrs;
