@@ -716,12 +716,12 @@ module de1_cl_hps_debug( clock clk,
         for (i; 6) {
             led_seven_segment h[i](hex <= riscv_last_pc[4;4*i], leds=>de1_hex_leds[i] );
         }
-        de1_leds.h0 = de1_hex_leds[0];
-        de1_leds.h1 = de1_hex_leds[1];
-        de1_leds.h2 = de1_hex_leds[2];
-        de1_leds.h3 = de1_hex_leds[3];
-        de1_leds.h4 = de1_hex_leds[4];
-        de1_leds.h5 = de1_hex_leds[5];
+        de1_leds.h0 = ~de1_hex_leds[0];
+        de1_leds.h1 = ~de1_hex_leds[1];
+        de1_leds.h2 = ~de1_hex_leds[2];
+        de1_leds.h3 = ~de1_hex_leds[3];
+        de1_leds.h4 = ~de1_hex_leds[4];
+        de1_leds.h5 = ~de1_hex_leds[5];
 
         de1_cl_led_data_pin = !led_chain;
 

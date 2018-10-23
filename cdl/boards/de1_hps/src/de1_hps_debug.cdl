@@ -65,7 +65,6 @@ constant bit[8] sr_divider    = 49; // 1MHz
 module de1_hps_debug( clock clk,
                        input bit reset_n,
 
-                       clock lw_axi_clock_clk,
                        input t_axi_request    lw_axi_ar,
                        output bit             lw_axi_arready,
                        input t_axi_request    lw_axi_aw,
@@ -88,6 +87,10 @@ module de1_hps_debug( clock clk,
                        clock de1_vga_clock,
                        input bit de1_vga_reset_n,
                        output t_adv7123 de1_vga,
+
+                      clock de1_audio_bclk,
+                      input t_de1_audio de1_audio_adc,
+                      output t_de1_audio de1_audio_dac,
 
                        output bit de1_irda_txd
     )
@@ -209,7 +212,7 @@ module de1_hps_debug( clock clk,
         timer_control.enable_counter = 1;
         timer_control.integer_adder = 20; // 50MHz
 
-        riscv_i32_minimal riscv( clk <- lw_axi_clock_clk,
+        riscv_i32_minimal riscv( clk <- clk,
                                proc_reset_n <= reset_n & rv_sram_ctrl[0],
                                reset_n <= reset_n,
                                irqs <= irqs,
@@ -220,11 +223,11 @@ module de1_hps_debug( clock clk,
                                riscv_config <= riscv_config,
                                trace => riscv_trace
                          );
-        riscv_i32_trace trace(clk <- lw_axi_clock_clk,
+        riscv_i32_trace trace(clk <- clk,
                               reset_n <= reset_n,
                               trace <= riscv_trace );
 
-        riscv_i32_minimal_apb rv_apb( clk <- lw_axi_clock_clk,
+        riscv_i32_minimal_apb rv_apb( clk <- clk,
                                       reset_n <= reset_n,
                                       data_access_req  <= data_access_req,
                                       data_access_resp => data_access_resp,
@@ -258,7 +261,7 @@ module de1_hps_debug( clock clk,
                                    write_data <= 0,
                                    data_out => apb_rom_data );
 
-        apb_master_axi apbm(aclk <- lw_axi_clock_clk,
+        apb_master_axi apbm(aclk <- clk,
                         areset_n <= reset_n,
                         ar <= lw_axi_ar,
                         arready => lw_axi_arready,
@@ -278,7 +281,7 @@ module de1_hps_debug( clock clk,
 
     /*b APB master multiplexing and decode */
     apb_multiplexing_decode: {
-        apb_master_mux apb_mux_rp( clk <- lw_axi_clock_clk,
+        apb_master_mux apb_mux_rp( clk <- clk,
                                reset_n <= reset_n,
                                apb_request_0 <= riscv_apb_request,
                                apb_request_1 <= proc_apb_request,
@@ -289,7 +292,7 @@ module de1_hps_debug( clock clk,
                                apb_request =>  rp_apb_request,
                                apb_response <= rp_apb_response );
 
-        apb_master_mux apb_mux_ap( clk <- lw_axi_clock_clk,
+        apb_master_mux apb_mux_ap( clk <- clk,
                                reset_n <= reset_n,
                                apb_request_0 <= axi_apb_request,
                                apb_request_1 <= rp_apb_request,
@@ -463,21 +466,21 @@ module de1_hps_debug( clock clk,
                                            sram_access_req => fb_sram_access_req,
                                            sram_access_resp <= fb_sram_access_resp );
 
-        apb_target_dprintf apb_dprintf( clk <- lw_axi_clock_clk,
+        apb_target_dprintf apb_dprintf( clk <- clk,
                                     reset_n <= reset_n,
                                     apb_request  <= dprintf_apb_request,
                                     apb_response => dprintf_apb_response,
                                     dprintf_req => apb_dprintf_req,
                                     dprintf_ack <= apb_dprintf_ack );
 
-        apb_target_rv_timer timer( clk <- lw_axi_clock_clk,
+        apb_target_rv_timer timer( clk <- clk,
                                    reset_n <= reset_n,
                                    timer_control <= timer_control,
                                    apb_request  <= timer_apb_request,
                                    apb_response => timer_apb_response,
                                    timer_value => timer_value );
 
-        apb_target_gpio gpio( clk <- lw_axi_clock_clk,
+        apb_target_gpio gpio( clk <- clk,
                               reset_n <= reset_n,
                               apb_request  <= gpio_apb_request,
                               apb_response => gpio_apb_response,
@@ -506,7 +509,7 @@ module de1_hps_debug( clock clk,
 
     /*b Dprintf/framebuffer */
     dprintf_framebuffer_instances: {
-        dprintf dprintf( clk <- lw_axi_clock_clk,
+        dprintf dprintf( clk <- clk,
                          reset_n <= reset_n,
                          dprintf_req <= mux_dprintf_req[0],
                          dprintf_ack => mux_dprintf_ack[0],
@@ -523,8 +526,8 @@ module de1_hps_debug( clock clk,
         fb_sram_access_resp.valid = fb_sram_access_req.valid;
         fb_sram_access_resp.id    = fb_sram_access_req.id;
 
-        framebuffer_teletext ftb_debug( csr_clk <- lw_axi_clock_clk,
-                                        sram_clk <- lw_axi_clock_clk,
+        framebuffer_teletext ftb_debug( csr_clk <- clk,
+                                        sram_clk <- clk,
                                         video_clk <- de1_vga_clock,
                                         reset_n <= reset_n,
                                         video_bus => debug_video_bus,
@@ -534,8 +537,8 @@ module de1_hps_debug( clock clk,
                                         csr_response => tt_debug_framebuffer_csr_response
             );
 
-        framebuffer_teletext ftb_vga( csr_clk <- lw_axi_clock_clk,
-                                      sram_clk <- lw_axi_clock_clk,
+        framebuffer_teletext ftb_vga( csr_clk <- clk,
+                                      sram_clk <- clk,
                                       video_clk <- de1_vga_clock,
                                       reset_n <= reset_n,
                                       video_bus => vga_video_bus,
@@ -545,7 +548,7 @@ module de1_hps_debug( clock clk,
                                       csr_response => tt_vga_framebuffer_csr_response
             );
 
-        csr_target_timeout csr_timeout(clk <- lw_axi_clock_clk,
+        csr_target_timeout csr_timeout(clk <- clk,
                                        reset_n <= reset_n,
                                        csr_request <= csr_request,
                                        csr_response => timeout_csr_response,
@@ -637,15 +640,16 @@ module de1_hps_debug( clock clk,
 
         de1_leds.leds = counter[10;0];
         if (riscv_trace.instr_valid) { riscv_last_pc<=riscv_trace.instr_pc; }
+        if (divider_reset) {riscv_last_pc <= vga_counters[de1_inputs.switches[2;5]];}
         for (i; 6) {
             led_seven_segment h[i](hex <= riscv_last_pc[4;4*i], leds=>de1_hex_leds[i] );
         }
-        de1_leds.h0 = de1_hex_leds[0];
-        de1_leds.h1 = de1_hex_leds[1];
-        de1_leds.h2 = de1_hex_leds[2];
-        de1_leds.h3 = de1_hex_leds[3];
-        de1_leds.h4 = de1_hex_leds[4];
-        de1_leds.h5 = de1_hex_leds[5];
+        de1_leds.h0 = ~de1_hex_leds[0];
+        de1_leds.h1 = ~de1_hex_leds[1];
+        de1_leds.h2 = ~de1_hex_leds[2];
+        de1_leds.h3 = ~de1_hex_leds[3];
+        de1_leds.h4 = ~de1_hex_leds[4];
+        de1_leds.h5 = ~de1_hex_leds[5];
 
         gpio_input <= {*=0};
         gpio_input[4;0]  <= de1_inputs.keys;
@@ -655,5 +659,7 @@ module de1_hps_debug( clock clk,
         de1_ps2_out <= ps2_out;
         de1_ps2b_out = {*=0};
         de1_irda_txd = 0;
+
+        de1_audio_dac = {*=0};
     }
 }
