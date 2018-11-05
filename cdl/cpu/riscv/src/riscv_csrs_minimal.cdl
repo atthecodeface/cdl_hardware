@@ -26,6 +26,7 @@ constant integer mimpid = 0;
 constant integer misa = 0;
 constant integer mvendorid = 0;
 constant integer mhartid = 0;
+constant integer debug_force_disable=0;
 
 /*a Types */
 /*t t_csr_write */
@@ -188,6 +189,7 @@ WFI may always be a NOP.
         case CSR_ADDR_MEDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
         case CSR_ADDR_MIDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
         case CSR_ADDR_MIE       : { csr_data.illegal_access=0; csr_data.read_data = 0; }
+        case CSR_ADDR_DEPC      : { csr_data.illegal_access=0; csr_data.read_data = csrs.depc; }
         }
 
         /*b Decode CSR writes */
@@ -304,9 +306,35 @@ WFI may always be a NOP.
             }
         }
 
-        /*b Handle scratch state */
+        /*b Handle MSCRATCH state */
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MSCRATCH)) {
             csrs.mscratch <= csr_write.data;
+        }
+
+        /*b Handle DSCRATCH state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_DSCRATCH0)) {
+            csrs.dscratch0 <= csr_write.data;
+        }
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_DSCRATCH1)) {
+            csrs.dscratch1 <= csr_write.data;
+        }
+
+        /*b Handle DEPC state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_DEPC)) {
+            csrs.depc <= csr_write.data;
+        }
+        if (csr_controls.trap.valid) {
+            if (csr_controls.trap.to_mode == rv_mode_debug) {
+                csrs.depc <= csr_controls.trap.pc;
+            }
+        }
+
+        /*b Kill registers if debug not enabled */
+        if (debug_force_disable) {
+            csrs.depc <= 0;
+            csrs.dscratch0 <= 0;
+            csrs.dscratch1 <= 0;
+            //csrs.dcsr <= 0;
         }
 
         /*b Tie-offs for machine mode only */
@@ -351,8 +379,8 @@ WFI may always be a NOP.
     logging """
     """: {
         if (csr_write.enable) {
-            if (csr_access.address == CSR_ADDR_DSCRATCH) {
-                log("Scratch debug write",
+            if (csr_access.address == CSR_ADDR_DSCRATCH0) {
+                log("Scratch debug 0 write",
                     "write_data", csr_access.write_data );
             }
         }

@@ -1,0 +1,83 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_debug_decode.cdl
+ * @brief  Debug decoder for RISC-V implementation
+ *
+ * CDL implementation of debug decoder
+ *
+ */
+
+/*a Includes
+ */
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+
+/*a Module
+ */
+module riscv_i32_debug_decode( input t_riscv_i32_inst instruction,
+                               output t_riscv_i32_decode idecode,
+                               input t_riscv_config riscv_config
+)
+"""
+Instruction decoder for RISC-V debugger
+"""
+{
+    idecode_logic :{
+        idecode = {*=0};
+        if (riscv_config.i32c) { idecode.rs1_valid=0; } // to use riscv_config
+        idecode.immediate = instruction.data;
+        idecode.rs1       = instruction.debug.data[5;0];
+        idecode.rs1_valid = 1;
+        idecode.rs2       = 0;
+        idecode.rs2_valid = 0;
+        idecode.rd        = instruction.debug.data[5;0];
+        idecode.rd_written = 0;
+        idecode.immediate_valid = 1;
+        idecode.op    = riscv_op_alu;
+        idecode.subop = riscv_subop_or; // alu_result = rs1 | rs2_or_imm
+        idecode.csr_access.access  = riscv_csr_access_none;
+        idecode.csr_access.address = instruction.debug.data[12;0];
+        if (instruction.debug.data[12]) { // GPR access
+            full_switch (instruction.debug.debug_op) {
+            case rv_inst_debug_op_read_reg: {
+                idecode.rs1_valid       = 0;
+                idecode.immediate_valid = 0;
+            }
+            case rv_inst_debug_op_write_reg: { // rd <= 0 | imm
+                idecode.rs1             = 0;
+                idecode.rs1_valid       = 0;
+                idecode.immediate_valid = 1;
+                idecode.rd_written      = 1;
+            }
+            }
+        } else { // CSR access
+            idecode.op    = riscv_op_csr;
+            idecode.subop = riscv_subop_or; // csr read
+            full_switch (instruction.debug.debug_op) {
+            case rv_inst_debug_op_read_reg: {
+                idecode.csr_access.access = riscv_csr_access_read;
+                idecode.rs1_valid       = 0;
+                idecode.immediate_valid = 0;
+            }
+            case rv_inst_debug_op_write_reg: { // csr write
+                idecode.csr_access.access = riscv_csr_access_write;
+                idecode.rs1_valid       = 0;
+                idecode.immediate_valid = 1;
+            }
+            }
+        }
+    }
+
+    /*b All done */
+}

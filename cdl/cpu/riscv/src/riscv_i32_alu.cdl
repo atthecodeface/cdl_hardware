@@ -29,6 +29,7 @@ include "cpu/riscv/riscv.h"
 /*t t_alu_combs */
 typedef struct {
     t_riscv_word  imm_or_rs2;
+    t_riscv_word  imm_or_rs1;
     bit[64] rshift_operand;
     bit[64] rshift_result;
     bit[5]  shift_amount;
@@ -67,9 +68,11 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
     alu_operation """
     """ : {
 
-        /*b Determine rs2 or immediate */
+        /*b Determine rs2 or immediate, and ditto for CSR write accesses */
         alu_combs.imm_or_rs2 = rs2;
         if (idecode.immediate_valid) { alu_combs.imm_or_rs2 = idecode.immediate; }
+        alu_combs.imm_or_rs1 = rs1;
+        if (idecode.immediate_valid) { alu_combs.imm_or_rs1 = idecode.immediate; }
 
         /*b Find shift operands and amount; sign-extend @rshift_operand for sra, zero-extend for srl */
         alu_combs.rshift_operand = bundle(32b0, rs1);
@@ -155,26 +158,9 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
         case riscv_op_jalr:     { alu_result.branch_target = bundle(alu_combs.arith_result[31;1],1b0); }
         }
 
-        /*b CSR access */
-        alu_result.csr_access = {*=0};
-        if (0) { // should remove this
-        alu_result.csr_access.address    = idecode.csr_access.address;
-        if (idecode.subop == riscv_subop_csrrw) {
-            alu_result.csr_access.access = riscv_csr_access_rw;
-        }
-        elsif (idecode.subop == riscv_subop_csrrs) {
-            alu_result.csr_access.access = riscv_csr_access_rs;
-        }
-        elsif (idecode.subop == riscv_subop_csrrc) {
-            alu_result.csr_access.access = riscv_csr_access_rc;
-        }
-        if (idecode.rs1 == 0) {
-            alu_result.csr_access.access = riscv_csr_access_read;
-        }
-        if (idecode.op != riscv_op_csr) {
-            alu_result.csr_access.access     = riscv_csr_access_none;
-        }
-        }
+        /*b CSR access write data*/
+        alu_result.csr_access            = idecode.csr_access;
+        alu_result.csr_access.write_data = alu_combs.imm_or_rs1;
 
         /*b All done */
     }

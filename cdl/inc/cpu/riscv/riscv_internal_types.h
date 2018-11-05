@@ -442,7 +442,9 @@ typedef enum[12] {
     //CSR_ADDR_MTIMECMPH = 12h7C2,
 
     // provisional debug, used across these RISC-V implementations
-    CSR_ADDR_DSCRATCH  = 12h7B2
+    CSR_ADDR_DEPC       = 12h7B1,
+    CSR_ADDR_DSCRATCH0  = 12h7B2,
+    CSR_ADDR_DSCRATCH1  = 12h7B3
 } t_riscv_csr_addr;
 
 /*t t_riscv_csr_dcsr
@@ -564,14 +566,33 @@ typedef struct {
     t_riscv_csr_mstatus mstatus     "";
     t_riscv_csr_mip     mip         "";
     t_riscv_csr_mie     mie         "";
+
+    bit[32] depc;
+    bit[32] dscratch0;
+    bit[32] dscratch1;
 } t_riscv_csrs_minimal;
 
 /*a I32 types */
+/*t t_riscv_i32_inst_debug_op
+ */
+typedef enum[2] {
+    rv_inst_debug_op_read_reg,
+    rv_inst_debug_op_write_reg
+} t_riscv_i32_inst_debug_op;
+
+/*t t_riscv_i32_inst_debug
+ */
+typedef struct {
+    bit valid;
+    t_riscv_i32_inst_debug_op debug_op;
+    bit[16]                   data     "For reading/writing a register, this is the register number";
+} t_riscv_i32_inst_debug;
+
 /*t t_riscv_i32_inst
  */
 typedef struct {
-    t_riscv_mode mode;
     bit[32]      data;
+    t_riscv_i32_inst_debug debug;
 } t_riscv_i32_inst;
 
 /*t t_riscv_i32_decode_ext
@@ -588,15 +609,15 @@ typedef struct {
  */
 typedef struct {
     bit[5]       rs1                   "Source register 1 that is required by the instruction";
-    bit          rs1_valid             "Asserted if rs1 is valid; if deasserted then rs1 is not used";
+    bit          rs1_valid             "Asserted if rs1 is valid; if deasserted then rs1 is not used - only used for blocking in pipelines";
     bit[5]       rs2                   "Source register 2 that is required by the instruction";
-    bit          rs2_valid             "Asserted if rs2 is valid; if deasserted then rs2 is not used";
+    bit          rs2_valid             "Asserted if rs2 is valid; if deasserted then rs2 is not used - only used for blocking in pipelines";
     bit[5]       rd                    "Destination register that is written by the instruction";
     bit          rd_written            "Asserted if Rd is written to (hence also Rd will be non-zero)";
     t_riscv_csr_access     csr_access  "CSR access if valid and legal";
     bit[32]      immediate             "Immediate value decoded from the instruction";
     bit[5]       immediate_shift       "Immediate shift value decoded from the instruction";
-    bit          immediate_valid       "Asserted if immediate data is valid (generally used instead of source register 2)";
+    bit          immediate_valid       "Asserted if immediate data is valid and therefore to be used instead of source register 2";
     t_riscv_op     op                  "Operation class of the instruction";
     t_riscv_subop  subop               "Subclass of the operation class";
     bit          requires_machine_mode "Indicates that in non-machine-mode the instruction is illlegal";
@@ -726,6 +747,8 @@ typedef struct {
     bit    interrupt_req;
     bit[4] interrupt_number;
     t_riscv_mode interrupt_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
+    t_riscv_word           instruction_data;
+    t_riscv_i32_inst_debug instruction_debug;
 } t_riscv_pipeline_control;
 
 /*t t_riscv_pipeline_response_decode
@@ -771,6 +794,7 @@ typedef struct {
     t_riscv_pipeline_response_decode decode;
     t_riscv_pipeline_response_exec   exec;
     t_riscv_pipeline_response_rfw    rfw;
+    bit                              pipeline_empty;
 } t_riscv_pipeline_response;
 
 /*t t_riscv_pipeline_fetch_data
@@ -778,7 +802,7 @@ typedef struct {
 typedef struct {
     bit          valid;
     t_riscv_word pc;
-    t_riscv_word data;
+    t_riscv_i32_inst instruction;
     bit          dec_flush_pipeline;
     bit          dec_predicted_branch   "Not part of fetch - indicates that pipeline_control predicted a branch for the decode, so when the decode is executed this should match the execution - if not, a mispredict occurs";
     t_riscv_word dec_pc_if_mispredicted;

@@ -111,12 +111,16 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
             self.compare_expected_list(reason+":"+str(a)+":"+str(address), e, d)
             pass
         pass
+    #f run_start
+    def run_start(self):
+        pass
     #f run
     def run(self):
         self.sim_msg = self.sim_message()
         self.bfm_wait(10)
         simple_tb.base_th.run_start(self)
-        self.bfm_wait(self.run_time-10)
+        self.run_start()
+        self.bfm_wait(self.run_time-10-self.global_cycle()/2)
         #self.ios.b.drive(1)
         self.check_memory("Check memory after run complete (%d)"%self.global_cycle())
         self.finishtest(0,"")
@@ -135,6 +139,61 @@ class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
         pass
     pass
 
+#c c_riscv_minimal_test_dump_with_debug
+class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
+    #f dm_write
+    def dm_write(self, address, data, write_ir=False):
+        """
+        Requires the JTAG state machine to be in reset or idle.
+
+        Writes the IR to be 'access' if required, then does the appropriate write access.
+        """
+        if write_ir:
+            self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (dm_access)
+            pass
+        data = self.jtag_write_drs(dr_bits = bits_of_n(50,((address&0xffff)<<34)|((data&0xffffffff)<<2)|(2)))
+        return data
+
+    #f dm_read_slow
+    def dm_read_slow(self, address, write_ir=False):
+        """
+        Requires the JTAG state machine to be in reset or idle.
+
+        Writes the IR to be 'access' if required, then does the appropriate read access; it then waits and does another operation to get the data back
+        """
+        if write_ir:
+            self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (dm_access)
+            pass
+        data = self.jtag_write_drs(dr_bits = bits_of_n(50,((address&0xffff)<<34)|(0<<2)|(1)))
+        self.bfm_wait(100)
+        data = self.jtag_write_drs(dr_bits = bits_of_n(50,0))
+        return int_of_bits(data)
+
+    #f dm_read_pipelined
+    def dm_read_pipelined(self, address):
+        """
+        Requires the JTAG state machine to be in reset or idle.
+
+        Peforms the appropriate read access and returns the last data
+        """
+        data = self.jtag_write_drs(dr_bits = bits_of_n(50,((address&0xffff)<<34)|(0<<2)|(1)))
+        return int_of_bits(data)
+    #f run_start
+    def run_start(self):
+        print "Start using JTAG"
+        self.jtag_module = jtag_support.jtag_module(self.bfm_wait, self.tck_enable, self.jtag__tms, self.jtag__tdi, self.tdo, self)
+        self.jtag_reset()
+        self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (apb_access)
+        self.dm_write(0x10, 1) # Enable
+        #self.dm_write(0x04, 0x1245678) # data0 = Initial PC
+        #self.dm_write(0x17, 0x00231001) # Abstract command to Write data0 to r1
+        self.dm_write(0x04, 0) # data0 = Initial PC
+        self.dm_write(0x17, 0x002307b1) # Abstract command to Write data0 to DEPC
+        self.dm_write(0x10, 0x40000000) # Resume request (halt request removed)
+        pass
+    #f All done
+    pass
+
 #c c_riscv_minimal_test_one
 class c_riscv_minimal_test_one(c_riscv_minimal_test_base):
     dump_filename = riscv_regression_dir+"rv32ui-p-or.dump"
@@ -148,6 +207,7 @@ class c_riscv_jtag_debug_base(simple_tb.base_th):
     """
     Base methods for JTAG interaction, really
     """
+    #f run_start
     def run_start(self):
         self.sim_msg = self.sim_message()
         self.bfm_wait(10)
@@ -378,11 +438,12 @@ class riscv_base(simple_tb.base_test):
     hw = None
     cycles_scale = 1.0
     test_memory = None
+    cls_test_dump_class = c_riscv_minimal_test_dump
     @classmethod
-    def add_test_fn(cls, name, tf, num_cycles):
+    def add_test_fn(cls, name, dump_file, num_cycles):
         num_cycles = int(num_cycles * cls.cycles_scale)
         def test_fn(c):
-            c.do_test_run(cls.hw(c_riscv_minimal_test_dump(dump_filename=tf,
+            c.do_test_run(cls.hw(cls.cls_test_dump_class(dump_filename=dump_file,
                                                        test_memory = cls.test_memory,
                                                        )), num_cycles=num_cycles)
             pass
@@ -419,13 +480,14 @@ class riscv_i32mc_pipeline3(riscv_base):
     hw = riscv_i32mc_pipeline3_test_hw
     test_memory = "dmem"
     cycles_scale = 1.5
+    cls_test_dump_class = c_riscv_minimal_test_dump_with_debug
     pass
 
 #c OLD riscv_minimal_single_memory
 class old_riscv_minimal_single_memory(riscv_base):
     pass
 
-#c Add tests to riscv_minimal and riscv_minimal_single_memory
+#c Add tests to riscv_i32_minimal, riscv_i32c_minimal, riscv_i32c_pipeline3, riscv_i32mc_pipeline3
 riscv_atcf_zephyr = {#"zephyr":("zephyr.dump",250*1000,[]),
 }
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[]),
@@ -496,8 +558,8 @@ for (test_dir,tests) in [(riscv_zephyr_dir,riscv_atcf_zephyr),
                          (riscv_regression_dir,riscv_regression_tests),
                          (riscv_atcf_regression_dir,riscv_atcf_regression_tests)]:
     for tc in tests:
-        (tf,num_cycles,tags) = tests[tc]
-        tf = test_dir+tf
+        (dump_file,num_cycles,tags) = tests[tc]
+        dump_file = test_dir+dump_file
         for test_class in [ riscv_i32_minimal,                  
                                   riscv_i32c_minimal,             
                                   riscv_i32c_pipeline3,           
@@ -508,7 +570,7 @@ for (test_dir,tests) in [(riscv_zephyr_dir,riscv_atcf_zephyr),
                 if t not in test_class.supports: can_do = False
                 pass
             if can_do:
-                test_class.add_test_fn(name=tc, tf=tf, num_cycles=num_cycles)
+                test_class.add_test_fn(name=tc, dump_file=dump_file, num_cycles=num_cycles)
                 pass
         pass
     pass

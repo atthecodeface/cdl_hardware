@@ -361,6 +361,40 @@ constant integer max_hart_minus_one=63;
 constant bit[64] valid_hart_mask = 64hffffffffffffffff;
 
 /*a Types */
+typedef fsm {
+    command_fsm_idle;
+    command_fsm_transfer_ready;
+    command_fsm_transfer_wait;
+    command_fsm_execute_ready;
+    command_fsm_execute_wait;
+} t_command_state;
+
+/*t t_riscv_abstractcs_transfer
+ *
+ * From v0.13 draft section 3.11.6
+ *
+ */
+typedef enum [2] {
+    transfer_none = 2b00,
+    transfer_none2 = 2b01,
+    transfer_read = 2b10,
+    transfer_write = 2b11
+} t_riscv_abstractcs_transfer;
+
+/*t t_riscv_debug_cmderr
+ *
+ * From v0.13 draft section 3.11.6
+ *
+ */
+typedef enum [3] { 
+    rv_abstractcs_cmderr_none          = 0  "No error reported",
+    rv_abstractcs_cmderr_busy          = 1  "Register written while abstractcs_busy",
+    rv_abstractcs_cmderr_not_supported = 2,
+    rv_abstractcs_cmderr_exception     = 3,
+    rv_abstractcs_cmderr_halt_resume   = 4,
+    rv_abstractcs_cmderr_other         = 7
+} t_riscv_debug_cmderr;
+    
 /*t t_write_action */
 typedef enum[3] {
     write_action_none,
@@ -417,6 +451,17 @@ typedef struct
     t_read_select  read_select;
 } t_apb_state;
 
+/*t t_command
+ *
+ */
+typedef struct {
+    bit valid;
+    bit[2] transfer_op;
+    bit    do_execute;
+    bit[16] reg_num;
+    t_command_state fsm_state;
+} t_command;
+
 /*t t_debug_state
  *
  */
@@ -434,6 +479,9 @@ typedef struct
     bit[64] halted         "One bit per hart reflecting its last reported halt state; only bottom N bits are ever non-zero";
     bit[64] resumed        "One bit per hart reflecting its last reported resumed state; only bottom N bits are ever non-zero";
     bit[64] hit_breakpoint "One bit per hart reflecting its last reported hit breakpoint state; only bottom N bits are ever non-zero";
+    t_command command      "Command to execute";
+    t_riscv_debug_cmderr abstractcs_cmderr  "Asserted if abstract command had an error at some point in the past";
+    bit abstractcs_busy    "Asserted if abstract command is busy";
 } t_debug_state;
 
 /*t t_dmstatus
@@ -471,9 +519,15 @@ typedef struct {
     bit[32] haltsum1;
     bit[32] dmstatus_data;
     bit[32] dmcontrol_data;
+    bit[32] abstractcs;
     bit[64] next_halted         "One bit per hart reflecting its last reported halt state; only bottom N bits are ever non-zero";
     bit[64] next_resumed        "One bit per hart reflecting its last reported resumed state; only bottom N bits are ever non-zero";
     bit[64] next_hit_breakpoint "One bit per hart reflecting its last reported hit breakpoint state; only bottom N bits are ever non-zero";
+    bit transfer_request;
+    bit execute_request;
+    bit mst_initiating_transfer;
+    bit mst_initiating_execute;
+    bit tgt_transfer_completing;
 } t_debug_combs;
 
 /*a Module */
@@ -560,14 +614,33 @@ revision 0.13.
             );
         debug_combs.dmcontrol_data = bundle(31b0,
                                             debug_state.dmactive);
+        debug_combs.abstractcs = bundle(3b0,
+                                        5b1, // progbuf size
+                                        11b0,
+                                        debug_state.abstractcs_busy,
+                                        1b0,
+                                        debug_state.abstractcs_cmderr,
+                                        4b0,
+                                        4b1 // data size
+            );
     }
 
     /*b Drive debug master bus */
     debug_mst_driving """
+    Drive the debug master as follows (in this priority order):
+
+    1) If a halt/resume request is pending, then drive that (since this will go away on the next cycle)
+
+    2) If an abstract command is pending then ?
+
+    3) If there is a hart driving attention then poll the next hart
     """ : {
         debug_mst.valid  <= 0;
         debug_mst.data <= 0;
+        debug_mst.select <= 0;
         debug_mst.mask <= -1;
+        debug_combs.mst_initiating_transfer = 0;
+        debug_combs.mst_initiating_execute = 0;
         if (debug_state.must_set_requests) {
             debug_mst.valid  <= 1;
             debug_mst.select <= debug_state.hart_sel;
@@ -575,7 +648,21 @@ revision 0.13.
             debug_mst.op <= rv_debug_set_requests;
             debug_mst.arg[0] <= debug_state.halt_req;
             debug_mst.arg[1] <= debug_state.resume_req;
+        } elsif (debug_combs.transfer_request) {
+            debug_mst.valid  <= 1;
+            debug_mst.select <= debug_state.hart_sel;
             
+            debug_mst.op   <= (debug_state.command.transfer_op[0] ? rv_debug_write : rv_debug_read);
+            debug_mst.arg  <= debug_state.command.reg_num;
+            debug_mst.data <= debug_state.data0;
+            debug_combs.mst_initiating_transfer = 1;
+        } elsif (debug_combs.execute_request) {
+            debug_mst.valid  <= 1;
+            debug_mst.select <= debug_state.hart_sel;
+            
+            debug_mst.op   <= rv_debug_execute_progbuf;
+            debug_mst.data <= debug_state.progbuf0;
+            debug_combs.mst_initiating_execute = 1;
         } elsif (debug_tgt.attention) {
             debug_mst.valid  <= 1;
             debug_mst.select <= debug_state.hart_to_poll;
@@ -594,6 +681,7 @@ revision 0.13.
         debug_combs.next_halted          = debug_state.halted;
         debug_combs.next_resumed         = debug_state.resumed;
         debug_combs.next_hit_breakpoint  = debug_state.hit_breakpoint;
+        debug_combs.tgt_transfer_completing = 0;
         if (debug_tgt.valid) {
             if (debug_tgt.selected <= max_hart_minus_one) {
                 debug_combs.update_status = 1;
@@ -624,10 +712,11 @@ revision 0.13.
             apb_state.write_action <= write_action_none;  // clear cmd_err if written with 1, else do nothing
         }
         case dm_addr_abstract_cmd: { // cmd type in top 8 bits, control in bottom 24; ignore if cmd_err set
-            apb_state.write_action <= write_action_none;
+            apb_state.write_action <= write_action_abstract_cmd;
         }
         case dm_addr_data0: {
             apb_state.read_select <= read_select_data0;
+            apb_state.write_action <= write_action_data0;
         }
         case dm_addr_progbuf0: {  // set cmd_err if abstract cmd is busy
             apb_state.read_select <= read_select_progbuf0;
@@ -661,7 +750,7 @@ revision 0.13.
         part_switch (apb_state.read_select) {
         case read_select_dmcontrol  : { apb_response.prdata = debug_combs.dmcontrol_data; }
         case read_select_dmstatus   : { apb_response.prdata = debug_combs.dmstatus_data; }
-        case read_select_abstractcs : { apb_response.prdata = debug_combs.dmstatus_data; }
+        case read_select_abstractcs : { apb_response.prdata = debug_combs.abstractcs; }
         case read_select_data0      : { apb_response.prdata = debug_state.data0; }
         case read_select_progbuf0   : { apb_response.prdata = debug_state.progbuf0; }
         case read_select_haltsum0   : { apb_response.prdata = debug_combs.haltsum0; }
@@ -670,8 +759,6 @@ revision 0.13.
 
         /*b Handle basic write action */
         debug_state.must_set_requests <= 0;
-        debug_state.data0 <= 0;
-        debug_state.progbuf0 <= 0;
         part_switch (apb_state.write_action) {
         case write_action_control : {
             debug_state.dmactive <= apb_request.pwdata[0];
@@ -685,12 +772,85 @@ revision 0.13.
         // bit 2 is clear halt-on-reset-request
         }
         case write_action_data0 : {
+            debug_state.data0 <= apb_request.pwdata;            
         }
         case write_action_progbuf0 : {
+            debug_state.progbuf0 <= apb_request.pwdata;
         }
         case write_action_abstract_cs : {
+            if (debug_state.abstractcs_busy) {
+                debug_state.abstractcs_cmderr <= rv_abstractcs_cmderr_busy;
+            }
         }
         case write_action_abstract_cmd : {
+            // ignore if cmd_err set
+            if (debug_state.abstractcs_cmderr == rv_abstractcs_cmderr_none) {
+                // set cmd_err (busy) if abstract command is in progress
+                // set cmd_err (halt_resume) if HART is not halted
+                // set cmd_err (not supported) if command is not supported
+                if (debug_state.abstractcs_busy) {
+                    debug_state.abstractcs_cmderr <= rv_abstractcs_cmderr_busy;
+                } elsif (!debug_combs.dmstatus.halted_all) {
+                    debug_state.abstractcs_cmderr <= rv_abstractcs_cmderr_halt_resume;
+                } elsif ((apb_request.pwdata[8;24]!=0) || (apb_request.pwdata[3;20]!=2)) {
+                    debug_state.abstractcs_cmderr <= rv_abstractcs_cmderr_not_supported;
+                } else {
+                    // cmd type in top 8 bits, control in bottom 24
+                    debug_state.abstractcs_busy <= 1;
+                    debug_state.command.valid <= 1;
+                    debug_state.command.transfer_op <= apb_request.pwdata[2;16]; //2b0x = none, 2b10=read, 2b11=write
+                    debug_state.command.do_execute  <= apb_request.pwdata[18];
+                    debug_state.command.reg_num     <= apb_request.pwdata[16;0];
+                }
+            }
+        }
+        }
+        debug_combs.transfer_request = 0;
+        debug_combs.execute_request = 0;
+        full_switch (debug_state.command.fsm_state) {
+        case command_fsm_idle: {
+            if (debug_state.abstractcs_busy) {
+                debug_state.command.fsm_state   <= command_fsm_transfer_ready;
+            }
+        }
+        case command_fsm_transfer_ready: {
+            full_switch (debug_state.command.transfer_op) {
+            case transfer_read: {
+                debug_combs.transfer_request = 1;
+                if (debug_combs.mst_initiating_transfer) {
+                    debug_state.command.fsm_state <= command_fsm_transfer_wait;
+                }
+            }
+            case transfer_write: {
+                debug_combs.transfer_request = 1;
+                if (debug_combs.mst_initiating_transfer) {
+                    debug_state.command.fsm_state <= command_fsm_transfer_wait;
+                }
+            }
+            default: {
+                debug_state.command.fsm_state <= command_fsm_execute_ready;
+            }
+            }
+        }
+        case  command_fsm_transfer_wait: {
+            if (debug_combs.tgt_transfer_completing) {
+                debug_state.command.fsm_state <= command_fsm_execute_ready;
+            }
+        }
+        case  command_fsm_execute_ready: {
+            debug_combs.execute_request = 1;
+            if (!debug_state.command.do_execute) {
+                debug_combs.execute_request = 1;
+                debug_state.abstractcs_busy <= 0;
+                debug_state.command.fsm_state <= command_fsm_idle;
+            }
+            elsif (debug_combs.mst_initiating_transfer) {
+                debug_state.command.fsm_state <= command_fsm_execute_wait;
+            }
+        }
+        case  command_fsm_execute_wait: {
+            // waiting for an ebreak on selected hart
+            debug_state.command.fsm_state <= command_fsm_execute_wait;
         }
         }
     }

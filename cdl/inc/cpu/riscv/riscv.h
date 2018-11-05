@@ -127,6 +127,7 @@ typedef struct {
     bit      e32;
     bit      i32m;
     bit      i32m_fuse;
+    bit      debug_enable;
     bit      coproc_disable;
     bit      unaligned_mem; // if clear, trap on unaligned memory loads/stores
 } t_riscv_config;
@@ -142,7 +143,10 @@ typedef enum[4] {
     rv_debug_execute_progbuf "Execute instruction at 'progbuf' address X (if it is a jump and link it will return)",
 } t_riscv_debug_op;
 
+/*t t_riscv_debug_resp
+ */
 typedef bit t_riscv_debug_resp;
+
 /*t t_riscv_debug_mst
  *
  * Debug module (DM) communication to (many) pipeline debug modules (PDMs)

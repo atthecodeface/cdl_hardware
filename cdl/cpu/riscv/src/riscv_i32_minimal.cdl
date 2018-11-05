@@ -469,10 +469,12 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     }
 
     /*b Pipeline */
+    comb t_riscv_debug_mst debug_mst;
     pipeline: {
         coproc_response = {*=0};
         riscv_config_pipe = riscv_config;
         riscv_config_pipe.i32m = 0;
+        debug_mst = {*=0};
         riscv_i32_pipeline_control pc(clk <- riscv_clk,
                                       reset_n          <= proc_reset_n,
                                       csrs <= csrs,
@@ -480,7 +482,10 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                       pipeline_response <= pipeline_response,
                                       pipeline_fetch_data <= pipeline_fetch_data,
                                       riscv_config     <= riscv_config_pipe,
-                                      trace            <= trace_pipe );
+                                      trace            <= trace_pipe,
+                                      debug_mst        <= debug_mst,
+                                      //debug_tgt       => ,
+                                      rv_select <= 0 );
         riscv_i32_pipeline_control_fetch_req pc_fetch_req( csrs <= csrs,
                                                            pipeline_control <= pipeline_control,
                                                            pipeline_response <= pipeline_response,

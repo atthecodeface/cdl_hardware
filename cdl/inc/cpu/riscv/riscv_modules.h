@@ -68,11 +68,20 @@ extern module riscv_i32_pipeline_control( clock clk,
                                           input t_riscv_pipeline_response    pipeline_response,
                                           input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
                                           input  t_riscv_config              riscv_config,
-                                          input t_riscv_i32_trace            trace
+                                          input t_riscv_i32_trace            trace,
+                                          input  t_riscv_debug_mst               debug_mst,
+                                          output t_riscv_debug_tgt               debug_tgt,
+
+                                          input bit[6] rv_select
 )
 {
-    timing comb input csrs;
-    timing comb output pipeline_control;
+    timing to   rising clock clk csrs, pipeline_response, pipeline_fetch_data;
+    timing to   rising clock clk riscv_config, trace;
+    timing to   rising clock clk debug_mst;
+    timing from rising clock clk pipeline_control;
+    timing from rising clock clk debug_tgt;
+    timing comb input rv_select, riscv_config, csrs;
+    timing comb output pipeline_control, debug_tgt;
 }
 
 /*m riscv_i32_pipeline_control_fetch_req
@@ -157,7 +166,7 @@ module riscv_i32c_pipeline3( clock clk,
     timing from rising clock clk dmem_access_req, pipeline_response, csr_access;
     timing to   rising clock clk dmem_access_resp, pipeline_control, pipeline_fetch_data, coproc_response, csr_read_data;
     timing to   rising clock clk riscv_config;
-    timing comb input riscv_config, pipeline_control;
+    timing comb input riscv_config, pipeline_control, coproc_response;
     timing comb output pipeline_response;
 }
 
@@ -215,23 +224,6 @@ extern module riscv_i32_debug( clock clk         "System clock",
 {
     timing to   rising clock clk apb_request, debug_tgt;
     timing from rising clock clk apb_response, debug_mst;
-}
-
-/*m riscv_i32_pipeline_debug */
-extern module riscv_i32_pipeline_debug( clock clk,
-                                 input bit reset_n,
-                                 input  t_riscv_debug_mst debug_mst,
-                                 output t_riscv_debug_tgt debug_tgt,
-                                 output t_riscv_pipeline_debug_control debug_control,
-                                 input  t_riscv_pipeline_debug_response debug_response,
-
-                                 input bit[6] rv_select
-)
-{
-    timing to rising clock clk debug_mst, debug_response, rv_select;
-    timing from rising clock clk debug_control, debug_tgt;
-    timing comb input rv_select;
-    timing comb output debug_tgt;
 }
 
 /*m riscv_i32_ifetch_debug */

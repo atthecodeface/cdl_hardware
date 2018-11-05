@@ -150,6 +150,7 @@ then the instructions are decoded as illegal.
         }
         case riscv_opc_system: {
             idecode.immediate_valid = instruction.data[14]; // for csr write immediates only, data written is rs1
+            idecode.immediate       = bundle(27b0, idecode.rs1);
         }
         }
     }

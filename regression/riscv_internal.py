@@ -158,6 +158,7 @@ riscv_config = {"i32c":1,
                 "e32":1,
                 "i32m":1,
                 "i32m_fuse":1,
+                "debug_enable":1,
                 "coproc_disable":1,
                 "unaligned_mem":1,
 }

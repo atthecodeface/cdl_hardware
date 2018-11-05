@@ -56,8 +56,6 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
     net   t_riscv_debug_mst debug_mst;
     comb  t_riscv_debug_tgt debug_tgt;
     net   t_riscv_debug_tgt debug_tgt0;
-    net   t_riscv_pipeline_debug_control debug_control0;
-    comb  t_riscv_pipeline_debug_response debug_response0;
 
     net  t_riscv_mem_access_req  dmem_access_req;
     comb t_riscv_mem_access_resp dmem_access_resp;
@@ -154,7 +152,6 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
     comb t_riscv_irqs      irqs;
     riscv_instance: {
         tck_enable_fix = tck_enable;
-        debug_response0 = {*=0};
         debug_tgt  = debug_tgt0;
         se_test_harness th(clk <- jtag_tck, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
         riscv_config = {*=0};
@@ -163,6 +160,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
         riscv_config.i32m = 1;
         riscv_config.i32m_fuse = 1;
         riscv_config.coproc_disable = 0;
+        riscv_config.debug_enable = 1;
         irqs = {*=0};
         
         jtag_tap tap( jtag_tck <- jtag_tck_gated,
@@ -199,23 +197,18 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                             debug_tgt <= debug_tgt 
             );
 
-        riscv_i32_pipeline_debug pd0( clk <- riscv_clk,
-                                     reset_n <= reset_n,
-                                     debug_mst <= debug_mst,
-                                     debug_tgt => debug_tgt0,
-                                     debug_control => debug_control0,
-                                     debug_response <= debug_response0,
-
-                                     rv_select <= 0 );
 
         riscv_i32_pipeline_control pc(clk <- riscv_clk,
-                                      reset_n          <= reset_n,
-                                      csrs <= csrs,
-                                      pipeline_control => pipeline_control,
-                                      pipeline_response <= pipeline_response,
-                                      pipeline_fetch_data <= pipeline_fetch_data,
-                                      riscv_config     <= riscv_config,
-                                      trace            <= trace );
+                                                 reset_n <= reset_n,
+                                                 csrs <= csrs,
+                                                 pipeline_control => pipeline_control,
+                                                 pipeline_response <= pipeline_response,
+                                                 pipeline_fetch_data <= pipeline_fetch_data,
+                                                 riscv_config     <= riscv_config,
+                                                 trace            <= trace,
+                                                 debug_mst        <= debug_mst,
+                                                 debug_tgt       => debug_tgt0,
+                                                 rv_select <= 0 );
 
         riscv_i32_pipeline_control_fetch_req pc_fetch_req( csrs <= csrs,
                                                            pipeline_control <= pipeline_control,

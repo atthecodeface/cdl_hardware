@@ -67,6 +67,17 @@ module riscv_e32c_decode( input t_riscv_i32_inst    instruction,
     timing comb output idecode;
 }
 
+/*m riscv_i32_debug_decode  */
+extern
+module riscv_i32_debug_decode( input t_riscv_i32_inst instruction,
+                               output t_riscv_i32_decode idecode,
+                               input  t_riscv_config          riscv_config
+)
+{
+    timing comb input instruction, riscv_config;
+    timing comb output idecode;
+}
+
 /*m riscv_i32_alu  */
 extern
 module riscv_i32_alu( input t_riscv_i32_decode      idecode,
