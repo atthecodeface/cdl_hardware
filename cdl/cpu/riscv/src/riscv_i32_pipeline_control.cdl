@@ -113,6 +113,8 @@ typedef struct {
     t_riscv_word data0      "Data from a completed transaction; 0 otherwise";
     bit instruction_debug_valid "Asserted if instructino debug is valid (should only happen when halted";
     t_riscv_i32_inst_debug_op instruction_debug_op;
+    bit waiting_for_read_write;
+    bit read_write_completed;
 } t_debug_state;
 
 /*t t_ifetch_combs
@@ -208,12 +210,14 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                 debug_state.data0 <= debug_mst.data;
                 debug_state.instruction_debug_valid <= 1;
                 debug_state.instruction_debug_op    <= rv_inst_debug_op_read_reg;
+                debug_state.waiting_for_read_write   <= 1;
             }
             case rv_debug_write: {
                 assert((debug_state.fsm_state == debug_fsm_halted), "Debug module must be halted to do debug write op");
                 debug_state.arg   <= debug_mst.arg;
                 debug_state.instruction_debug_valid <= 1;
                 debug_state.instruction_debug_op    <= rv_inst_debug_op_write_reg;
+                debug_state.waiting_for_read_write   <= 1;
                 debug_state.data0 <= debug_mst.data;
             }
             case rv_debug_execute_progbuf: {
@@ -222,12 +226,22 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
             }
             }
         }
+        if (pipeline_response.rfw.valid && debug_state.waiting_for_read_write) {
+            debug_state.data0 <= pipeline_response.rfw.data;
+            debug_state.waiting_for_read_write   <= 0;
+            debug_state.read_write_completed  <= 1;
+            debug_state.resp <= rv_debug_resp_read_write_complete;
+            debug_state.attention <= 1;
+        }
 
         /*b Manage debug_state resumption response */
-        debug_state.resp <= {*=0};
         if (debug_state.resumed && !debug_state.resume_req) {
             debug_state.resumed <= 0;
             debug_state.attention <= 1;
+        }
+        if (debug_state.read_write_completed && debug_state.drive_response) {
+            debug_state.read_write_completed <= 0;
+            debug_state.resp <= rv_debug_resp_acknowledge;
         }
 
         /*b Handle debug state machine */

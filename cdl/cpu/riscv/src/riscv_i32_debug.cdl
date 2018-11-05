@@ -648,6 +648,7 @@ revision 0.13.
             debug_mst.op <= rv_debug_set_requests;
             debug_mst.arg[0] <= debug_state.halt_req;
             debug_mst.arg[1] <= debug_state.resume_req;
+            debug_state.hart_to_poll <= debug_state.hart_sel;
         } elsif (debug_combs.transfer_request) {
             debug_mst.valid  <= 1;
             debug_mst.select <= debug_state.hart_sel;
@@ -655,6 +656,7 @@ revision 0.13.
             debug_mst.op   <= (debug_state.command.transfer_op[0] ? rv_debug_write : rv_debug_read);
             debug_mst.arg  <= debug_state.command.reg_num;
             debug_mst.data <= debug_state.data0;
+            debug_state.hart_to_poll <= debug_state.hart_sel;
             debug_combs.mst_initiating_transfer = 1;
         } elsif (debug_combs.execute_request) {
             debug_mst.valid  <= 1;
@@ -662,6 +664,7 @@ revision 0.13.
             
             debug_mst.op   <= rv_debug_execute_progbuf;
             debug_mst.data <= debug_state.progbuf0;
+            debug_state.hart_to_poll <= debug_state.hart_sel;
             debug_combs.mst_initiating_execute = 1;
         } elsif (debug_tgt.attention) {
             debug_mst.valid  <= 1;
@@ -688,6 +691,9 @@ revision 0.13.
                 debug_combs.next_halted[debug_tgt.selected]         = debug_tgt.halted;
                 debug_combs.next_resumed[debug_tgt.selected]        = debug_tgt.resumed;
                 debug_combs.next_hit_breakpoint[debug_tgt.selected] = debug_tgt.hit_breakpoint;
+                if (debug_tgt.resp==rv_debug_resp_read_write_complete) {
+                    debug_combs.tgt_transfer_completing = 1;
+                }
             }
         }
         if (debug_combs.update_status) {
@@ -709,6 +715,7 @@ revision 0.13.
             apb_state.read_select <= read_select_dmstatus;
         }
         case dm_addr_abstract_cs: {  // progbufsize, cmd_busy, cmd_err, data count (clear cmd_err on write of 1)
+            apb_state.read_select <= read_select_abstractcs;
             apb_state.write_action <= write_action_none;  // clear cmd_err if written with 1, else do nothing
         }
         case dm_addr_abstract_cmd: { // cmd type in top 8 bits, control in bottom 24; ignore if cmd_err set
@@ -765,7 +772,7 @@ revision 0.13.
             debug_state.ndmreset <= apb_request.pwdata[1];
             debug_state.hart_sel <= apb_request.pwdata[6;16];
             debug_state.must_set_requests <= 1;
-            debug_state.halt_req <= apb_request.pwdata[31];
+            debug_state.halt_req   <= apb_request.pwdata[31];
             debug_state.resume_req <= apb_request.pwdata[30];
         // bit 29 is hart reset
         // bit 3 is set halt-on-reset-request
@@ -834,6 +841,7 @@ revision 0.13.
         }
         case  command_fsm_transfer_wait: {
             if (debug_combs.tgt_transfer_completing) {
+                debug_state.data0 <= debug_tgt.data;
                 debug_state.command.fsm_state <= command_fsm_execute_ready;
             }
         }

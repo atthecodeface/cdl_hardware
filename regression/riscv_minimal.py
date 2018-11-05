@@ -186,7 +186,27 @@ class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
         self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (apb_access)
         self.dm_write(0x10, 1) # Enable
         #self.dm_write(0x04, 0x1245678) # data0 = Initial PC
-        #self.dm_write(0x17, 0x00231001) # Abstract command to Write data0 to r1
+        #self.dm_write(0x17, 0x002307b1) # Abstract command to Write data0 to r1
+        #while True:
+        #    abstractcs = ((self.dm_read_slow(0x16)>>2)&0xffffffff)
+        #    print "AbstractCS %08x"%abstractcs
+        #    if (abstractcs & 0x1000)==0: break
+        #    pass
+        #self.dm_write(0x17, 0x00221001) # Abstract command to Read data0 to r1
+        #while True:
+        #    abstractcs = ((self.dm_read_slow(0x16)>>2)&0xffffffff)
+        #    print "AbstractCS %08x"%abstractcs
+        #    if (abstractcs & 0x1000)==0: break
+        #    pass
+        #print "Data0 %08x"%((self.dm_read_slow(0x04)>>2)&0xffffffff)
+        #self.dm_write(0x17, 0x002207b1) # Abstract command to Read data0 to r1
+        #while True:
+        #    abstractcs = ((self.dm_read_slow(0x16)>>2)&0xffffffff)
+        #    print "AbstractCS %08x"%abstractcs
+        #    if (abstractcs & 0x1000)==0: break
+        #    pass
+        #print "Data0 %08x"%((self.dm_read_slow(0x04)>>2)&0xffffffff)
+
         self.dm_write(0x04, 0) # data0 = Initial PC
         self.dm_write(0x17, 0x002307b1) # Abstract command to Write data0 to DEPC
         self.dm_write(0x10, 0x40000000) # Resume request (halt request removed)
