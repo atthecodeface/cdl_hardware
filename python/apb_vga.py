@@ -61,6 +61,7 @@ dprintf_data[6] = 0xffffffff
 program = {}
 program["code"] = []
 program["code"] += code_display_parameters(csr_select["vga_fbt"],displays["vga_640x480"])
+program["code"] += code_display_parameters(csr_select["lcd_fbt"],displays["vga_640x480"])
 program["code"] += [ (apb_rom.rom.op_set("increment",4),),
                      (apb_rom.rom.op_set("address",csr_dprintf_data),),
                      (apb_rom.rom.op_req("write_arg_inc",dprintf_data[0]),),

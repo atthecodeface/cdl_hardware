@@ -20,7 +20,7 @@
  */
 
 /*a Types */
-/*t t_de1_inuts */
+/*t t_de1_inputs */
 typedef struct {
     bit irda_rxd;
     bit[4]  keys;
