@@ -343,17 +343,32 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         }
         case ifetch_fsm_restarting: {
             ifetch_combs.fetch_action   = rv_pc_fetch_action_restart_at_pc;
-            if (pipeline_fetch_data.valid) {
-                ifetch_state.state <= ifetch_fsm_fetching;
+            ifetch_state.state <= ifetch_fsm_fetching;
+            if (pipeline_response.exec.trap.valid) { // vector interrupts if required, late decision
+                ifetch_state.pc <= bundle(csrs.mtvec.base, 2b0);
+                ifetch_state.state <= ifetch_fsm_restarting;
             }
         }
             // on a flush NEXT cycle pipeline_response.exec.pc MUST equal ifetch_req.address
             // it always will with this pipeline
         case ifetch_fsm_fetching: { // present request, decode should be valid, pipeline not empty
             ifetch_combs.fetch_action   = rv_pc_fetch_action_continue_fetching;
-            if (pipeline_fetch_data.valid && !pipeline_response.decode.decode_blocked) {
+            if (pipeline_fetch_data.valid && !pipeline_response.decode.blocked) {
                 ifetch_state.pc <= pipeline_fetch_data.pc;
             }
+            if (pipeline_response.exec.valid && (pipeline_response.exec.branch_taken != pipeline_response.exec.predicted_branch)) {
+                ifetch_state.pc <= pipeline_response.exec.pc_if_mispredicted; // late address, late decision
+                ifetch_state.state <= ifetch_fsm_restarting;
+            }
+            if (pipeline_response.exec.trap.mret) { // late decision
+                ifetch_state.pc <= csrs.mepc;
+                ifetch_state.state <= ifetch_fsm_restarting;
+            }
+            if (pipeline_response.exec.trap.valid) { // vector interrupts if required, late decision
+                ifetch_state.pc <= bundle(csrs.mtvec.base, 2b0);
+                ifetch_state.state <= ifetch_fsm_restarting;
+            }
+            
             //if  (debug_state.fsm_state==debug_fsm_halting) {
             //}
         }

@@ -252,10 +252,10 @@ An example implementation of could be
     required, reads the register file.
     """: {
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
-        pipeline_response.decode.decode_blocked = dec_state.valid && alu_state.valid && alu_combs.cannot_complete;
+        pipeline_response.decode.blocked = dec_state.valid && alu_state.valid && alu_combs.cannot_complete;
 
         dec_state.valid <= 0;
-        if (pipeline_response.decode.decode_blocked) {
+        if (pipeline_response.decode.blocked) {
             dec_state <= dec_state;
         } else {
             if (pipeline_fetch_data.valid) {
@@ -448,6 +448,9 @@ An example implementation of could be
                                    idecode          = alu_state.idecode,
                                    first_cycle = 1
         };
+        if (!alu_state.valid) {
+            alu_combs.control_data.pc = pipeline_control.decode_pc; // this is PC for decode OR next being fetched if that is not valid
+        }
         riscv_i32_control_flow control_flow( pipeline_control <= pipeline_control,
                                              control_data <= alu_combs.control_data,
                                              control_flow => alu_control_flow );

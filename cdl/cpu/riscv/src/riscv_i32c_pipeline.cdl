@@ -259,7 +259,7 @@ stage the multiply cannot support fused operations
         // possible add in valid and illegal (if valid && illegal then pipeline will flush)
         pipeline_response.decode.valid          = decexecrfw_state.valid;
         pipeline_response.decode.idecode        = decexecrfw_combs.idecode;
-        pipeline_response.decode.decode_blocked = 0;
+        pipeline_response.decode.blocked        = 0;
         pipeline_response.decode.branch_target  = 0; // used only if predict_branch - i.e. never in this pipeline
         pipeline_response.decode.enable_branch_prediction = 0; // Disable branch prediction as we always use exec control flow
 

@@ -738,10 +738,9 @@ typedef bit[2] t_riscv_pipeline_tag;
 typedef struct {
     // add in exec_wfi_continues, and exec_take_interrupt
     bit      valid;
-    bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
     t_riscv_pipeline_control_fetch_action fetch_action;
-    bit[32]  decode_pc "PC of current or next-to-be-fetched decode instruction";
-    t_riscv_mode mode "Mode to fetch in";
+    bit[32]  decode_pc "PC of instruction to be fetched";
+    t_riscv_mode mode "Mode the pipeline is executing in";
     bit          error;
     t_riscv_pipeline_tag tag;
     bit    interrupt_req;
@@ -755,7 +754,7 @@ typedef struct {
  */
 typedef struct {
     bit      valid             "Asserted if branch_target and idecode are valid";
-    bit      decode_blocked    "Asserted only if decode is valid, and it cannot progress";
+    bit      blocked           "Asserted only if decode is valid, and it cannot progress";
     bit[32]  branch_target     "Used if predict_branch";
     t_riscv_i32_decode idecode "Decode of instruction (if valid)";
     bit enable_branch_prediction "Asserted if branch prediction (and hence branch_target) is to be used";

@@ -210,15 +210,16 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                                                  debug_tgt       => debug_tgt0,
                                                  rv_select <= 0 );
 
-        riscv_i32_pipeline_control_fetch_req pc_fetch_req( csrs <= csrs,
-                                                           pipeline_control <= pipeline_control,
+        riscv_i32_pipeline_control_fetch_req pc_fetch_req( pipeline_control <= pipeline_control,
                                                            pipeline_response <= pipeline_response,
                                                            ifetch_req => rv_imem_access_req );
 
         riscv_i32_pipeline_control_fetch_data pc_fetch_data( pipeline_control <= pipeline_control,
                                                              ifetch_req  <= rv_imem_access_req,
                                                              ifetch_resp <= rv_imem_access_resp,
+                                                             pipeline_response <= pipeline_response,
                                                              pipeline_fetch_data => pipeline_fetch_data );
+
         riscv_i32_pipeline_control_csr_trace pc_csr_trace( pipeline_control <= pipeline_control,
                                                            pipeline_response <= pipeline_response,
                                                            pipeline_fetch_data <= pipeline_fetch_data,

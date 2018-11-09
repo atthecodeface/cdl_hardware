@@ -86,13 +86,12 @@ extern module riscv_i32_pipeline_control( clock clk,
 
 /*m riscv_i32_pipeline_control_fetch_req
  */
-extern module riscv_i32_pipeline_control_fetch_req( input t_riscv_csrs_minimal         csrs,
-                                                    input t_riscv_pipeline_control   pipeline_control,
+extern module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control   pipeline_control,
                                                     input t_riscv_pipeline_response  pipeline_response,
                                                     output t_riscv_fetch_req           ifetch_req
 )
 {
-    timing comb input csrs, pipeline_control, pipeline_response;
+    timing comb input pipeline_control, pipeline_response;
     timing comb output ifetch_req;
 }
 
@@ -101,10 +100,11 @@ extern module riscv_i32_pipeline_control_fetch_req( input t_riscv_csrs_minimal  
 extern module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_control   pipeline_control,
                                                      input t_riscv_fetch_req          ifetch_req,
                                                      input t_riscv_fetch_resp         ifetch_resp,
+                                                    input t_riscv_pipeline_response  pipeline_response,
                                                      output t_riscv_pipeline_fetch_data pipeline_fetch_data
 )
 {
-    timing comb input pipeline_control, ifetch_req, ifetch_resp;
+    timing comb input pipeline_control, pipeline_response, ifetch_req, ifetch_resp;
     timing comb output pipeline_fetch_data;
 }
 

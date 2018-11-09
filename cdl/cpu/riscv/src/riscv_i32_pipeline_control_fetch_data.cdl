@@ -66,6 +66,7 @@ include "cpu/riscv/riscv_internal_types.h"
 module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_control     pipeline_control,
                                               input  t_riscv_fetch_req           ifetch_req,
                                               input  t_riscv_fetch_resp          ifetch_resp,
+                                              input  t_riscv_pipeline_response   pipeline_response,
                                               output t_riscv_pipeline_fetch_data pipeline_fetch_data
 )
 {
@@ -91,7 +92,21 @@ module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_control    
         pipeline_fetch_data.dec_pc_if_mispredicted = ifetch_req.pc_if_mispredicted;
         pipeline_fetch_data.dec_predicted_branch   = ifetch_req.predicted_branch;
         pipeline_fetch_data.dec_flush_pipeline     = ifetch_req.flush_pipeline;
-        if (pipeline_control.instruction_debug.valid) {
+
+            if (pipeline_response.exec.valid && (pipeline_response.exec.branch_taken != pipeline_response.exec.predicted_branch)) {
+        pipeline_fetch_data.dec_flush_pipeline     = 1;
+        pipeline_fetch_data.valid = 0;
+            }
+            if (pipeline_response.exec.trap.valid) { // vector interrupts if required, late decision
+        pipeline_fetch_data.dec_flush_pipeline     = 1;
+        pipeline_fetch_data.valid = 0;
+            }
+            if (pipeline_response.exec.trap.mret) { // late decision
+        pipeline_fetch_data.dec_flush_pipeline     = 1;
+        pipeline_fetch_data.valid = 0;
+            }
+
+            if (pipeline_control.instruction_debug.valid) {
             pipeline_fetch_data.valid = 1;
             pipeline_fetch_data.instruction.debug  = pipeline_control.instruction_debug;
             pipeline_fetch_data.instruction.data   = pipeline_control.instruction_data;

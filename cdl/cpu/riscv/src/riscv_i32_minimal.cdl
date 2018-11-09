@@ -486,14 +486,17 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                       debug_mst        <= debug_mst,
                                       //debug_tgt       => ,
                                       rv_select <= 0 );
-        riscv_i32_pipeline_control_fetch_req pc_fetch_req( csrs <= csrs,
-                                                           pipeline_control <= pipeline_control,
+
+        riscv_i32_pipeline_control_fetch_req pc_fetch_req( pipeline_control <= pipeline_control,
                                                            pipeline_response <= pipeline_response,
                                                            ifetch_req => ifetch_req );
+
         riscv_i32_pipeline_control_fetch_data pc_fetch_data( pipeline_control <= pipeline_control,
                                                              ifetch_req <= ifetch_req,
                                                              ifetch_resp <= ifetch_resp,
+                                                             pipeline_response <= pipeline_response,
                                                              pipeline_fetch_data => pipeline_fetch_data );
+
         riscv_i32_pipeline_control_csr_trace pc_csr_trace( pipeline_control <= pipeline_control,
                                                            pipeline_response <= pipeline_response,
                                                            pipeline_fetch_data <= pipeline_fetch_data,
@@ -515,7 +518,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                      csr_access       => csr_access,
                                      csr_read_data    <= csr_data.read_data );
 
-        riscv_csrs_minimal csrs( clk <- clk,
+        riscv_csrs_minimal csrs( clk <- riscv_clk,
                                  reset_n <= reset_n,
                                  irqs <= irqs,
                                  csr_access     <= csr_access,

@@ -84,8 +84,7 @@ typedef struct {
 
 /*a Module
  */
-module riscv_i32_pipeline_control_fetch_req( input t_riscv_csrs_minimal        csrs,
-                                             input t_riscv_pipeline_control    pipeline_control,
+module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    pipeline_control,
                                              input t_riscv_pipeline_response   pipeline_response,
                                              output t_riscv_fetch_req          ifetch_req
 )
@@ -153,43 +152,14 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_csrs_minimal        c
             if (pipeline_response.decode.valid) {
                 ifetch_req.address    = ifetch_combs.fetch_next_pc; // early address
                 ifetch_req.sequential = ifetch_combs.fetch_sequential;
-                ifetch_req.flush_pipeline = 0;
-            } else { // Only for the high speed path
+            } else {
                 ifetch_req.valid = 1;
                 ifetch_req.address    = pipeline_control.decode_pc; // early address
                 ifetch_req.sequential = 0;
-                ifetch_req.flush_pipeline = 0;
-            }
-            if (pipeline_response.exec.valid && (pipeline_response.exec.branch_taken != pipeline_response.exec.predicted_branch)) {
-                ifetch_req.address = pipeline_response.exec.pc_if_mispredicted; // late address, late decision
-                ifetch_req.sequential = 0;
-                ifetch_req.flush_pipeline = 1;
-            }
-            if (pipeline_response.exec.trap.valid) { // vector interrupts if required, late decision
-                ifetch_req.address = bundle(csrs.mtvec.base, 2b0);
-                ifetch_req.sequential = 0;
-                ifetch_req.flush_pipeline = 1;
-            }
-            if (pipeline_response.exec.trap.mret) { // late decision
-                ifetch_req.address = csrs.mepc;
-                ifetch_req.sequential = 0;
-                ifetch_req.flush_pipeline = 1;
             }
         } elsif (pipeline_control.fetch_action == rv_pc_fetch_action_idle) {
             ifetch_req.flush_pipeline = 0;
         }
-
-        /*b High speed implementation
-         *  One actually wants a false path here probably
-         *  One could do a 'post-exec mispredict and kill current instruction'?
-         *  One could have a 'late address' and 'early address' from above;
-         *  In high speed mode always use 'early address' but invalidate the data if 'late address' was needed
-         */
-        // if (ifetch_req.flush_pipeline) {
-        // ifetch_req.address = pipeline_control.decode_pc;
-        // ifetch_req.valid = 0;
-        // ifetch_req.sequential = 0;
-        //}
 
         /*b All done
          */
