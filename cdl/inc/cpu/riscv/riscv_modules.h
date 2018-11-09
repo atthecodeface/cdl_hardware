@@ -63,6 +63,7 @@ module riscv_i32_minimal( clock clk,
  */
 extern module riscv_i32_pipeline_control( clock clk,
                                           input bit reset_n,
+                                          input bit riscv_clk_enable,
                                           input t_riscv_csrs_minimal         csrs,
                                           output t_riscv_pipeline_control    pipeline_control,
                                           input t_riscv_pipeline_response    pipeline_response,
@@ -75,6 +76,7 @@ extern module riscv_i32_pipeline_control( clock clk,
                                           input bit[6] rv_select
 )
 {
+    timing to   rising clock clk riscv_clk_enable;
     timing to   rising clock clk csrs, pipeline_response, pipeline_fetch_data;
     timing to   rising clock clk riscv_config, trace;
     timing to   rising clock clk debug_mst;
@@ -244,9 +246,11 @@ extern module riscv_i32_ifetch_debug( input t_riscv_fetch_req pipeline_ifetch_re
 extern
 module riscv_i32_trace( clock clk            "Clock for the CPU",
                         input bit reset_n     "Active low reset",
+                        input bit riscv_clk_enable,
                         input t_riscv_i32_trace trace "Trace signals"
 )
 {
+    timing to   rising clock clk riscv_clk_enable;
     timing to rising clock clk trace;
 }
 
@@ -254,6 +258,7 @@ module riscv_i32_trace( clock clk            "Clock for the CPU",
 extern
 module riscv_csrs_minimal( clock clk                                   "RISC-V clock",
                            input bit reset_n                           "Active low reset",
+                        input bit riscv_clk_enable,
                            input t_riscv_irqs       irqs               "Interrupts in to the CPU",
                            input t_riscv_csr_access csr_access         "RISC-V CSR access, combinatorially decoded",
                            output t_riscv_csr_data csr_data            "CSR response (including take interrupt and read data), from the current @a csr_access",
@@ -261,6 +266,7 @@ module riscv_csrs_minimal( clock clk                                   "RISC-V c
                            output t_riscv_csrs_minimal csrs            "CSR values"
     )
 {
+    timing to   rising clock clk riscv_clk_enable;
     timing to   rising clock clk csr_access, csr_controls, irqs;
     timing from rising clock clk csr_data, csrs;
     timing comb input csr_access;

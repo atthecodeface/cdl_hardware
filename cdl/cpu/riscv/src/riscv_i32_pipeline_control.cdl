@@ -95,13 +95,21 @@ typedef struct {
 
 /*t t_debug_state
  *
- * State of debugger 
+ * State of debugger target driving
+ *
+ */
+typedef struct {
+    bit attention;
+    bit response;
+} t_debug_drive;
+
+/*t t_debug_control
+ *
+ * State of debugger control FSM etc
  *
  */
 typedef struct {
     t_debug_fsm fsm_state;
-    bit drive_attention;
-    bit drive_response;
     bit halt_req;
     bit resume_req;
     bit halted;
@@ -115,6 +123,16 @@ typedef struct {
     t_riscv_i32_inst_debug_op instruction_debug_op;
     bit waiting_for_read_write;
     bit read_write_completed;
+} t_debug_control;
+
+/*t t_debug_state
+ *
+ * State of debugger 
+ *
+ */
+typedef struct {
+    t_debug_control control;
+    t_debug_drive   drive;
 } t_debug_state;
 
 /*t t_ifetch_combs
@@ -147,6 +165,7 @@ typedef struct {
  */
 module riscv_i32_pipeline_control( clock clk,
                                    input bit reset_n,
+                                   input bit                           riscv_clk_enable   "Clock enable for the RISC-V core",
                                    input t_riscv_csrs_minimal          csrs,
                                    output t_riscv_pipeline_control     pipeline_control,
                                    input t_riscv_pipeline_response     pipeline_response,
@@ -176,10 +195,14 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
     default reset active_low reset_n;
 
     comb t_debug_combs debug_combs;
-    clocked t_debug_state debug_state = {*=0, attention=1, halted=1, resumed=0, fsm_state=debug_fsm_halted};
+    clocked t_debug_state debug_state = {*=0, control={attention=1, halted=1, resumed=0, fsm_state=debug_fsm_halted}}
+        "debug_state must be on the constantly running clock, as the debug interface is shared between cores";
 
+    gated_clock clock clk active_high riscv_clk_enable riscv_clk;
+    default clock riscv_clk;
     comb    t_ifetch_combs         ifetch_combs;
-    clocked t_ifetch_state         ifetch_state = {*=0, mode=rv_mode_machine, pc=INITIAL_PC, state=ifetch_fsm_idle};
+    clocked t_ifetch_state         ifetch_state = {*=0, mode=rv_mode_machine, pc=INITIAL_PC, state=ifetch_fsm_idle}
+        "ifetch_state is on the RISC-V clock; debug_state must only uses ifetch_state with correct handshakes";
 
     /*b Debug state machine
      */
@@ -194,104 +217,97 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
 
         /*b If being addressed then update debug state
          */
-        debug_state.instruction_debug_valid <= 0;
+        debug_state.control.instruction_debug_valid <= 0;
         if (debug_combs.mst_valid) {
-            debug_state.attention <= 0;
+            debug_state.control.attention <= 0;
             full_switch (debug_mst.op) {
             case rv_debug_acknowledge: { // no-op as far as request to do is concerned
-                debug_state.attention <= 0;
+                debug_state.control.attention <= 0;
             }
             case rv_debug_set_requests: {
-                debug_state.halt_req <= debug_mst.arg[0];
-                debug_state.resume_req <= debug_mst.arg[1];
+                debug_state.control.halt_req <= debug_mst.arg[0];
+                debug_state.control.resume_req <= debug_mst.arg[1];
             }
             case rv_debug_read: {
-                assert((debug_state.fsm_state == debug_fsm_halted), "Debug module must be halted to do debug read op");
-                debug_state.arg   <= debug_mst.arg;
-                debug_state.data0 <= debug_mst.data;
-                debug_state.instruction_debug_valid <= 1;
-                debug_state.instruction_debug_op    <= rv_inst_debug_op_read_reg;
-                debug_state.waiting_for_read_write   <= 1;
+                assert((debug_state.control.fsm_state == debug_fsm_halted), "Debug module must be halted to do debug read op");
+                debug_state.control.arg   <= debug_mst.arg;
+                debug_state.control.data0 <= debug_mst.data;
+                debug_state.control.instruction_debug_valid <= 1;
+                debug_state.control.instruction_debug_op    <= rv_inst_debug_op_read_reg;
+                debug_state.control.waiting_for_read_write   <= 1;
             }
             case rv_debug_write: {
-                assert((debug_state.fsm_state == debug_fsm_halted), "Debug module must be halted to do debug write op");
-                debug_state.arg   <= debug_mst.arg;
-                debug_state.instruction_debug_valid <= 1;
-                debug_state.instruction_debug_op    <= rv_inst_debug_op_write_reg;
-                debug_state.waiting_for_read_write   <= 1;
-                debug_state.data0 <= debug_mst.data;
+                assert((debug_state.control.fsm_state == debug_fsm_halted), "Debug module must be halted to do debug write op");
+                debug_state.control.arg   <= debug_mst.arg;
+                debug_state.control.instruction_debug_valid <= 1;
+                debug_state.control.instruction_debug_op    <= rv_inst_debug_op_write_reg;
+                debug_state.control.waiting_for_read_write   <= 1;
+                debug_state.control.data0 <= debug_mst.data;
             }
             case rv_debug_execute_progbuf: {
-                assert((debug_state.fsm_state == debug_fsm_halted), "Debug module must be halted to do debug execute op");
-                debug_state.data0 <= debug_mst.data;
+                assert((debug_state.control.fsm_state == debug_fsm_halted), "Debug module must be halted to do debug execute op");
+                debug_state.control.data0 <= debug_mst.data;
             }
             }
         }
-        if (pipeline_response.rfw.valid && debug_state.waiting_for_read_write) {
-            debug_state.data0 <= pipeline_response.rfw.data;
-            debug_state.waiting_for_read_write   <= 0;
-            debug_state.read_write_completed  <= 1;
-            debug_state.resp <= rv_debug_resp_read_write_complete;
-            debug_state.attention <= 1;
+        if (pipeline_response.rfw.valid && debug_state.control.waiting_for_read_write) {
+            debug_state.control.data0 <= pipeline_response.rfw.data;
+            debug_state.control.waiting_for_read_write   <= 0;
+            debug_state.control.read_write_completed  <= 1;
+            debug_state.control.resp <= rv_debug_resp_read_write_complete;
+            debug_state.control.attention <= 1;
         }
 
         /*b Manage debug_state resumption response */
-        if (debug_state.resumed && !debug_state.resume_req) {
-            debug_state.resumed <= 0;
-            debug_state.attention <= 1;
+        if (debug_state.control.resumed && !debug_state.control.resume_req) {
+            debug_state.control.resumed <= 0;
+            debug_state.control.attention <= 1;
         }
-        if (debug_state.read_write_completed && debug_state.drive_response) {
-            debug_state.read_write_completed <= 0;
-            debug_state.resp <= rv_debug_resp_acknowledge;
+        if (debug_state.control.read_write_completed && debug_state.drive.response) {
+            debug_state.control.read_write_completed <= 0;
+            debug_state.control.resp <= rv_debug_resp_acknowledge;
         }
 
         /*b Handle debug state machine */
-        full_switch (debug_state.fsm_state) {
+        full_switch (debug_state.control.fsm_state) {
         case debug_fsm_running: {
-            if (debug_state.halt_req) {
-                debug_state.fsm_state <= debug_fsm_halting;
+            if (debug_state.control.halt_req) {
+                debug_state.control.fsm_state <= debug_fsm_halting;
             }
             /*if (pipeline_response.exec_valid && debug_response.exec_halting) { // ebreak?
-                debug_state.fsm_state <= debug_fsm_halted;
-                debug_state.halted <= 1;
-                debug_state.hit_breakpoint <= 1;
-                debug_state.attention <= 1;
+                debug_state.control.fsm_state <= debug_fsm_halted;
+                debug_state.control.halted <= 1;
+                debug_state.control.hit_breakpoint <= 1;
+                debug_state.control.attention <= 1;
                 }*/
         }
         case debug_fsm_halting: {
             if (0) {/*debug_response.exec_valid && debug_response.exec_halting) {*/
-                debug_state.fsm_state <= debug_fsm_halted;
-                debug_state.halted <= 1;
-                debug_state.attention <= 1;
+                debug_state.control.fsm_state <= debug_fsm_halted;
+                debug_state.control.halted <= 1;
+                debug_state.control.attention <= 1;
             }
         }
         case debug_fsm_halted: { // can resume or single step from here (or read/write register, or execute progbuf)
-            if (debug_state.resume_req && !debug_state.resumed) {
-                debug_state.fsm_state <= debug_fsm_resuming;
+            if (debug_state.control.resume_req && !debug_state.control.resumed) {
+                debug_state.control.fsm_state <= debug_fsm_resuming;
             }
         }
         case debug_fsm_resuming: {
-            if (ifetch_state.state != ifetch_fsm_idle) {
-                debug_state.fsm_state <= debug_fsm_running;
-                debug_state.hit_breakpoint <= 0;
-                debug_state.halted <= 0;
-                debug_state.resumed <= 1;
-                debug_state.attention <= 1;
+            if ((ifetch_state.state != ifetch_fsm_idle) && riscv_clk_enable) {
+                debug_state.control.fsm_state <= debug_fsm_running;
+                debug_state.control.hit_breakpoint <= 0;
+                debug_state.control.halted <= 0;
+                debug_state.control.resumed <= 1;
+                debug_state.control.attention <= 1;
             }
         }
         }
 
         /*b Kill debug state if debugger not enabled */
         if (!debug_enable || !riscv_config.debug_enable) {
-            debug_state.halt_req       <= 0;
-            debug_state.resume_req     <= 0;
-            debug_state.attention      <= 0;
-            debug_state.halted         <= 0;
-            debug_state.resumed        <= 0;
-            debug_state.hit_breakpoint <= 0;
-            debug_state.data0          <= 0;
-            debug_state.arg            <= 0;
-            debug_state.fsm_state      <= debug_fsm_resuming;
+            debug_state.control   <= debug_state.control;
+            debug_state.control.fsm_state <= debug_fsm_resuming;
         }
 
         /*b All done */
@@ -333,7 +349,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         ifetch_combs.fetch_action   = rv_pc_fetch_action_idle;
         full_switch (ifetch_state.state) {
         case ifetch_fsm_idle: {
-            if (debug_state.fsm_state == debug_fsm_resuming) {
+            if (debug_state.control.fsm_state == debug_fsm_resuming) {
                 ifetch_state.state <= ifetch_fsm_restarting;
                 ifetch_state.pc   <= csrs.depc;
                 if (!debug_enable || !riscv_config.debug_enable) {
@@ -410,11 +426,11 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         pipeline_control.interrupt_req     = ifetch_combs.interrupt_req;
         pipeline_control.interrupt_number  = ifetch_combs.interrupt_number;
         pipeline_control.interrupt_to_mode = rv_mode_machine;
-        pipeline_control.instruction_data  = debug_state.data0;
+        pipeline_control.instruction_data  = debug_state.control.data0;
         pipeline_control.instruction_debug = {
-            valid    = debug_state.instruction_debug_valid,
-            debug_op = debug_state.instruction_debug_op,
-            data     = debug_state.arg
+            valid    = debug_state.control.instruction_debug_valid,
+            debug_op = debug_state.control.instruction_debug_op,
+            data     = debug_state.control.arg
         };
     }
 
@@ -423,31 +439,29 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
     debug_response_driving """
     """ : {
 
-        debug_state.drive_attention <= 0;
-        debug_state.drive_response  <= 0;
+        debug_state.drive <= {*=0};
         if ((debug_mst.mask & rv_select) == debug_mst.select) {
-            debug_state.drive_attention <= 1;
+            debug_state.drive.attention <= 1;
         }
         if (debug_mst.valid && (rv_select==debug_mst.select)) {
-            debug_state.drive_response <= 1;
+            debug_state.drive.response <= 1;
         }
         if (!debug_enable || !riscv_config.debug_enable) {
-            debug_state.drive_response <= 0;
-            debug_state.drive_attention <= 0;
+            debug_state.drive <= {*=0};
         }
 
         debug_tgt = {*=0};
-        if (debug_state.drive_attention) {
-            debug_tgt.attention = debug_state.attention;
+        if (debug_state.drive.attention) {
+            debug_tgt.attention = debug_state.control.attention;
         }
-        if (debug_state.drive_response) {
+        if (debug_state.drive.response) {
             debug_tgt.valid          = 1;
             debug_tgt.selected       = rv_select;
-            debug_tgt.halted         = debug_state.halted;
-            debug_tgt.resumed        = debug_state.resumed;
-            debug_tgt.hit_breakpoint = debug_state.hit_breakpoint;
-            debug_tgt.resp           = debug_state.resp;
-            debug_tgt.data           = debug_state.data0;
+            debug_tgt.halted         = debug_state.control.halted;
+            debug_tgt.resumed        = debug_state.control.resumed;
+            debug_tgt.hit_breakpoint = debug_state.control.hit_breakpoint;
+            debug_tgt.resp           = debug_state.control.resp;
+            debug_tgt.data           = debug_state.control.data0;
         }
         if (!debug_enable || !riscv_config.debug_enable) {
             debug_tgt = {*=0};

@@ -36,8 +36,9 @@ typedef struct {
 } t_csr_write;
 
 /*a Module */
-module riscv_csrs_minimal( clock clk                                   "RISC-V clock",
+module riscv_csrs_minimal( clock clk                                   "Free-running clock",
                            input bit reset_n                           "Active low reset",
+                           input bit riscv_clk_enable                  "RISC-V clock enable",
                            input t_riscv_irqs          irqs            "Interrupts in to the CPU",
                            input t_riscv_csr_access    csr_access      "RISC-V CSR access, combinatorially decoded",
                            output t_riscv_csr_data     csr_data        "CSR respone (including read data), from the current @a csr_access",
@@ -122,6 +123,8 @@ WFI may always be a NOP.
      */
     default clock clk;
     default reset active_low reset_n;
+    gated_clock clock clk active_high riscv_clk_enable riscv_clk;
+    default clock riscv_clk;
     clocked t_riscv_csrs_minimal csrs={*=0};
     comb t_csr_write  csr_write;
 

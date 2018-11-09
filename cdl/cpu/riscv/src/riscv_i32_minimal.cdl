@@ -477,6 +477,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         debug_mst = {*=0};
         riscv_i32_pipeline_control pc(clk <- riscv_clk,
                                       reset_n          <= proc_reset_n,
+                                      riscv_clk_enable <= 1,
                                       csrs <= csrs,
                                       pipeline_control => pipeline_control,
                                       pipeline_response <= pipeline_response,
@@ -520,6 +521,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
 
         riscv_csrs_minimal csrs( clk <- riscv_clk,
                                  reset_n <= reset_n,
+                                 riscv_clk_enable <= 1,
                                  irqs <= irqs,
                                  csr_access     <= csr_access,
                                  csr_data       => csr_data,

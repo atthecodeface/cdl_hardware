@@ -146,6 +146,7 @@ module tb_riscv_i32_minimal( clock clk,
                          );
         riscv_i32_trace trace(clk <- clk,
                               reset_n <= reset_n,
+                              riscv_clk_enable <= 1,
                               trace <= trace );
     }
 }
