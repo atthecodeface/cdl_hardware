@@ -120,9 +120,9 @@ bbc_waves: ${TARGET_DIR}/py_engine.so
 	WAVES=1 BBC=1 ${REGRESS_ALL}
 
 riscv_flows: ${TARGET_DIR}/py_engine.so
-	${REGRESS_ALL} regression.riscv_minimal.riscv_i32c_pipeline3.${TEST}
+	(${REGRESS_ALL} regression.riscv_minimal.riscv_i32c_pipeline3.${TEST}) || echo "test failed but keep going"
 	./python/rv_flow.py > min_pipe3_${TEST}.flow
-	${REGRESS_ALL} regression.riscv_minimal.riscv_minimal.${TEST}
+	(${REGRESS_ALL} regression.riscv_minimal.riscv_i32_minimal.${TEST})  || echo "test failed but keep going"
 	./python/rv_flow.py > min_min_${TEST}.flow
 	diff min_pipe3_${TEST}.flow min_min_${TEST}.flow
 

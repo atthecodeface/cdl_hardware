@@ -141,24 +141,28 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    p
         ifetch_req.predicted_branch   = ifetch_combs.predict_branch;
         ifetch_req.pc_if_mispredicted = ifetch_combs.pc_if_mispredicted;
         ifetch_req.flush_pipeline = 1;
-        if (pipeline_control.fetch_action == rv_pc_fetch_action_restart_at_pc) {
+        full_switch (pipeline_control.fetch_action) {
+        case rv_pc_fetch_action_restart_at_pc: {
             ifetch_req.valid          = 1;
             ifetch_req.address        = pipeline_control.decode_pc; // == ifetch_state.pc
             ifetch_req.flush_pipeline = 1;
-        } elsif (pipeline_control.fetch_action == rv_pc_fetch_action_continue_fetching) {
+        }
+        case rv_pc_fetch_action_retry: {
+            ifetch_req.valid = 1;
+            ifetch_req.sequential = 1; // actually a repeat
+            ifetch_req.address    = ifetch_combs.fetch_next_pc; // early address - must be same as last time since the data is all the same
+            ifetch_req.flush_pipeline = 0;
+        }
+        case rv_pc_fetch_action_continue_fetching: {
             ifetch_req.valid = 1;
             ifetch_req.sequential = 1;
             ifetch_req.flush_pipeline = 0;
-            if (pipeline_response.decode.valid) {
-                ifetch_req.address    = ifetch_combs.fetch_next_pc; // early address
-                ifetch_req.sequential = ifetch_combs.fetch_sequential;
-            } else {
-                ifetch_req.valid = 1;
-                ifetch_req.address    = pipeline_control.decode_pc; // early address
-                ifetch_req.sequential = 0;
-            }
-        } elsif (pipeline_control.fetch_action == rv_pc_fetch_action_idle) {
+            ifetch_req.address    = ifetch_combs.fetch_next_pc; // early address
+            ifetch_req.sequential = ifetch_combs.fetch_sequential;
+        }
+        default: { // idle
             ifetch_req.flush_pipeline = 0;
+        }
         }
 
         /*b All done

@@ -184,7 +184,7 @@ module tb_riscv_i32c_pipeline3( clock clk,
                                   csr_read_data    <= csr_data.read_data,
                                   riscv_config <= riscv_config);
 
-        riscv_csrs_minimal csrs( clk <- clk,
+        riscv_csrs_minimal csrs( clk <- riscv_clk,
                                  reset_n <= reset_n,
                                  irqs <= irqs,
                                  csr_access     <= csr_access,

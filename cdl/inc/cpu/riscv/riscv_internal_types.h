@@ -729,6 +729,7 @@ typedef struct {
 typedef enum[2] {
     rv_pc_fetch_action_idle,
     rv_pc_fetch_action_restart_at_pc,
+    rv_pc_fetch_action_retry,
     rv_pc_fetch_action_continue_fetching
 } t_riscv_pipeline_control_fetch_action;
 
