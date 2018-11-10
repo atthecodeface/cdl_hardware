@@ -255,7 +255,8 @@ WFI may always be a NOP.
             csrs.mstatus.mpie <= csrs.mstatus.mie;
             csrs.mstatus.mie  <= 0;
         } else {
-            if (csr_controls.trap.mret) { // note, should enter mode 'csrs.mstatus.mpp'
+            if (csr_controls.trap.ret) { // note, should enter mode 'csrs.mstatus.mpp'
+                // cause must be riscv_trap_cause_ret_mret
                 csrs.mstatus.mpp  <= 2b11; //rv_mode_machine;
                 csrs.mstatus.mpie <= 1;
                 csrs.mstatus.mie  <= csrs.mstatus.mpie;
@@ -303,7 +304,6 @@ WFI may always be a NOP.
             case riscv_trap_cause_store_fault:            { csrs.mcause <= bundle(24b0, riscv_mcause_store_fault); }
             case riscv_trap_cause_uecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_uecall); }
             case riscv_trap_cause_secall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_secall); }
-            case riscv_trap_cause_hecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_hecall); }
             case riscv_trap_cause_mecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_mecall); }
             default:                                      { csrs.mcause <= bundle(1b1, 23b0, 4b0, csr_controls.trap.cause[4;0]); } // interrupts
             }

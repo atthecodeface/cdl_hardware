@@ -96,16 +96,23 @@ typedef enum[3] {
 } t_riscv_mode;
 
 /*t t_riscv_fetch_req
+ *
+ *
+ *
  */
+typedef enum[2] {
+    rv_fetch_none,
+    rv_fetch_nonsequential,
+    rv_fetch_sequential,
+    rv_fetch_repeat,
+} t_riscv_fetch_req_type;
 typedef struct {
-    bit      valid;
+    bit      flush_pipeline         "Asserted if prefetch should flush any pipeline";
+    t_riscv_fetch_req_type req_type "Request type - none, nonseq, seq, repeat; if flush only none, nonseq";
     bit[32]  address;
-    bit      sequential;
     t_riscv_mode mode;
-    bit     predicted_branch   "Only used if branch prediction is supported - so not for single cycle pipeline";
-    bit[32] pc_if_mispredicted "Only used if branch prediction is supported - so not for single cycle pipeline";
-    bit     flush_pipeline;
-    // will_take?
+    bit     predicted_branch   "Only used if branch prediction is supported - so not for single cycle pipeline; for internal use really";
+    bit[32] pc_if_mispredicted "Only used if branch prediction is supported - so not for single cycle pipeline for internal use really";
 } t_riscv_fetch_req;
 
 /*t t_riscv_fetch_resp

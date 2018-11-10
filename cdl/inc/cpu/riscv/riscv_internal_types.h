@@ -277,13 +277,12 @@ typedef enum[8] {
     riscv_mcause_store_fault            = 7,
     riscv_mcause_uecall                 = 8,
     riscv_mcause_secall                 = 9,
-    riscv_mcause_hecall                 = 10,
     riscv_mcause_mecall                 = 11,
 } t_riscv_mcause;
 
 /*t t_riscv_trap_cause
  */
-typedef enum[5] {
+typedef enum[4] {
     riscv_trap_cause_instruction_misaligned = 0,
     riscv_trap_cause_instruction_fault      = 1,
     riscv_trap_cause_illegal_instruction    = 2,
@@ -294,9 +293,12 @@ typedef enum[5] {
     riscv_trap_cause_store_fault            = 7,
     riscv_trap_cause_uecall                 = 8,
     riscv_trap_cause_secall                 = 9,
-    riscv_trap_cause_hecall                 = 10,
     riscv_trap_cause_mecall                 = 11,
-    riscv_trap_cause_interrupt              = 16,
+    riscv_trap_cause_interrupt              = 15,
+    riscv_trap_cause_ret_mret               = 0,
+    riscv_trap_cause_ret_sret               = 1,
+    riscv_trap_cause_ret_uret               = 2,
+    riscv_trap_cause_ret_dret               = 3,
 } t_riscv_trap_cause;
 
 /*a CSR types */
@@ -337,7 +339,7 @@ typedef struct {
     t_riscv_trap_cause cause;
     bit[32] pc;
     bit[32] value;
-    bit mret;
+    bit ret;
     bit vector;
 } t_riscv_i32_trap;
 
@@ -744,6 +746,7 @@ typedef struct {
     t_riscv_mode mode "Mode the pipeline is executing in";
     bit          error;
     t_riscv_pipeline_tag tag;
+    bit    halt                    "Halt the CPU by 'faking' an ebreak";
     bit    interrupt_req;
     bit[4] interrupt_number;
     t_riscv_mode interrupt_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";

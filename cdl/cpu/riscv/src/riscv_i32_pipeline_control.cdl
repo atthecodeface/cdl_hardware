@@ -307,7 +307,6 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         /*b Kill debug state if debugger not enabled */
         if (!debug_enable || !riscv_config.debug_enable) {
             debug_state.control   <= debug_state.control;
-            debug_state.control.fsm_state <= debug_fsm_resuming;
         }
 
         /*b All done */
@@ -349,12 +348,14 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         ifetch_combs.fetch_action   = rv_pc_fetch_action_idle;
         full_switch (ifetch_state.state) {
         case ifetch_fsm_idle: {
-            if (debug_state.control.fsm_state == debug_fsm_resuming) {
+            if (debug_state.control.fsm_state == debug_fsm_resuming){
                 ifetch_state.state <= ifetch_fsm_restarting;
                 ifetch_state.pc   <= csrs.depc;
-                if (!debug_enable || !riscv_config.debug_enable) {
-                    ifetch_state.pc   <= INITIAL_PC;
-                }
+                ifetch_state.mode <= rv_mode_machine;
+            }
+            if (!debug_enable || !riscv_config.debug_enable) {
+                ifetch_state.state <= ifetch_fsm_restarting;
+                ifetch_state.pc   <= INITIAL_PC;
                 ifetch_state.mode <= rv_mode_machine;
             }
         }
@@ -385,7 +386,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                 ifetch_state.pc <= pipeline_response.exec.pc_if_mispredicted; // late address, late decision
                 ifetch_state.state <= ifetch_fsm_restarting;
             }
-            if (pipeline_response.exec.trap.mret) { // late decision
+            if (pipeline_response.exec.trap.ret) { // late decision
                 ifetch_state.pc <= csrs.mepc;
                 ifetch_state.state <= ifetch_fsm_restarting;
                 ifetch_state.mode <= rv_mode_machine;
@@ -396,26 +397,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                 ifetch_state.mode <= rv_mode_machine;
             }
             
-            //if  (debug_state.fsm_state==debug_fsm_halting) {
-            //}
         }
-            /*
-        case debug_fsm_running: {
-            debug_control.kill_fetch = 0;
-        }
-        case debug_fsm_halting: {
-            debug_control.valid = 1;
-            debug_control.kill_fetch = 1;
-            debug_control.halt_request = 1; // forces entry to debug mode
-        }
-        case debug_fsm_halted: {
-            debug_control.valid = 1;
-            debug_control.kill_fetch = 1;
-        }
-        case debug_fsm_resuming: {
-            debug_control.valid = 1;
-            debug_control.fetch_dret = 1; // forces a dret?
-            */
         }
 
         pipeline_control                   = {*=0};

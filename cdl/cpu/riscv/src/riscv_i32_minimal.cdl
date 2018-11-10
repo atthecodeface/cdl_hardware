@@ -256,11 +256,11 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         full_switch (riscv_clock_phase) {
         case rcp_clock_high: { // riscv_clk has just gone high, so core is presenting memory requests
             riscv_clock_action = riscv_clock_action_fall;
-            if (ifetch_req.valid) {
+            if (ifetch_req.req_type != rv_fetch_none) {
                 riscv_clock_action = riscv_clock_action_ifetch;
                 if (!i32c_force_disable || riscv_config.i32c) {
                     if (ifetch_req.address[1]) {
-                        if (ifetch_req.sequential) {
+                        if (ifetch_req.req_type != rv_fetch_nonsequential) {
                             riscv_clock_action = riscv_clock_action_ifetch_second16;
                         } else {
                             riscv_clock_action = riscv_clock_action_ifetch_first16;
@@ -427,7 +427,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             }
             if (riscv_clock_phase==rcp_ifetch_second16_in_progress) {
                 ifetch_reg <= bundle(mem_read_data[16;0],ifetch_reg[16;16]);
-                if (ifetch_req.sequential) {
+                if (ifetch_req.req_type != rv_fetch_nonsequential) {
                     ifetch_reg <= bundle(mem_read_data[16;0],ifetch_last16_reg);
                 }
                 ifetch_last16_reg <= mem_read_data[16;16];
@@ -435,7 +435,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         }
 
         ifetch_resp = {*=0};
-        ifetch_resp.valid = ifetch_req.valid;
+        ifetch_resp.valid = (ifetch_req.req_type != rv_fetch_none);
         ifetch_resp.data  = mem_read_data;
         if (ifetch_src == ifetch_src_reg) {
             ifetch_resp.data  = ifetch_reg;
@@ -443,7 +443,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         if (i32c_force_disable==0) {
             if (ifetch_src == ifetch_src_reg16) { // only compressed, and only if (riscv_clock_phase==rcp_ifetch_second16_in_progress)
                 ifetch_resp.data  = bundle(mem_read_data[16;0],ifetch_reg[16;16]);
-                if (ifetch_req.sequential) {
+                if (ifetch_req.req_type != rv_fetch_nonsequential) {
                     ifetch_resp.data  = bundle(mem_read_data[16;0],ifetch_last16_reg);
                 }
             }

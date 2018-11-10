@@ -123,7 +123,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
         }
         last_imem_mem_read_data <= imem_mem_read_data;
         se_sram_srw_16384x32 imem(sram_clock <- clk,
-                                  select         <= imem_access_req.valid & (riscv_clk_cycle_0 || riscv_clk_cycle_1),
+                                  select         <= (imem_access_req.req_type!=rv_fetch_none) & (riscv_clk_cycle_0 || riscv_clk_cycle_1),
                                   read_not_write <= 1,
                                   write_enable   <= -1,
                                   address        <= imem_access_req.address[14;2],
