@@ -848,7 +848,7 @@ revision 0.13.
         case  command_fsm_execute_ready: {
             debug_combs.execute_request = 1;
             if (!debug_state.command.do_execute) {
-                debug_combs.execute_request = 1;
+                debug_combs.execute_request = 0;
                 debug_state.abstractcs_busy <= 0;
                 debug_state.command.fsm_state <= command_fsm_idle;
             }

@@ -80,8 +80,8 @@ typedef fsm {
     debug_fsm_halting;
     debug_fsm_halted;
     debug_fsm_resuming;
-        
-    // runnning, halting, resuming, single step, read register_start, read_register_wait, write register_start, write_register_wait, 
+    debug_fsm_start_progbuf;
+    debug_fsm_executing_progbuf;
 } t_debug_fsm;
 
 /*t t_debug_combs
@@ -112,6 +112,7 @@ typedef struct {
     t_debug_fsm fsm_state;
     bit halt_req;
     bit resume_req;
+    bit exec_progbuf_req;
     bit halted;
     bit resumed;
     bit attention;
@@ -265,6 +266,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
             case rv_debug_execute_progbuf: {
                 assert((debug_state.control.fsm_state == debug_fsm_halted), "Debug module must be halted to do debug execute op");
                 debug_state.control.data0 <= debug_mst.data;
+                debug_state.control.exec_progbuf_req <= 1;
             }
             }
         }
@@ -309,9 +311,23 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
             if (debug_state.control.resume_req && !debug_state.control.resumed) {
                 debug_state.control.fsm_state <= debug_fsm_resuming;
             }
+            if (debug_state.control.exec_progbuf_req) {
+                debug_state.control.exec_progbuf_req <= 0;
+                debug_state.control.fsm_state <= debug_fsm_start_progbuf;
+            }
+        }
+        case debug_fsm_start_progbuf: {
+            if ((ifetch_state.state != ifetch_fsm_halted) && riscv_clk_enable) { // wait for pipeline to be empty?
+                debug_state.control.fsm_state <= debug_fsm_executing_progbuf;
+            }
+        }
+        case debug_fsm_executing_progbuf: {
+            if ((ifetch_state.state == ifetch_fsm_halted) && riscv_clk_enable) { // wait for pipeline to be empty?
+                debug_state.control.fsm_state <= debug_fsm_halted;
+            }
         }
         case debug_fsm_resuming: {
-            if ((ifetch_state.state != ifetch_fsm_halted) && riscv_clk_enable) {
+            if ((ifetch_state.state != ifetch_fsm_halted) && riscv_clk_enable) { // wait for pipeline to be empty?
                 debug_state.control.fsm_state <= debug_fsm_running;
                 debug_state.control.hit_breakpoint <= 0;
                 debug_state.control.halted <= 0;
@@ -372,6 +388,11 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                 ifetch_state.pc   <= csrs.depc;
                 ifetch_state.mode <= rv_mode_machine;
             }
+            if (debug_state.control.fsm_state == debug_fsm_start_progbuf) {
+                ifetch_state.state <= ifetch_fsm_restarting;
+                ifetch_state.pc   <= 0xffffff00;
+                ifetch_state.mode <= rv_mode_debug;
+            }
             if (ifetch_combs.debug_disabled) {
                 ifetch_state.state <= ifetch_fsm_restarting;
                 ifetch_state.pc   <= INITIAL_PC;
@@ -420,7 +441,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                 } else {
                     ifetch_state.state <= ifetch_fsm_restarting;
                 }
-                ifetch_state.mode <= rv_mode_machine;
+                ifetch_state.mode <= pipeline_control.interrupt_to_mode;
                 ifetch_state.pc <= bundle(csrs.mtvec.base, 2b0);
             }
             }   
@@ -434,7 +455,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         pipeline_control.mode              = ifetch_state.mode;
         pipeline_control.interrupt_req     = ifetch_combs.interrupt_req  || ifetch_state.halt_req;
         pipeline_control.interrupt_number  = ifetch_combs.interrupt_number;
-        pipeline_control.interrupt_to_mode = ifetch_state.halt_req ? rv_mode_debug : rv_mode_machine;
+        pipeline_control.interrupt_to_mode = ifetch_state.halt_req ? rv_mode_debug : ifetch_state.mode;
         pipeline_control.instruction_data  = debug_state.control.data0;
         pipeline_control.instruction_debug = {
             valid    = debug_state.control.instruction_debug_valid,

@@ -120,6 +120,7 @@ typedef enum[3] {
 typedef struct {
     bit      flush_pipeline         "Asserted if prefetch should flush any pipeline";
     t_riscv_fetch_req_type req_type "Request type - none, nonseq, seq, repeat; if flush only none, nonseq";
+    bit      debug_fetch            "Asserted if fetch of a debug location (data0 or ebreak)";
     bit[32]  address;
     t_riscv_mode mode;
     bit     predicted_branch   "Only used if branch prediction is supported - so not for single cycle pipeline; for internal use really";
