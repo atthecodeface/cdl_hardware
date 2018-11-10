@@ -252,7 +252,7 @@ typedef enum[4] {
 
     riscv_subop_ecall  = 0,
     riscv_subop_ebreak = 1,
-    riscv_subop_mret   = 2,
+    riscv_subop_mret   = 2, // possibly need uret and sret - see table 6.1 in priv spec 1.10
     riscv_subop_mwfi   = 3,
 
     riscv_subop_fence   = 0, // to match riscv_op_f3

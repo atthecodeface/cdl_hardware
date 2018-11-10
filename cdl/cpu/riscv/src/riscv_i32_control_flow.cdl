@@ -80,7 +80,6 @@ module riscv_i32_control_flow( input  t_riscv_pipeline_control  pipeline_control
         }
         if (pipeline_control.interrupt_req && control_data.interrupt_ack) {
             control_flow.trap.valid = 1;
-            //control_flow.trap.ebreak = 1; ??
             control_flow.trap.ret = 0;
             control_flow.trap.cause = riscv_trap_cause_interrupt;
             control_flow.trap.cause[4;0] = pipeline_control.interrupt_number;

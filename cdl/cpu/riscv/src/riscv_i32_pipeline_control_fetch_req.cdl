@@ -153,7 +153,10 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    p
         }
         case rv_pc_fetch_action_continue_fetching: {
             ifetch_req.flush_pipeline = 0;
-            ifetch_req.req_type       = ifetch_combs.fetch_sequential ? rv_fetch_sequential : rv_fetch_nonsequential;
+            ifetch_req.req_type       = rv_fetch_nonsequential;
+            if (ifetch_combs.fetch_sequential) {
+                ifetch_req.req_type = (pipeline_response.decode.idecode.is_compressed) ? rv_fetch_sequential_16 : rv_fetch_sequential_32;
+            }
             ifetch_req.address        = ifetch_combs.fetch_next_pc; // early address
         }
         default: { // idle
