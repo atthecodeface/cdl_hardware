@@ -251,9 +251,11 @@ WFI may always be a NOP.
 
         /*b Handle MSTATUS */
         if (csr_controls.trap.valid) {
-            csrs.mstatus.mpp  <= 2b11; //rv_mode_machine; // Since this is all that is supported; actually 'current mode'
-            csrs.mstatus.mpie <= csrs.mstatus.mie;
-            csrs.mstatus.mie  <= 0;
+            if (csr_controls.trap.to_mode == rv_mode_machine) {
+                csrs.mstatus.mpp  <= 2b11; //rv_mode_machine; // Since this is all that is supported; actually 'current mode'
+                csrs.mstatus.mpie <= csrs.mstatus.mie;
+                csrs.mstatus.mie  <= 0;
+            }
         } else {
             if (csr_controls.trap.ret) { // note, should enter mode 'csrs.mstatus.mpp'
                 // cause must be riscv_trap_cause_ret_mret
@@ -273,8 +275,10 @@ WFI may always be a NOP.
             csrs.mepc <= csr_write.data;
         }
         if (csr_controls.trap.valid) {
-            // should use interrupt_to_mode if supporting more than machine mode
-            csrs.mepc <= csr_controls.trap.pc;
+            if (csr_controls.trap.to_mode == rv_mode_machine) {
+                // should use interrupt_to_mode if supporting more than machine mode
+                csrs.mepc <= csr_controls.trap.pc;
+            }
         }
 
         /*b Handle MTVEC state */
@@ -293,19 +297,22 @@ WFI may always be a NOP.
             csrs.mcause <= csr_write.data;
         }
         if (csr_controls.trap.valid) {
-            full_switch (csr_controls.trap.cause) {
-            case riscv_trap_cause_instruction_misaligned: { csrs.mcause <= bundle(24b0, riscv_mcause_instruction_misaligned); }
-            case riscv_trap_cause_instruction_fault:      { csrs.mcause <= bundle(24b0, riscv_mcause_instruction_fault); }
-            case riscv_trap_cause_illegal_instruction:    { csrs.mcause <= bundle(24b0, riscv_mcause_illegal_instruction); }
-            case riscv_trap_cause_breakpoint:             { csrs.mcause <= bundle(24b0, riscv_mcause_breakpoint); }
-            case riscv_trap_cause_load_misaligned:        { csrs.mcause <= bundle(24b0, riscv_mcause_load_misaligned); }
-            case riscv_trap_cause_load_fault:             { csrs.mcause <= bundle(24b0, riscv_mcause_load_fault); }
-            case riscv_trap_cause_store_misaligned:       { csrs.mcause <= bundle(24b0, riscv_mcause_store_misaligned); }
-            case riscv_trap_cause_store_fault:            { csrs.mcause <= bundle(24b0, riscv_mcause_store_fault); }
-            case riscv_trap_cause_uecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_uecall); }
-            case riscv_trap_cause_secall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_secall); }
-            case riscv_trap_cause_mecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_mecall); }
-            default:                                      { csrs.mcause <= bundle(1b1, 23b0, 4b0, csr_controls.trap.cause[4;0]); } // interrupts
+            if (csr_controls.trap.to_mode == rv_mode_machine) {
+            
+                full_switch (csr_controls.trap.cause) {
+                case riscv_trap_cause_instruction_misaligned: { csrs.mcause <= bundle(24b0, riscv_mcause_instruction_misaligned); }
+                case riscv_trap_cause_instruction_fault:      { csrs.mcause <= bundle(24b0, riscv_mcause_instruction_fault); }
+                case riscv_trap_cause_illegal_instruction:    { csrs.mcause <= bundle(24b0, riscv_mcause_illegal_instruction); }
+                case riscv_trap_cause_breakpoint:             { csrs.mcause <= bundle(24b0, riscv_mcause_breakpoint); }
+                case riscv_trap_cause_load_misaligned:        { csrs.mcause <= bundle(24b0, riscv_mcause_load_misaligned); }
+                case riscv_trap_cause_load_fault:             { csrs.mcause <= bundle(24b0, riscv_mcause_load_fault); }
+                case riscv_trap_cause_store_misaligned:       { csrs.mcause <= bundle(24b0, riscv_mcause_store_misaligned); }
+                case riscv_trap_cause_store_fault:            { csrs.mcause <= bundle(24b0, riscv_mcause_store_fault); }
+                case riscv_trap_cause_uecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_uecall); }
+                case riscv_trap_cause_secall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_secall); }
+                case riscv_trap_cause_mecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_mecall); }
+                default:                                      { csrs.mcause <= bundle(1b1, 23b0, 4b0, csr_controls.trap.cause[4;0]); } // interrupts
+                }
             }
         }
 

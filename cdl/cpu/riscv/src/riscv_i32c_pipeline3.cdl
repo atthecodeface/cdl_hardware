@@ -255,7 +255,7 @@ An example implementation of could be
         pipeline_response.decode.blocked = dec_state.valid && alu_state.valid && alu_combs.cannot_complete;
 
         dec_state.valid <= 0;
-        if (pipeline_response.decode.blocked) {
+        if (pipeline_response.decode.blocked && !pipeline_fetch_data.dec_flush_pipeline) {
             dec_state <= dec_state;
         } else {
             if (pipeline_fetch_data.valid) {
@@ -330,7 +330,7 @@ An example implementation of could be
         /*b Record state */
         alu_state.valid <= 0;
         alu_state.idecode.rd_written <= 0; // Ensure it is cleared if invalid
-        if (alu_combs.cannot_complete) {
+        if (alu_combs.cannot_complete && !alu_control_flow.async_cancel) {
             if (!alu_combs.cannot_start) {
                 alu_state.first_cycle <= 0;
             }
@@ -415,7 +415,7 @@ An example implementation of could be
         if (!alu_combs.valid_legal) {
             alu_combs.csr_access.access = riscv_csr_access_none;
         }
-        alu_combs.csr_access.access_cancelled = 0;
+        alu_combs.csr_access.access_cancelled = alu_control_flow.async_cancel;
         csr_access = alu_combs.csr_access;
 
         /*b ALU stage result */
@@ -431,7 +431,7 @@ An example implementation of could be
         alu_combs.dmem_exec = { idecode        = alu_state.idecode,
                                 arith_result   = alu_result.arith_result, // address of access
                                 rs2            = alu_combs.rs2,    // data for access (before rotation)
-                                exec_committed = alu_state.valid, // alu_combs.exec_cancelled,
+                                exec_committed = alu_state.valid && !alu_control_flow.async_cancel, // alu_combs.exec_cancelled,
                                 first_cycle = 1
         };
         riscv_i32_dmem_request dmem_req( dmem_exec    <= alu_combs.dmem_exec,
@@ -459,7 +459,7 @@ An example implementation of could be
         /*b Pipeline response from exec */
         pipeline_response.exec.valid           = alu_state.valid;
         pipeline_response.exec.cannot_start    = alu_combs.blocked_by_mem;
-        pipeline_response.exec.cannot_complete = alu_combs.blocked_by_mem;
+        pipeline_response.exec.cannot_complete = alu_combs.blocked_by_mem || alu_control_flow.async_cancel;
         pipeline_response.exec.interrupt_ack   = pipeline_control.interrupt_req;
         pipeline_response.exec.is_compressed   = alu_state.idecode.is_compressed;
         pipeline_response.exec.pc              = alu_state.pc;
@@ -500,7 +500,7 @@ An example implementation of could be
         mem_state.valid        <= 0;
         mem_state.rd_written   <= 0;
         mem_state.rd_from_mem  <= 0;
-        if (alu_combs.valid_legal && !alu_combs.cannot_complete) {
+        if (alu_combs.valid_legal && !alu_combs.cannot_complete && !alu_control_flow.async_cancel) { // better if async control flow interrupt
             mem_state.valid         <= 1;
             mem_state.dmem_request  <= alu_combs_dmem_request;
             if (alu_combs_dmem_request.reading && alu_state.idecode.rd_written) { // && does not require another cycle?

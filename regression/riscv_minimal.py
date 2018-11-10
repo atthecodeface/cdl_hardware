@@ -120,7 +120,10 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
         self.bfm_wait(10)
         simple_tb.base_th.run_start(self)
         self.run_start()
-        self.bfm_wait(self.run_time-10-self.global_cycle()/2)
+        delay = self.run_time-10-self.global_cycle()/2
+        if delay<0: delay=1
+        print "%d: Waiting for test for %d cycles (run time is %d)"%(self.global_cycle(),delay,self.run_time)
+        self.bfm_wait(delay)
         #self.ios.b.drive(1)
         self.check_memory("Check memory after run complete (%d)"%self.global_cycle())
         self.finishtest(0,"")
@@ -141,6 +144,7 @@ class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
 
 #c c_riscv_minimal_test_dump_with_debug
 class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
+    num_pauses = 10
     #f dm_write
     def dm_write(self, address, data, write_ir=False):
         """
@@ -178,6 +182,21 @@ class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
         """
         data = self.jtag_write_drs(dr_bits = bits_of_n(50,((address&0xffff)<<34)|(0<<2)|(1)))
         return int_of_bits(data)
+    #f resume_riscv
+    def resume_riscv(self, n=0):
+        self.dm_write(0x10, 0x40000001) # Resume request (halt request removed)
+        status = ((self.dm_read_slow(0x11)>>2)&0xffffffff) # Read status
+        print "%d:%d: Status bit 17 resume_ack and bit 11 running_all should be set %08x"%(self.global_cycle(), n, status)
+        self.dm_write(0x10, 0x00000001) # Resume request (halt request removed)
+        status = ((self.dm_read_slow(0x11)>>2)&0xffffffff) # Read status
+        print "%d:%d: Status bit 17 resume_ack should now be clear %08x"%(self.global_cycle(), n, status)
+        pass
+    #f halt_riscv
+    def halt_riscv(self, n=0):
+        self.dm_write(0x10, 0x80000001) # Halt request (resume request removed)
+        status = ((self.dm_read_slow(0x11)>>2)&0xffffffff) # Read status
+        print "%d:%d: Status bit 9 is halted_all and should be set %08x"%(self.global_cycle(), n, status)
+        pass
     #f run_start
     def run_start(self):
         print "Start using JTAG"
@@ -209,7 +228,15 @@ class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
 
         self.dm_write(0x04, 0) # data0 = Initial PC
         self.dm_write(0x17, 0x002307b1) # Abstract command to Write data0 to DEPC
-        self.dm_write(0x10, 0x40000000) # Resume request (halt request removed)
+        self.resume_riscv()
+        for i in range(self.num_pauses):
+            delay = (i+1)*self.run_time/(self.num_pauses+1)-10-self.global_cycle()/2
+            if delay<0: delay=1
+            self.bfm_wait(delay)
+            self.halt_riscv(i)
+            self.resume_riscv(i)
+            pass
+        print "%d: Halt/resume completed"%(self.global_cycle())
         pass
     #f All done
     pass
@@ -457,11 +484,12 @@ class riscv_base(simple_tb.base_test):
     supports = []
     hw = None
     cycles_scale = 1.0
+    cycles_adder = 0
     test_memory = None
     cls_test_dump_class = c_riscv_minimal_test_dump
     @classmethod
     def add_test_fn(cls, name, dump_file, num_cycles):
-        num_cycles = int(num_cycles * cls.cycles_scale)
+        num_cycles = int(num_cycles * cls.cycles_scale + cls.cycles_adder)
         def test_fn(c):
             c.do_test_run(cls.hw(cls.cls_test_dump_class(dump_filename=dump_file,
                                                        test_memory = cls.test_memory,
@@ -500,6 +528,7 @@ class riscv_i32mc_pipeline3(riscv_base):
     hw = riscv_i32mc_pipeline3_test_hw
     test_memory = "dmem"
     cycles_scale = 1.5
+    cycles_adder = 10*1800 # seems that each halt/resume takes this much real time even if the test does not
     cls_test_dump_class = c_riscv_minimal_test_dump_with_debug
     pass
 

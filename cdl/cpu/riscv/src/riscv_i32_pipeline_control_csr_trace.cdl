@@ -101,7 +101,6 @@ module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_control    p
         csr_controls = {*=0};
         csr_controls.retire       = pipeline_response.exec.valid && !pipeline_response.exec.cannot_complete && !coproc_response_cfg.cannot_complete;
         csr_controls.trap         = pipeline_response.exec.trap;
-        csr_controls.trap.to_mode = rv_mode_machine;
     }
 
     /*b Coprocessor interface */

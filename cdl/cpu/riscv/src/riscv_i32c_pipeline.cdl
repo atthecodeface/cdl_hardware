@@ -207,10 +207,6 @@ stage the multiply cannot support fused operations
         if (decexecrfw_combs.idecode.illegal || decexecrfw_combs.idecode.illegal_pc) {
             decexecrfw_combs.exec_committed = 0;
         }
-        // block interrupt_req if in second+ cycle of multicycle exec operation
-        if (pipeline_control.interrupt_req) {
-            decexecrfw_combs.exec_committed = 0;
-        }
 
         /*b Register read - post decode, prior to ALU and CSR accesss */
         decexecrfw_combs.rs1 = registers[decexecrfw_combs.idecode.rs1]; // note that register 0 is ALWAYS 0 anyway
@@ -225,14 +221,14 @@ stage the multiply cannot support fused operations
     
         /*b CSR accesss - post register read, parallel with ALU */
         decexecrfw_combs.csr_access                  = decexecrfw_alu_result.csr_access;
-        decexecrfw_combs.csr_access.access_cancelled = !decexecrfw_combs.exec_committed;
+        decexecrfw_combs.csr_access.access_cancelled = !decexecrfw_combs.exec_committed || decexecrfw_control_flow.async_cancel;
         csr_access = decexecrfw_combs.csr_access;
 
         /*b Memory access handling - post ALU - must be valid before middle of cycle */
         decexecrfw_combs.dmem_exec = { idecode = decexecrfw_combs.idecode,
                                        arith_result   = decexecrfw_alu_result.arith_result, // address of access
                                        rs2            = decexecrfw_combs.rs2,    // data for access (before rotation)
-                                       exec_committed = decexecrfw_combs.exec_committed,
+                                       exec_committed = decexecrfw_combs.exec_committed && !decexecrfw_control_flow.async_cancel,
                                        first_cycle = 1
         };
         riscv_i32_dmem_request dmem_req( dmem_exec    <= decexecrfw_combs.dmem_exec,
@@ -300,12 +296,12 @@ stage the multiply cannot support fused operations
         if (decexecrfw_combs.idecode.csr_access.access != riscv_csr_access_none) {
             decexecrfw_combs.rfw_write_data = csr_read_data;
         }
-        if (decexecrfw_combs.exec_committed && decexecrfw_combs.idecode.rd_written) {
+        if (decexecrfw_combs.exec_committed && decexecrfw_combs.idecode.rd_written && !decexecrfw_control_flow.async_cancel) {
             registers[decexecrfw_combs.idecode.rd] <= decexecrfw_combs.rfw_write_data;
         }
         registers[0] <= 0; // register 0 is always zero...
 
-        rfw_state.valid      <= decexecrfw_combs.exec_committed;
+        rfw_state.valid      <= decexecrfw_combs.exec_committed && !decexecrfw_control_flow.async_cancel;
         rfw_state.rd_written <= decexecrfw_combs.exec_committed && decexecrfw_combs.idecode.rd_written;
         rfw_state.rd         <= decexecrfw_combs.idecode.rd;
         rfw_state.data       <= decexecrfw_combs.rfw_write_data;

@@ -719,6 +719,7 @@ typedef struct {
 
 /*t t_riscv_i32_control_flow */
 typedef struct {
+    bit              async_cancel;
     bit              branch_taken;
     bit              jalr;
     t_riscv_word     next_pc;

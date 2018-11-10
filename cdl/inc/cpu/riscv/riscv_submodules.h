@@ -91,7 +91,7 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
     timing comb output alu_result;
 }
 
-/*m riscv_i32_dmem_request */
+/*m riscv_i32_control_flow */
 extern module riscv_i32_control_flow( input  t_riscv_pipeline_control  pipeline_control,
                                input  t_riscv_i32_control_data  control_data,
                                output t_riscv_i32_control_flow  control_flow

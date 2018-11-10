@@ -160,7 +160,7 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    p
             ifetch_req.address        = ifetch_combs.fetch_next_pc; // early address
         }
         default: { // idle
-            ifetch_req.flush_pipeline = 0;
+            ifetch_req.flush_pipeline = 1;
         }
         }
 
