@@ -120,7 +120,7 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
         self.bfm_wait(10)
         simple_tb.base_th.run_start(self)
         self.run_start()
-        delay = self.run_time-10-self.global_cycle()/2
+        delay = self.run_time-self.global_cycle()/2 - 10
         if delay<0: delay=1
         print "%d: Waiting for test for %d cycles (run time is %d)"%(self.global_cycle(),delay,self.run_time)
         self.bfm_wait(delay)
@@ -135,18 +135,8 @@ class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
     base_address = 0x0000000
     memory_expectation = { "tohost":(1,),
                            }
-    def __init__(self, dump_filename, test_memory="dmem", **kwargs):
-        self.dump_filename = dump_filename
-        self.test_memory = test_memory
-        c_riscv_minimal_test_base.__init__(self, **kwargs)
-        pass
-    pass
-
-#c c_riscv_minimal_test_dump_with_debug
-class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
-    num_pauses = 10
-    #f dm_write
-    def dm_write(self, address, data, write_ir=False):
+    #f jtag_dm_write
+    def jtag_dm_write(self, address, data, write_ir=False):
         """
         Requires the JTAG state machine to be in reset or idle.
 
@@ -158,8 +148,8 @@ class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
         data = self.jtag_write_drs(dr_bits = bits_of_n(50,((address&0xffff)<<34)|((data&0xffffffff)<<2)|(2)))
         return data
 
-    #f dm_read_slow
-    def dm_read_slow(self, address, write_ir=False):
+    #f jtag_dm_read_slow
+    def jtag_dm_read_slow(self, address, write_ir=False):
         """
         Requires the JTAG state machine to be in reset or idle.
 
@@ -173,8 +163,8 @@ class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
         data = self.jtag_write_drs(dr_bits = bits_of_n(50,0))
         return int_of_bits(data)
 
-    #f dm_read_pipelined
-    def dm_read_pipelined(self, address):
+    #f jtag_dm_read_pipelined
+    def jtag_dm_read_pipelined(self, address):
         """
         Requires the JTAG state machine to be in reset or idle.
 
@@ -182,20 +172,108 @@ class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
         """
         data = self.jtag_write_drs(dr_bits = bits_of_n(50,((address&0xffff)<<34)|(0<<2)|(1)))
         return int_of_bits(data)
-    #f resume_riscv
-    def resume_riscv(self, n=0):
-        self.dm_write(0x10, 0x40000001) # Resume request (halt request removed)
-        status = ((self.dm_read_slow(0x11)>>2)&0xffffffff) # Read status
+    #f jtag_resume_riscv
+    def jtag_resume_riscv(self, n=0):
+        self.jtag_dm_write(0x10, 0x40000001) # Resume request (halt request removed)
+        status = ((self.jtag_dm_read_slow(0x11)>>2)&0xffffffff) # Read status
         print "%d:%d: Status bit 17 resume_ack and bit 11 running_all should be set %08x"%(self.global_cycle(), n, status)
-        self.dm_write(0x10, 0x00000001) # Resume request (halt request removed)
-        status = ((self.dm_read_slow(0x11)>>2)&0xffffffff) # Read status
+        self.jtag_dm_write(0x10, 0x00000001) # Resume request (halt request removed)
+        status = ((self.jtag_dm_read_slow(0x11)>>2)&0xffffffff) # Read status
         print "%d:%d: Status bit 17 resume_ack should now be clear %08x"%(self.global_cycle(), n, status)
         pass
-    #f halt_riscv
-    def halt_riscv(self, n=0):
-        self.dm_write(0x10, 0x80000001) # Halt request (resume request removed)
-        status = ((self.dm_read_slow(0x11)>>2)&0xffffffff) # Read status
+    #f jtag_halt_riscv
+    def jtag_halt_riscv(self, n=0):
+        self.jtag_dm_write(0x10, 0x80000001) # Halt request (resume request removed)
+        status = ((self.jtag_dm_read_slow(0x11)>>2)&0xffffffff) # Read status
         print "%d:%d: Status bit 9 is halted_all and should be set %08x"%(self.global_cycle(), n, status)
+        pass
+    #f jtag_init
+    def jtag_init(self):
+        print "Start using JTAG"
+        self.jtag_module = jtag_support.jtag_module(self.bfm_wait, self.tck_enable, self.jtag__tms, self.jtag__tdi, self.tdo, self)
+        self.jtag_reset()
+        self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (apb_access)
+        self.jtag_dm_write(0x10, 1) # Enable
+        pass
+    #f jtag_start_riscv
+    def jtag_start_riscv(self):
+        self.jtag_dm_write(0x04, 0) # data0 = Initial PC
+        self.jtag_dm_write(0x17, 0x002307b1) # Abstract command to Write data0 to DEPC
+        self.jtag_resume_riscv()
+        pass
+    #f __init__
+    def __init__(self, dump_filename, hw_cls=None, test_memory="dmem", num_cycles=1000, options={}, **kwargs):
+        self.needs_jtag_startup = False
+        if hasattr(hw_cls,"needs_jtag_startup") and hw_cls.needs_jtag_startup:
+            self.needs_jtag_startup = True
+            num_cycles += 2000
+            pass
+        self.dump_filename = dump_filename
+        self.test_memory = test_memory
+        self.num_cycles = num_cycles
+        self.options = options
+        c_riscv_minimal_test_base.__init__(self, **kwargs)
+        pass
+    #f run_start
+    def run_start(self):
+        if self.needs_jtag_startup:
+            self.jtag_init()
+            self.jtag_start_riscv()
+            pass
+        pass
+    pass
+
+#c c_riscv_minimal_test_dump_with_pauses
+class c_riscv_minimal_test_dump_with_pauses(c_riscv_minimal_test_dump):
+    num_pauses = 10
+    #f __init__
+    def __init__(self, num_cycles=1000, **kwargs):
+        c_riscv_minimal_test_dump.__init__(self, num_cycles=num_cycles+self.num_pauses*2000, **kwargs)
+        pass
+    #f run_start
+    def run_start(self):
+        self.jtag_init()
+        self.jtag_start_riscv()
+        for i in range(self.num_pauses):
+            delay = (i+1)*self.run_time/(self.num_pauses+1)-10-self.global_cycle()/2
+            if delay<0: delay=1
+            self.bfm_wait(delay)
+            self.jtag_halt_riscv(i)
+            self.jtag_resume_riscv(i)
+            pass
+        print "%d: Halt/resume completed"%(self.global_cycle())
+        pass
+    #f All done
+    pass
+
+#c c_riscv_minimal_test_jtag_prog
+class c_riscv_minimal_test_jtag_prog(c_riscv_minimal_test_dump):
+    num_pauses = 10
+    #f __init__
+    def __init__(self, num_cycles=1000, **kwargs):
+        c_riscv_minimal_test_dump.__init__(self, num_cycles=num_cycles+self.num_pauses*1800, **kwargs)
+        pass
+    #f run_start
+    def run_start(self):
+        print "Start using JTAG"
+        self.jtag_module = jtag_support.jtag_module(self.bfm_wait, self.tck_enable, self.jtag__tms, self.jtag__tdi, self.tdo, self)
+        self.jtag_reset()
+        self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (apb_access)
+        self.dm_write(0x10, 1) # Enable
+        self.dm_write(0x04, 0) # data0 = Initial PC
+        self.dm_write(0x17, 0x002307b1) # Abstract command to Write data0 to DEPC
+        self.dm_write(0x20, 0x12345678) # progbuf0
+        self.dm_write(0x17, 0x00240000) # execute progbuf0
+        pass
+    #f All done
+    pass
+
+#c c_riscv_minimal_test_dump_with_debug
+class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
+    num_pauses = 10
+    #f __init__
+    def __init__(self, num_cycles=1000, **kwargs):
+        c_riscv_minimal_test_dump.__init__(self, num_cycles=num_cycles+self.num_pauses*1800, **kwargs)
         pass
     #f run_start
     def run_start(self):
@@ -233,10 +311,12 @@ class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
             delay = (i+1)*self.run_time/(self.num_pauses+1)-10-self.global_cycle()/2
             if delay<0: delay=1
             self.bfm_wait(delay)
-            self.halt_riscv(i)
-            self.resume_riscv(i)
+            self.jtag_halt_riscv(i)
+            self.jtag_resume_riscv(i)
             pass
         print "%d: Halt/resume completed"%(self.global_cycle())
+        #self.dm_write(0x20, 0x12345678) # progbuf0
+        #self.dm_write(0x17, 0x00240000) # execute progbuf0
         pass
     #f All done
     pass
@@ -353,6 +433,8 @@ class riscv_i32_minimal_test_hw(simple_tb.cdl_test_hw):
     module_name = "tb_riscv_i32_minimal"
     #f __init__
     def __init__(self, test):
+        self.num_cycles = test.num_cycles
+        self.options    = test.options
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
         self.th_forces["dut.mem.filename"] = mif_filename
@@ -374,6 +456,8 @@ class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
     module_name = "tb_riscv_i32c_minimal"
     #f __init__
     def __init__(self, test):
+        self.num_cycles = test.num_cycles
+        self.options    = test.options
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
         self.th_forces["dut.mem.filename"] = mif_filename
@@ -395,6 +479,8 @@ class riscv_i32c_pipeline3_test_hw(simple_tb.cdl_test_hw):
     module_name = "tb_riscv_i32c_pipeline3"
     #f __init__
     def __init__(self, test):
+        self.num_cycles = test.num_cycles
+        self.options    = test.options
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
         self.th_forces["imem.filename"] = mif_filename
@@ -420,6 +506,8 @@ class riscv_i32mc_pipeline3_test_hw(simple_tb.cdl_test_hw):
     module_name = "tb_riscv_i32mc_pipeline3"
     #f __init__
     def __init__(self, test):
+        self.num_cycles = test.num_cycles
+        self.options    = test.options
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
         self.th_forces["imem.filename"] = mif_filename
@@ -484,16 +572,23 @@ class riscv_base(simple_tb.base_test):
     supports = []
     hw = None
     cycles_scale = 1.0
-    cycles_adder = 0
     test_memory = None
-    cls_test_dump_class = c_riscv_minimal_test_dump
+    default_test_class = c_riscv_minimal_test_dump
     @classmethod
-    def add_test_fn(cls, name, dump_file, num_cycles):
-        num_cycles = int(num_cycles * cls.cycles_scale + cls.cycles_adder)
+    def add_test_fn(cls, name, dump_file, num_cycles, options):
+        num_cycles = int(num_cycles * cls.cycles_scale)
         def test_fn(c):
-            c.do_test_run(cls.hw(cls.cls_test_dump_class(dump_filename=dump_file,
-                                                       test_memory = cls.test_memory,
-                                                       )), num_cycles=num_cycles)
+            test_class = cls.default_test_class
+            if "jtag_blah" in options:
+                test_class = c_riscv_minimal_test_dump_with_debug
+                pass
+            test = test_class(hw_cls        = cls,
+                              dump_filename = dump_file,
+                              test_memory   = cls.test_memory,
+                              num_cycles    = num_cycles,
+                              options       = options)
+            hw = cls.hw(test)
+            c.do_test_run(hw, hw.num_cycles)
             pass
         setattr(cls, "test_"+name, test_fn)
         pass
@@ -524,12 +619,12 @@ class riscv_i32c_pipeline3(riscv_base):
 
 #c riscv_i32mc_pipeline3
 class riscv_i32mc_pipeline3(riscv_base):
-    supports = ["compressed", "muldiv"]
+    supports = ["compressed", "muldiv", "jtag"]
     hw = riscv_i32mc_pipeline3_test_hw
     test_memory = "dmem"
     cycles_scale = 1.5
-    cycles_adder = 10*1800 # seems that each halt/resume takes this much real time even if the test does not
-    cls_test_dump_class = c_riscv_minimal_test_dump_with_debug
+    needs_jtag_startup = True
+    default_test_class = c_riscv_minimal_test_dump_with_pauses
     pass
 
 #c OLD riscv_minimal_single_memory
@@ -539,75 +634,78 @@ class old_riscv_minimal_single_memory(riscv_base):
 #c Add tests to riscv_i32_minimal, riscv_i32c_minimal, riscv_i32c_pipeline3, riscv_i32mc_pipeline3
 riscv_atcf_zephyr = {#"zephyr":("zephyr.dump",250*1000,[]),
 }
-riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[]),
-                               "traps":("traps.dump",10*1000,[]),
-                               "timer_irqs":("timer_irqs.dump",40*1000,["rv_timer"]),
-                               #"data_access":("data_access.dump",10*1000,["apb_timer"]),
-                               "data":("data.dump",10*1000,[]),
-                               "c_dprintf":("c_dprintf.dump",10*1000,["compressed"]),
-                               "c_arith":("c_arith.dump",2*1000,["compressed"]),
-                               "c_stack":("c_stack.dump",2*1000,["compressed"]),
-                               "c_jump":("c_jump.dump",2*1000,["compressed"]),
-                               "c_branch":("c_branch.dump",2*1000,["compressed"]),
-                               "c_mv":("c_mv.dump",5*1000,["compressed"]),
-                               "c_logic":("c_logic.dump",50*1000,["compressed"]),
-#                               "c_temp":("c_temp.dump",5*1000,["compressed"]),
+riscv_jtag_regression_tests = {"jtag_simple":("",10*1000,["jtag"],{}),
+                               }
+riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[],{}),
+                               "traps":("traps.dump",10*1000,[],{}),
+                               "timer_irqs":("timer_irqs.dump",40*1000,["rv_timer"],{}),
+                               #"data_access":("data_access.dump",10*1000,["apb_timer"],{}),
+                               "data":("data.dump",10*1000,[],{}),
+                               "c_dprintf":("c_dprintf.dump",10*1000,["compressed"],{}),
+                               "c_arith":("c_arith.dump",2*1000,["compressed"],{}),
+                               "c_stack":("c_stack.dump",2*1000,["compressed"],{}),
+                               "c_jump":("c_jump.dump",2*1000,["compressed"],{}),
+                               "c_branch":("c_branch.dump",2*1000,["compressed"],{}),
+                               "c_mv":("c_mv.dump",5*1000,["compressed"],{}),
+                               "c_logic":("c_logic.dump",50*1000,["compressed"],{}),
+                               #                               "c_temp":("c_temp.dump",5*1000,["compressed"],{}),
 }
-riscv_regression_tests = {"or":("rv32ui-p-or.dump",3*1000,[]),
-         "simple":("rv32ui-p-simple.dump",3*1000,[]),
-         "jalr":("rv32ui-p-jalr.dump",3*1000,[]),
-         "jal":("rv32ui-p-jal.dump",3*1000,[]),
-         "fence_i":("rv32ui-p-fence_i.dump",3*1000,["ifence"]), #Note that Fence does not work on the riscv_minimal as that does not have writable instruction memory
-         "bne":("rv32ui-p-bne.dump",3*1000,[]),
-         "bltu":("rv32ui-p-bltu.dump",3*1000,[]),
-         "blt":("rv32ui-p-blt.dump",3*1000,[]),
-         "bgeu":("rv32ui-p-bgeu.dump",3*1000,[]),
-         "bge":("rv32ui-p-bge.dump",3*1000,[]),
-         "beq":("rv32ui-p-beq.dump",3*1000,[]),
-         "auipc":("rv32ui-p-auipc.dump",3*1000,[]),
-         "andi":("rv32ui-p-andi.dump",3*1000,[]),
-         "and":("rv32ui-p-and.dump",3*1000,[]),
-         "addi":("rv32ui-p-addi.dump",3*1000,[]),
-         "add":("rv32ui-p-add.dump",3*1000,[]),
-         "sw":("rv32ui-p-sw.dump",3*1000,[]),
-         "sltiu":("rv32ui-p-sltiu.dump",3*1000,[]),
-         "slti":("rv32ui-p-slti.dump",3*1000,[]),
-         "slt":("rv32ui-p-slt.dump",3*1000,[]),
-         "slli":("rv32ui-p-slli.dump",3*1000,[]),
-         "sll":("rv32ui-p-sll.dump",3*1000,[]),
-         "sh":("rv32ui-p-sh.dump",3*1000,[]),
-         "sb":("rv32ui-p-sb.dump",3*1000,[]),
-         "ori":("rv32ui-p-ori.dump",3*1000,[]),
-         "or":("rv32ui-p-or.dump",3*1000,[]),
-         "lw":("rv32ui-p-lw.dump",3*1000,[]),
-         "lui":("rv32ui-p-lui.dump",3*1000,[]),
-         "lhu":("rv32ui-p-lhu.dump",3*1000,[]),
-         "lh":("rv32ui-p-lh.dump",3*1000,[]),
-         "lbu":("rv32ui-p-lbu.dump",3*1000,[]),
-         "lb":("rv32ui-p-lb.dump",3*1000,[]),
-         "xori":("rv32ui-p-xori.dump",3*1000,[]),
-         "xor":("rv32ui-p-xor.dump",3*1000,[]),
-         "sub":("rv32ui-p-sub.dump",3*1000,[]),
-         "srli":("rv32ui-p-srli.dump",3*1000,[]),
-         "srl":("rv32ui-p-srl.dump",3*1000,[]),
-         "srai":("rv32ui-p-srai.dump",3*1000,[]),
-         "sra":("rv32ui-p-sra.dump",3*1000,[]),
-         "sltu":("rv32ui-p-sltu.dump",3*1000,[]),
+riscv_regression_tests = {"or":("rv32ui-p-or.dump",3*1000,[],{}),
+         "simple":("rv32ui-p-simple.dump",3*1000,[],{}),
+         "jalr":("rv32ui-p-jalr.dump",3*1000,[],{}),
+         "jal":("rv32ui-p-jal.dump",3*1000,[],{}),
+         "fence_i":("rv32ui-p-fence_i.dump",3*1000,["ifence"],{}), #Note that Fence does not work on the riscv_minimal as that does not have writable instruction memory
+         "bne":("rv32ui-p-bne.dump",3*1000,[],{}),
+         "bltu":("rv32ui-p-bltu.dump",3*1000,[],{}),
+         "blt":("rv32ui-p-blt.dump",3*1000,[],{}),
+         "bgeu":("rv32ui-p-bgeu.dump",3*1000,[],{}),
+         "bge":("rv32ui-p-bge.dump",3*1000,[],{}),
+         "beq":("rv32ui-p-beq.dump",3*1000,[],{}),
+         "auipc":("rv32ui-p-auipc.dump",3*1000,[],{}),
+         "andi":("rv32ui-p-andi.dump",3*1000,[],{}),
+         "and":("rv32ui-p-and.dump",3*1000,[],{}),
+         "addi":("rv32ui-p-addi.dump",3*1000,[],{}),
+         "add":("rv32ui-p-add.dump",3*1000,[],{}),
+         "sw":("rv32ui-p-sw.dump",3*1000,[],{}),
+         "sltiu":("rv32ui-p-sltiu.dump",3*1000,[],{}),
+         "slti":("rv32ui-p-slti.dump",3*1000,[],{}),
+         "slt":("rv32ui-p-slt.dump",3*1000,[],{}),
+         "slli":("rv32ui-p-slli.dump",3*1000,[],{}),
+         "sll":("rv32ui-p-sll.dump",3*1000,[],{}),
+         "sh":("rv32ui-p-sh.dump",3*1000,[],{}),
+         "sb":("rv32ui-p-sb.dump",3*1000,[],{}),
+         "ori":("rv32ui-p-ori.dump",3*1000,[],{}),
+         "or":("rv32ui-p-or.dump",3*1000,[],{}),
+         "lw":("rv32ui-p-lw.dump",3*1000,[],{}),
+         "lui":("rv32ui-p-lui.dump",3*1000,[],{}),
+         "lhu":("rv32ui-p-lhu.dump",3*1000,[],{}),
+         "lh":("rv32ui-p-lh.dump",3*1000,[],{}),
+         "lbu":("rv32ui-p-lbu.dump",3*1000,[],{}),
+         "lb":("rv32ui-p-lb.dump",3*1000,[],{}),
+         "xori":("rv32ui-p-xori.dump",3*1000,[],{}),
+         "xor":("rv32ui-p-xor.dump",3*1000,[],{}),
+         "sub":("rv32ui-p-sub.dump",3*1000,[],{}),
+         "srli":("rv32ui-p-srli.dump",3*1000,[],{}),
+         "srl":("rv32ui-p-srl.dump",3*1000,[],{}),
+         "srai":("rv32ui-p-srai.dump",3*1000,[],{}),
+         "sra":("rv32ui-p-sra.dump",3*1000,[],{}),
+         "sltu":("rv32ui-p-sltu.dump",3*1000,[],{}),
 
-         "div":("rv32um-p-div.dump",3*1000,["muldiv"]),
-         "divu":("rv32um-p-divu.dump",3*1000,["muldiv"]),
-         "rem":("rv32um-p-rem.dump",3*1000,["muldiv"]),
-         "remu":("rv32um-p-remu.dump",3*1000,["muldiv"]),
-         "mul":("rv32um-p-mul.dump",4*1000,["muldiv"]),
-         "mulh":("rv32um-p-mulh.dump",3*3000,["muldiv"]),
-         "mulhu":("rv32um-p-mulhu.dump",3*3000,["muldiv"]),
-         "mulhsu":("rv32um-p-mulhsu.dump",3*3000,["muldiv"]),
+         "div":("rv32um-p-div.dump",3*1000,["muldiv"],{}),
+         "divu":("rv32um-p-divu.dump",3*1000,["muldiv"],{}),
+         "rem":("rv32um-p-rem.dump",3*1000,["muldiv"],{}),
+         "remu":("rv32um-p-remu.dump",3*1000,["muldiv"],{}),
+         "mul":("rv32um-p-mul.dump",4*1000,["muldiv"],{}),
+         "mulh":("rv32um-p-mulh.dump",3*3000,["muldiv"],{}),
+         "mulhu":("rv32um-p-mulhu.dump",3*3000,["muldiv"],{}),
+         "mulhsu":("rv32um-p-mulhsu.dump",3*3000,["muldiv"],{}),
            }
 for (test_dir,tests) in [(riscv_zephyr_dir,riscv_atcf_zephyr),
                          (riscv_regression_dir,riscv_regression_tests),
-                         (riscv_atcf_regression_dir,riscv_atcf_regression_tests)]:
+                         (riscv_atcf_regression_dir,riscv_atcf_regression_tests),
+                         (riscv_atcf_regression_dir,riscv_jtag_regression_tests)]:
     for tc in tests:
-        (dump_file,num_cycles,tags) = tests[tc]
+        (dump_file,num_cycles,tags,options) = tests[tc]
         dump_file = test_dir+dump_file
         for test_class in [ riscv_i32_minimal,                  
                                   riscv_i32c_minimal,             
@@ -619,7 +717,7 @@ for (test_dir,tests) in [(riscv_zephyr_dir,riscv_atcf_zephyr),
                 if t not in test_class.supports: can_do = False
                 pass
             if can_do:
-                test_class.add_test_fn(name=tc, dump_file=dump_file, num_cycles=num_cycles)
+                test_class.add_test_fn(name=tc, dump_file=dump_file, num_cycles=num_cycles, options=options)
                 pass
         pass
     pass
