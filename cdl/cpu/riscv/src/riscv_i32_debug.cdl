@@ -547,6 +547,9 @@ CDL hardware repo.
 It provides the registers defined in the RISC-V Debug specificaiton
 revision 0.13.
 
+We need a way to force it out of command busy, in case we reset the HART under its feet.
+Or the hart is just bloody minded and never finishes its execution
+
 """
 {
     default clock clk;
@@ -727,6 +730,7 @@ revision 0.13.
         }
         case dm_addr_progbuf0: {  // set cmd_err if abstract cmd is busy
             apb_state.read_select <= read_select_progbuf0;
+            apb_state.write_action <= write_action_progbuf0;
         }
         case dm_addr_haltsum0: {
             apb_state.read_select <= read_select_haltsum0;
@@ -852,13 +856,16 @@ revision 0.13.
                 debug_state.abstractcs_busy <= 0;
                 debug_state.command.fsm_state <= command_fsm_idle;
             }
-            elsif (debug_combs.mst_initiating_transfer) {
+            elsif (debug_combs.mst_initiating_execute) {
                 debug_state.command.fsm_state <= command_fsm_execute_wait;
             }
         }
         case  command_fsm_execute_wait: {
             // waiting for an ebreak on selected hart
             debug_state.command.fsm_state <= command_fsm_execute_wait;
+            assert(0,"Argh");
+            debug_state.abstractcs_busy <= 0;
+            debug_state.command.fsm_state <= command_fsm_idle;
         }
         }
     }

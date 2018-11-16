@@ -341,6 +341,7 @@ typedef struct {
     bit[32] value;
     bit ret;
     bit vector;
+    bit ebreak_to_dbg "Asserted if the trap is a breakpoint and pipeline_control.ebreak_to_dbg was set";
 } t_riscv_i32_trap;
 
 /*t t_riscv_csr_controls
@@ -436,14 +437,8 @@ typedef enum[12] {
     CSR_ADDR_MIMPID    = 12hF13  "Implementation ID, required - but may be hardwired to zero for not implemented",
     CSR_ADDR_MHARTID   = 12hF14  "Hardware thread ID, required - but may be hardwired to zero (if only one thread in system)",
 
-    // CLARVI does not memory-map mtime and mtime_cmp, but the spec says it should - these are clarvi-specific, then
-    // Rumor has it that MTIME has now been removed entirely; the spec does not say so. This is a sadness of open source hardware - architecture by github...
-    //CSR_ADDR_MTIME     = 12hF01,
-    //CSR_ADDR_MTIMEH    = 12hF81,
-    //CSR_ADDR_MTIMECMP  = 12h7C1,
-    //CSR_ADDR_MTIMECMPH = 12h7C2,
-
     // provisional debug, used across these RISC-V implementations
+    CSR_ADDR_DCSR       = 12h7B0,
     CSR_ADDR_DEPC       = 12h7B1,
     CSR_ADDR_DSCRATCH0  = 12h7B2,
     CSR_ADDR_DSCRATCH1  = 12h7B3
@@ -569,6 +564,7 @@ typedef struct {
     t_riscv_csr_mip     mip         "";
     t_riscv_csr_mie     mie         "";
 
+    t_riscv_csr_dcsr    dcsr        "Debug control/status, if debug enabled (otherwise 0)";
     bit[32] depc;
     bit[32] dscratch0;
     bit[32] dscratch1;
@@ -687,7 +683,7 @@ typedef struct {
     t_riscv_i32_decode      idecode "Exec stage idecode";
     t_riscv_word            arith_result;
     t_riscv_word            rs2;
-    bit                     exec_committed;
+    bit                     exec_committed "Must not be asserted if exec stage is invalid";
     bit                     first_cycle;
 } t_riscv_i32_dmem_exec;
 
@@ -709,7 +705,7 @@ typedef struct {
 typedef struct {
     bit                     interrupt_ack;
     bit                     valid;
-    bit                     exec_committed;
+    bit                     exec_committed "Must not be asserted if exec stage is invalid";
     bit                     first_cycle;
     t_riscv_i32_decode      idecode "Exec stage idecode";
     t_riscv_word            pc;
@@ -729,8 +725,9 @@ typedef struct {
 /*a RISC-V pipeline control interaction */
 /*t t_riscv_pipeline_control_fetch_action
  */
-typedef enum[2] {
-    rv_pc_fetch_action_idle,
+typedef enum[3] {
+    rv_pc_fetch_action_idle, // Idle the pipeline by flushing anything pre-exec
+    rv_pc_fetch_action_none, // execute but don't fetch
     rv_pc_fetch_action_restart_at_pc,
     rv_pc_fetch_action_retry,
     rv_pc_fetch_action_continue_fetching
@@ -748,6 +745,7 @@ typedef struct {
     bit          error;
     t_riscv_pipeline_tag tag;
     bit    halt                    "Halt the CPU by 'faking' an ebreak";
+    bit    ebreak_to_dbg           "Breakpoint would go to debug mode (halt CPU)";
     bit    interrupt_req;
     bit[4] interrupt_number;
     t_riscv_mode interrupt_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";

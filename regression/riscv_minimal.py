@@ -259,11 +259,15 @@ class c_riscv_minimal_test_jtag_prog(c_riscv_minimal_test_dump):
         self.jtag_module = jtag_support.jtag_module(self.bfm_wait, self.tck_enable, self.jtag__tms, self.jtag__tdi, self.tdo, self)
         self.jtag_reset()
         self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (apb_access)
-        self.dm_write(0x10, 1) # Enable
-        self.dm_write(0x04, 0) # data0 = Initial PC
-        self.dm_write(0x17, 0x002307b1) # Abstract command to Write data0 to DEPC
-        self.dm_write(0x20, 0x12345678) # progbuf0
-        self.dm_write(0x17, 0x00240000) # execute progbuf0
+        self.jtag_dm_write(0x10, 1) # Enable
+        self.jtag_dm_write(0x04, 0) # data0 = Initial PC
+        self.jtag_dm_write(0x17, 0x002307b1) # Abstract command to Write data0 to DEPC
+        #self.jtag_dm_write(0x20, 0x12345678) # progbuf0
+        self.jtag_dm_write(0x20, 0x00000133) # progbuf0
+        self.jtag_dm_write(0x17, 0x00240000) # execute progbuf0
+        status = ((self.jtag_dm_read_slow(0x11)>>2)&0xffffffff) # Read status
+        self.jtag_dm_write(0x20, 0x00002103) # progbuf0
+        self.jtag_dm_write(0x17, 0x00240000) # execute progbuf0
         pass
     #f All done
     pass
@@ -273,7 +277,7 @@ class c_riscv_minimal_test_dump_with_debug(c_riscv_minimal_test_dump):
     num_pauses = 10
     #f __init__
     def __init__(self, num_cycles=1000, **kwargs):
-        c_riscv_minimal_test_dump.__init__(self, num_cycles=num_cycles+self.num_pauses*1800, **kwargs)
+        c_riscv_minimal_test_dump.__init__(self, num_cycles=num_cycles+self.num_pauses*1830, **kwargs)
         pass
     #f run_start
     def run_start(self):
@@ -579,9 +583,6 @@ class riscv_base(simple_tb.base_test):
         num_cycles = int(num_cycles * cls.cycles_scale)
         def test_fn(c):
             test_class = cls.default_test_class
-            if "jtag_blah" in options:
-                test_class = c_riscv_minimal_test_dump_with_debug
-                pass
             test = test_class(hw_cls        = cls,
                               dump_filename = dump_file,
                               test_memory   = cls.test_memory,
@@ -625,6 +626,7 @@ class riscv_i32mc_pipeline3(riscv_base):
     cycles_scale = 1.5
     needs_jtag_startup = True
     default_test_class = c_riscv_minimal_test_dump_with_pauses
+    #default_test_class = c_riscv_minimal_test_jtag_prog
     pass
 
 #c OLD riscv_minimal_single_memory
@@ -634,7 +636,7 @@ class old_riscv_minimal_single_memory(riscv_base):
 #c Add tests to riscv_i32_minimal, riscv_i32c_minimal, riscv_i32c_pipeline3, riscv_i32mc_pipeline3
 riscv_atcf_zephyr = {#"zephyr":("zephyr.dump",250*1000,[]),
 }
-riscv_jtag_regression_tests = {"jtag_simple":("",10*1000,["jtag"],{}),
+riscv_jtag_regression_tests = {#"jtag_simple":("",10*1000,["jtag"],{}),
                                }
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[],{}),
                                "traps":("traps.dump",10*1000,[],{}),

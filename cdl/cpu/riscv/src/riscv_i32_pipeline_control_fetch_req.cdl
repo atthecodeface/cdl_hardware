@@ -159,13 +159,18 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    p
             }
             ifetch_req.address        = ifetch_combs.fetch_next_pc; // early address
         }
+        case rv_pc_fetch_action_none: {
+            ifetch_req.flush_pipeline = 0;
+        }
         default: { // idle
             ifetch_req.flush_pipeline = 1;
         }
         }
         ifetch_req.debug_fetch = 0;
         if (pipeline_control.mode == rv_mode_debug) {
-            if ((pipeline_control.fetch_action!=rv_pc_fetch_action_idle) && (ifetch_req.address[24;8]==-1)) {
+            if ((pipeline_control.fetch_action!=rv_pc_fetch_action_idle) &&
+                (pipeline_control.fetch_action!=rv_pc_fetch_action_none) &&
+                (ifetch_req.address[24;8]==-1)) {
                 ifetch_req.req_type = rv_fetch_none;
                 ifetch_req.debug_fetch = 1;
             }

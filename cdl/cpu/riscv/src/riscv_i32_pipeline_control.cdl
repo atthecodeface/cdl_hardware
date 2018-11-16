@@ -236,7 +236,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
 
         /*b If being addressed then update debug state
          */
-        debug_state.control.instruction_debug_valid <= 0;
+        if (riscv_clk_enable) {debug_state.control.instruction_debug_valid <= 0;}
         if (debug_combs.mst_valid) {
             debug_state.control.attention <= 0;
             full_switch (debug_mst.op) {
@@ -398,21 +398,20 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                 ifetch_state.pc   <= INITIAL_PC;
                 ifetch_state.mode <= rv_mode_machine;
             }
-        }
-        case ifetch_fsm_restarting: {
-            ifetch_combs.fetch_action   = rv_pc_fetch_action_restart_at_pc;
-            ifetch_state.state <= ifetch_fsm_fetching;
-            if (pipeline_response.exec.trap.valid) { // vector interrupts if required, late decision
-                ifetch_state.pc <= bundle(csrs.mtvec.base, 2b0);
-                ifetch_state.state <= ifetch_fsm_restarting;
+            if (debug_state.control.waiting_for_read_write) {
+                ifetch_combs.fetch_action   = rv_pc_fetch_action_none;
             }
         }
-        case ifetch_fsm_fetching, ifetch_fsm_retry: { // present request, decode should be valid, pipeline not empty
+        case ifetch_fsm_restarting, ifetch_fsm_fetching, ifetch_fsm_retry: { // present request, decode should be valid, pipeline not empty
+            ifetch_state.state <= ifetch_fsm_retry; // retry next means that the decode NOW is valid and blocked. possibly it should also work for decode NOW invalid and fetch data is invalid in which case the address may need to be hacked
             ifetch_combs.fetch_action   = rv_pc_fetch_action_continue_fetching;
+            if (ifetch_state.state == ifetch_fsm_restarting) {
+                ifetch_combs.fetch_action   = rv_pc_fetch_action_restart_at_pc;
+                ifetch_state.state <= ifetch_fsm_fetching;
+            }
             if (ifetch_state.state == ifetch_fsm_retry) {
                 ifetch_combs.fetch_action   = rv_pc_fetch_action_retry; // note that decode MUST be valid here with same data as last cycle hence if we feed in same PC we get the same fetch request
             }
-            ifetch_state.state <= ifetch_fsm_retry; // retry next means that the decode NOW is valid and blocked. possibly it should also work for decode NOW invalid and fetch data is invalid in which case the address may need to be hacked
             if (pipeline_fetch_data.valid && pipeline_response.decode.blocked) {
                 ifetch_state.pc <= ifetch_state.pc;
             } else {
@@ -420,6 +419,9 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
             }
             if (debug_state.control.fsm_state == debug_fsm_halting) {
                 ifetch_state.halt_req <= !ifetch_combs.debug_disabled;
+            }
+            if (csrs.dcsr.step && pipeline_response.exec.valid) {
+                ifetch_state.halt_req <= 1;
             }
             if (pipeline_fetch_data.valid && !pipeline_response.decode.blocked) {
                 ifetch_state.pc <= pipeline_fetch_data.pc;
@@ -438,6 +440,8 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                 if (pipeline_control.interrupt_to_mode == rv_mode_debug) {
                     ifetch_state.halt_req <= 0;
                     ifetch_state.state <= ifetch_fsm_halted;
+                } elsif (pipeline_response.exec.trap.ebreak_to_dbg) {
+                    ifetch_state.state <= ifetch_fsm_halted;
                 } else {
                     ifetch_state.state <= ifetch_fsm_restarting;
                 }
@@ -453,6 +457,15 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         pipeline_control.decode_pc         = ifetch_state.pc;
         pipeline_control.fetch_action      = ifetch_combs.fetch_action;
         pipeline_control.mode              = ifetch_state.mode;
+        pipeline_control.ebreak_to_dbg      = 0;
+        full_switch (ifetch_state.mode) {
+        case rv_mode_debug:      { pipeline_control.ebreak_to_dbg = 1; }
+        case rv_mode_machine:    { pipeline_control.ebreak_to_dbg = csrs.dcsr.ebreakm; }
+        case rv_mode_supervisor: { pipeline_control.ebreak_to_dbg = csrs.dcsr.ebreaks; }
+        case rv_mode_user:       { pipeline_control.ebreak_to_dbg = csrs.dcsr.ebreaku; }
+        }
+        if (ifetch_combs.debug_disabled) { pipeline_control.ebreak_to_dbg = 0; }
+        
         pipeline_control.interrupt_req     = ifetch_combs.interrupt_req  || ifetch_state.halt_req;
         pipeline_control.interrupt_number  = ifetch_combs.interrupt_number;
         pipeline_control.interrupt_to_mode = ifetch_state.halt_req ? rv_mode_debug : ifetch_state.mode;

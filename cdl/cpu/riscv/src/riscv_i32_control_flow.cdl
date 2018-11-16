@@ -57,6 +57,7 @@ module riscv_i32_control_flow( input  t_riscv_pipeline_control  pipeline_control
             }
             if (control_data.idecode.subop==riscv_subop_ebreak) {
                 control_flow.trap.valid = 1;
+                control_flow.trap.ebreak_to_dbg = pipeline_control.ebreak_to_dbg;
                 control_flow.trap.cause = riscv_trap_cause_breakpoint;
                 control_flow.trap.value = control_data.pc;
             }
@@ -65,6 +66,7 @@ module riscv_i32_control_flow( input  t_riscv_pipeline_control  pipeline_control
         if (!control_data.exec_committed) {
             control_flow.trap.valid = 0;
             control_flow.trap.ret = 0;
+            control_flow.trap.ebreak_to_dbg = 0;
             control_flow.branch_taken = 0;
         }
         
