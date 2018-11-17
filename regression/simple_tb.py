@@ -16,6 +16,7 @@
 import pycdl
 import sys, os, unittest
 import threading
+import socket, select
 
 #a Test classes
 #c base_th
@@ -53,7 +54,7 @@ class base_th(pycdl._thfile):
     #b class tcp_server_thread
     class tcp_server_thread(thread):
         def __init__(self, server, port):
-            super(c_jtag_apb_time_test_server.tcp_server_thread, self).__init__(server)
+            super(base_th.tcp_server_thread, self).__init__(server)
             self.server_skt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_skt.bind(("localhost", port))
             self.server_skt.listen(1)

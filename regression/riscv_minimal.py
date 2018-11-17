@@ -246,6 +246,62 @@ class c_riscv_minimal_test_dump_with_pauses(c_riscv_minimal_test_dump):
     #f All done
     pass
 
+#c c_riscv_minimal_test_jtag_server
+class c_riscv_minimal_test_jtag_server(c_riscv_minimal_test_base):
+    #f __init__
+    def __init__(self, num_cycles=1000, **kwargs):
+        self.num_cycles = num_cycles
+        self.options = {}
+        self.spawned_threads = {}
+        c_riscv_minimal_test_base.__init__(self, **kwargs)
+        pass
+    def get_image(self):
+        return ""
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(10)
+        self.jtag_module = jtag_support.jtag_module(self.bfm_wait, self.tck_enable, self.jtag__tms, self.jtag__tdi, self.tdo, self)
+        simple_tb.base_th.run_start(self)
+        openocd = jtag_support.openocd_server(server=self, port=9999)
+        openocd.start_nonpy()
+        rxq = openocd.queue_recvd
+        txq = openocd.queue_to_send
+
+        while True:
+            self.bfm_wait(1)
+            if not rxq.empty():
+                print "Rxq not empty"
+                reply = ""
+                data = rxq.get()
+                print "Handling",data
+                for c in data:
+                    if c=='B': print "LED ON"
+                    elif c=='b': print "LED OFF"
+                    elif c in "rstu" : print "Do some reset thing '%s'"%c
+                    elif c in "01234567":
+                        c = int(c)
+                        self.jtag__tdi.drive((c>>0)&1)
+                        self.jtag__tms.drive((c>>1)&1)
+                        self.tck_enable.drive((c>>2)&1)
+                        self.bfm_wait(1)
+                        self.tck_enable.drive(0)
+                        pass
+                    elif c=='R':
+                        self.tck_enable.drive(0)
+                        self.bfm_wait(1)
+                        self.tck_enable.drive(0)
+                        reply += "01"[self.tdo.value()]
+                        pass
+                    pass
+                if reply!="": txq.put(reply)
+                pass
+            pass
+
+        self.finishtest(0,"")
+    #f All done
+    pass
+
 #c c_riscv_minimal_test_jtag_prog
 class c_riscv_minimal_test_jtag_prog(c_riscv_minimal_test_dump):
     num_pauses = 10
@@ -627,6 +683,10 @@ class riscv_i32mc_pipeline3(riscv_base):
     needs_jtag_startup = True
     default_test_class = c_riscv_minimal_test_dump_with_pauses
     #default_test_class = c_riscv_minimal_test_jtag_prog
+    def openocd(self):
+        test = c_riscv_minimal_test_jtag_server(1000*1000*1000)
+        hw = self.hw(test)
+        self.do_test_run(hw, hw.num_cycles)
     pass
 
 #c OLD riscv_minimal_single_memory

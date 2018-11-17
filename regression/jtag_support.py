@@ -161,26 +161,24 @@ class jtag_module:
         self.jtag_tms([1,0]) # Dump it back in to idle
         return data
 
-
-
 #c openocd_server
-    class openocd_server(simple_tb.base_th.tcp_server_thread):
-        def __init__(self, **kwargs):
-            simple_tb.base_th.tcp_server_thread.__init__(self, **kwargs)
-            self.queue_recvd   = Queue.Queue()
-            self.queue_to_send = Queue.Queue()
-            self.data_to_send = ""
-            pass
-        def update_data_to_send(self):
-            while not self.queue_to_send.empty():
-                self.data_to_send += self.queue_to_send.get()
-                pass
-            return self.data_to_send
-        def did_send_data(self, n):
-            self.data_to_send = self.data_to_send[n:]
-            pass
-        def received_data(self, data):
-            self.queue_recvd.put(data)
-            pass
+class openocd_server(simple_tb.base_th.tcp_server_thread):
+    def __init__(self, **kwargs):
+        simple_tb.base_th.tcp_server_thread.__init__(self, **kwargs)
+        self.queue_recvd   = Queue.Queue()
+        self.queue_to_send = Queue.Queue()
+        self.data_to_send = ""
         pass
+    def update_data_to_send(self):
+        while not self.queue_to_send.empty():
+            self.data_to_send += self.queue_to_send.get()
+            pass
+        return self.data_to_send
+    def did_send_data(self, n):
+        self.data_to_send = self.data_to_send[n:]
+        pass
+    def received_data(self, data):
+        self.queue_recvd.put(data)
+        pass
+    pass
         
