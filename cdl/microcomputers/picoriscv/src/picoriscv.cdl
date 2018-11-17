@@ -23,12 +23,12 @@
 /*a Includes
  */
 include "picoriscv_types.h"
-include "riscv_modules.h"
+include "cpu/riscv/riscv_modules.h"
 include "picoriscv_submodules.h"
-include "framebuffer.h"
+include "video/framebuffer_modules.h"
 include "srams.h"
-include "csr_interface.h"
-include "bbc_micro_types.h"
+include "types/csr.h"
+include "microcomputers/bbc/bbc_types.h"
 
 /*a Types
  */
@@ -226,7 +226,7 @@ module picoriscv( clock clk                   "Clock, divided down for CPU",
                                   reset_n <= video_reset_n,
                                   video_bus => video_bus,
                                   display_sram_write <= tt_display_sram_write,
-                                  csr_select_in <= 0, // uses 2 selects, from the default
+                                  csr_select_in <= 4,
                                   csr_request <= csr_request,
                                   csr_response => tt_csr_response
             );

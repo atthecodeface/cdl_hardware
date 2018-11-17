@@ -18,7 +18,7 @@
 
 /*a Includes
  */
-include "riscv.h"
+include "cpu/riscv/riscv.h"
 
 /*t t_prv_mem_control */
 /**

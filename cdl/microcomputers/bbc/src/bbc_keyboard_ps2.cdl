@@ -20,9 +20,11 @@
  *
  */
 /*a Includes */
-include "bbc_micro_types.h"
-include "input_devices.h"
+include "types/ps2.h"
+include "microcomputers/bbc/bbc_types.h"
+include "microcomputers/bbc/bbc_submodules.h"
 include "srams.h"
+
 /*a Types */
 /*t t_kbd_map_state */
 typedef struct {

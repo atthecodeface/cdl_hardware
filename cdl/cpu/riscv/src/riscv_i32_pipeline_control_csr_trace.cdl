@@ -1,0 +1,145 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_minimal.cdl
+ * @brief  Minimal RISC-V implementation ported to CDL
+ *
+ * CDL implementation of minimal RISC-V teaching implementation
+ *
+ * This is a two-stage pipeline implementation, with instruction fetch
+ * of the next PC occuring simultaneously with the decode, register
+ * read, ALU, data read/write request, data read memory access, and
+ * register update.
+ *
+ * The instruction memory request, then, becomes valid dependent on
+ * the decode of the registered instruction last fetched. For most
+ * branches this requires only a small amount of logic, but for
+ * jump-and-link-register instructions (which uses the full ALU
+ * result) this may take a considerable amount of gates to determine
+ * the correct branch target and hence next instruction fetch.  Hence
+ * the instruction memory request is valid after a considerable delay
+ * from the start of the cycle.
+ *
+ * The return value from the instruction memory request must be valid
+ * before the end of the cycle.
+ *
+ * Any instruction memory implementation must start its access well
+ * after the CPU clock edge, , as the request is valid after the CPU
+ * clock edge; the resultant read data delay (from the clock edge)
+ * then has to be factored in to determine when the next CPU clock
+ * edge can occur. Hence it may be sensible to use a double speed
+ * clock (e.g. 'fast_clk') to generate CPU clock edges (every other
+ * fast_clk edge) and SRAM access clock edges (for a synchronous
+ * memory) on the intervening fast_clk edges.
+ *
+ * The data memory request becomes valid, again, a fair time after the
+ * CPU clock edge, as it requires instruction decode, register fetch,
+ * and ALU operation to occur prior to the memory address being valid.
+ *
+ * The data memory response must be valid (for read data!) in the same
+ * CPU cycle, as the returning data has to be rotated to the correct
+ * byte lanes and prepared for the register file write.
+ *
+ * Hence a data memory implementation can be similar to that proposed
+ * for the instruction memory - that is, accesses start on a memory
+ * clock edge that is in the middle of a CPU clock edge, by using a
+ * fast_clk.
+ *
+ */
+
+/*a Includes
+ */
+include "cpu/riscv/riscv_internal_types.h"
+
+/*a Constants
+ */
+constant integer coproc_force_disable=0;
+
+/*a Types
+ */
+/*t t_ifetch_combs
+ *
+ * Combinatorials for the instruction fetch
+ */
+typedef struct {
+    bit[32] pc_plus_4;
+    bit[32] pc_plus_2;
+    bit[32] pc_plus_inst;
+    bit[32] pc_if_mispredicted;
+    bit predict_branch;
+    bit[32] fetch_next_pc;
+    bit     fetch_sequential;
+} t_ifetch_combs;
+
+/*a Module
+ */
+module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_control    pipeline_control,
+                                             input t_riscv_pipeline_response   pipeline_response,
+                                             input t_riscv_pipeline_fetch_data pipeline_fetch_data,
+                                             input  t_riscv_config             riscv_config,
+                                             input t_riscv_i32_coproc_response   coproc_response,
+                                             output t_riscv_i32_coproc_controls  coproc_controls,
+                                             output t_riscv_csr_controls       csr_controls,
+                                             output t_riscv_i32_trace          trace
+)
+{
+    comb t_riscv_i32_coproc_response   coproc_response_cfg "Coprocessor response masked out if configured off";
+
+    /*b CSR controls */
+    csr_controls : {
+        /*b CSR controls - post trap detection */
+        csr_controls = {*=0};
+        csr_controls.retire       = pipeline_response.exec.valid && !pipeline_response.exec.cannot_complete && !coproc_response_cfg.cannot_complete;
+        csr_controls.trap         = pipeline_response.exec.trap;
+    }
+
+    /*b Coprocessor interface */
+    coprocessor_interface """
+    Drive the coprocessor controls unless disabled; mirror the pipeline combs
+
+    Probably only legal if there is a decode stage - or if the coprocessor knows there is not
+    """: {
+        coproc_response_cfg = coproc_response;
+        if (coproc_force_disable || riscv_config.coproc_disable) {
+            coproc_response_cfg = {*=0};
+        }
+
+        coproc_controls.dec_idecode        = pipeline_response.decode.idecode;
+        coproc_controls.dec_idecode_valid  = pipeline_response.decode.valid && !pipeline_control.interrupt_req;
+        coproc_controls.dec_to_alu_blocked = pipeline_response.exec.cannot_complete || coproc_response_cfg.cannot_complete;
+        coproc_controls.alu_rs1 = pipeline_response.exec.rs1;
+        coproc_controls.alu_rs2 = pipeline_response.exec.rs2;
+        coproc_controls.alu_flush_pipeline  = pipeline_fetch_data.dec_flush_pipeline;
+        coproc_controls.alu_cannot_start    = pipeline_response.exec.cannot_start    || coproc_response_cfg.cannot_start;
+        coproc_controls.alu_cannot_complete = pipeline_response.exec.cannot_complete || coproc_response_cfg.cannot_complete;
+        if (coproc_force_disable || riscv_config.coproc_disable) {
+            coproc_controls = {*=0};
+        }
+    }
+
+    /*b Logging */
+    logging """
+    """: {
+        trace = {*=0};
+        trace.instr_valid    = pipeline_response.exec.valid && !pipeline_response.exec.cannot_complete && !coproc_response_cfg.cannot_complete;
+        trace.instr_pc       = pipeline_response.exec.pc;
+        trace.instruction    = pipeline_response.exec.instruction;
+        trace.rfw_retire     = pipeline_response.rfw.valid;
+        trace.rfw_data_valid = pipeline_response.rfw.rd_written;
+        trace.rfw_rd         = pipeline_response.rfw.rd;
+        trace.rfw_data       = pipeline_response.rfw.data;
+        trace.branch_taken   = pipeline_response.exec.branch_taken;
+        trace.trap           = pipeline_response.exec.trap.valid;
+        trace.branch_target  = pipeline_fetch_data.pc;
+    }
+}

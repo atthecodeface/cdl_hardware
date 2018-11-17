@@ -158,12 +158,13 @@ riscv_config = {"i32c":1,
                 "e32":1,
                 "i32m":1,
                 "i32m_fuse":1,
+                "debug_enable":1,
                 "coproc_disable":1,
                 "unaligned_mem":1,
 }
 
 #v i32_csr_access - signal widths for pycdl.wirebundle - must match implementation
-i32_csr_access = {"access":3, "address":12}
+i32_csr_access = {"access":3, "address":12, "access_cancelled":1, "write_data":32}
 
 #v i32_decode - signal widths for pycdl.wirebundle - must match implementation
 i32_decode = {"rs1":5,
@@ -181,6 +182,7 @@ i32_decode = {"rs1":5,
               "memory_width":2,
               "csr_access":i32_csr_access,
               "illegal":1,
+              "illegal_pc":1,
               "requires_machine_mode":1,
               "is_compressed":1,
               "ext__dummy":1,

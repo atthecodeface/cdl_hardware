@@ -88,7 +88,7 @@
  */
 
 /*a Includes */
-include "input_devices.h"
+include "types/ps2.h"
 
 /*a Constants */
 constant integer timeout_rx_data=1000; // 11 bits at 10kHz is 1.1ms, which is 330*3us

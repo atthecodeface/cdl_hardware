@@ -1,0 +1,134 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_bbc_display_sram.cdl
+ * @brief Testbench for BBC display SRAM
+ *
+ */
+/*a Includes */
+include "types/axi.h"
+include "axi/axi_masters.h"
+include "boards/de1_cl/de1_cl_hps.h"
+
+/*a Module */
+module tb_de1_cl_hps_generic( clock clk,
+                            input bit reset_n
+)
+{
+
+    /*b Nets */
+    net t_axi_request    lw_axi_ar;
+    net bit             lw_axi_arready;
+    net t_axi_request    lw_axi_aw;
+    net bit             lw_axi_awready;
+    net bit             lw_axi_wready;
+    net t_axi_write_data lw_axi_w;
+    net bit              lw_axi_bready;
+    net t_axi_write_response lw_axi_b;
+    net bit lw_axi_rready;
+    net t_axi_read_response lw_axi_r;
+
+    comb t_de1_cl_inputs_status  de1_cl_inputs_status;
+    net  t_de1_cl_inputs_control de1_cl_inputs_control;
+
+    net bit de1_cl_led_data_pin;
+
+    net t_de1_cl_lcd de1_cl_lcd;
+    net t_de1_leds de1_leds;
+
+    comb t_ps2_pins   de1_ps2_in;
+    net  t_ps2_pins  de1_ps2_out;
+    comb t_ps2_pins   de1_ps2b_in;
+    net  t_ps2_pins  de1_ps2b_out;
+
+    net t_adv7123 de1_vga;
+    comb bit[4] de1_keys;
+    comb bit[10] de1_switches;
+    comb bit de1_irda_rxd;
+    net bit de1_irda_txd;
+
+    /*b Instantiations */
+    instantiations: {
+        de1_keys = {*=0};
+        de1_cl_inputs_status = {*=0};
+        de1_ps2_in = {*=0};
+        de1_ps2b_in = {*=0};
+        de1_switches = 0;
+        de1_irda_rxd = 0;
+        axi_master th( aclk <- clk, // called th as that is what simple_tb expects to give a test 'object' to
+                         areset_n <= reset_n,
+
+                         ar      => lw_axi_ar,
+                         arready <= lw_axi_arready,
+                         aw      => lw_axi_aw,
+                         awready <= lw_axi_awready,
+                         w       => lw_axi_w,
+                         wready  <= lw_axi_wready,
+                         b       <= lw_axi_b,
+                         bready  => lw_axi_bready,
+                         r       <= lw_axi_r,
+                         rready  => lw_axi_rready
+
+            );
+
+        de1_cl_hps_generic dut( clk <- clk,
+                 reset_n <= reset_n,
+
+                 lw_axi_clock_clk <- clk,
+                 lw_axi_ar      <= lw_axi_ar,
+                 lw_axi_arready => lw_axi_arready,
+                 lw_axi_aw      <= lw_axi_aw,
+                 lw_axi_awready => lw_axi_awready,
+                 lw_axi_w       <= lw_axi_w,
+                 lw_axi_wready  => lw_axi_wready,
+                 lw_axi_b       => lw_axi_b,
+                 lw_axi_bready  <= lw_axi_bready,
+                 lw_axi_r       => lw_axi_r,
+                 lw_axi_rready  <= lw_axi_rready,
+
+                 de1_cl_inputs_status  <= de1_cl_inputs_status,
+                 de1_cl_inputs_control => de1_cl_inputs_control,
+
+                 de1_cl_led_data_pin => de1_cl_led_data_pin,
+
+                 de1_cl_lcd_clock <- clk,
+                 de1_cl_lcd_reset_n <= reset_n,
+                 de1_cl_lcd => de1_cl_lcd,
+                 de1_leds => de1_leds,
+
+                 de1_ps2_in <= de1_ps2_in,
+                 de1_ps2_out => de1_ps2_out,
+                 de1_ps2b_in <= de1_ps2b_in,
+                 de1_ps2b_out => de1_ps2b_out,
+
+                 de1_vga_clock <- clk,
+                 de1_vga_reset_n <= reset_n,
+                 de1_vga => de1_vga,
+
+                 de1_keys <= de1_keys,
+                 de1_switches <= de1_switches,
+                 de1_irda_rxd <= de1_irda_rxd,
+                 de1_irda_txd => de1_irda_txd
+            );
+    }
+
+    /*b All done */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/

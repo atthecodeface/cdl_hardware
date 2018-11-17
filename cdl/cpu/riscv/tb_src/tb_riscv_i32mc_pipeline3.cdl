@@ -19,9 +19,9 @@
 /*a Includes
  */
 include "srams.h"
-include "riscv.h"
-include "riscv_modules.h"
-include "riscv_submodules.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_modules.h"
+include "cpu/riscv/riscv_submodules.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_enable, input bit tdo )
@@ -56,8 +56,6 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
     net   t_riscv_debug_mst debug_mst;
     comb  t_riscv_debug_tgt debug_tgt;
     net   t_riscv_debug_tgt debug_tgt0;
-    net   t_riscv_pipeline_debug_control debug_control0;
-    comb  t_riscv_pipeline_debug_response debug_response0;
 
     net  t_riscv_mem_access_req  dmem_access_req;
     comb t_riscv_mem_access_resp dmem_access_resp;
@@ -66,6 +64,13 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
     comb t_riscv_fetch_req  imem_access_req;
     comb t_riscv_fetch_resp rv_imem_access_resp;
     comb t_riscv_config riscv_config;
+    net t_riscv_csr_controls      csr_controls;
+    net t_riscv_csr_data          csr_data;
+    net t_riscv_csr_access        csr_access;
+    net t_riscv_csrs_minimal csrs;
+    net t_riscv_pipeline_control     pipeline_control;
+    net t_riscv_pipeline_response   pipeline_response;
+    net t_riscv_pipeline_fetch_data  pipeline_fetch_data;
 
     /*b State and comb
      */
@@ -118,7 +123,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
         }
         last_imem_mem_read_data <= imem_mem_read_data;
         se_sram_srw_16384x32 imem(sram_clock <- clk,
-                                  select         <= imem_access_req.valid & (riscv_clk_cycle_0 || riscv_clk_cycle_1),
+                                  select         <= (imem_access_req.req_type!=rv_fetch_none) & (riscv_clk_cycle_0 || riscv_clk_cycle_1),
                                   read_not_write <= 1,
                                   write_enable   <= -1,
                                   address        <= imem_access_req.address[14;2],
@@ -145,9 +150,9 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
      */
     net t_riscv_i32_trace trace;
     comb t_riscv_irqs      irqs;
+    comb bit riscv_clk_enable;
     riscv_instance: {
         tck_enable_fix = tck_enable;
-        debug_response0 = {*=0};
         debug_tgt  = debug_tgt0;
         se_test_harness th(clk <- jtag_tck, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
         riscv_config = {*=0};
@@ -156,7 +161,10 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
         riscv_config.i32m = 1;
         riscv_config.i32m_fuse = 1;
         riscv_config.coproc_disable = 0;
+        riscv_config.debug_enable = 1;
         irqs = {*=0};
+
+        riscv_clk_enable = riscv_clk_cycle_2;        
         
         jtag_tap tap( jtag_tck <- jtag_tck_gated,
                       reset_n <= reset_n,
@@ -178,11 +186,11 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                       dr_tdi_mask => dr_tdi_mask,
                       dr_out => dr_out,
 
-                      apb_clock <- riscv_clk,
+                      apb_clock <- clk,
                       apb_request => apb_request,
                       apb_response <= apb_response );
 
-        riscv_i32_debug dm( clk <- riscv_clk,
+        riscv_i32_debug dm( clk <- clk,
                             reset_n <= reset_n,
 
                             apb_request <= apb_request,
@@ -192,26 +200,59 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                             debug_tgt <= debug_tgt 
             );
 
-        riscv_i32_pipeline_debug pd0( clk <- riscv_clk,
-                                     reset_n <= reset_n,
-                                     debug_mst <= debug_mst,
-                                     debug_tgt => debug_tgt0,
-                                     debug_control => debug_control0,
-                                     debug_response <= debug_response0,
 
-                                     rv_select <= 0 );
+        riscv_i32_pipeline_control pc(clk <- clk,
+                                      reset_n <= reset_n,
+                                      riscv_clk_enable <= riscv_clk_enable,
+                                      csrs <= csrs,
+                                      pipeline_control => pipeline_control,
+                                      pipeline_response <= pipeline_response,
+                                      pipeline_fetch_data <= pipeline_fetch_data,
+                                      riscv_config     <= riscv_config,
+                                      trace            <= trace,
+                                      debug_mst        <= debug_mst,
+                                      debug_tgt       => debug_tgt0,
+                                      rv_select <= 0 );
 
+        riscv_i32_pipeline_control_fetch_req pc_fetch_req( pipeline_control <= pipeline_control,
+                                                           pipeline_response <= pipeline_response,
+                                                           ifetch_req => rv_imem_access_req );
+
+        riscv_i32_pipeline_control_fetch_data pc_fetch_data( pipeline_control <= pipeline_control,
+                                                             ifetch_req  <= rv_imem_access_req,
+                                                             ifetch_resp <= rv_imem_access_resp,
+                                                             pipeline_response <= pipeline_response,
+                                                             pipeline_fetch_data => pipeline_fetch_data );
+
+        riscv_i32_pipeline_control_csr_trace pc_csr_trace( pipeline_control <= pipeline_control,
+                                                           pipeline_response <= pipeline_response,
+                                                           pipeline_fetch_data <= pipeline_fetch_data,
+                                                           riscv_config     <= riscv_config,
+                                                           coproc_response <= coproc_response,
+                                                           coproc_controls  => coproc_controls,
+                                                           csr_controls     => csr_controls,
+                                                           trace            => trace );
+        
         riscv_i32c_pipeline3 dut( clk <- riscv_clk,
                                   reset_n <= reset_n,
-                                  irqs <= irqs,
+                                  pipeline_control <= pipeline_control,
+                                  pipeline_response => pipeline_response,
+                                  pipeline_fetch_data <= pipeline_fetch_data,
                                   dmem_access_req => dmem_access_req,
                                   dmem_access_resp <= dmem_access_resp,
-                                  ifetch_req => rv_imem_access_req,
-                                  ifetch_resp <= rv_imem_access_resp,
-                                  coproc_controls => coproc_controls,
                                   coproc_response <= coproc_response,
-                                  riscv_config <= riscv_config,
-                                  trace => trace
+                                     csr_access       => csr_access,
+                                     csr_read_data    <= csr_data.read_data,
+                                  riscv_config <= riscv_config );
+        
+        riscv_csrs_minimal csrs( clk <- clk,
+                                 reset_n <= reset_n,
+                                 riscv_clk_enable <= riscv_clk_enable,
+                                 irqs <= irqs,
+                                 csr_access     <= csr_access,
+                                 csr_data       => csr_data,
+                                 csr_controls   <= csr_controls,
+                                 csrs => csrs
                          );
 
         riscv_i32_muldiv m( clk <- riscv_clk,
@@ -220,8 +261,9 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                             coproc_response => coproc_response,
                             riscv_config <= riscv_config );
 
-        riscv_i32_trace trace(clk <- riscv_clk,
+        riscv_i32_trace trace(clk <- clk,
                               reset_n <= reset_n,
+                              riscv_clk_enable <= riscv_clk_enable,
                               trace <= trace );
     }
 }

@@ -59,35 +59,22 @@
 
 /*a Includes
  */
-include "riscv_internal_types.h"
-include "riscv.h"
-include "riscv_submodules.h"
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_submodules.h"
 
 /*a Constants
  */
-constant integer INITIAL_PC=0x0;
 constant integer i32c_force_disable=0;
 constant integer coproc_force_disable=0;
+constant integer debug_force_disable=0;
 
 /*a Types
  */
-/*t t_ifetch_combs
- *
- * Combinatorials for the instruction fetch
- */
-typedef struct {
-    bit request;
-    bit[32] address;
-} t_ifetch_combs;
-
 /*t t_decexecrfw_state */
 typedef struct {
-    bit enable                     "Asserted if execution is enabled, deasserted at reset";
     t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
     bit valid                      "Asserted if @instr_data is a valid fetched instruction, whether misaligned or not";
-    bit valid_legal                "Asserted if @instr_data is a valid fetched instruction on a valid alignment";
-    bit illegal_pc                 "Asserted if a valid @instr_data is a fetched instruction from a badly aligned PC";
-    bit[32] pc                     "PC of the fetched instruction";
 } t_decexecrfw_state;
 
 /*t t_decexecrfw_combs
@@ -99,40 +86,28 @@ typedef struct {
 
     t_riscv_word   rs1;
     t_riscv_word   rs2;
-    bit[32] pc_plus_4;
-    bit[32] pc_plus_2;
-    bit[32] pc_plus_inst;
-    bit[32] next_pc;
-    bit     fetch_sequential;
 
-    bit[2]  word_offset;
-    bit[32] branch_target;
-    bit branch_taken;
-    bit trap;
-    t_riscv_trap_cause trap_cause;
-    bit[32] trap_value;
+    bit exec_committed;
     t_riscv_csr_access csr_access;
     t_riscv_word rfw_write_data;
-    t_riscv_word memory_data;
-    bit dmem_misaligned          "Asserted if the dmem address offset in a word does not match the size of the decoded access, whether the instruction is valid or not";
-    bit load_address_misaligned  "Asserted only for valid instructions, for loads not aligned to the alignment of the access";
-    bit store_address_misaligned "Asserted only for valid instructions, for stores not aligned to the alignment of the access";
+    t_riscv_i32_dmem_exec dmem_exec;
+    t_riscv_i32_control_data control_data;
 } t_decexecrfw_combs;
 
 /*a Module
  */
 module riscv_i32c_pipeline( clock clk,
                             input bit reset_n,
-                            input t_riscv_irqs       irqs               "Interrupts in to the CPU",
-                            output t_riscv_mem_access_req  dmem_access_req,
-                            input  t_riscv_mem_access_resp dmem_access_resp,
-                            output t_riscv_fetch_req       ifetch_req,
-                            input  t_riscv_fetch_resp      ifetch_resp,
-                            output t_riscv_i32_coproc_controls  coproc_controls,
-                            input t_riscv_i32_coproc_response   coproc_response,
-                            input  t_riscv_config          riscv_config,
-                            output t_riscv_i32_trace       trace
-)
+                            output t_riscv_mem_access_req      dmem_access_req,
+                            input  t_riscv_mem_access_resp     dmem_access_resp,
+                            input t_riscv_pipeline_control     pipeline_control,
+                            output t_riscv_pipeline_response   pipeline_response,
+                            input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
+                            input t_riscv_i32_coproc_response  coproc_response,
+                            output t_riscv_csr_access          csr_access,
+                            input t_riscv_word                 csr_read_data,
+                            input  t_riscv_config              riscv_config
+    )
 """
 This is just the processor pipeline, using a single stage for execution.
 
@@ -151,7 +126,9 @@ A coprocessor is supported; this may be configured to be disabled, in
 which case the outputs are driven low and the inputs are coprocessor
 response is ignored.
 
-A coprocessor can implement, for example, the multiply for i32m (using riscv_i32_muldiv).
+A coprocessor can implement, for example, the multiply for i32m (using
+riscv_i32_muldiv).  Note that since there is not a separate decode
+stage the multiply cannot support fused operations
 
 """
 {
@@ -163,44 +140,16 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
 
     clocked t_riscv_word[32] registers={*=0} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
 
-    comb    t_ifetch_combs         ifetch_combs;
     net     t_riscv_i32_decode     decexecrfw_idecode_i32;
     net     t_riscv_i32_decode     decexecrfw_idecode_i32c;
-    clocked t_decexecrfw_state     decexecrfw_state={*=0, pc=INITIAL_PC};
+    net     t_riscv_i32_decode     decexecrfw_idecode_debug;
+    clocked t_decexecrfw_state     decexecrfw_state={*=0};
     comb    t_decexecrfw_combs     decexecrfw_combs;
+    net     t_riscv_i32_dmem_request decexecrfw_dmem_request "Data memory request data";
+    net     t_riscv_word           decexecrfw_dmem_read_data;
+    net     t_riscv_i32_control_flow decexecrfw_control_flow;
     net     t_riscv_i32_alu_result decexecrfw_alu_result;
-
-    comb t_riscv_csr_controls csr_controls;
-    net t_riscv_csr_data csr_data;
-    net t_riscv_csrs_minimal csrs;
-
-    /*b Ifetch request
-     */
-    instruction_fetch_request
-    """
-    The instruction fetch request derives from the
-    decode/execute stage (the instruction address that is required
-    next) and presents that to the outside world.
-
-    This request may be for any 16-bit aligned address, and two
-    successive 16-bit words from that request must be presented,
-    aligned to bit 0.
-
-    If the decode/execute stage is invalid (i.e. it does not have a
-    valid instruction to decode) then the current PC is requested.
-    """:
-    {
-        ifetch_combs.address        = decexecrfw_combs.next_pc;
-        if (!decexecrfw_state.valid && decexecrfw_state.enable) {
-            ifetch_combs.address   = decexecrfw_state.pc;
-        }
-        ifetch_combs.request = decexecrfw_state.enable;
-
-        ifetch_req             = {*=0};
-        ifetch_req.valid       = ifetch_combs.request;
-        ifetch_req.sequential  = decexecrfw_combs.fetch_sequential;
-        ifetch_req.address     = ifetch_combs.address;
-    }
+    clocked t_riscv_pipeline_response_rfw rfw_state={*=0};
 
     /*b Decode, RFR, execute and RFW stage - single stage execution
      */
@@ -220,16 +169,13 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
 
     """: {
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
-        decexecrfw_state.enable <= 1;
         decexecrfw_state.valid <= 0;
-        if (ifetch_req.valid && ifetch_resp.valid) {
-            decexecrfw_state.instruction <= {data=ifetch_resp.data, mode=rv_mode_machine};
-            decexecrfw_state.illegal_pc <= 0;
-            decexecrfw_state.valid_legal <= 1;
+        if (pipeline_fetch_data.valid) {
+            decexecrfw_state.instruction <= pipeline_fetch_data.instruction;
+            if (debug_force_disable || !riscv_config.debug_enable) {
+                decexecrfw_state.instruction.debug <= {*=0};
+            }
             decexecrfw_state.valid <= 1;
-        }
-        if (decexecrfw_state.valid) {
-            decexecrfw_state.pc <= decexecrfw_combs.next_pc;
         }
 
         /*b Decode instruction */
@@ -241,196 +187,124 @@ A coprocessor can implement, for example, the multiply for i32m (using riscv_i32
                                        idecode      => decexecrfw_idecode_i32c,
                                        riscv_config <= riscv_config );
 
-        /*b Select decode */
+        riscv_i32_debug_decode decode_i32_debug( instruction  <= decexecrfw_state.instruction,
+                                                 idecode      => decexecrfw_idecode_debug,
+                                                 riscv_config <= riscv_config );
+
+        /*b Select decode (from either i32 or i32c or possible debug) */
         decexecrfw_combs.idecode = decexecrfw_idecode_i32;
         if ((!i32c_force_disable) && riscv_config.i32c) {
             if (decexecrfw_state.instruction.data[2;0]!=2b11) {
                 decexecrfw_combs.idecode = decexecrfw_idecode_i32c;
             }
         }
+        if (!debug_force_disable && riscv_config.debug_enable && decexecrfw_state.instruction.debug.valid) {
+            decexecrfw_combs.idecode = decexecrfw_idecode_debug;
+        }
 
-        /*b Register read */
+        /*b Determine whether to commit to execute */
+        decexecrfw_combs.exec_committed = decexecrfw_state.valid;
+        if (decexecrfw_combs.idecode.illegal || decexecrfw_combs.idecode.illegal_pc) {
+            decexecrfw_combs.exec_committed = 0;
+        }
+
+        /*b Register read - post decode, prior to ALU and CSR accesss */
         decexecrfw_combs.rs1 = registers[decexecrfw_combs.idecode.rs1]; // note that register 0 is ALWAYS 0 anyway
         decexecrfw_combs.rs2 = registers[decexecrfw_combs.idecode.rs2]; // note that register 0 is ALWAYS 0 anyway
 
-        /*b Execute ALU stage */
+        /*b Execute ALU stage - post register read, parallel with CSR access */
         riscv_i32_alu alu( idecode <= decexecrfw_combs.idecode,
-                           pc  <= decexecrfw_state.pc,
+                           pc  <= pipeline_control.decode_pc,
                            rs1 <= decexecrfw_combs.rs1,
                            rs2 <= decexecrfw_combs.rs2,
                            alu_result => decexecrfw_alu_result );
+    
+        /*b CSR accesss - post register read, parallel with ALU */
+        decexecrfw_combs.csr_access                  = decexecrfw_alu_result.csr_access;
+        decexecrfw_combs.csr_access.access_cancelled = !decexecrfw_combs.exec_committed || decexecrfw_control_flow.async_cancel;
+        csr_access = decexecrfw_combs.csr_access;
 
-        /*b Minimal CSRs */
-        csr_controls = {*=0};
-        csr_controls.retire      = decexecrfw_state.valid_legal;
-        csr_controls.timer_inc   = 1;
+        /*b Memory access handling - post ALU - must be valid before middle of cycle */
+        decexecrfw_combs.dmem_exec = { idecode = decexecrfw_combs.idecode,
+                                       arith_result   = decexecrfw_alu_result.arith_result, // address of access
+                                       rs2            = decexecrfw_combs.rs2,    // data for access (before rotation)
+                                       exec_committed = decexecrfw_combs.exec_committed && !decexecrfw_control_flow.async_cancel,
+                                       first_cycle = 1
+        };
+        riscv_i32_dmem_request dmem_req( dmem_exec    <= decexecrfw_combs.dmem_exec,
+                                         dmem_request => decexecrfw_dmem_request );
+        dmem_access_req = decexecrfw_dmem_request.access;
+        // should use illegal dmem access for trap
+        // should use 'needs second cycle'
 
-        decexecrfw_combs.csr_access = decexecrfw_combs.idecode.csr_access;
-        if (!decexecrfw_state.valid_legal || decexecrfw_combs.idecode.illegal) {
-            decexecrfw_combs.csr_access.access = riscv_csr_access_none;
-        }
-        riscv_csrs_minimal csrs( clk <- clk,
-                                 reset_n <= reset_n,
-                                 irqs <= irqs,
-                                 csr_access     <= decexecrfw_combs.csr_access,
-                                 csr_write_data <= decexecrfw_combs.idecode.illegal ? bundle(27b0, decexecrfw_combs.idecode.rs1) : decexecrfw_combs.rs1,
-                                 csr_data       => csr_data,
-                                 csr_controls   <= csr_controls,
-                                 csrs => csrs);
+        /*b Control flow - post ALU for next PC & branch condition met, rest from decode */
+        decexecrfw_combs.control_data = { instruction_data = decexecrfw_state.instruction.data,
+                                          pc = pipeline_control.decode_pc,
+                                          alu_result = decexecrfw_alu_result,
+                                          interrupt_ack = 1,
+                                          valid            = decexecrfw_state.valid,
+                                          exec_committed = decexecrfw_combs.exec_committed,
+                                          idecode = decexecrfw_combs.idecode,
+                                          first_cycle = 1
+        };
+        riscv_i32_control_flow control_flow( pipeline_control <= pipeline_control,
+                                             control_data <= decexecrfw_combs.control_data,
+                                             control_flow => decexecrfw_control_flow );
 
-        /*b Memory access handling - must be valid before middle of cycle */
-        dmem_access_req.read_enable  = (decexecrfw_combs.idecode.op == riscv_op_load);
-        dmem_access_req.write_enable = (decexecrfw_combs.idecode.op == riscv_op_store);
-        if (!decexecrfw_state.valid_legal) {
-            dmem_access_req.read_enable  = 0;
-            dmem_access_req.write_enable = 0;
-        }
-        dmem_access_req.address         = decexecrfw_alu_result.arith_result;
-        decexecrfw_combs.word_offset    = decexecrfw_alu_result.arith_result[2;0];
-        decexecrfw_combs.dmem_misaligned = (decexecrfw_combs.word_offset!=0);
-        dmem_access_req.byte_enable  = 4hf << decexecrfw_combs.word_offset;
-        part_switch (decexecrfw_combs.idecode.memory_width) {
-        case mw_byte: {
-            dmem_access_req.byte_enable  = 4h1 << decexecrfw_combs.word_offset;
-            decexecrfw_combs.dmem_misaligned = 0;
-        }
-        case mw_half: {
-            dmem_access_req.byte_enable  = 4h3 << decexecrfw_combs.word_offset;
-            decexecrfw_combs.dmem_misaligned = decexecrfw_combs.word_offset[0];
-        }
-        default: {
-            decexecrfw_combs.dmem_misaligned = (decexecrfw_combs.word_offset!=0);
-        }
-        }
-        decexecrfw_combs.load_address_misaligned = 1;
-        decexecrfw_combs.store_address_misaligned = 1;
-        if (dmem_access_req.read_enable && decexecrfw_combs.dmem_misaligned) {
-            decexecrfw_combs.load_address_misaligned = 1;
-        }
-        if (dmem_access_req.write_enable && decexecrfw_combs.dmem_misaligned) {
-            decexecrfw_combs.store_address_misaligned = 1;
-        }
-        dmem_access_req.write_data = decexecrfw_combs.rs2 << (bundle(decexecrfw_combs.word_offset,3b0));
+        /*b Pipeline response from decode */
+        // possible add in valid and illegal (if valid && illegal then pipeline will flush)
+        pipeline_response.decode.valid          = decexecrfw_state.valid;
+        pipeline_response.decode.idecode        = decexecrfw_combs.idecode;
+        pipeline_response.decode.blocked        = 0;
+        pipeline_response.decode.branch_target  = 0; // used only if predict_branch - i.e. never in this pipeline
+        pipeline_response.decode.enable_branch_prediction = 0; // Disable branch prediction as we always use exec control flow
 
-        /*b Determine whether branch would be taken and find next PC */
-        decexecrfw_combs.trap = 0;
-        decexecrfw_combs.trap_cause = 0;
-        decexecrfw_combs.trap_value = 0;
-        decexecrfw_combs.branch_taken = 0;
-        decexecrfw_combs.branch_target = decexecrfw_alu_result.branch_target;
-        part_switch (decexecrfw_combs.idecode.op) {
-        case riscv_op_branch:   { decexecrfw_combs.branch_taken = decexecrfw_alu_result.branch_condition_met; }
-        case riscv_op_jal:      { decexecrfw_combs.branch_taken=1; }
-        case riscv_op_jalr:     { decexecrfw_combs.branch_taken=1; }
-        case riscv_op_system:   {
-            if (decexecrfw_combs.idecode.subop==riscv_subop_mret) {
-                decexecrfw_combs.branch_taken=1;
-                decexecrfw_combs.branch_target = csrs.mepc;
-            }
-            if (decexecrfw_combs.idecode.subop==riscv_subop_ecall) {
-                decexecrfw_combs.trap = 1;
-                decexecrfw_combs.trap_cause = riscv_trap_cause_mecall;
-            }
-            if (decexecrfw_combs.idecode.subop==riscv_subop_ebreak) {
-                decexecrfw_combs.trap = 1;
-                decexecrfw_combs.trap_cause = riscv_trap_cause_breakpoint;
-                decexecrfw_combs.trap_value = decexecrfw_state.pc;
-            }
-        }
-        }
-        if (decexecrfw_combs.idecode.illegal) {
-            decexecrfw_combs.trap = 1;
-            decexecrfw_combs.trap_cause = riscv_trap_cause_illegal_instruction;
-            decexecrfw_combs.trap_value = decexecrfw_state.instruction.data;
-        }
-        decexecrfw_combs.pc_plus_4      = decexecrfw_state.pc + 4;
-        decexecrfw_combs.pc_plus_2      = decexecrfw_state.pc + 2;
-        decexecrfw_combs.pc_plus_inst   = decexecrfw_combs.idecode.is_compressed ? decexecrfw_combs.pc_plus_2 : decexecrfw_combs.pc_plus_4;
-        decexecrfw_combs.next_pc = decexecrfw_combs.pc_plus_inst;
-        decexecrfw_combs.fetch_sequential = 1;
-        if (decexecrfw_combs.branch_taken) {
-            decexecrfw_combs.next_pc = decexecrfw_combs.branch_target;
-            decexecrfw_combs.fetch_sequential = 0;
-        }
-        if (decexecrfw_combs.trap) {
-            decexecrfw_combs.next_pc = csrs.mtvec;
-            decexecrfw_combs.fetch_sequential = 0;
-        }
-        csr_controls.trap_cause = decexecrfw_combs.trap_cause;
-        csr_controls.trap       = 0;
-        csr_controls.trap_pc    = decexecrfw_state.pc;
-        csr_controls.trap_value = decexecrfw_combs.trap_value;
-        if (decexecrfw_combs.trap) {
-            csr_controls.trap       = decexecrfw_state.valid_legal;
-        }
-        if (decexecrfw_state.illegal_pc) {
-            csr_controls.trap_cause = riscv_trap_cause_instruction_misaligned;
-            csr_controls.trap       = 1;
-            csr_controls.trap_value = decexecrfw_state.pc;
-        }
+        /*b Pipeline response from exec */
+        pipeline_response.exec.valid           = decexecrfw_state.valid;
+        pipeline_response.exec.cannot_start    = !decexecrfw_combs.exec_committed;
+        pipeline_response.exec.cannot_complete = !decexecrfw_combs.exec_committed;
+        pipeline_response.exec.interrupt_ack   = pipeline_control.interrupt_req;
+        pipeline_response.exec.is_compressed   = decexecrfw_combs.idecode.is_compressed;
+        pipeline_response.exec.pc              = pipeline_control.decode_pc;
+        pipeline_response.exec.instruction     = decexecrfw_state.instruction;
+        pipeline_response.exec.rs1             = decexecrfw_combs.rs1;
+        pipeline_response.exec.rs2             = decexecrfw_combs.rs2;
+        pipeline_response.exec.predicted_branch   = 0;
+        pipeline_response.exec.pc_if_mispredicted = decexecrfw_alu_result.branch_target; // correct for jalr and branch
+        pipeline_response.exec.branch_taken       = decexecrfw_control_flow.branch_taken;
+        pipeline_response.exec.trap               = decexecrfw_control_flow.trap;
 
-        /*b Memory read handling - way late in the second half of the cycle */
-        decexecrfw_combs.memory_data = dmem_access_resp.read_data;
-        part_switch (decexecrfw_combs.idecode.memory_width) {
-        case mw_byte: {
-            decexecrfw_combs.memory_data = (dmem_access_resp.read_data >> (bundle(decexecrfw_combs.word_offset,3b0))) & 0xff;
-            if (!decexecrfw_combs.idecode.memory_read_unsigned && decexecrfw_combs.memory_data[7]) { decexecrfw_combs.memory_data[24;8] = -1; }
-        }
-        case mw_half: {
-            decexecrfw_combs.memory_data = (dmem_access_resp.read_data >> (bundle(decexecrfw_combs.word_offset,3b0))) & 0xffff;
-            if (!decexecrfw_combs.idecode.memory_read_unsigned && decexecrfw_combs.memory_data[15]) { decexecrfw_combs.memory_data[16;16] = -1; }
-        }
-        }
+        pipeline_response.rfw = rfw_state;
 
+        pipeline_response.pipeline_empty = !decexecrfw_state.valid;
+
+        /*b Memory read handling - post memory request and memory read - so way late in the second half of the cycle */
+        riscv_i32_dmem_read_data dmem_data( dmem_request <= decexecrfw_dmem_request,
+                                            last_data <= 0, // only for unaligned reads
+                                            dmem_access_resp <= dmem_access_resp,
+                                            dmem_read_data => decexecrfw_dmem_read_data);
+
+        /*b Register write - post memory read
+         */
         decexecrfw_combs.rfw_write_data = decexecrfw_alu_result.result | coproc_response.result;
         if (coproc_force_disable || riscv_config.coproc_disable) {
             decexecrfw_combs.rfw_write_data = decexecrfw_alu_result.result;
         }
-
         if (dmem_access_req.read_enable) {
-            decexecrfw_combs.rfw_write_data =  decexecrfw_combs.memory_data;
+            decexecrfw_combs.rfw_write_data =  decexecrfw_dmem_read_data;
         }
         if (decexecrfw_combs.idecode.csr_access.access != riscv_csr_access_none) {
-            decexecrfw_combs.rfw_write_data = csr_data.read_data;
+            decexecrfw_combs.rfw_write_data = csr_read_data;
         }
-        if (decexecrfw_state.valid_legal && decexecrfw_combs.idecode.rd_written && !decexecrfw_combs.idecode.illegal) {
+        if (decexecrfw_combs.exec_committed && decexecrfw_combs.idecode.rd_written && !decexecrfw_control_flow.async_cancel) {
             registers[decexecrfw_combs.idecode.rd] <= decexecrfw_combs.rfw_write_data;
         }
         registers[0] <= 0; // register 0 is always zero...
-    }
 
-    /*b Coprocessor interface */
-    coprocessor_interface """
-    Drive the coprocessor controls unless disabled; mirror the pipeline combs
-    """: {
-        coproc_controls = {*=0};
-        coproc_controls.dec_idecode_valid  = decexecrfw_state.valid;
-        coproc_controls.dec_idecode        = decexecrfw_combs.idecode;
-        coproc_controls.dec_to_alu_blocked = coproc_response.cannot_complete; // If ALU can complete...
-        coproc_controls.alu_rs1 = decexecrfw_combs.rs1;
-        coproc_controls.alu_rs2 = decexecrfw_combs.rs2;
-        coproc_controls.alu_flush_pipeline = 0; // No pipeline to flush
-        coproc_controls.alu_cannot_start = coproc_response.cannot_start;       // ALU can always start itself; coprocessor can block it
-        coproc_controls.alu_cannot_complete = coproc_response.cannot_complete; // ALU can always complete (no unaligned transactions yet); coprocessor can block it
-        if (coproc_force_disable || riscv_config.coproc_disable) {
-            coproc_controls = {*=0};
-        }
-    }
-
-    /*b Logging */
-    logging """
-    """: {
-        trace = {*=0};
-        trace.instr_valid    = decexecrfw_state.valid;
-        trace.instr_pc       = decexecrfw_state.pc;
-        trace.instruction    = decexecrfw_state.instruction;
-        trace.rfw_retire     = decexecrfw_state.valid;
-        trace.rfw_data_valid = decexecrfw_state.valid_legal && decexecrfw_combs.idecode.rd_written && !decexecrfw_combs.idecode.illegal;
-        trace.rfw_rd         = decexecrfw_combs.idecode.rd;
-        trace.rfw_data       = decexecrfw_combs.rfw_write_data;
-        trace.branch_taken   = decexecrfw_combs.branch_taken;
-        trace.trap           = decexecrfw_combs.trap;
-        trace.branch_target  = decexecrfw_combs.branch_target;
+        rfw_state.valid      <= decexecrfw_combs.exec_committed && !decexecrfw_control_flow.async_cancel;
+        rfw_state.rd_written <= decexecrfw_combs.exec_committed && decexecrfw_combs.idecode.rd_written;
+        rfw_state.rd         <= decexecrfw_combs.idecode.rd;
+        rfw_state.data       <= decexecrfw_combs.rfw_write_data;
     }
 
     /*b All done */

@@ -18,10 +18,10 @@
 
 /*a Includes
  */
-include "jtag.h"
-include "apb.h"
-include "riscv.h"
-include "riscv_modules.h"
+include "types/jtag.h"
+include "types/apb.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_modules.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_enable, input bit tdo )
@@ -66,15 +66,26 @@ module tb_riscv_jtag_debug( clock jtag_tck,
     comb  t_riscv_debug_tgt debug_tgt;
     net   t_riscv_debug_tgt debug_tgt0;
     net   t_riscv_debug_tgt debug_tgt1;
-    net   t_riscv_pipeline_debug_control debug_control0;
-    net   t_riscv_pipeline_debug_control debug_control1;
     comb  t_riscv_pipeline_debug_response debug_response0;
     comb  t_riscv_pipeline_debug_response debug_response1;
 
     /*b Instantiate APB timer
      */
+    net t_riscv_pipeline_control     pipeline_control0;
+    net t_riscv_pipeline_control     pipeline_control1;
+    comb t_riscv_pipeline_response   pipeline_response;
+    comb t_riscv_pipeline_fetch_data  pipeline_fetch_data;
+    comb t_riscv_i32_trace trace;
+    comb t_riscv_csrs_minimal csrs;
+    comb t_riscv_config riscv_config;
     dut_instance: {
         tck_enable_fix = tck_enable;
+        riscv_config = {*=0};
+        riscv_config.debug_enable = 1;
+        pipeline_response = {*=0};
+        pipeline_fetch_data = {*=0};
+        trace = {*=0};
+        csrs = {*=0};
         debug_response0 = {*=0};
         debug_response1 = {*=0};
         debug_tgt  = debug_tgt0;
@@ -114,22 +125,29 @@ module tb_riscv_jtag_debug( clock jtag_tck,
                             debug_mst  => debug_mst,
                             debug_tgt <= debug_tgt 
             );
-        riscv_i32_pipeline_debug pd0( clk <- apb_clock,
-                                     reset_n <= reset_n,
-                                     debug_mst <= debug_mst,
-                                     debug_tgt => debug_tgt0,
-                                     debug_control => debug_control0,
-                                     debug_response <= debug_response0,
-
-                                     rv_select <= 0 );
-
-        riscv_i32_pipeline_debug pd1( clk <- apb_clock,
-                                     reset_n <= reset_n,
-                                     debug_mst <= debug_mst,
-                                     debug_tgt => debug_tgt1,
-                                     debug_control => debug_control1,
-                                     debug_response <= debug_response1,
-
-                                     rv_select <= 1 );
+        riscv_i32_pipeline_control pc0(clk <- apb_clock,
+                                                 reset_n <= reset_n,
+                                       riscv_clk_enable <= 1,
+                                                 csrs <= csrs,
+                                                 pipeline_control => pipeline_control0,
+                                                 pipeline_response <= pipeline_response,
+                                                 pipeline_fetch_data <= pipeline_fetch_data,
+                                                 riscv_config     <= riscv_config,
+                                                 trace            <= trace,
+                                                 debug_mst        <= debug_mst,
+                                                 debug_tgt       => debug_tgt0,
+                                                 rv_select <= 0 );
+        riscv_i32_pipeline_control pc1(clk <- apb_clock,
+                                                 reset_n <= reset_n,
+                                       riscv_clk_enable <= 1,
+                                                 csrs                <= csrs,
+                                                 pipeline_control    => pipeline_control1,
+                                                 pipeline_response   <= pipeline_response,
+                                                 pipeline_fetch_data <= pipeline_fetch_data,
+                                                 riscv_config        <= riscv_config,
+                                                 trace               <= trace,
+                                                 debug_mst           <= debug_mst,
+                                                 debug_tgt           => debug_tgt1,
+                                                 rv_select <= 1 );
     }
 }

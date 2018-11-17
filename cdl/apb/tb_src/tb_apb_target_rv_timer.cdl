@@ -18,9 +18,8 @@
  * This is a simple testbench for the ROM-based APB transaction processor
  */
 /*a Includes */
-include "srams.h"
-include "apb.h"
-include "apb_peripherals.h"
+include "types/apb.h"
+include "apb/apb_targets.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk,

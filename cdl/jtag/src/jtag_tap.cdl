@@ -30,8 +30,8 @@
  * shifting IR and to be client-defined (based on IR) in shifting DR.
  *
  */
-/*a Imports */
-include "jtag.h"
+/*a Includes */
+include "types/jtag.h"
 
 /*a Constants */
 /*v ir_length

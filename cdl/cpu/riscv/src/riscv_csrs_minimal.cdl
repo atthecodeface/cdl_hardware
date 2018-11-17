@@ -19,14 +19,14 @@
  */
 
 /*a Includes */
-include "riscv_internal_types.h"
+include "cpu/riscv/riscv_internal_types.h"
 
 /*a Constants that can be overridden */
 constant integer mimpid = 0;
 constant integer misa = 0;
 constant integer mvendorid = 0;
 constant integer mhartid = 0;
-constant integer mstatus = 0;
+constant integer debug_force_disable=0;
 
 /*a Types */
 /*t t_csr_write */
@@ -35,12 +35,20 @@ typedef struct {
     bit[32] data       "Write data, dependent on current CSR data potentially";
 } t_csr_write;
 
+/*t t_mode_combs */
+typedef struct {
+    bit d;
+    bit m;
+    bit s;
+    bit u;
+} t_mode_combs;
+
 /*a Module */
-module riscv_csrs_minimal( clock clk                                   "RISC-V clock",
+module riscv_csrs_minimal( clock clk                                   "Free-running clock",
                            input bit reset_n                           "Active low reset",
+                           input bit riscv_clk_enable                  "RISC-V clock enable",
                            input t_riscv_irqs          irqs            "Interrupts in to the CPU",
                            input t_riscv_csr_access    csr_access      "RISC-V CSR access, combinatorially decoded",
-                           input t_riscv_word          csr_write_data  "Write data for the CSR access, later in the cycle than @csr_access possibly",
                            output t_riscv_csr_data     csr_data        "CSR respone (including read data), from the current @a csr_access",
                            input t_riscv_csr_controls  csr_controls    "Control signals to update the CSRs",
                            output t_riscv_csrs_minimal csrs            "CSR values"
@@ -123,11 +131,20 @@ WFI may always be a NOP.
      */
     default clock clk;
     default reset active_low reset_n;
+    gated_clock clock clk active_high riscv_clk_enable riscv_clk;
+    default clock riscv_clk;
     clocked t_riscv_csrs_minimal csrs={*=0};
     comb t_csr_write  csr_write;
+    comb t_mode_combs ret_combs  "Breakout for xRET";
+    comb t_mode_combs trap_combs "Breakout for valid trap to mode";
 
     /*b CSR read/write
      */
+    comb bit[32] mstatus;
+    comb bit[32] mtvec;
+    comb bit[32] mip;
+    comb bit[32] mie;
+    comb bit[32] dcsr;
     csr_read_write """
     CSR_ADDR_MSTATUS
     CSR_ADDR_MISA
@@ -140,6 +157,71 @@ WFI may always be a NOP.
         /*b Decode read data and 'illegal_access' for the CSR access */
         csr_data = {*=0};
         csr_data.illegal_access = 1;
+        mstatus = bundle(csrs.mstatus.sd,
+                         8b0,
+                         csrs.mstatus.tsr,
+                         csrs.mstatus.tw,
+                         csrs.mstatus.tvm,
+                         csrs.mstatus.mxr,
+                         csrs.mstatus.sum,
+                         csrs.mstatus.mprv,
+                         csrs.mstatus.xs,
+                         csrs.mstatus.fs,
+                         csrs.mstatus.mpp,
+                         2b0,
+                         csrs.mstatus.spp,
+                         csrs.mstatus.mpie,
+                         1b0,
+                         csrs.mstatus.spie,
+                         csrs.mstatus.upie,
+                         csrs.mstatus.mie,
+                         1b0,
+                         csrs.mstatus.sie,
+                         csrs.mstatus.uie
+            );
+        mie = bundle(20b0,
+                     csrs.mie.meip,
+                     1b0,
+                     csrs.mie.seip,
+                     csrs.mie.ueip,
+                     csrs.mie.mtip,
+                     1b0,
+                     csrs.mie.stip,
+                     csrs.mie.utip,
+                     csrs.mie.msip,
+                     1b0,
+                     csrs.mie.ssip,
+                     csrs.mie.usip );
+        mip = bundle(20b0,
+                     csrs.mip.meip,
+                     1b0,
+                     csrs.mip.seip,
+                     csrs.mip.ueip,
+                     csrs.mip.mtip,
+                     1b0,
+                     csrs.mip.stip,
+                     csrs.mip.utip,
+                     csrs.mip.msip,
+                     1b0,
+                     csrs.mip.ssip,
+                     csrs.mip.usip );
+        dcsr = bundle(csrs.dcsr.xdebug_ver,
+                      12b0,
+                      csrs.dcsr.ebreakm,
+                      1b0,
+                      csrs.dcsr.ebreaks,
+                      csrs.dcsr.ebreaku,
+                      csrs.dcsr.stepie,
+                      csrs.dcsr.stopcount,
+                      csrs.dcsr.stoptime,
+                      csrs.dcsr.cause,
+                      1b0,
+                      csrs.dcsr.mprven,
+                      csrs.dcsr.nmip,
+                      csrs.dcsr.step,
+                      csrs.dcsr.prv );
+                     
+        mtvec = bundle(csrs.mtvec.base, 1b0, csrs.mtvec.vectored);
         part_switch (csr_access.address) {
         case CSR_ADDR_CYCLE     : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;0]; }
         case CSR_ADDR_CYCLEH    : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;32]; }
@@ -160,26 +242,54 @@ WFI may always be a NOP.
         case CSR_ADDR_MEPC      : { csr_data.illegal_access=0; csr_data.read_data = csrs.mepc; }
         case CSR_ADDR_MCAUSE    : { csr_data.illegal_access=0; csr_data.read_data = csrs.mcause; }
         case CSR_ADDR_MTVAL     : { csr_data.illegal_access=0; csr_data.read_data = csrs.mtval; }
-        case CSR_ADDR_MTVEC     : { csr_data.illegal_access=0; csr_data.read_data = csrs.mtvec; } // can be hardwired to any value, or read/write; tests require read-write
+        case CSR_ADDR_MTVEC     : { csr_data.illegal_access=0; csr_data.read_data = mtvec; } // can be hardwired to any value, or read/write; tests require read-write
             // basic RISC-V tests require the following to not be illegal to write to
         case CSR_ADDR_MEDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
         case CSR_ADDR_MIDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
-        case CSR_ADDR_MIE       : { csr_data.illegal_access=0; csr_data.read_data = 0; }
+        case CSR_ADDR_MIE       : { csr_data.illegal_access=0; csr_data.read_data = mie; }
+        case CSR_ADDR_MIP       : { csr_data.illegal_access=0; csr_data.read_data = mip; }
+        case CSR_ADDR_DEPC      : { csr_data.illegal_access=0; csr_data.read_data = csrs.depc; }
+        case CSR_ADDR_DCSR      : { csr_data.illegal_access=0; csr_data.read_data = dcsr; }
         }
 
         /*b Decode CSR writes */
         csr_write.enable = 0;
-        csr_write.data = csr_write_data;
-        part_switch (csr_access.access) {
-        case riscv_csr_access_write: { csr_write.enable=1; }
-        case riscv_csr_access_rw:    { csr_write.enable=1; }
-        case riscv_csr_access_rs:    { csr_write.enable=1; csr_write.data |= csr_data.read_data; }
-        case riscv_csr_access_rc:    { csr_write.enable=1; csr_write.data  = csr_data.read_data &~ csr_write_data; }
+        csr_write.data = csr_access.write_data;
+        if (!csr_access.access_cancelled) {
+            part_switch (csr_access.access) {
+                case riscv_csr_access_write: { csr_write.enable=1; }
+                case riscv_csr_access_rw:    { csr_write.enable=1; }
+                case riscv_csr_access_rs:    { csr_write.enable=1; csr_write.data |= csr_data.read_data; }
+                case riscv_csr_access_rc:    { csr_write.enable=1; csr_write.data  = csr_data.read_data &~ csr_access.write_data; }
+            }
         }
 
         /*b All done */
     }
 
+    /*b Break out ret and trap */
+    ret_trap_breakout: {
+        trap_combs = {*=0};
+        if (csr_controls.trap.valid) {
+            full_switch (csr_controls.trap.to_mode) {
+            case rv_mode_debug:      { trap_combs.d = 1; }
+            case rv_mode_machine:    { trap_combs.m = 1; }
+            case rv_mode_supervisor: { trap_combs.s = 1; }
+            case rv_mode_user:       { trap_combs.u = 1; }
+            }
+            if (debug_force_disable) { trap_combs.m=1; }
+        }
+        ret_combs = {*=0};
+        if (csr_controls.trap.ret) {
+            full_switch (csr_controls.trap.cause) {
+            case riscv_trap_cause_ret_dret: { ret_combs.d = 1; }
+            case riscv_trap_cause_ret_mret: { ret_combs.m = 1; }
+            case riscv_trap_cause_ret_sret: { ret_combs.s = 1; }
+            case riscv_trap_cause_ret_uret: { ret_combs.u = 1; }
+            }
+        }
+    }
+    
     /*b CSR state update */
     csr_state_update """
     """: {
@@ -209,30 +319,59 @@ WFI may always be a NOP.
             csrs.instret[32;32] <= csr_write.data;
         }
 
+        /*b Handle interrupt pending/enable state */
+        csrs.mip.meip <= irqs.meip;
+        csrs.mip.mtip <= irqs.mtip;
+        csrs.mip.msip <= irqs.msip;
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_MIE)) {
+            csrs.mie.meip <= csr_write.data[11];
+            csrs.mie.mtip <= csr_write.data[7];
+            csrs.mie.msip <= csr_write.data[3];
+        }
+
+        /*b Handle MSTATUS */
+        if (trap_combs.m) {
+            csrs.mstatus.mpp  <= 2b11; //rv_mode_machine; // Since this is all that is supported; actually 'current mode'
+            csrs.mstatus.mpie <= csrs.mstatus.mie;
+            csrs.mstatus.mie  <= 0;
+        } else {
+            if (ret_combs.m) { // note, should enter mode 'csrs.mstatus.mpp'
+                csrs.mstatus.mpp  <= 2b11; //rv_mode_machine;
+                csrs.mstatus.mpie <= 1;
+                csrs.mstatus.mie  <= csrs.mstatus.mpie;
+            }
+            if (csr_write.enable && (csr_access.address==CSR_ADDR_MSTATUS)) {
+                csrs.mstatus.mpp  <= csr_write.data[2;11];
+                csrs.mstatus.mpie <= csr_write.data[7];
+                csrs.mstatus.mie  <= csr_write.data[3];
+            }
+        }
+
         /*b Handle MEPC state */
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MEPC)) {
             csrs.mepc <= csr_write.data;
         }
-        if (csr_controls.trap) {
-            csrs.mepc <= csr_controls.trap_pc;
+        if (trap_combs.m) {
+            csrs.mepc <= csr_controls.trap.pc;
         }
 
         /*b Handle MTVEC state */
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MTVEC)) {
-            csrs.mtvec <= csr_write.data;
+            csrs.mtvec.base     <= csr_write.data[30;2];
+            csrs.mtvec.vectored <= csr_write.data[0];
         }
 
         /*b Handle MTVAL state */
-        if (csr_controls.trap) {
-            csrs.mtval <= csr_controls.trap_value;
+        if (trap_combs.m) {
+            csrs.mtval <= csr_controls.trap.value;
         }
 
         /*b Handle MCAUSE state */
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MCAUSE)) {
             csrs.mcause <= csr_write.data;
         }
-        if (csr_controls.trap) {
-            full_switch (csr_controls.trap_cause) {
+        if (trap_combs.m) {
+            full_switch (csr_controls.trap.cause) {
             case riscv_trap_cause_instruction_misaligned: { csrs.mcause <= bundle(24b0, riscv_mcause_instruction_misaligned); }
             case riscv_trap_cause_instruction_fault:      { csrs.mcause <= bundle(24b0, riscv_mcause_instruction_fault); }
             case riscv_trap_cause_illegal_instruction:    { csrs.mcause <= bundle(24b0, riscv_mcause_illegal_instruction); }
@@ -243,15 +382,92 @@ WFI may always be a NOP.
             case riscv_trap_cause_store_fault:            { csrs.mcause <= bundle(24b0, riscv_mcause_store_fault); }
             case riscv_trap_cause_uecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_uecall); }
             case riscv_trap_cause_secall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_secall); }
-            case riscv_trap_cause_hecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_hecall); }
             case riscv_trap_cause_mecall:                 { csrs.mcause <= bundle(24b0, riscv_mcause_mecall); }
+            default:                                      { csrs.mcause <= bundle(1b1, 23b0, 4b0, csr_controls.trap.cause[4;0]); } // interrupts
             }
         }
 
-        /*b Handle scratch state */
+        /*b Handle MSCRATCH state */
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MSCRATCH)) {
             csrs.mscratch <= csr_write.data;
         }
+
+        /*b Handle DSCRATCH state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_DSCRATCH0)) {
+            csrs.dscratch0 <= csr_write.data;
+        }
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_DSCRATCH1)) {
+            csrs.dscratch1 <= csr_write.data;
+        }
+
+        /*b Handle DEPC state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_DEPC)) {
+            csrs.depc <= csr_write.data;
+        }
+        if (trap_combs.d) {
+            csrs.depc <= csr_controls.trap.pc;
+        }
+
+        /*b Handle DCSR state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_DCSR)) {
+            csrs.dcsr.ebreakm   <= csr_write.data[15];
+            csrs.dcsr.ebreaks   <= csr_write.data[13];
+            csrs.dcsr.ebreaku   <= csr_write.data[12];
+            csrs.dcsr.stepie    <= csr_write.data[11];
+            csrs.dcsr.stopcount <= csr_write.data[10];
+            csrs.dcsr.stoptime  <= csr_write.data[9];
+            csrs.dcsr.mprven    <= csr_write.data[4];
+            csrs.dcsr.step      <= csr_write.data[2];
+            csrs.dcsr.prv       <= csr_write.data[2;0];
+        }
+        if (trap_combs.d) {
+            csrs.dcsr.cause <= 0;
+            csrs.dcsr.prv   <= csr_controls.exec_mode[2;0];
+        }
+        csrs.dcsr.xdebug_ver <= 4;
+
+        /*b Kill registers if debug not enabled */
+        if (debug_force_disable) {
+            csrs.depc <= 0;
+            csrs.dscratch0 <= 0;
+            csrs.dscratch1 <= 0;
+            csrs.dcsr <= {*=0};
+        }
+
+        /*b Tie-offs for machine mode only */
+        //csrs.mtvec.base[;]  <= 0;
+        //csrs.mtvec.vectored <= 0;
+        csrs.mstatus.mpp    <= 2b11; // only machine mode supported
+        csrs.mstatus.sd     <= 0;
+        csrs.mstatus.tsr     <= 0;
+        csrs.mstatus.tw     <= 0;
+        csrs.mstatus.tvm     <= 0;
+        csrs.mstatus.mxr     <= 0;
+        csrs.mstatus.sum     <= 0;
+        csrs.mstatus.mprv     <= 0;
+        csrs.mstatus.xs     <= 0;
+        csrs.mstatus.fs     <= 0;
+        csrs.mstatus.spp     <= 0;
+        csrs.mstatus.spie     <= 0;
+        csrs.mstatus.upie     <= 0;
+        csrs.mstatus.sie     <= 0;
+        csrs.mstatus.uie     <= 0;
+
+        csrs.mip.seip     <= 0; // supervisor external interrupt pending from input pin
+        csrs.mip.seip_sw  <= 0; // supervisor external interrupt pending from machine mode write
+        csrs.mip.ueip     <= 0; // user external interrupt pending from input pin
+        csrs.mip.ueip_sw  <= 0; // user external interrupt pending from machine mode write
+        csrs.mip.stip     <= 0; // supervisor timer interrupt pending from machine mode write
+        csrs.mip.utip     <= 0; // user timer interrupt pending from machine/supervisor mode write
+        csrs.mip.ssip     <= 0; // supervisor software interrupt pending from machine/supervisor mode write
+        csrs.mip.usip     <= 0; // user software interrupt pending from machine/supervisor mode write
+
+        csrs.mie.seip     <= 0;
+        csrs.mie.ueip     <= 0;
+        csrs.mie.stip     <= 0;
+        csrs.mie.utip     <= 0;
+        csrs.mie.ssip     <= 0;
+        csrs.mie.usip     <= 0;
 
         /*b All done */
     }
@@ -260,9 +476,9 @@ WFI may always be a NOP.
     logging """
     """: {
         if (csr_write.enable) {
-            if (csr_access.address == CSR_ADDR_DSCRATCH) {
-                log("Scratch debug write",
-                    "write_data", csr_write_data );
+            if (csr_access.address == CSR_ADDR_DSCRATCH0) {
+                log("Scratch debug 0 write",
+                    "write_data", csr_access.write_data );
             }
         }
     }

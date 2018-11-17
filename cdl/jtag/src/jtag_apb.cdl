@@ -92,8 +92,8 @@
  *
  */
 /*a Includes */
-include "jtag.h"
-include "apb.h"
+include "types/jtag.h"
+include "types/apb.h"
 
 /*a Constants */
 // | 20 bits manufacturer unique | 11 bits of manufacturer ID | 1

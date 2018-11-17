@@ -39,16 +39,18 @@
  * SRAM.
  */
 /*a Includes */
-include "bbc_micro_types.h" // for t_bbc_display_sram_write
-include "framebuffer.h"
-include "csr_interface.h"
+include "types/csr.h"
+include "types/sram.h"
+include "types/video.h"
+include "types/teletext.h"
+include "csr/csr_targets.h"
+include "video/framebuffer_modules.h"
 include "srams.h"
-include "teletext.h"
 
 /*a Constants */
 constant integer cfg_downsize_x=0;
 constant integer cfg_downsize_y=1;
-constant bit[16] csr_select_default = bbc_csr_select_framebuffer;
+constant bit[16] csr_select_default = 0;
 
 /*a Types */
 /*t t_display_fsm */
@@ -98,7 +100,7 @@ typedef struct {
 
 /*t t_sram_state */
 typedef struct {
-    t_bbc_display_sram_write write_request;
+    t_sram_access_req write_request;
 } t_sram_state;
 
 /*t t_video_csrs */
@@ -123,7 +125,7 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
                              clock sram_clk  "SRAM write clock, with frame buffer data",
                              clock video_clk "Video clock, used to generate vsync, hsync, data out, etc",
                              input bit reset_n,
-                             input t_bbc_display_sram_write display_sram_write,
+                             input t_sram_access_req display_sram_write,
                              output t_video_bus video_bus,
                              input bit[16] csr_select_in,
                              input t_csr_request csr_request,
@@ -292,16 +294,16 @@ scrolling, or it can be held at 0.
     sram_write_logic """
     Take the SRAM write bus, register it, then write in the data
     """: {
-        sram_state.write_request.enable <= 0;
-        if (display_sram_write.enable) {
+        sram_state.write_request.valid <= 0;
+        if (display_sram_write.valid) {
             sram_state.write_request <= display_sram_write;
         }
 
         se_sram_mrw_2_16384x8 display(sram_clock_0     <- sram_clk,
-                                       select_0         <= sram_state.write_request.enable,
+                                       select_0         <= sram_state.write_request.valid,
                                        read_not_write_0 <= 0,
                                        address_0        <= sram_state.write_request.address[14;0],
-                                       write_data_0     <= sram_state.write_request.data[8;0],
+                                       write_data_0     <= sram_state.write_request.write_data[8;0],
                                        // data_out_0 =>
                                        
                                        sram_clock_1     <- video_clk,

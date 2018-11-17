@@ -1,0 +1,516 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_minimal.cdl
+ * @brief  Minimal RISC-V implementation ported to CDL
+ *
+ * CDL implementation of minimal RISC-V teaching implementation
+ *
+ * This is a two-stage pipeline implementation, with instruction fetch
+ * of the next PC occuring simultaneously with the decode, register
+ * read, ALU, data read/write request, data read memory access, and
+ * register update.
+ *
+ * The instruction memory request, then, becomes valid dependent on
+ * the decode of the registered instruction last fetched. For most
+ * branches this requires only a small amount of logic, but for
+ * jump-and-link-register instructions (which uses the full ALU
+ * result) this may take a considerable amount of gates to determine
+ * the correct branch target and hence next instruction fetch.  Hence
+ * the instruction memory request is valid after a considerable delay
+ * from the start of the cycle.
+ *
+ * The return value from the instruction memory request must be valid
+ * before the end of the cycle.
+ *
+ * Any instruction memory implementation must start its access well
+ * after the CPU clock edge, , as the request is valid after the CPU
+ * clock edge; the resultant read data delay (from the clock edge)
+ * then has to be factored in to determine when the next CPU clock
+ * edge can occur. Hence it may be sensible to use a double speed
+ * clock (e.g. 'fast_clk') to generate CPU clock edges (every other
+ * fast_clk edge) and SRAM access clock edges (for a synchronous
+ * memory) on the intervening fast_clk edges.
+ *
+ * The data memory request becomes valid, again, a fair time after the
+ * CPU clock edge, as it requires instruction decode, register fetch,
+ * and ALU operation to occur prior to the memory address being valid.
+ *
+ * The data memory response must be valid (for read data!) in the same
+ * CPU cycle, as the returning data has to be rotated to the correct
+ * byte lanes and prepared for the register file write.
+ *
+ * Hence a data memory implementation can be similar to that proposed
+ * for the instruction memory - that is, accesses start on a memory
+ * clock edge that is in the middle of a CPU clock edge, by using a
+ * fast_clk.
+ *
+ */
+
+/*a Includes
+ */
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_submodules.h"
+
+/*a Constants
+ */
+constant integer INITIAL_PC=0x0;
+constant integer start_on_reset = 1;
+constant integer debug_enable   = 1;
+
+/*a Types
+ */
+/*t t_debug_fsm
+ *
+ * State machine
+ */
+typedef fsm {
+    debug_fsm_running;
+    debug_fsm_halting;
+    debug_fsm_halted;
+    debug_fsm_resuming;
+    debug_fsm_start_progbuf;
+    debug_fsm_executing_progbuf;
+} t_debug_fsm;
+
+/*t t_debug_combs
+ *
+ * Combinatorial signals from the state and inputs
+ *
+ */
+typedef struct {
+    bit mst_valid;
+} t_debug_combs;
+
+/*t t_debug_state
+ *
+ * State of debugger target driving
+ *
+ */
+typedef struct {
+    bit attention;
+    bit response;
+} t_debug_drive;
+
+/*t t_debug_control
+ *
+ * State of debugger control FSM etc
+ *
+ */
+typedef struct {
+    t_debug_fsm fsm_state;
+    bit halt_req;
+    bit resume_req;
+    bit exec_progbuf_req;
+    bit halted;
+    bit resumed;
+    bit attention;
+    bit hit_breakpoint;
+    bit[16] arg;
+    t_riscv_debug_resp resp "Response from a requested op - only one op should be requested for each response";
+    t_riscv_word data0      "Data from a completed transaction; 0 otherwise";
+    bit instruction_debug_valid "Asserted if instructino debug is valid (should only happen when halted";
+    t_riscv_i32_inst_debug_op instruction_debug_op;
+    bit waiting_for_read_write;
+    bit read_write_completed;
+} t_debug_control;
+
+/*t t_debug_state
+ *
+ * State of debugger 
+ *
+ */
+typedef struct {
+    t_debug_control control;
+    t_debug_drive   drive;
+} t_debug_state;
+
+/*t t_ifetch_combs
+ *
+ * Combinatorials for the instruction fetch
+ */
+typedef struct {
+    bit debug_disabled;
+    t_riscv_pipeline_control_fetch_action fetch_action;
+    bit interrupt_req;
+    bit[4] interrupt_number;
+} t_ifetch_combs;
+
+/*t t_ifetch_fsm
+ *
+ * State machine for the instruction fetch
+ */
+typedef fsm {
+    ifetch_fsm_halted;
+    ifetch_fsm_restarting;
+    ifetch_fsm_retry;
+    ifetch_fsm_fetching;
+} t_ifetch_fsm;
+
+/*t t_ifetch_state
+ *
+ * State for the instruction fetch
+ */
+typedef struct {
+    t_ifetch_fsm state;
+    t_riscv_mode    mode;
+    bit[32]      pc    "PC to start fetching from";
+    bit halt_req;
+} t_ifetch_state;
+
+/*a Module
+ */
+module riscv_i32_pipeline_control( clock clk,
+                                   input bit reset_n,
+                                   input bit                           riscv_clk_enable   "Clock enable for the RISC-V core",
+                                   input t_riscv_csrs_minimal          csrs,
+                                   output t_riscv_pipeline_control     pipeline_control,
+                                   input t_riscv_pipeline_response     pipeline_response,
+                                   input t_riscv_pipeline_fetch_data   pipeline_fetch_data,
+                                   input  t_riscv_config               riscv_config,
+                                   input t_riscv_i32_trace             trace,
+
+                                   input  t_riscv_debug_mst               debug_mst,
+                                   output t_riscv_debug_tgt               debug_tgt,
+
+                                   input bit[6] rv_select
+)
+"""
+This is a fully synchronous pipeline debug module supporting the pipelines. 
+
+It is designed to feed data in to a RISC-V pipeline (being merged with
+instruction fetch responses), and it takes commands and reports out to
+a RISC-V debug module.
+
+In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 returns ebreak
+
+"""
+{
+    /*b State and comb
+     */
+    default clock clk;
+    default reset active_low reset_n;
+
+    comb t_debug_combs debug_combs;
+    clocked t_debug_state debug_state = {*=0, control={attention=1, halted=1, resumed=0, fsm_state=debug_fsm_halted}}
+        "debug_state must be on the constantly running clock, as the debug interface is shared between cores";
+
+    gated_clock clock clk active_high riscv_clk_enable riscv_clk;
+    default clock riscv_clk;
+    comb    t_ifetch_combs         ifetch_combs;
+    clocked t_ifetch_state         ifetch_state = {*=0, mode=rv_mode_machine, pc=INITIAL_PC, state=ifetch_fsm_halted}
+        "ifetch_state is on the RISC-V clock; debug_state must only uses ifetch_state with correct handshakes";
+
+    /*b Debug state machine - free running clock
+     */
+    debug_state_machine """
+    This logic contains the target of the debug interface, which is
+    used to control the fetch state machine running in the RISC-V
+    clock domain.
+
+    It implements some state that is updated by the debug interface;
+    this causes a state machine to operate, causing some interaction
+    with the fetch state machine, which permits this state machine to
+    complete and return a result on the debug interface as a response.
+
+    If no debug support is present then this logic becomes static and
+    is synthesized out.
+    """ : {
+        /*b Determine if being addressed on debug_mst
+         */
+        debug_combs.mst_valid = debug_mst.valid;
+        if (debug_mst.select != rv_select) {
+            debug_combs.mst_valid = 0;
+        }
+
+        /*b If being addressed then update debug state
+         */
+        if (riscv_clk_enable) {debug_state.control.instruction_debug_valid <= 0;}
+        if (debug_combs.mst_valid) {
+            debug_state.control.attention <= 0;
+            full_switch (debug_mst.op) {
+            case rv_debug_acknowledge: { // no-op as far as request to do is concerned
+                debug_state.control.attention <= 0;
+            }
+            case rv_debug_set_requests: {
+                debug_state.control.halt_req <= debug_mst.arg[0];
+                debug_state.control.resume_req <= debug_mst.arg[1];
+            }
+            case rv_debug_read: {
+                assert((debug_state.control.fsm_state == debug_fsm_halted), "Debug module must be halted to do debug read op");
+                debug_state.control.arg   <= debug_mst.arg;
+                debug_state.control.data0 <= debug_mst.data;
+                debug_state.control.instruction_debug_valid <= 1;
+                debug_state.control.instruction_debug_op    <= rv_inst_debug_op_read_reg;
+                debug_state.control.waiting_for_read_write   <= 1;
+            }
+            case rv_debug_write: {
+                assert((debug_state.control.fsm_state == debug_fsm_halted), "Debug module must be halted to do debug write op");
+                debug_state.control.arg   <= debug_mst.arg;
+                debug_state.control.instruction_debug_valid <= 1;
+                debug_state.control.instruction_debug_op    <= rv_inst_debug_op_write_reg;
+                debug_state.control.waiting_for_read_write   <= 1;
+                debug_state.control.data0 <= debug_mst.data;
+            }
+            case rv_debug_execute_progbuf: {
+                assert((debug_state.control.fsm_state == debug_fsm_halted), "Debug module must be halted to do debug execute op");
+                debug_state.control.data0 <= debug_mst.data;
+                debug_state.control.exec_progbuf_req <= 1;
+            }
+            }
+        }
+        if (pipeline_response.rfw.valid && debug_state.control.waiting_for_read_write) {
+            debug_state.control.data0 <= pipeline_response.rfw.data;
+            debug_state.control.waiting_for_read_write   <= 0;
+            debug_state.control.read_write_completed  <= 1;
+            debug_state.control.resp <= rv_debug_resp_read_write_complete;
+            debug_state.control.attention <= 1;
+        }
+
+        /*b Manage debug_state resumption response */
+        if (debug_state.control.resumed && !debug_state.control.resume_req) {
+            debug_state.control.resumed <= 0;
+            debug_state.control.attention <= 1;
+        }
+        if (debug_state.control.read_write_completed && debug_state.drive.response) {
+            debug_state.control.read_write_completed <= 0;
+            debug_state.control.resp <= rv_debug_resp_acknowledge;
+        }
+
+        /*b Handle debug state machine */
+        full_switch (debug_state.control.fsm_state) {
+        case debug_fsm_running: {
+            if (debug_state.control.halt_req) {
+                debug_state.control.fsm_state <= debug_fsm_halting;
+            }
+            if ((ifetch_state.state == ifetch_fsm_halted) && riscv_clk_enable) { // due to ebreak presumably
+                debug_state.control.fsm_state <= debug_fsm_halting; // so we go through all the correct steps
+                debug_state.control.hit_breakpoint <= 0; //?
+            }
+        }
+        case debug_fsm_halting: {
+            if ((ifetch_state.state == ifetch_fsm_halted) && riscv_clk_enable) {
+                debug_state.control.fsm_state <= debug_fsm_halted;
+                debug_state.control.halted <= 1;
+                debug_state.control.attention <= 1;
+                debug_state.control.hit_breakpoint <= 0; //?
+            }
+        }
+        case debug_fsm_halted: { // can resume or single step from here (or read/write register, or execute progbuf)
+            if (debug_state.control.resume_req && !debug_state.control.resumed) {
+                debug_state.control.fsm_state <= debug_fsm_resuming;
+            }
+            if (debug_state.control.exec_progbuf_req) {
+                debug_state.control.exec_progbuf_req <= 0;
+                debug_state.control.fsm_state <= debug_fsm_start_progbuf;
+            }
+        }
+        case debug_fsm_start_progbuf: {
+            if ((ifetch_state.state != ifetch_fsm_halted) && riscv_clk_enable) { // wait for pipeline to be empty?
+                debug_state.control.fsm_state <= debug_fsm_executing_progbuf;
+            }
+        }
+        case debug_fsm_executing_progbuf: {
+            if ((ifetch_state.state == ifetch_fsm_halted) && riscv_clk_enable) { // wait for pipeline to be empty?
+                debug_state.control.fsm_state <= debug_fsm_halted;
+            }
+        }
+        case debug_fsm_resuming: {
+            if ((ifetch_state.state != ifetch_fsm_halted) && riscv_clk_enable) { // wait for pipeline to be empty?
+                debug_state.control.fsm_state <= debug_fsm_running;
+                debug_state.control.hit_breakpoint <= 0;
+                debug_state.control.halted <= 0;
+                debug_state.control.resumed <= 1;
+                debug_state.control.attention <= 1;
+            }
+        }
+        }
+
+        /*b Kill debug state if debugger not enabled */
+        if (ifetch_combs.debug_disabled) {
+            debug_state.control   <= debug_state.control;
+        }
+
+        /*b All done */
+    }
+
+    /*b Pipeline control
+     */
+    pipeline_control_logic
+    """
+    The instruction fetch request derives from the
+    decode/execute stage (the instruction address that is required
+    next) and presents that to the outside world.
+
+    This request may be for any 16-bit aligned address, and two
+    successive 16-bit words from that request must be presented,
+    aligned to bit 0.
+
+    If the decode/execute stage is invalid (i.e. it does not have a
+    valid instruction to decode) then the current PC is requested.
+    """:
+    {
+        // handle wfi_mode[] too
+        //        machine_mode_int_req = 0;
+        ifetch_combs.debug_disabled = (!debug_enable || !riscv_config.debug_enable);
+        ifetch_combs.interrupt_req = 0;
+        ifetch_combs.interrupt_number = 0;
+        if (csrs.mip.mtip & csrs.mie.mtip) {
+           ifetch_combs.interrupt_req    = csrs.mstatus.mie; // and only if not in debug
+           ifetch_combs.interrupt_number = 7;
+        }
+        if (csrs.mip.msip & csrs.mie.msip) {
+           ifetch_combs.interrupt_req    = csrs.mstatus.mie; // and only if not in debug
+           ifetch_combs.interrupt_number = 3;
+        }
+        if (csrs.mip.meip & csrs.mie.meip) {
+           ifetch_combs.interrupt_req    = csrs.mstatus.mie; // and only if not in debug
+           ifetch_combs.interrupt_number = 11;
+        }
+
+        ifetch_combs.fetch_action   = rv_pc_fetch_action_idle;
+        ifetch_state.halt_req <= 0;
+        full_switch (ifetch_state.state) {
+        case ifetch_fsm_halted: {
+            if (debug_state.control.fsm_state == debug_fsm_resuming){
+                ifetch_state.state <= ifetch_fsm_restarting;
+                ifetch_state.pc   <= csrs.depc;
+                ifetch_state.mode <= rv_mode_machine;
+            }
+            if (debug_state.control.fsm_state == debug_fsm_start_progbuf) {
+                ifetch_state.state <= ifetch_fsm_restarting;
+                ifetch_state.pc   <= 0xffffff00;
+                ifetch_state.mode <= rv_mode_debug;
+            }
+            if (ifetch_combs.debug_disabled) {
+                ifetch_state.state <= ifetch_fsm_restarting;
+                ifetch_state.pc   <= INITIAL_PC;
+                ifetch_state.mode <= rv_mode_machine;
+            }
+            if (debug_state.control.waiting_for_read_write) {
+                ifetch_combs.fetch_action   = rv_pc_fetch_action_none;
+            }
+        }
+        case ifetch_fsm_restarting, ifetch_fsm_fetching, ifetch_fsm_retry: { // present request, decode should be valid, pipeline not empty
+            ifetch_state.state <= ifetch_fsm_retry; // retry next means that the decode NOW is valid and blocked. possibly it should also work for decode NOW invalid and fetch data is invalid in which case the address may need to be hacked
+            ifetch_combs.fetch_action   = rv_pc_fetch_action_continue_fetching;
+            if (ifetch_state.state == ifetch_fsm_restarting) {
+                ifetch_combs.fetch_action   = rv_pc_fetch_action_restart_at_pc;
+                ifetch_state.state <= ifetch_fsm_fetching;
+            }
+            if (ifetch_state.state == ifetch_fsm_retry) {
+                ifetch_combs.fetch_action   = rv_pc_fetch_action_retry; // note that decode MUST be valid here with same data as last cycle hence if we feed in same PC we get the same fetch request
+            }
+            if (pipeline_fetch_data.valid && pipeline_response.decode.blocked) {
+                ifetch_state.pc <= ifetch_state.pc;
+            } else {
+                ifetch_state.pc <= pipeline_fetch_data.pc;
+            }
+            if (debug_state.control.fsm_state == debug_fsm_halting) {
+                ifetch_state.halt_req <= !ifetch_combs.debug_disabled;
+            }
+            if (csrs.dcsr.step && pipeline_response.exec.valid) {
+                ifetch_state.halt_req <= 1;
+            }
+            if (pipeline_fetch_data.valid && !pipeline_response.decode.blocked) {
+                ifetch_state.pc <= pipeline_fetch_data.pc;
+                ifetch_state.state <= ifetch_fsm_fetching;
+            }
+            if (pipeline_response.exec.valid && (pipeline_response.exec.branch_taken != pipeline_response.exec.predicted_branch)) {
+                ifetch_state.pc <= pipeline_response.exec.pc_if_mispredicted; // late address, late decision
+                ifetch_state.state <= ifetch_fsm_restarting;
+            }
+            if (pipeline_response.exec.trap.ret) { // late decision
+                ifetch_state.pc <= csrs.mepc;
+                ifetch_state.state <= ifetch_fsm_restarting;
+                ifetch_state.mode <= rv_mode_machine;
+            }
+            if (pipeline_response.exec.trap.valid) { // vector interrupts if required, late decision
+                if (pipeline_control.interrupt_to_mode == rv_mode_debug) {
+                    ifetch_state.halt_req <= 0;
+                    ifetch_state.state <= ifetch_fsm_halted;
+                } elsif (pipeline_response.exec.trap.ebreak_to_dbg) {
+                    ifetch_state.state <= ifetch_fsm_halted;
+                } else {
+                    ifetch_state.state <= ifetch_fsm_restarting;
+                }
+                ifetch_state.mode <= pipeline_control.interrupt_to_mode;
+                ifetch_state.pc <= bundle(csrs.mtvec.base, 2b0);
+            }
+            }   
+        }
+    }
+    pc_logic: {
+        pipeline_control                   = {*=0};
+        pipeline_control.valid             = 1;
+        pipeline_control.decode_pc         = ifetch_state.pc;
+        pipeline_control.fetch_action      = ifetch_combs.fetch_action;
+        pipeline_control.mode              = ifetch_state.mode;
+        pipeline_control.ebreak_to_dbg      = 0;
+        full_switch (ifetch_state.mode) {
+        case rv_mode_debug:      { pipeline_control.ebreak_to_dbg = 1; }
+        case rv_mode_machine:    { pipeline_control.ebreak_to_dbg = csrs.dcsr.ebreakm; }
+        case rv_mode_supervisor: { pipeline_control.ebreak_to_dbg = csrs.dcsr.ebreaks; }
+        case rv_mode_user:       { pipeline_control.ebreak_to_dbg = csrs.dcsr.ebreaku; }
+        }
+        if (ifetch_combs.debug_disabled) { pipeline_control.ebreak_to_dbg = 0; }
+        
+        pipeline_control.interrupt_req     = ifetch_combs.interrupt_req  || ifetch_state.halt_req;
+        pipeline_control.interrupt_number  = ifetch_combs.interrupt_number;
+        pipeline_control.interrupt_to_mode = ifetch_state.halt_req ? rv_mode_debug : ifetch_state.mode;
+        pipeline_control.instruction_data  = debug_state.control.data0;
+        pipeline_control.instruction_debug = {
+            valid    = debug_state.control.instruction_debug_valid,
+            debug_op = debug_state.control.instruction_debug_op,
+            data     = debug_state.control.arg
+        };
+    }
+
+    /*b Drive debug response
+     */
+    debug_response_driving """
+    """ : {
+
+        debug_state.drive <= {*=0};
+        if ((debug_mst.mask & rv_select) == debug_mst.select) {
+            debug_state.drive.attention <= 1;
+        }
+        if (debug_mst.valid && (rv_select==debug_mst.select)) {
+            debug_state.drive.response <= 1;
+        }
+        if (ifetch_combs.debug_disabled) {
+            debug_state.drive <= {*=0};
+        }
+
+        debug_tgt = {*=0};
+        if (debug_state.drive.attention) {
+            debug_tgt.attention = debug_state.control.attention;
+        }
+        if (debug_state.drive.response) {
+            debug_tgt.valid          = 1;
+            debug_tgt.selected       = rv_select;
+            debug_tgt.halted         = debug_state.control.halted;
+            debug_tgt.resumed        = debug_state.control.resumed;
+            debug_tgt.hit_breakpoint = debug_state.control.hit_breakpoint;
+            debug_tgt.resp           = debug_state.control.resp;
+            debug_tgt.data           = debug_state.control.data0;
+        }
+        if (ifetch_combs.debug_disabled) {
+            debug_tgt = {*=0};
+        }
+    }
+
+    /*b All done
+     */
+}

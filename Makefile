@@ -41,6 +41,7 @@ PYTHON_DIR  := ${SRC_ROOT}/python
 PREFIX_OBJ_DIR := $(CURDIR)/build/
 DEBUG_BUILD := no
 EXTRA_CDLFLAGS := --extra_cdlflags="--v_clkgate_type='banana' --v_use_always_at_star --v_clks_must_have_enables "
+BBC_DATA_DIR := $(CURDIR)/../bbc_data
 
 LOCAL_DIR := /usr/local
 LOCAL_CFLAGS   := -I${LOCAL_DIR}/include ${EXTRA_CFLAGS}
@@ -95,6 +96,13 @@ test_regress_riscv: ${TARGET_DIR}/py_engine.so
 	${REGRESS_ALL} regression.riscv_minimal
 
 #a Operational targets
+.PHONY: bbc_data
+bbc_data:
+	mkdir -p roms disks
+	cp ${BBC_DATA_DIR}/roms/* roms
+	cp ${BBC_DATA_DIR}/disks/* disks
+	python python/rom_to_mif.py
+
 .PHONY: non_bbc_roms
 non_bbc_roms:
 	python python/teletext_font.py > roms/teletext.mif
@@ -103,19 +111,18 @@ non_bbc_roms:
 	python python/ps2_bbc_kbd_map.py
 
 .PHONY: roms
-roms: non_bbc_roms
-	python python/rom_to_mif.py
+roms: bbc_data
 
-bbc_run: ${TARGET_DIR}/py_engine.so
+bbc_run: bbc_data ${TARGET_DIR}/py_engine.so
 	BBC=1 ${REGRESS_ALL}
 
 bbc_waves: ${TARGET_DIR}/py_engine.so
 	WAVES=1 BBC=1 ${REGRESS_ALL}
 
 riscv_flows: ${TARGET_DIR}/py_engine.so
-	${REGRESS_ALL} regression.riscv_minimal.riscv_i32c_pipeline3.${TEST}
+	(${REGRESS_ALL} regression.riscv_minimal.riscv_i32c_pipeline3.${TEST}) || echo "test failed but keep going"
 	./python/rv_flow.py > min_pipe3_${TEST}.flow
-	${REGRESS_ALL} regression.riscv_minimal.riscv_minimal.${TEST}
+	(${REGRESS_ALL} regression.riscv_minimal.riscv_i32_minimal.${TEST})  || echo "test failed but keep going"
 	./python/rv_flow.py > min_min_${TEST}.flow
 	diff min_pipe3_${TEST}.flow min_min_${TEST}.flow
 
@@ -135,6 +142,7 @@ help_top:
 	@echo "This makefile permits making, testing and running of the BBC micro"
 	@echo "The standard ROMs and disk images are not included in a standard distribution"
 	@echo "due to copyright reasons"
+	@echo ""
 	@echo "The BBC micro operation depends on an OS1.2 ROM, Basic2 ROM and a DFS ROM"
 	@echo "These need to be in MIF file format in roms as 'os12.rom.mif', 'basic2.rom.mif' and 'dfs.rom.mif'"
 	@echo "To convert roms from binary to MIF, use python/rom_to_mif or just 'make roms'"

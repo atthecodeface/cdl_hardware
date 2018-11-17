@@ -24,8 +24,8 @@
 
 /*a Includes
  */
-include "apb.h"
-include "axi.h"
+include "types/apb.h"
+include "types/axi.h"
 
 /*a Types */
 typedef fsm

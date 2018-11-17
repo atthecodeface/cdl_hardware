@@ -160,8 +160,9 @@ OS execution
 */
 /*a Includes
  */
-include "bbc_micro_types.h"
-include "bbc_submodules.h"
+include "microcomputers/bbc/bbc_types.h"
+include "microcomputers/bbc/bbc_submodules.h"
+include "srams.h"
 
 /*a Global variables
  */

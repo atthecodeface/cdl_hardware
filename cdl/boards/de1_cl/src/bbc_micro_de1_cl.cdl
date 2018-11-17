@@ -21,30 +21,35 @@
  *
  */
 /*a Includes */
-include "bbc_micro_types.h"
-include "bbc_submodules.h"
-include "de1_cl.h"
-include "dprintf.h"
-include "input_devices.h"
-include "leds.h"
-include "de1_cl.h"
+include "microcomputers/bbc/bbc_submodules.h"
+include "types/ps2.h"
+include "types/led.h"
+include "boards/de1_cl/de1_cl_types.h"
+include "boards/de1.h"
 
 /*a Constants */
 
 /*a Module */
-module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generator",
-                         clock video_clk    "9MHz clock from PLL, derived from 50MHz",
+module bbc_micro_de1_cl( clock clk               "50MHz clock from DE1 clock generator",
+                         clock de1_vga_clock     "VGA clock, not used",
+                         clock de1_cl_lcd_clock    "9MHz clock from PLL, derived from 50MHz",
                          input bit reset_n  "hard reset from a pin - a key on DE1",
-                         input bit video_locked "High if video PLL has locked",
-                         output t_de1_cl_lcd lcd   "LCD display out to computer lab daughterboard",
-                         input bit[4] keys       "DE1 keys",
-                         input bit[10] switches  "DE1 switches",
-                         output bit[10] leds     "DE1 leds",
-                         input t_ps2_pins ps2_in   "PS2 input pins",
-                         output t_ps2_pins ps2_out "PS2 output pin driver open collector",
-                         output bit led_data_pin "DE1 CL daughterboard neopixel LED pin",
-                         input  t_de1_cl_inputs_status   inputs_status  "DE1 CL daughterboard shifter register etc status",
-                         output t_de1_cl_inputs_control  inputs_control "DE1 CL daughterboard shifter register control"
+                         input bit de1_vga_reset_n  "Combination of resets",
+                         input bit de1_cl_lcd_reset_n  "Combination of resets",
+                         input bit de1_vga_clock_locked    "High if VGA PLL has locked",
+                         input bit de1_cl_lcd_clock_locked "High if LCD PLL has locked",
+                         output t_de1_cl_lcd de1_cl_lcd   "LCD display out to computer lab daughterboard",
+                         input t_de1_inputs de1_inputs  "DE1 inputs",
+                         output t_de1_leds  de1_leds    "DE1 LEDs (red+hex)",
+                         input t_ps2_pins de1_ps2_in   "PS2 input pins",
+                         output t_ps2_pins de1_ps2_out "PS2 output pin driver open collector",
+                         input t_ps2_pins de1_ps2b_in   "PS2 input pins",
+                         output t_ps2_pins de1_ps2b_out "PS2 output pin driver open collector",
+                         output bit de1_cl_led_data_pin "DE1 CL daughterboard neopixel LED pin",
+                         output bit de1_irda_txd        "IrDA tx data pin",
+                         output t_adv7123 de1_vga     "DE1 VGA board output",
+                         input  t_de1_cl_inputs_status   de1_cl_inputs_status  "DE1 CL daughterboard shifter register etc status",
+                         output t_de1_cl_inputs_control  de1_cl_inputs_control "DE1 CL daughterboard shifter register control"
     )
 {
     net t_video_bus bbc_video_bus;
@@ -52,14 +57,14 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
 
     net t_bbc_clock_control bbc_clock_control;
 
-    net t_ps2_pins ps2_out;
+    net t_ps2_pins de1_ps2_out;
 
     net t_csr_request csr_request;
     net t_csr_response bbc_csr_response;
 
     net  bit led_chain;
-    net bit[10] leds;
-    net  t_de1_cl_inputs_control inputs_control "DE1 CL IO inputs control - shift register clock, and so on";
+    net  t_de1_leds de1_leds;
+    net  t_de1_cl_inputs_control de1_cl_inputs_control "DE1 CL IO inputs control - shift register clock, and so on";
 
     comb bit bbc_reset_n;
     comb bit framebuffer_reset_n;
@@ -69,61 +74,63 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
     /*b Miscellaneous logic */
     misc_logic """
     """: {
-        bbc_reset_n             = reset_n & !bbc_clock_control.reset_cpu & switches[0];
-        framebuffer_reset_n     = reset_n & video_locked;
+        bbc_reset_n             = reset_n & !bbc_clock_control.reset_cpu & de1_inputs.switches[0];
+        framebuffer_reset_n     = reset_n & de1_cl_lcd_clock_locked;
+        de1_irda_txd = 0;
+        de1_vga = {*=0};
+        de1_ps2b_out = {*=0};
     }
 
     /*b DE1/CL IO for BBC subsystem */
     bbc_de1_cl_instantiations: {
-        bbc_micro_de1_cl_io io( clk <- clk,
-                                video_clk <- video_clk,
-                                reset_n <= reset_n,
-                                bbc_reset_n <= bbc_reset_n,
+        bbc_micro_de1_cl_io io( clk                 <- clk,
+                                video_clk           <- de1_cl_lcd_clock,
+                                reset_n             <= reset_n,
+                                bbc_reset_n         <= bbc_reset_n,
                                 framebuffer_reset_n <= framebuffer_reset_n,
-                                keys <= keys,
-                                switches <= switches,
-                                clock_control <= bbc_clock_control,
-                                bbc_keyboard => bbc_keyboard,
-                                video_bus => io_video_bus,
-                                csr_request => csr_request,
-                                csr_response <= bbc_csr_response,
-                                inputs_control => inputs_control,
-                                inputs_status <= inputs_status,
-                                ps2_in <= ps2_in,
-                                ps2_out => ps2_out,
-                                lcd_source => lcd_source,
-                                leds => leds,
-                                led_chain => led_chain
+                                de1_inputs          <= de1_inputs,
+                                clock_control       <= bbc_clock_control,
+                                bbc_keyboard        => bbc_keyboard,
+                                video_bus           => io_video_bus,
+                                csr_request         => csr_request,
+                                csr_response        <= bbc_csr_response,
+                                inputs_control      => de1_cl_inputs_control,
+                                inputs_status       <= de1_cl_inputs_status,
+                                ps2_in              <= de1_ps2_in,
+                                ps2_out             => de1_ps2_out,
+                                lcd_source          => lcd_source,
+                                de1_leds            => de1_leds,
+                                led_chain           => led_chain
             );
     }
 
     /*b BBC Micro subsystem */
     bbc_micro_instantiations: {
-        bbc_micro_de1_cl_bbc bbc( clk <- clk,
-                                  video_clk <- video_clk,
-                                  reset_n <= reset_n,
-                                  bbc_reset_n <= bbc_reset_n,
+        bbc_micro_de1_cl_bbc bbc( clk                 <- clk,
+                                  video_clk           <- de1_cl_lcd_clock,
+                                  reset_n             <= reset_n,
+                                  bbc_reset_n         <= bbc_reset_n,
                                   framebuffer_reset_n <= framebuffer_reset_n,
-                                  clock_control => bbc_clock_control,
-                                  bbc_keyboard <= bbc_keyboard,
-                                  video_bus => bbc_video_bus,
-                                  csr_request <= csr_request,
-                                  csr_response => bbc_csr_response );
+                                  clock_control       => bbc_clock_control,
+                                  bbc_keyboard        <= bbc_keyboard,
+                                  video_bus           => bbc_video_bus,
+                                  csr_request         <= csr_request,
+                                  csr_response        => bbc_csr_response );
     }
 
     /*b Output muxes */
     output_muxes """
     """: {
-        lcd = { vsync_n        = !bbc_video_bus.vsync,
-                hsync_n        = !bbc_video_bus.hsync,
-                display_enable = bbc_video_bus.display_enable,
-                red            = bbc_video_bus.red[6;2],
-                green          = bbc_video_bus.green[7;1],
-                blue           = bbc_video_bus.blue[6;2],
-                backlight = switches[1]
+        de1_cl_lcd = { vsync_n        = !bbc_video_bus.vsync,
+                       hsync_n        = !bbc_video_bus.hsync,
+                       display_enable = bbc_video_bus.display_enable,
+                       red            = bbc_video_bus.red[6;2],
+                       green          = bbc_video_bus.green[7;1],
+                       blue           = bbc_video_bus.blue[6;2],
+                       backlight = de1_inputs.switches[1]
         };
         if (lcd_source) {
-            lcd = { vsync_n        = !io_video_bus.vsync,
+            de1_cl_lcd = { vsync_n        = !io_video_bus.vsync,
                     hsync_n        = !io_video_bus.hsync,
                     display_enable = io_video_bus.display_enable,
                     red            = io_video_bus.red[6;2],
@@ -131,7 +138,7 @@ module bbc_micro_de1_cl( clock clk          "50MHz clock from DE1 clock generato
                     blue           = io_video_bus.blue[6;2]
             };
         }
-        led_data_pin = !led_chain;
+        de1_cl_led_data_pin = !led_chain;
     }
 
     /*b All done */

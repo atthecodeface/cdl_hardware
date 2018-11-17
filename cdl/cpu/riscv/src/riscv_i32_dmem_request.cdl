@@ -1,0 +1,104 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_alu.cdl
+ * @brief  ALU for i32 RISC-V implementation
+ *
+ * CDL implementation of RISC-V i32 ALU based on the RISC-V
+ * specification v2.1.
+ *
+ */
+
+/*a Includes
+ */
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+
+/*a Types
+ */
+/*t t_dmem_combs */
+typedef struct {
+    bit[2] word_offset;
+    bit dmem_misaligned          "Asserted if the dmem address offset in a word does not match the size of the decoded access, whether the instruction is valid or not";
+} t_dmem_combs;
+
+/*a Module
+ */
+module riscv_i32_dmem_request( input  t_riscv_i32_dmem_exec     dmem_exec,
+                               output t_riscv_i32_dmem_request  dmem_request
+    )
+"""
+
+"""
+{
+    comb t_dmem_combs dmem_combs;
+    code : {
+        dmem_request.access.address   = dmem_exec.arith_result;
+        dmem_combs.word_offset    = dmem_exec.arith_result[2;0];
+
+        dmem_request.access.byte_enable  = 4hf << dmem_combs.word_offset;
+        dmem_combs.dmem_misaligned       = (dmem_combs.word_offset!=0); // valid for words
+        dmem_request.multicycle          = (dmem_combs.word_offset!=0); // valid for words
+        dmem_request.read_data_rotation    = dmem_combs.word_offset;
+        dmem_request.read_data_byte_enable = 4hf;
+        dmem_request.read_data_byte_clear  = 4hf;
+        dmem_request.sign_extend_half = 0;
+        dmem_request.sign_extend_byte = 0;
+        part_switch (dmem_exec.idecode.memory_width) {
+            case mw_byte: { // always single cycle!
+            dmem_combs.dmem_misaligned = 0;
+            dmem_request.access.byte_enable  = 4h1 << dmem_combs.word_offset;
+            dmem_request.read_data_byte_enable = 4h1;
+            dmem_request.sign_extend_byte = !dmem_exec.idecode.memory_read_unsigned;
+            dmem_request.multicycle = 0;
+        }
+        case mw_half: {
+            dmem_combs.dmem_misaligned = dmem_combs.word_offset[0];
+            dmem_request.access.byte_enable  = 4h3 << dmem_combs.word_offset;
+            dmem_request.read_data_byte_enable = 4h3;
+            dmem_request.sign_extend_half = !dmem_exec.idecode.memory_read_unsigned;
+            dmem_request.multicycle = (dmem_combs.word_offset==2b11);
+        }
+        default: {
+            dmem_combs.dmem_misaligned = (dmem_combs.word_offset!=0);
+            dmem_request.access.byte_enable  = 4hf << dmem_combs.word_offset;
+            dmem_request.multicycle = (dmem_combs.word_offset!=0);
+        }
+        }
+
+        dmem_request.access.read_enable  = (dmem_exec.idecode.op == riscv_op_load);
+        dmem_request.access.write_enable = (dmem_exec.idecode.op == riscv_op_store);
+        if (!dmem_exec.exec_committed) {
+            dmem_request.access.read_enable  = 0;
+            dmem_request.access.write_enable = 0;
+        }
+        dmem_request.reading = dmem_request.access.read_enable;
+
+        dmem_request.load_address_misaligned  = (dmem_request.access.read_enable && dmem_combs.dmem_misaligned);
+        dmem_request.store_address_misaligned = (dmem_request.access.write_enable && dmem_combs.dmem_misaligned);
+
+        // Little-endian 
+        // data=AABBCCDD: bus data for offset (row) in cycle 1 and cycle 2 (columns)
+        //   00     AABBCCDD        -
+        //   01     BBCCDDxx    xxxxxxAA
+        //   11     CCDDxxxx    xxxxAABB
+        //   11     DDxxxxxx    xxAABBCC
+        dmem_request.access.write_data = dmem_exec.rs2;
+        full_switch (dmem_combs.word_offset) {
+        case 2b00: { dmem_request.access.write_data = dmem_exec.rs2; }
+        case 2b01: { dmem_request.access.write_data = bundle(dmem_exec.rs2[24; 0], dmem_exec.rs2[ 8;24]); }
+        case 2b10: { dmem_request.access.write_data = bundle(dmem_exec.rs2[16; 0], dmem_exec.rs2[16;16]); }
+        case 2b11: { dmem_request.access.write_data = bundle(dmem_exec.rs2[ 8; 0], dmem_exec.rs2[24; 8]); }
+        }
+    }
+}

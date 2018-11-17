@@ -20,7 +20,7 @@
  *
  */
 /*a Includes */
-include "dprintf.h"
+include "types/dprintf.h"
 
 /*a Constants */
 constant integer cfg_downsize_x=0;

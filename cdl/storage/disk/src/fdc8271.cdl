@@ -20,7 +20,7 @@
  * be mapped to SRAM read/writes, rather than analog FM/MFM data.
  */
 /*a Includes */
-include "bbc_micro_types.h"
+include "microcomputers/bbc/bbc_types.h"
 
 /*a Constants
  */

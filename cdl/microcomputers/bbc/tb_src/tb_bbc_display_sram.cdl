@@ -17,8 +17,12 @@
  *
  */
 /*a Includes */
-include "bbc_micro_types.h"
-include "bbc_submodules.h"
+include "types/apb.h"
+include "types/csr.h"
+include "apb/apb_masters.h"
+include "csr/csr_masters.h"
+include "microcomputers/bbc/bbc_types.h"
+include "microcomputers/bbc/bbc_submodules.h"
 include "srams.h"
 
 /*a External modules */

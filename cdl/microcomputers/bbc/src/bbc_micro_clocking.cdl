@@ -105,9 +105,10 @@ Hence keep a 2MHz_high signal that is asserted on every other tick. This is the 
     
 */
 /*a Includes */
-include "csr_interface.h"
-include "bbc_micro_types.h"
-include "bbc_submodules.h"
+include "types/csr.h"
+include "microcomputers/bbc/bbc_types.h"
+include "microcomputers/bbc/bbc_submodules.h"
+include "csr/csr_targets.h"
 
 /*a Types */
 /*t t_clock_comb */

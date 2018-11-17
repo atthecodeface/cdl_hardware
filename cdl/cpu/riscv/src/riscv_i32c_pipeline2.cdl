@@ -20,9 +20,9 @@
 
 /*a Includes
  */
-include "riscv_internal_types.h"
-include "riscv.h"
-include "riscv_submodules.h"
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_submodules.h"
 
 /*a Constants
  */
@@ -177,7 +177,6 @@ module riscv_i32c_pipeline2( clock clk,
         /*b Minimal CSRs */
         csr_controls = {*=0};
         csr_controls.retire      = decexec_state.valid;
-        csr_controls.timer_inc   = 1;
 
         decexec_combs.csr_access = decexec_combs.idecode.csr_access;
         if (!decexec_state.valid || decexec_combs.idecode.illegal) {

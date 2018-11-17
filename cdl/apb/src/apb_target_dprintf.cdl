@@ -19,8 +19,8 @@
  */
 /*a Includes
  */
-include "dprintf.h"
-include "apb.h"
+include "types/dprintf.h"
+include "types/apb.h"
 
 /*a Types */
 /*t t_apb_address

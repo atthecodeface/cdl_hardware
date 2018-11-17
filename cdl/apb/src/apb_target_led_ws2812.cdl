@@ -19,8 +19,9 @@
  */
 /*a Includes
  */
-include "apb.h"
-include "leds.h"
+include "types/apb.h"
+include "types/led.h"
+include "led/led_modules.h"
 
 /*a Types */
 /*t t_apb_address

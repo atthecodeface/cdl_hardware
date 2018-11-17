@@ -20,7 +20,8 @@
  * model.
  */
 /*a Includes */
-include "bbc_submodules.h"
+include "srams.h"
+include "microcomputers/bbc/bbc_submodules.h"
 
 /*a Module */
 module tb_6502( clock clk,

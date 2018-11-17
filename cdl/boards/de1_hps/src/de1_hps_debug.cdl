@@ -1,0 +1,665 @@
+/** @copyright (C) 2018,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_master_axi.cdl
+ * @brief  AXI target to an APB master interface
+ *
+ * The AXI target supports 32-bit aligned 32-bit read/writes with full
+ * byte enables only.
+ * 
+ * Other transactions return a slave error response
+ *
+ 
+ VGA CSRs are not being written to
+
+
+ Add rotary inputs
+
+ Add PS/2 inputs
+
+ */
+
+/*a Includes
+ */
+include "types/video.h"
+include "types/axi.h"
+include "types/apb.h"
+include "types/csr.h"
+include "types/dprintf.h"
+include "types/sram.h"
+include "types/ps2.h"
+include "srams.h"
+include "apb/apb_targets.h"
+include "apb/apb_masters.h"
+include "csr/csr_targets.h"
+include "csr/csr_masters.h"
+include "utils/dprintf_modules.h"
+include "led/led_modules.h"
+include "video/framebuffer_modules.h"
+include "cpu/riscv/riscv_modules.h"
+include "boards/de1.h"
+
+/*a Constants */
+constant integer num_dprintf_requesters=16;
+constant bit[8] divider_400ns = 19; // 2.5MHz
+constant bit[8] sr_divider    = 49; // 1MHz
+
+/*a Types */
+/*a Module
+ */
+/*m de1_hps_debug
+ *
+ * Debug module for testing out HPS in the Cyclone-V FPGA
+ *
+ */
+module de1_hps_debug( clock clk,
+                       input bit reset_n,
+
+                       input t_axi_request    lw_axi_ar,
+                       output bit             lw_axi_arready,
+                       input t_axi_request    lw_axi_aw,
+                       output bit             lw_axi_awready,
+                       output bit             lw_axi_wready,
+                       input t_axi_write_data lw_axi_w,
+                       input bit              lw_axi_bready,
+                       output t_axi_write_response lw_axi_b,
+                       input bit lw_axi_rready,
+                       output t_axi_read_response lw_axi_r,
+
+                      input t_de1_inputs de1_inputs,
+                      output t_de1_leds de1_leds,
+
+                       input t_ps2_pins   de1_ps2_in,
+                       output t_ps2_pins  de1_ps2_out,
+                       input t_ps2_pins   de1_ps2b_in,
+                       output t_ps2_pins  de1_ps2b_out,
+
+                       clock de1_vga_clock,
+                       input bit de1_vga_reset_n,
+                       output t_adv7123 de1_vga,
+
+                      clock de1_audio_bclk,
+                      input t_de1_audio de1_audio_adc,
+                      output t_de1_audio de1_audio_dac,
+
+                       output bit de1_irda_txd
+    )
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Nets */
+    net bit             lw_axi_arready;
+    net bit             lw_axi_awready;
+    net bit             lw_axi_wready;
+    net t_axi_write_response lw_axi_b;
+    net t_axi_read_response lw_axi_r;
+
+
+    net  t_apb_request riscv_apb_request;
+    net  t_apb_request axi_apb_request;
+    net  t_apb_request proc_apb_request;
+
+    net t_apb_request  rp_apb_request;
+    net t_apb_request  apb_request;
+    comb bit[4]        apb_request_sel;
+    comb t_apb_request timer_apb_request;
+    comb t_apb_request gpio_apb_request;
+    comb t_apb_request dprintf_apb_request;
+    comb t_apb_request csr_apb_request;
+    comb t_apb_request rv_sram_apb_request;
+    comb t_apb_request fb_sram_apb_request;
+    comb t_apb_request ps2_apb_request;
+
+    net t_apb_response  timer_apb_response;
+    net t_apb_response  gpio_apb_response;
+    net t_apb_response  dprintf_apb_response;
+    net t_apb_response  csr_apb_response;
+    net t_apb_response  rv_sram_apb_response;
+    net t_apb_response  fb_sram_apb_response;
+    net t_apb_response  ps2_apb_response;
+    comb t_apb_response apb_response;
+
+    net t_apb_response rp_apb_response;
+    net t_apb_response axi_apb_response;
+    net t_apb_response proc_apb_response;
+    net t_apb_response riscv_apb_response;
+
+    comb t_timer_control timer_control;
+    net  t_timer_value timer_value;
+    net bit[16] gpio_output;
+    net bit[16] gpio_output_enable;
+    clocked bit[16]  gpio_input=0;
+    net bit     gpio_input_event;
+    net bit[32] rv_sram_ctrl;
+    net bit[32] fb_sram_ctrl;
+
+    net  t_dprintf_req_4 apb_dprintf_req "Dprintf request from APB target";
+    comb bit             apb_dprintf_ack "Ack for dprintf request from APB target";
+
+    net bit[num_dprintf_requesters]                 dprintf_ack;
+    clocked t_dprintf_req_4[num_dprintf_requesters] dprintf_req={*=0};
+    net bit[num_dprintf_requesters-1]               mux_dprintf_ack "Ack for dprintf request after multiplexing";
+    net t_dprintf_req_4[num_dprintf_requesters-1]   mux_dprintf_req "Dprintf request after multiplexing";
+    net t_dprintf_byte dprintf_byte;
+
+    net t_csr_request   csr_request;
+    comb t_csr_response csr_response;
+    clocked t_csr_response csr_response_r = {*=0};
+    net t_csr_response tt_debug_framebuffer_csr_response;
+    net t_csr_response tt_vga_framebuffer_csr_response;
+    net t_csr_response timeout_csr_response;
+    comb t_sram_access_req tt_display_sram_access_req;
+    net t_video_bus vga_video_bus;
+    net t_video_bus debug_video_bus;
+    comb t_video_bus selected_video_bus;
+
+    clocked t_apb_processor_request  apb_processor_request={*=0};
+    clocked bit apb_processor_completed = 0;
+    net t_apb_processor_response  apb_processor_response;
+    net t_apb_rom_request         apb_rom_request;
+    net bit[40]                   apb_rom_data;
+
+    comb t_riscv_config riscv_config;
+    net t_riscv_i32_trace riscv_trace;
+    comb t_riscv_irqs       irqs;
+    net t_riscv_mem_access_req data_access_req;
+    net t_riscv_mem_access_resp data_access_resp;
+    net t_sram_access_req  rv_sram_access_req;
+    net t_sram_access_resp rv_sram_access_resp;
+    net t_sram_access_req  fb_sram_access_req;
+    comb t_sram_access_resp fb_sram_access_resp;
+
+    clocked bit[32] divider=0;
+    clocked bit divider_reset=0;
+    clocked bit[8]  seconds=0;
+    clocked bit[16] counter=0;
+
+    clocked t_ps2_pins       ps2_in = {*=-1};
+    clocked t_ps2_pins  de1_ps2_out = {*=-1};
+    net t_ps2_pins  ps2_out;
+
+    net bit[7][6]de1_hex_leds;
+    clocked bit[32] riscv_last_pc=0;
+
+    default clock de1_vga_clock;
+    default reset active_low de1_vga_reset_n;
+    clocked bit[4]  vga_vsync_counter=0;
+    clocked bit[12] vga_hsync_counter=0;
+    clocked t_adv7123 de1_vga={*=0};
+    clocked bit[4] vga_seconds_sr = 0;
+    clocked bit[32][4] vga_counters={*=0};
+
+    /*b RISC-V */
+    riscv_instance: {
+        riscv_config = {*=0};
+        riscv_config.e32   = 0;
+        riscv_config.i32c  = 1;
+        irqs = {*=0};
+        irqs.mtip = timer_value.irq;
+        timer_control = {*=0};
+        timer_control.enable_counter = 1;
+        timer_control.integer_adder = 20; // 50MHz
+
+        riscv_i32_minimal riscv( clk <- clk,
+                               proc_reset_n <= reset_n & rv_sram_ctrl[0],
+                               reset_n <= reset_n,
+                               irqs <= irqs,
+                               data_access_req => data_access_req,
+                               data_access_resp <= data_access_resp,
+                               sram_access_req <= rv_sram_access_req,
+                               sram_access_resp => rv_sram_access_resp,
+                               riscv_config <= riscv_config,
+                               trace => riscv_trace
+                         );
+        riscv_i32_trace trace(clk <- clk,
+                              reset_n <= reset_n,
+                              trace <= riscv_trace );
+
+        riscv_i32_minimal_apb rv_apb( clk <- clk,
+                                      reset_n <= reset_n,
+                                      data_access_req  <= data_access_req,
+                                      data_access_resp => data_access_resp,
+                                      apb_request  => riscv_apb_request,
+                                      apb_response <= riscv_apb_response );
+    }
+
+    /*b AXI to APB master, APB processor */
+    apb_master_instances: {
+        apb_processor_request.address <= 0;
+        apb_processor_request.valid   <= !apb_processor_completed;
+        if (apb_processor_response.acknowledge) {
+            apb_processor_request.valid   <= 0;
+            apb_processor_completed <= 1;
+        }
+
+        apb_processor apbp( clk <- clk,
+                            reset_n <= reset_n,
+
+                            apb_processor_request <= apb_processor_request,
+                            apb_processor_response => apb_processor_response,
+                            apb_request   => proc_apb_request,
+                            apb_response  <= proc_apb_response,
+                            rom_request   => apb_rom_request,
+                            rom_data      <= apb_rom_data );
+
+        se_sram_srw_256x40 apb_rom(sram_clock <- clk,
+                                   select <= apb_rom_request.enable,
+                                   address <= apb_rom_request.address[8;0],
+                                   read_not_write <= 1,
+                                   write_data <= 0,
+                                   data_out => apb_rom_data );
+
+        apb_master_axi apbm(aclk <- clk,
+                        areset_n <= reset_n,
+                        ar <= lw_axi_ar,
+                        arready => lw_axi_arready,
+                        aw <= lw_axi_aw,
+                        awready => lw_axi_awready,
+                        w <= lw_axi_w,
+                        wready => lw_axi_wready,
+                        b => lw_axi_b,
+                        bready <= lw_axi_bready,
+                        r => lw_axi_r,
+                        rready <= lw_axi_rready,
+
+                        apb_request =>  axi_apb_request,
+                        apb_response <= axi_apb_response );
+
+    }
+
+    /*b APB master multiplexing and decode */
+    apb_multiplexing_decode: {
+        apb_master_mux apb_mux_rp( clk <- clk,
+                               reset_n <= reset_n,
+                               apb_request_0 <= riscv_apb_request,
+                               apb_request_1 <= proc_apb_request,
+
+                               apb_response_0 => riscv_apb_response,
+                               apb_response_1 => proc_apb_response,
+
+                               apb_request =>  rp_apb_request,
+                               apb_response <= rp_apb_response );
+
+        apb_master_mux apb_mux_ap( clk <- clk,
+                               reset_n <= reset_n,
+                               apb_request_0 <= axi_apb_request,
+                               apb_request_1 <= rp_apb_request,
+
+                               apb_response_0 => axi_apb_response,
+                               apb_response_1 => rp_apb_response,
+
+                               apb_request =>  apb_request,
+                               apb_response <= apb_response );
+
+        apb_request_sel = apb_request.paddr[4;16]; // 1MB of address space, top 4 bits as select
+        timer_apb_request      = apb_request;
+        gpio_apb_request       = apb_request;
+        dprintf_apb_request    = apb_request;
+        csr_apb_request        = apb_request;
+        rv_sram_apb_request    = apb_request;
+        fb_sram_apb_request    = apb_request;
+        ps2_apb_request        = apb_request;
+
+        timer_apb_request.paddr      = apb_request.paddr >> 2;
+        gpio_apb_request.paddr       = apb_request.paddr >> 2;
+        dprintf_apb_request.paddr    = apb_request.paddr >> 2;
+        rv_sram_apb_request.paddr    = apb_request.paddr >> 2;
+        fb_sram_apb_request.paddr    = apb_request.paddr >> 2;
+        ps2_apb_request.paddr        = apb_request.paddr >> 2;
+
+        timer_apb_request.psel       = apb_request.psel && (apb_request_sel==0);
+        gpio_apb_request.psel        = apb_request.psel && (apb_request_sel==1);
+        dprintf_apb_request.psel     = apb_request.psel && (apb_request_sel==2);
+        csr_apb_request.psel         = apb_request.psel && (apb_request_sel==3);
+        rv_sram_apb_request.psel     = apb_request.psel && (apb_request_sel==4);
+        fb_sram_apb_request.psel     = apb_request.psel && (apb_request_sel==7);
+        ps2_apb_request.psel         = apb_request.psel && (apb_request_sel==8);
+        csr_apb_request.paddr[16;16] = bundle(12b0,apb_request.paddr[4;12]);
+        csr_apb_request.paddr[16;0]  = bundle( 6b0,apb_request.paddr[10;2]);
+
+        apb_response = timer_apb_response; // defaulting to timer is good - it is always ready even if not selected...
+        if (apb_request_sel==1) { apb_response = gpio_apb_response; }
+        if (apb_request_sel==2) { apb_response = dprintf_apb_response; }
+        if (apb_request_sel==3) { apb_response = csr_apb_response; }
+        if (apb_request_sel==4) { apb_response = rv_sram_apb_response; }
+        if (apb_request_sel==7) { apb_response = fb_sram_apb_response; }
+        if (apb_request_sel==8) { apb_response = ps2_apb_response; }
+    }
+
+    /*b Dprintf requesting */
+    dprintf_requesting : {
+        for (i; num_dprintf_requesters) {
+            if (dprintf_ack[i]) {
+                dprintf_req[i].valid <= 0;
+            }
+        }
+        dprintf_req[0] <= apb_dprintf_req;
+        apb_dprintf_ack = dprintf_ack[0];
+
+        if (lw_axi_ar.valid) {
+            dprintf_req[1] <= {valid=1, address=40,
+                    data_0=bundle(36h41_52_3a_83_0, lw_axi_ar.id, 16h_20_87), // AR:%04x %08x %x %x %x (id/address/len/size/burst)
+                    data_1=bundle(lw_axi_ar.addr, 16h2080, 4b0,lw_axi_ar.len, 8h20),
+                    data_2=bundle(8h80, 5b0,lw_axi_ar.size, 16h2080, 6b0,lw_axi_ar.burst, 8hff, 16h0) };
+        }
+        if (lw_axi_aw.valid) {
+            dprintf_req[2] <= {valid=1, address=80,
+                    data_0=bundle(36h41_57_3a_83_0, lw_axi_aw.id, 16h_20_87), // AW:%04x %08x %x %x %x (id/address/len/size/burst)
+                    data_1=bundle(lw_axi_aw.addr, 16h2080, 4b0,lw_axi_aw.len, 8h20),
+                    data_2=bundle(8h80, 5b0,lw_axi_aw.size, 16h2080, 6b0,lw_axi_aw.burst, 8hff, 16h0) };
+        }
+        if (lw_axi_w.valid) {
+            dprintf_req[3] <= {valid=1, address=120,
+                    data_0=bundle(36h20_57_3a_83_0, lw_axi_w.id, 16h_20_87), //  W:%04x %08x %x %x (id/data/strb/last)
+                    data_1=bundle(lw_axi_w.data, 16h2080, 4b0,lw_axi_w.strb, 8h20),
+                    data_2=bundle(8h80, 7b0,lw_axi_w.last, 8hff, 40h0) };
+        }
+        if (lw_axi_b.valid) {
+            dprintf_req[4] <= {valid=1, address=160,
+                    data_0=bundle(36h20_42_3a_83_0, lw_axi_b.id, 16h_20_80), //  B:%04x %x (id/resp)
+                    data_1=bundle(6b0,lw_axi_b.resp, 8hff, 48h0) };
+        }
+        if (lw_axi_r.valid) {
+            dprintf_req[5] <= {valid=1, address=200,
+                    data_0=bundle(36h20_52_3a_83_0, lw_axi_b.id, 16h_20_87), //  R:%04x %08x %x %x (id/data/resp/last)
+                    data_1=bundle(lw_axi_r.data, 16h2080, 6b0,lw_axi_r.resp, 8h20),
+                    data_2=bundle(8h80, 7b0,lw_axi_w.last, 8hff, 40h0) };
+        }
+        if (apb_request.psel) {
+            dprintf_req[6] <= {valid=1, address=240,
+                    data_0=bundle(40h41_50_42_3a_80, 7b0,apb_request.pwrite, 16h_20_87), // APB:%x %08x %08x (pwrite paddr pwdata)
+                    data_1=bundle(apb_request.paddr, 32h20000087),
+                    data_2=bundle(apb_request.pwdata, 8hff, 24h0) };
+        }
+        if (csr_request.valid) {
+            dprintf_req[7] <= {valid=1, address=280,
+                    data_0=bundle(40h43_53_52_3a_80, 7b0,csr_request.read_not_write, 16h_20_83), // CSR:%x %04x %04x %08x (read_not_write select address data)
+                    data_1=bundle(csr_request.select,  48h200000000083),
+                    data_2=bundle(csr_request.address, 48h200000000087),
+                    data_3=bundle(csr_request.data,    8hff, 24h0) };
+        }
+        if (rv_sram_access_req.valid) {
+            dprintf_req[8] <= {valid=1, address=320,
+                    data_0=bundle(40h53_52_4d_3a_83, 4b0,rv_sram_access_req.id,16h_20_80), // SRM:%x %x %08x %08x %x (id read_not_write address data be)
+                    data_1=bundle(7b0,rv_sram_access_req.read_not_write,  56h20000000000087),
+                    data_2=bundle(rv_sram_access_req.address,    32h20000087),
+                    data_3=bundle(rv_sram_access_req.write_data[32;0], 16h2080, rv_sram_access_req.byte_enable, 8hff) };
+        }
+        if (riscv_trace.instr_valid) {
+            dprintf_req[9] <= {valid=1, address=360,
+                    data_0=bundle(32h52_56_49_3a, 32h_00_00_00_87), // RVI:%08x %08x (pc inst)
+                    data_1=bundle(riscv_trace.instr_pc,  32h200087),
+                    data_2=bundle(riscv_trace.instruction.data, 8hff, 24h000000) };
+        }
+        if (riscv_apb_request.psel) {
+            dprintf_req[10] <= {valid=1, address=400,
+                    data_0=bundle(40h41_50_42_3a_80, 7b0,riscv_apb_request.pwrite, 16h_20_87), // APB:%x %08x %08x (pwrite paddr pwdata)
+                    data_1=bundle(riscv_apb_request.paddr, 32h20000087),
+                    data_2=bundle(riscv_apb_request.pwdata, 8hff, 24h0) };
+        }
+        if (divider_reset) {
+            dprintf_req[11] <= {valid=1, address=440,
+                    data_0=bundle(32h56_47_41_3a, 32h_00_00_00_87), // VGA:%08x %08x %08x (cnts0/1/2)
+                    data_1=bundle(vga_counters[0], 32h20000087),
+                    data_2=bundle(vga_counters[1], 32h20000087),
+                    data_3=bundle(vga_counters[2], 8hff, 24h0) };
+        }
+    }
+
+    /*b Dprintf multiplexing */
+    dprintf_multiplexing """
+    mux[n-2] = req[n-2] * req[n-1]
+    mux[n-3] = req[n-2] * mux[n-2]
+    mux[2]   = req[2] * mux[3]
+    mux[1]   = req[1] * mux[2]
+    mux[0]   = req[0] * mux[1]
+    """: {
+        dprintf_4_mux tdm_n( clk <- clk,
+                             reset_n <= reset_n,
+                             req_a <= dprintf_req[num_dprintf_requesters-2],
+                             ack_a => dprintf_ack[num_dprintf_requesters-2],
+                             req_b <= dprintf_req[num_dprintf_requesters-1],
+                             ack_b => dprintf_ack[num_dprintf_requesters-1],
+                             req => mux_dprintf_req[num_dprintf_requesters-2],
+                             ack <= mux_dprintf_ack[num_dprintf_requesters-2] );
+
+        for (i; num_dprintf_requesters-2) {
+            dprintf_4_mux tdm[i]( clk <- clk, reset_n <= reset_n,
+                                  req_a <= dprintf_req[i],
+                                  ack_a => dprintf_ack[i],
+                                  req_b <= mux_dprintf_req[i+1],
+                                  ack_b => mux_dprintf_ack[i+1],
+                                  req => mux_dprintf_req[i],
+                                  ack <= mux_dprintf_ack[i] );
+        }
+
+    }
+
+    /*b APB targets */
+    apb_target_instances: {
+
+        apb_target_sram_interface rv_sram_if( clk <- clk,
+                                           reset_n <= reset_n,
+                                           apb_request  <= rv_sram_apb_request,
+                                           apb_response => rv_sram_apb_response,
+                                           sram_ctrl    => rv_sram_ctrl,
+                                           sram_access_req => rv_sram_access_req,
+                                           sram_access_resp <= rv_sram_access_resp );
+
+        apb_target_sram_interface fb_sram_if( clk <- clk,
+                                           reset_n <= reset_n,
+                                           apb_request  <= fb_sram_apb_request,
+                                           apb_response => fb_sram_apb_response,
+                                           sram_ctrl    => fb_sram_ctrl,
+                                           sram_access_req => fb_sram_access_req,
+                                           sram_access_resp <= fb_sram_access_resp );
+
+        apb_target_dprintf apb_dprintf( clk <- clk,
+                                    reset_n <= reset_n,
+                                    apb_request  <= dprintf_apb_request,
+                                    apb_response => dprintf_apb_response,
+                                    dprintf_req => apb_dprintf_req,
+                                    dprintf_ack <= apb_dprintf_ack );
+
+        apb_target_rv_timer timer( clk <- clk,
+                                   reset_n <= reset_n,
+                                   timer_control <= timer_control,
+                                   apb_request  <= timer_apb_request,
+                                   apb_response => timer_apb_response,
+                                   timer_value => timer_value );
+
+        apb_target_gpio gpio( clk <- clk,
+                              reset_n <= reset_n,
+                              apb_request  <= gpio_apb_request,
+                              apb_response => gpio_apb_response,
+                              gpio_input <= gpio_input,
+                              gpio_output => gpio_output,
+                              gpio_output_enable => gpio_output_enable,
+                              gpio_input_event => gpio_input_event
+            );
+
+        ps2_in <= de1_ps2_in;
+        apb_target_ps2_host ps2_if( clk <- clk,
+                                    reset_n <= reset_n,
+                                    apb_request  <= ps2_apb_request,
+                                    apb_response => ps2_apb_response,
+                                    ps2_in  <= ps2_in,
+                                    ps2_out => ps2_out );
+
+        csr_master_apb master( clk <- clk,
+                               reset_n <= reset_n,
+                               apb_request <= csr_apb_request,
+                               apb_response => csr_apb_response,
+                               csr_request => csr_request,
+                               csr_response <= csr_response_r );
+
+    }
+
+    /*b Dprintf/framebuffer */
+    dprintf_framebuffer_instances: {
+        dprintf dprintf( clk <- clk,
+                         reset_n <= reset_n,
+                         dprintf_req <= mux_dprintf_req[0],
+                         dprintf_ack => mux_dprintf_ack[0],
+                         dprintf_byte => dprintf_byte
+            );
+
+        tt_display_sram_access_req = {*=0,
+                                      valid = dprintf_byte.valid,
+                                      address = bundle(16b0, dprintf_byte.address),
+                                      write_data = bundle(56b0, dprintf_byte.data) };
+
+        fb_sram_access_resp = {*=0};
+        fb_sram_access_resp.ack   = fb_sram_access_req.valid;
+        fb_sram_access_resp.valid = fb_sram_access_req.valid;
+        fb_sram_access_resp.id    = fb_sram_access_req.id;
+
+        framebuffer_teletext ftb_debug( csr_clk <- clk,
+                                        sram_clk <- clk,
+                                        video_clk <- de1_vga_clock,
+                                        reset_n <= reset_n,
+                                        video_bus => debug_video_bus,
+                                        display_sram_write <= tt_display_sram_access_req,
+                                        csr_select_in <= 16h2, // uses 2 selects
+                                        csr_request <= csr_request,
+                                        csr_response => tt_debug_framebuffer_csr_response
+            );
+
+        framebuffer_teletext ftb_vga( csr_clk <- clk,
+                                      sram_clk <- clk,
+                                      video_clk <- de1_vga_clock,
+                                      reset_n <= reset_n,
+                                      video_bus => vga_video_bus,
+                                      display_sram_write <= fb_sram_access_req,
+                                      csr_select_in <= 16h4, // uses 2 selects
+                                      csr_request <= csr_request,
+                                      csr_response => tt_vga_framebuffer_csr_response
+            );
+
+        csr_target_timeout csr_timeout(clk <- clk,
+                                       reset_n <= reset_n,
+                                       csr_request <= csr_request,
+                                       csr_response => timeout_csr_response,
+                                       csr_timeout <= 16h100 );
+
+        csr_response  = tt_vga_framebuffer_csr_response;
+        csr_response |= tt_debug_framebuffer_csr_response;
+        csr_response |= timeout_csr_response;
+        csr_response_r <= csr_response;
+
+        selected_video_bus = vga_video_bus;
+        if (de1_inputs.switches[9]) {
+            selected_video_bus = debug_video_bus;
+        }
+        de1_vga.hs <= 1;
+        if (vga_hsync_counter!=0) {
+            de1_vga.hs <= 0;
+            vga_hsync_counter <= vga_hsync_counter-1;
+        }
+        if (selected_video_bus.hsync) {
+            de1_vga.hs <= 0;
+            vga_hsync_counter <= 110; // 128 for 64MHz officially, 96 for 25MHz
+            de1_vga.vs <= 1;
+            if (vga_vsync_counter!=0) {
+                de1_vga.vs <= 0;
+                vga_vsync_counter <= vga_vsync_counter-1;
+            }
+        }
+        if (selected_video_bus.vsync) {
+            de1_vga.vs <= 0;
+            vga_vsync_counter <= 1;
+        }
+        
+        de1_vga.blank_n <= selected_video_bus.display_enable;
+        de1_vga.sync_n  <= de1_vga.vs & de1_vga.hs;
+        de1_vga.red     <= bundle(selected_video_bus.red  [8;0],2b0);
+        de1_vga.green   <= bundle(selected_video_bus.green[8;0],2b0);
+        de1_vga.blue    <= bundle(selected_video_bus.blue [8;0],2b0);
+
+        if (selected_video_bus.vsync) {
+            vga_counters[0] <= vga_counters[0]+1;
+        }
+        if (selected_video_bus.hsync) {
+            vga_counters[1] <= vga_counters[1]+1;
+        }
+        if (selected_video_bus.display_enable) {
+            vga_counters[2] <= vga_counters[2]+1;
+        }
+        vga_seconds_sr <= bundle(seconds[0], vga_seconds_sr[3;1]);
+        if (vga_seconds_sr[0]!=vga_seconds_sr[1]) {
+            vga_counters[0] <= 0;
+            vga_counters[1] <= 0;
+            vga_counters[2] <= 0;
+            vga_counters[3] <= 0;
+        }
+
+    }
+
+    /*b Stub out unused outputs and all done */
+    stubs : {
+        divider <= divider+1;
+        divider_reset <= 0;
+        if (divider==50*1000*1000) {
+            divider <= 0;
+            divider_reset <= 1;
+            seconds <= seconds + 1;
+        }
+        if (de1_inputs.switches[3;2]==0) {
+            counter <= counter + 1;
+        }
+        if ((de1_inputs.switches[3;2]==1) && (mux_dprintf_req[0].valid)) {
+            counter <= counter + 1;
+        }
+        if ((de1_inputs.switches[3;2]==2) && (mux_dprintf_ack[0])) {
+            counter <= counter + 1;
+        }
+        if ((de1_inputs.switches[3;2]==3) && (apb_request.psel)) {
+            counter <= counter + 1;
+        }
+        if ((de1_inputs.switches[3;2]==4) && (apb_processor_request.valid)) {
+            counter <= counter + 1;
+        }
+        if ((de1_inputs.switches[3;2]==5) && (apb_processor_response.acknowledge)) {
+            counter <= counter + 1;
+        }
+        if ((de1_inputs.switches[3;2]==6) && (tt_display_sram_access_req.valid)) {
+            counter <= counter + 1;
+        }
+
+        de1_leds.leds = counter[10;0];
+        if (riscv_trace.instr_valid) { riscv_last_pc<=riscv_trace.instr_pc; }
+        if (divider_reset) {riscv_last_pc <= vga_counters[de1_inputs.switches[2;5]];}
+        for (i; 6) {
+            led_seven_segment h[i](hex <= riscv_last_pc[4;4*i], leds=>de1_hex_leds[i] );
+        }
+        de1_leds.h0 = ~de1_hex_leds[0];
+        de1_leds.h1 = ~de1_hex_leds[1];
+        de1_leds.h2 = ~de1_hex_leds[2];
+        de1_leds.h3 = ~de1_hex_leds[3];
+        de1_leds.h4 = ~de1_hex_leds[4];
+        de1_leds.h5 = ~de1_hex_leds[5];
+
+        gpio_input <= {*=0};
+        gpio_input[4;0]  <= de1_inputs.keys;
+        gpio_input[10;4] <= de1_inputs.switches;
+        gpio_input[14]   <= de1_inputs.irda_rxd;
+
+        de1_ps2_out <= ps2_out;
+        de1_ps2b_out = {*=0};
+        de1_irda_txd = 0;
+
+        de1_audio_dac = {*=0};
+    }
+}

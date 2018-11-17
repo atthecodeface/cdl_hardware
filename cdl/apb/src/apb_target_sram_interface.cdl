@@ -20,8 +20,8 @@
  */
 /*a Includes
  */
-include "apb.h"
-include "srams.h"
+include "types/apb.h"
+include "types/sram.h"
 
 /*a Types */
 /*t t_apb_address

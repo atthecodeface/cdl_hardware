@@ -17,7 +17,8 @@
  *
  */
 /*a Includes */
-include "input_devices.h"
+include "types/ps2.h"
+include "input/ps2_modules.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk,

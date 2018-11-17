@@ -21,8 +21,8 @@
  *
  */
 /*a Includes */
-include "apb.h"
-include "csr_interface.h"
+include "types/apb.h"
+include "types/csr.h"
 
 /*a Type */
 /*t t_apb_action

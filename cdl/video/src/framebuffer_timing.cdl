@@ -21,8 +21,9 @@
  *
  */
 /*a Includes */
-include "framebuffer.h"
-include "csr_interface.h"
+include "types/csr.h"
+include "types/video.h"
+include "csr/csr_targets.h"
 
 /*a Types */
 /*t t_csr_address

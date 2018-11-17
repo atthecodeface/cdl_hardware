@@ -25,7 +25,7 @@
  *
  */
 /*a Includes */
-include "teletext.h"
+include "types/teletext.h"
 
 /*a Constants */
 constant integer flashing_on_count=10;

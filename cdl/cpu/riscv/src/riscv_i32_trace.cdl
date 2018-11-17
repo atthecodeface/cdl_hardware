@@ -21,8 +21,8 @@
 
 /*a Includes
  */
-include "riscv_internal_types.h"
-include "riscv.h"
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
 
 /*a Types
  */
@@ -37,8 +37,9 @@ typedef struct {
 
 /*a Module
  */
-module riscv_i32_trace( clock clk            "Clock for the CPU",
+module riscv_i32_trace( clock clk            "Free-running clock",
                         input bit reset_n     "Active low reset",
+                        input bit riscv_clk_enable "asserted if the RISC-V ticks on this edge",
                         input t_riscv_i32_trace trace "Trace signals"
 )
 """
@@ -52,16 +53,18 @@ Trace instruction execution
     /*b Logging */
     logging """
     """ : {
-        if (trace.instr_valid) {
-            log("PC",
-                "pc",trace.instr_pc,
-                "branch_taken",trace.branch_taken,
-                "branch_target",trace.branch_target,
-                "instr",trace.instruction.data);
-            log("flow", "branch_taken", trace.branch_taken, "trap", trace.trap);
-        }
-        if (trace.rfw_retire) {
-            log("retire", "rfw", trace.rfw_data_valid, "rd", trace.rfw_rd, "data", trace.rfw_data );
+        if (riscv_clk_enable) {
+            if (trace.instr_valid) {
+                log("PC",
+                    "pc",trace.instr_pc,
+                    "branch_taken",trace.branch_taken,
+                    "branch_target",trace.branch_target,
+                    "instr",trace.instruction.data);
+                log("flow", "branch_taken", trace.branch_taken, "trap", trace.trap);
+            }
+            if (trace.rfw_retire) {
+                log("retire", "rfw", trace.rfw_data_valid, "rd", trace.rfw_rd, "data", trace.rfw_data );
+            }
         }
     }
     /*b All done */

@@ -18,9 +18,11 @@
 
 /*a Includes
  */
-include "axi.h"
-include "apb.h"
-include "apb_peripherals.h"
+include "types/axi.h"
+include "types/apb.h"
+include "axi/axi_masters.h"
+include "apb/apb_masters.h"
+include "apb/apb_targets.h"
 
 /*a Module
  */

@@ -1,0 +1,94 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_alu.cdl
+ * @brief  ALU for i32 RISC-V implementation
+ *
+ * CDL implementation of RISC-V i32 ALU based on the RISC-V
+ * specification v2.1.
+ *
+ */
+
+/*a Includes
+ */
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+
+/*a Module
+ */
+module riscv_i32_control_flow( input  t_riscv_pipeline_control  pipeline_control,
+                               input  t_riscv_i32_control_data  control_data,
+                               output t_riscv_i32_control_flow  control_flow
+    )
+"""
+
+"""
+{
+    code : {
+        control_flow.trap = {*=0};
+        control_flow.branch_taken = 0;
+        control_flow.jalr = 0;
+        control_flow.next_pc = 0;
+        control_flow.trap.pc = control_data.pc;
+        control_flow.async_cancel = 0;
+        control_flow.trap.to_mode = pipeline_control.interrupt_to_mode;
+        part_switch (control_data.idecode.op) {
+        case riscv_op_branch:   { control_flow.branch_taken = control_data.alu_result.branch_condition_met; }
+        case riscv_op_jal:      { control_flow.branch_taken=1; }
+        case riscv_op_jalr:     { control_flow.branch_taken=1; control_flow.jalr=1; }
+        case riscv_op_system:   {
+            if (control_data.idecode.subop==riscv_subop_mret) {
+                control_flow.trap.ret = 1;
+                control_flow.trap.cause = riscv_trap_cause_ret_mret;
+            }
+            if (control_data.idecode.subop==riscv_subop_ecall) {
+                control_flow.trap.valid = 1;
+                control_flow.trap.cause = riscv_trap_cause_mecall;
+            }
+            if (control_data.idecode.subop==riscv_subop_ebreak) {
+                control_flow.trap.valid = 1;
+                control_flow.trap.ebreak_to_dbg = pipeline_control.ebreak_to_dbg;
+                control_flow.trap.cause = riscv_trap_cause_breakpoint;
+                control_flow.trap.value = control_data.pc;
+            }
+        }
+        }
+        if (!control_data.exec_committed) {
+            control_flow.trap.valid = 0;
+            control_flow.trap.ret = 0;
+            control_flow.trap.ebreak_to_dbg = 0;
+            control_flow.branch_taken = 0;
+        }
+        
+        if (control_data.valid && control_data.idecode.illegal) { // exec_committed will be zero
+            control_flow.trap.valid = 1;
+            control_flow.trap.ret = 0;
+            control_flow.trap.cause = riscv_trap_cause_illegal_instruction;
+            control_flow.trap.value = control_data.instruction_data;
+        }
+        if (control_data.valid && control_data.idecode.illegal_pc) { // exec_committed will be zero
+            control_flow.trap.valid = 1;
+            control_flow.trap.ret = 0;
+            control_flow.trap.cause = riscv_trap_cause_instruction_misaligned;
+            control_flow.trap.value = control_data.pc;
+        }
+        if (pipeline_control.interrupt_req && control_data.interrupt_ack) {
+            control_flow.async_cancel = 1;
+            control_flow.trap.valid = 1;
+            control_flow.trap.ret = 0;
+            control_flow.trap.cause = riscv_trap_cause_interrupt;
+            control_flow.trap.cause[4;0] = pipeline_control.interrupt_number;
+            control_flow.trap.value = control_data.pc;
+        }
+    }
+}
