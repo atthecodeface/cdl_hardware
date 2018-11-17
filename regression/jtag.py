@@ -491,7 +491,7 @@ class jtag_apb_timer(simple_tb.base_test):
         self.do_test_run(hw, 1000*1000*1000)
     pass
 
-#c Add tests to riscv_minimal and riscv_minimal_single_memory
+#c Add tests to jtag_apb_timer
 test_dir = ""
 tests = { "idcode"     : (c_jtag_apb_time_test_idcode,2*1000),
           "bypass"     : (c_jtag_apb_time_test_bypass,4*1000),
