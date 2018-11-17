@@ -267,9 +267,19 @@ class c_riscv_minimal_test_jtag_server(c_riscv_minimal_test_base):
         openocd.start_nonpy()
         rxq = openocd.queue_recvd
         txq = openocd.queue_to_send
+        self.running = True
+        self.had_client = False
+        def x(client_skt):
+            print "RV Poll", client_skt, self.had_client, self.running
+            if client_skt is None and self.had_client:
+                self.running = False
+            if client_skt is not None:
+                self.had_client = True
+            return not self.running
+        openocd.run_poll = x
 
-        while True:
-            self.bfm_wait(1)
+        while self.running:
+            self.bfm_wait(100)
             if not rxq.empty():
                 print "Rxq not empty"
                 reply = ""
@@ -286,8 +296,10 @@ class c_riscv_minimal_test_jtag_server(c_riscv_minimal_test_base):
                         self.tck_enable.drive((c>>2)&1)
                         self.bfm_wait(1)
                         self.tck_enable.drive(0)
+                        self.bfm_wait(100)
                         pass
                     elif c=='R':
+                        self.bfm_wait(100)
                         self.tck_enable.drive(0)
                         self.bfm_wait(1)
                         self.tck_enable.drive(0)
@@ -684,7 +696,7 @@ class riscv_i32mc_pipeline3(riscv_base):
     default_test_class = c_riscv_minimal_test_dump_with_pauses
     #default_test_class = c_riscv_minimal_test_jtag_prog
     def openocd(self):
-        test = c_riscv_minimal_test_jtag_server(1000*1000*1000)
+        test = c_riscv_minimal_test_jtag_server(100*1000*1000) #0*1000*1000)
         hw = self.hw(test)
         self.do_test_run(hw, hw.num_cycles)
     pass

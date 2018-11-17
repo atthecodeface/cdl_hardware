@@ -401,8 +401,8 @@ typedef enum[3] {
     write_action_data0,
     write_action_progbuf0,
     write_action_control,
-    write_action_abstract_cs,
-    write_action_abstract_cmd,
+    write_action_abstractcs,
+    write_action_abstractcmd,
 } t_write_action;
 
 /*t t_read_select */
@@ -427,7 +427,7 @@ typedef enum [8] {
     dm_addr_hart_info         = 0x12, // permitted to be zero by section 3.11.3
     dm_addr_hart_window_sel   = 0x14, // permitted to be zero if mask not supported (section 3.3.2); for 64 harts bit 0 only is read/write if mask is supported
     dm_addr_hart_window       = 0x15, // permitted to be zero if mask not supported (section 3.3.2)
-    dm_addr_abstract_cs       = 0x16, // RW progbufsize, cmd_busy, cmd_err, data count (clear cmd_err on write of 1)
+    dm_addr_abstractcs        = 0x16, // RW progbufsize, cmd_busy, cmd_err, data count (clear cmd_err on write of 1)
     dm_addr_abstract_cmd      = 0x17, // WO write only, read as zero
     dm_addr_abstract_cmd_autoexec = 0x18, // can be zero (sect 3.11.8) if no autoexec supported
     dm_addr_dev_tree_addr0    = 0x19, // permitted to be zero by section 3.11.9
@@ -588,11 +588,11 @@ Or the hart is just bloody minded and never finishes its execution
         debug_combs.dmstatus.running_any = ((debug_state.halted  & debug_combs.hart_sel_mask)==0);
         debug_combs.dmstatus.halted_all  = ((debug_state.halted  & debug_combs.hart_sel_mask)!=0);
         debug_combs.dmstatus.halted_any  = ((debug_state.halted  & debug_combs.hart_sel_mask)!=0);
-        debug_combs.dmstatus.authenticate = 0;
+        debug_combs.dmstatus.authenticate = 1;
         debug_combs.dmstatus.auth_busy = 0;
         debug_combs.dmstatus.has_reset_halt_req = 0;
         debug_combs.dmstatus.dev_tree_valid = 0;
-        debug_combs.dmstatus.version = 1;
+        debug_combs.dmstatus.version = 2;
 
         debug_combs.dmstatus_data = bundle(9b0,
                                debug_combs.dmstatus.impebreak, // must be 1 if prog buffer size is 1
@@ -717,12 +717,12 @@ Or the hart is just bloody minded and never finishes its execution
         case dm_addr_dmstatus: {
             apb_state.read_select <= read_select_dmstatus;
         }
-        case dm_addr_abstract_cs: {  // progbufsize, cmd_busy, cmd_err, data count (clear cmd_err on write of 1)
+        case dm_addr_abstractcs: {  // progbufsize, cmd_busy, cmd_err, data count (clear cmd_err on write of 1)
             apb_state.read_select <= read_select_abstractcs;
-            apb_state.write_action <= write_action_none;  // clear cmd_err if written with 1, else do nothing
+            apb_state.write_action <= write_action_abstractcs;
         }
         case dm_addr_abstract_cmd: { // cmd type in top 8 bits, control in bottom 24; ignore if cmd_err set
-            apb_state.write_action <= write_action_abstract_cmd;
+            apb_state.write_action <= write_action_abstractcmd;
         }
         case dm_addr_data0: {
             apb_state.read_select <= read_select_data0;
@@ -759,13 +759,13 @@ Or the hart is just bloody minded and never finishes its execution
         apb_response.perr = 0;
         apb_response.pready = 1;
         part_switch (apb_state.read_select) {
-        case read_select_dmcontrol  : { apb_response.prdata = debug_combs.dmcontrol_data; }
-        case read_select_dmstatus   : { apb_response.prdata = debug_combs.dmstatus_data; }
-        case read_select_abstractcs : { apb_response.prdata = debug_combs.abstractcs; }
-        case read_select_data0      : { apb_response.prdata = debug_state.data0; }
-        case read_select_progbuf0   : { apb_response.prdata = debug_state.progbuf0; }
-        case read_select_haltsum0   : { apb_response.prdata = debug_combs.haltsum0; }
-        case read_select_haltsum1   : { apb_response.prdata = debug_combs.haltsum1; }
+        case read_select_dmcontrol   : { apb_response.prdata = debug_combs.dmcontrol_data; }
+        case read_select_dmstatus    : { apb_response.prdata = debug_combs.dmstatus_data; }
+        case read_select_abstractcs  : { apb_response.prdata = debug_combs.abstractcs; }
+        case read_select_data0       : { apb_response.prdata = debug_state.data0; }
+        case read_select_progbuf0    : { apb_response.prdata = debug_state.progbuf0; }
+        case read_select_haltsum0    : { apb_response.prdata = debug_combs.haltsum0; }
+        case read_select_haltsum1    : { apb_response.prdata = debug_combs.haltsum1; }
         }
 
         /*b Handle basic write action */
@@ -788,12 +788,14 @@ Or the hart is just bloody minded and never finishes its execution
         case write_action_progbuf0 : {
             debug_state.progbuf0 <= apb_request.pwdata;
         }
-        case write_action_abstract_cs : {
+        case write_action_abstractcs : {
             if (debug_state.abstractcs_busy) {
                 debug_state.abstractcs_cmderr <= rv_abstractcs_cmderr_busy;
+            } else {
+                debug_state.abstractcs_cmderr <= debug_state.abstractcs_cmderr &~ apb_request.pwdata[3;8];
             }
         }
-        case write_action_abstract_cmd : {
+        case write_action_abstractcmd : {
             // ignore if cmd_err set
             if (debug_state.abstractcs_cmderr == rv_abstractcs_cmderr_none) {
                 // set cmd_err (busy) if abstract command is in progress

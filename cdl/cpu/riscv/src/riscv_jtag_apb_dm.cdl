@@ -200,6 +200,8 @@ JTAG client module that presents an APB master interface
     comb bit sync_complete_ack;
 
     /*b JTAG clock domain logic */
+    default clock jtag_tck;
+    default reset active_low reset_n;
     jtag_clock_domain """
     Handle the JTAG TAP interface; this provides capture, shift and update actions.
 
@@ -260,6 +262,7 @@ JTAG client module that presents an APB master interface
                 dr_out[32;2]  = jtag_state.last_read_data;
                 dr_out[16;34] = jtag_state.address;
                 if (jtag_state.busy && !jtag_state.write_not_read) {
+                    print("Jtag apb access while busy and reading");
                     jtag_state.op_status <= 3;
                     dr_out[2;0] = 3;
                 }
@@ -268,6 +271,7 @@ JTAG client module that presents an APB master interface
                 dr_out = 0; // Not sure what value is supposed to go here; only bit 0 is used
             }
             }
+            print("Jtag capture %x0%",dr_out);
         }
         case action_update: {
             part_switch (ir) {
@@ -345,6 +349,8 @@ JTAG client module that presents an APB master interface
                     apb_state.apb_request.pwrite  <= 0;
                     apb_state.last_read_data      <= apb_response.prdata;
                     apb_state.access_in_progress  <= 0;
+                    print("Jtag -> APB access completed data %d0%",
+                          apb_response.prdata);
                 }
             }
             if (apb_state.ready_ack && !sync_ready) {
@@ -361,6 +367,10 @@ JTAG client module that presents an APB master interface
         /*b ELSE wait for request (sync_ready) and start the APB state machine off */
         } else {
             if (sync_ready) {
+                print("Jtag -> APB access write %d0% %x1% %x2%",
+                      jtag_state.write_not_read,
+                      jtag_state.address,
+                      jtag_state.write_data);
                 apb_state.ready_ack <= 1;
                 apb_state.busy <= 1;
                 apb_state.access_in_progress <= 1;

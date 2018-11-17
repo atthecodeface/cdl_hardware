@@ -68,10 +68,13 @@ class base_th(pycdl._thfile):
             pass
         def received_data(self, data):
             pass
+        def run_poll(self, client_skt):
+            print "Poll", client_skt
+            return False
         def run(self, arg_tuple=None):
             done = False
             while not done:
-                print "Poll",self.client_skt
+                done = self.run_poll(self.client_skt)
                 if self.client_skt is None:
                     (r,_,_) = select.select([self.server_skt],[],[],self.skt_timeout)
                     if len(r)!=0:
@@ -90,7 +93,12 @@ class base_th(pycdl._thfile):
                         pass
                     if len(r)>0:
                         data = self.client_skt.recv(1024)
-                        if len(data)>0: self.received_data(data)
+                        if len(data)>0:
+                            self.received_data(data)
+                            pass
+                        else:
+                            self.client_skt = None
+                            pass
                         pass
                     pass
                 pass
