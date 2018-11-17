@@ -4,6 +4,8 @@ This repository contains hardware modules in CDL that scale from
 general utilities, CSR handling, and input output, down to simple CPUs
 and peripherals.
 
+[https://atthecodeface.github.io/cdl_hardware/cdl_external_html/index.html]
+
 There are regression tests for most modules, and they are fully
 documented (well, at present about 65% fully documented, but quickly
 being completed).
@@ -24,9 +26,7 @@ efficiently at FPGAs, simulation/emulation and real ASICs.
 
 Immediate plans are:
 
-* to complete a port of CLARVI - a BSD licensed implementation of the
-  RISC-V for teaching developed at the Cambridge University Computer
-  Laboratory
+* to complete implementations of RISC-V
 
 * to finish the conversion of the *GIP* to the latest CDL - this is a
   CPU designed in 2002 that executes a 16-bit instruction set, and has
@@ -55,7 +55,7 @@ of design - general purpose utilities, in essence.
 * hysteresis_switch: An input-pin filter with hysteresis to allow for
   example to debounce switches.
 
-### cdl/csrs - solid regression 
+### cdl/csr - solid regression 
 
 CSRs contains modules that implement a pipelined CSR (control/status
 register) interface; being pipelined this bus can be used across an
@@ -140,6 +140,51 @@ in various older microcomputer systems.
   controller - this is a configurable timing and address generator
   that is used to create synchronization signals and addresses for
   video displays. It is particularly used in the BBC microcomputer.
+
+### cdl/apb - solid regression
+
+This directory contains a number of APB targets and masters, and an
+APB arbiter/multiplexer.
+
+* apb_processor: an APB master that runs a very simple script language
+  from a ROM permitting APB reads and writes, where the data read back
+  can be mainpulated simply, and simple flow control. This permits
+  configuration of APB targets from a simple ROM without a full-blown
+  CPU.
+
+* apb_target_timer: a simple APB target timer peripheral with a 31-bit
+  timer and three equality comparators
+
+* apb_target_rv_timer: a more sophisticated APB target timer
+  peripheral that is compatible with RISC-V platform requirements,
+  with a 64-bit timer and a single 64-bit greater-than
+  comparator. This supports fractional addition under timer control to
+  provide for an accurate 64-bit nanosecond timer in a system,
+  independent of clock frequency
+
+* apb_target_sram_interface.cdl: a simple APB target that generates
+  pipeline SRAM read/write requests, to allow for reading/writing of
+  SRAMs relatively simply from a distance.
+
+* apb_target_gpio.cdl: a simple APB target for GPIO inputs/outputs.
+
+* apb_target_dprintf.cdl: a simple APB target that drives the
+  utils/dprintf module to permit debug 'printf' to SRAMs
+  (e.g. framebuffers) or (when implemented later...) UARTs.
+
+* apb_target_led_ws2812: an APB target that drives a chain of up to 16
+  Neopixel LEDs with full RGB
+
+* apb_target_ps2_host: an APB target that provides access to a PS/2
+  host interface, for example to interface with a PS/2 keyboard.
+
+* apb_target_de1_cl_inputs.cdl: an APB target that allows access to
+  the state of the Cambridge University CL DE1-SOC daughterboard inputs.
+
+* apb_master_mux: a two-input APB master arbiter/multiplexer,
+  permitting two APB masters to access a set of APB targets
+
+* apb_master_axi: an AXI target that is an APB master for reads and writes
 
 ### CPU, apb, boards, bbc, serial, storage
 

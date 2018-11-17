@@ -79,26 +79,44 @@ module apb_target_ps2_host( clock clk         "System clock",
                                  output t_ps2_pins ps2_out "Pin values to drive - 1 means float high, 0 means pull low"
     )
 """
-Before use, the clock divider must be set up with a write to the state
+This module provides an APB target to read data from a PS2 host
+interface, particularly for a PS2 keyboard or mouse.
+
+Before use, the clock divider must be set up with a write to the state.
 
 The state register is
-  16;16 = ps2_state.divider_3us (number of ticks to get approx 3us)
-     15 = 0
-   3;12 = fifo_wptr
-     11 = 0
-    3;8 = fifo_rptr
-    2;6 = 0
-      5 = fifo full
-      4 = fifo empty
-      3 = fifo overflow occurred since last read
-      2 = PS2 timeout occurred since last read
-      1 = PS2 protocol error occurred since last read
-      0 = PS2 parity error occurred since last read
+
+Bits     | Meaning
+---------|---------
+  16;16 | ps2_state.divider_3us (number of ticks to get approx 3us)
+     15 | 0
+   3;12 | fifo_wptr
+     11 | 0
+    3;8 | fifo_rptr
+    2;6 | 0
+      5 | fifo full
+      4 | fifo empty
+      3 | fifo overflow occurred since last read
+      2 | PS2 timeout occurred since last read
+      1 | PS2 protocol error occurred since last read
+      0 | PS2 parity error occurred since last read
 
 The fifo register is:
-     31 = Fifo empty (data invalid)
-  23; 8 = 0
-   8; 0 = PS2 Rx data
+
+Bits     | Meaning
+---------|---------
+     31 | Fifo empty (data invalid)
+  23; 8 | 0
+   8; 0 | PS2 Rx data
+
+The usage model is to poll bit 4 of the state register (the fifo empty
+bit); when this is cleared the fifo register will have at least one
+received byte; this may then be read.
+
+An alternative is to poll the fifo register itself, and check if the
+top bit is clear; if so, the bottom eight bits contain valid
+data. This will set the FIFO underflow bit, on every read when there
+is no valid receive data.
 
 """
 {

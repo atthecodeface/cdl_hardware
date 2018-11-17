@@ -11,11 +11,10 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  *
- * @file   apb_target_timer.cdl
- * @brief  Simple timer target for an APB bus
+ * @file   apb_target_led_ws2812.cdl
+ * @brief  Simple APB target for driving a chain of Neopixels
  *
- * CDL implementation of a simple timer target on an APB bus, derived
- * from an original GIP version.
+ * CDL implementation of a simple APB target to drive a chain of Neopixels.
  *
  */
 /*a Includes
@@ -29,8 +28,8 @@ include "leds.h"
  * APB address map, used to decode paddr
  */
 typedef enum [5] {
-    apb_address_config = 0,
-    apb_address_leds = 16, // 16 leds
+    apb_address_config = 0   "Address of configuration register (number of LEDs and operating clock divisor)",
+    apb_address_leds = 16    "Base address of 16 registers for RGB values of 16 LEDs", // 16 leds
 } t_apb_address;
 
 /*t t_access
@@ -38,27 +37,33 @@ typedef enum [5] {
  * APB access that is in progress; a decode of psel and paddr
  */
 typedef enum [3] {
-    access_none,
-    access_write_config,
-    access_read_config,
-    access_write_led
+    access_none           "No APB access",
+    access_write_config   "APB write to the configuration register",
+    access_read_config    "APB read of the configuration register",
+    access_write_led      "APB write to an LED register, given by paddr[4;0]"
 } t_access;
 
-/*t t_led_chain
+/*t t_rgb
+ *
+ * 24-bit RGB color
+ *
+ */
+typedef struct
+{
+    bit[8] red    "Red component value";
+    bit[8] green  "Green component value";
+    bit[8] blue   "Blue component value";
+} t_rgb;
+
+/*t t_chain_state
  *
  * Clock divider and LED contents
  *
  */
 typedef struct
 {
-    bit[8] red;
-    bit[8] green;
-    bit[8] blue;
-} t_rgb;
-typedef struct
-{
-    bit[8] divider_400ns;
-    bit[4] last_led;
+    bit[8] divider_400ns  "Divider to generate approximately a 400ns period (e.g. for 50MHz, should be 400ns/20ns-1 = 19)";
+    bit[4] last_led       "Last LED number, 0 (for 1 LED) to 15 (for 16 LEDs)";
 } t_chain_state;
 
 /*a Module */
@@ -73,6 +78,40 @@ module apb_target_led_ws2812( clock clk         "System clock",
                               output bit led_chain
     )
 """
+A simple module to drive a chain of Neopixel LEDs as an APB target.
+
+The Neopixel LEDs are 24-bit RGB LEDs that are driven through a chain,
+with a single control pin providing the information for the LEDs.
+
+This module supports up to 16 LEDs in a chain, each with a 24-bit RGB
+value. The chain must be configured with a clock divider (which is the
+number of clock ticks required to generate a 400ns, approximately,
+clock) and the number of LEDs in the chain.
+
+The clock divider resets to 0, but whenever it is zero it resets to
+the input value @a divider_400ns_in; hence it may be effectively
+'hardwired'.
+
+Once configured the LED colors can be individually written to
+address-mapped registers. The LED chain automatically updates.
+
+The configuration register is:
+
+Bits     | Meaning
+---------|---------
+12;2     | zero
+4;16     | last LED in the chain (0 for one LED, 15 for sixteen LEDs)
+8;8      | zero
+8;0      | clock divider to create a 400ns clock enable from system clock
+
+Example divider values
+
+System clock   |  Period | Divider
+----------------------------------
+50MHz          | 20ns    |   19
+100MHz         | 10ns    |   39
+20MHz          | 50ns    |   7
+
 
 """
 {
@@ -83,9 +122,14 @@ module apb_target_led_ws2812( clock clk         "System clock",
     /*b Decode APB interface */
     clocked t_access access=access_none   "Access being performed by APB";
 
-    /*b Timer state */
+    /*b LED chain state */
     clocked t_chain_state chain_state={*=0};
     clocked t_rgb[16] leds = {*=0};
+
+    /*b LED chain signals */
+    net  t_led_ws2812_request led_request;
+    comb t_led_ws2812_data    led_data;
+    net bit led_chain;
 
     /*b APB interface */
     apb_interface_logic """
@@ -126,11 +170,22 @@ module apb_target_led_ws2812( clock clk         "System clock",
     }
 
     /*b Handle the led chain */
-    net  t_led_ws2812_request led_request;
-    comb t_led_ws2812_data    led_data;
-    net bit led_chain;
-    timer_logic """
+    led_chain_logic """
+    The LED chain logic manages the configuration (last led and divider), the LED data values, and
+    the LED chain.
+
+    The divider is set to the input value if it is zeroed (as it would
+    be at reset, or if configured with 0); the @a last_led must be
+    configured.
+
+    The LED data values are simply written.
+
+    The LED chain uses the @a led_ws2812_chain module, which presents
+    an LED number - in response the LED's color must be returned. This
+    is done simply with a multiplexing of the LED values.
+
     """: {
+        /*b Clock divider and last led - configuration */
         if (chain_state.divider_400ns==0) {
             chain_state.divider_400ns <= divider_400ns_in;
         }
@@ -138,12 +193,15 @@ module apb_target_led_ws2812( clock clk         "System clock",
             chain_state.divider_400ns <= apb_request.pwdata[8; 0];
             chain_state.last_led      <= apb_request.pwdata[4;16];
         }
+
+        /*b LED data values */
         if (access==access_write_led) {
             leds[apb_request.paddr[4;0]].red   <= apb_request.pwdata[8; 0];
             leds[apb_request.paddr[4;0]].green <= apb_request.pwdata[8; 8];
             leds[apb_request.paddr[4;0]].blue  <= apb_request.pwdata[8;16];
         }
 
+        /*b LED chain */
         led_data = {*=0};
         if (led_request.ready) {
             led_data.red   = leds[led_request.led_number].red;

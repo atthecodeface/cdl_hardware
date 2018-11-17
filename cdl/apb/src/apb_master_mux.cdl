@@ -49,9 +49,9 @@ module apb_master_mux( clock clk         "System clock",
                        input   t_apb_response apb_response "APB response from targets"
     )
 """
-APB multiplexer (well, arbiter and mux really)
+APB multiplexer - or rather, arbiter and multiplexer
 
-The module takes two requests in, and provides a single master out.
+The module takes two APB requests in, and provides a single APB request out.
 
 An APB request from each master is registered, and APB transactions
 are performed using simple round-robin arbitration.

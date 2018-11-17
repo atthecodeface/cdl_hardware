@@ -17,7 +17,8 @@
  * The AXI target supports 32-bit aligned 32-bit read/writes with full
  * byte enables only.
  * 
- * Other transactions return a slave error response
+ * Other transactions should return a slave error response (but they
+ * don't as yet)
  *
  */
 
@@ -86,6 +87,17 @@ module apb_master_axi( clock aclk,
                        output t_apb_request     apb_request,
                        input t_apb_response     apb_response
     )
+"""
+AXI target mapping to an APB master
+
+This is a very simple AXI target that handles a single AXI transaction
+at any one time; it converts this into an APB read or write
+transaction, whose completion allows the completion of the AXI
+transaction.
+
+This module is currently very primitive, and does not checking of
+transaction input really.
+"""
 {
     default clock aclk;
     default reset active_low areset_n;
@@ -117,7 +129,21 @@ module apb_master_axi( clock aclk,
      * qos / region / user ?
      *
      */
-    axi_logic: {
+    axi_logic """
+    The AXI-side logic has two state machines: one handles AXI write
+    requests, the other AXI read requests.
+
+    A write request must be paired with write data, and this permits
+    the state machine to then generate a request to the APB side to
+    perform an APB write transaction; when that completes, the AXI
+    write response can be returned.
+
+    A read request permits the state machine to generate a request to
+    the APB side to perform an APB read transaction; when that
+    completes, the AXI read response can be returned.
+
+
+    """: {
         arready <= 0;
         wready <= 0;
         apb_access_start_read = 0;

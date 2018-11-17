@@ -2,6 +2,20 @@ DOCUMENTATION = $(SRC_ROOT)/doc
 DOXYGEN = DOCUMENTATION=$(DOCUMENTATION) SRC_ROOT=$(SRC_ROOT) doxygen 
 CDL_EXTERNAL_REF_SED_SCRIPT = '/\\chapter{Namespace Index}/d;/\\input{namespaces}/d;/\\input{.*cdl}/d;s/\\chapter{File Documentation}/\\chapter{Header Files}/;/\\chapter{Namespace Documentation}/d;/\\input{namespace.*}/d;'
 
+.PHONY:help_doc
+help: help_doc
+help_doc:
+	@echo "doc/Makefile"
+	@echo "============"
+	@echo ""
+	@echo "Documentation for making"
+	@echo ""
+	@echo "To make the documentation you need doxygen and pdflatex"
+	@echo "sudo apt install texlive-latex-base texlive-latex-full texlive-latex-recommended texlive-latex-extra"
+	@echo ""
+	@echo "make clean_doc"
+	@echo "make documentation"
+
 clean: clean_doc
 
 clean_doc:

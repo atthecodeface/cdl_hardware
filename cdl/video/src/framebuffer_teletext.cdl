@@ -130,6 +130,21 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
                              output t_csr_response csr_response
     )
 """
+This module provides a teletext framebuffer of configurable size.
+
+Each character is 12x10 pixels - horizontally smoothed, but not vertically.
+
+This module incorporates a @a framebuffer_timing module which should
+be configured with the correct display size and porches; the
+csr_select used for this is 1 more than that used for this module
+itself.
+
+The module includes a CSR target with two registers: framebuffer start
+address (register 0), and SRAM words per line (register 1). The
+words-per-line register should be initialized to the number of
+characters in a line (i.e. displayed pixels/12). The framebuffer start
+register can be used to have multiple framebuffers, or to provide for
+scrolling, or it can be held at 0.
 """
 {
     /*b State etc in CSR domain */
@@ -164,6 +179,7 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
 
     /*b Video bus out */
     video_bus_out """
+    Drive the video_bus out, and record the pixel value for that.
     """ : {
         video_bus.vsync = video_timing.v_sync;
         video_bus.hsync = video_timing.h_sync;
@@ -185,7 +201,12 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
     'video_timing.will_display_pixels' When it becomes empty, it
     attempts to load from the pixel buffer.
 
-    The pixel data buffer
+    The pixel data buffer is filled from the teletext output whenever
+    it is valid; this happens after a valid @a tt_char is presented to
+    the teletext module, which in turn happens after reading the frame
+    buffer, which again happens because the pixel data buffer is
+    empty.
+
     """: {
         /*b Pixel combinatorials */
         pixel_combs.next_num_valid = pixel_state.num_valid - 1;
@@ -293,6 +314,9 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
 
     /*b Teletext instance and its character ROM */
     teletext_logic """
+    This is an instantiation of the teletext module, which takes a
+    character and scanline timings and presents pixel data out, after
+    a few cycles, using a character ROM (instantiated here).
     """: {
         tt_timings.interpolate_vertical  <= cfg_downsize_y ? tvi_even_scanlines : tvi_all_scanlines;
         tt_timings.first_scanline_of_row <= 0;
@@ -318,7 +342,7 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
 
     /*b CSR interface */
     csr_interface_logic """
-    Basic CSRS - it should all be writable...
+    Basic CSRS and frame buffer timing module
     """: {
         if (csr_select_in!=0) {
             csr_select <= csr_select_in;
@@ -339,6 +363,7 @@ module framebuffer_teletext( clock csr_clk "Clock for CSR reads/writes",
                                   csr_request <= csr_request,
                                   csr_response => timing_csr_response,
                                   csr_select <= csr_select+1 );
+        
         csr_response = local_csr_response;
         csr_response |= timing_csr_response;
         csrs <= csrs;

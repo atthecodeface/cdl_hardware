@@ -109,7 +109,48 @@ module framebuffer_timing( clock csr_clk                      "Clock for CSR rea
     )
 """
 This module generates v_sync, h_sync and display_enable for a
-framebuffer, using configurable timings.
+framebuffer, using configurable timings. The synchronization signals
+are active for a single cycle, and v_sync is asserted simulationeously
+with h_sync for the start of a frame.
+
+The timing is controlled by three registers: display size, horizontal porches, and vertical porches.
+
+Each line has hsync, porch, display lines, porch; each frame similarly.
+
+The module that uses this must manage the synchronization signals
+required for the particular video standard (the length and polarity of
+synchronization pulses are varied in standards); the timing module
+provides the ability to generate framebuffer addresses and pixels
+reliably, rather than the actual video output synchronization signals.
+
+Display size register:
+
+Bits     | Meaning
+---------|---------
+6;26     | 0
+10;16    | Vertical lines of display -1
+6;10     | 0
+10;0     | Horizontal pixels of display -1
+
+Horizontal porches register:
+
+Bits     | Meaning
+---------|---------
+6;26     | 0
+10;16    | pixels after display prior to hsync -1
+6;10     | 0
+10;0     | pixels including and after hsync -1 prior to display
+
+Vertical porches register:
+
+Bits     | Meaning
+---------|---------
+6;26     | 0
+10;16    | lines after display prior to vsync -1
+6;10     | 0
+10;0     | lines including and after vsync -1 prior to display
+
+
 """
 {
     /*b State etc in CSR domain */

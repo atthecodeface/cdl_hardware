@@ -23,14 +23,14 @@ The modules are grouped into separate directories based on function.
 
 * apb
 
-  The APB modules are predominantly simple APB peripherals; timer,
-  GPIO. There is also the *apb_processor* which is a module that can
-  replay APB transactions (reads and writes) from a ROM, and execute
-  simple ALU operations and loop depending on values in an
-  accumulator; this module permits somewhat flexible APB transactions
-  to be performed in hardware without a microcontroller (such as to
-  initialize a PLL or DDR controller, where APB transactions may
-  depend on lock, skew, etc).
+  The APB modules are predominantly simple APB peripherals; timers,
+  GPIO, and other fixed purpose I/O. There is also the *apb_processor*
+  which is a module that can replay APB transactions (reads and
+  writes) from a ROM, and execute simple ALU operations and loop
+  depending on values in an accumulator; this module permits somewhat
+  flexible APB transactions to be performed in hardware without a
+  microcontroller (such as to initialize a PLL or DDR controller,
+  where APB transactions may depend on lock, skew, etc).
 
 * boards
 
@@ -39,7 +39,17 @@ The modules are grouped into separate directories based on function.
   this is mainly the Terasic Cyclone V DE1 board, with the Cambridge
   University Computer Laboratory I/O daughterboard.
 
-* cpus
+* cpu
+
+  The cpu directory contains a 6502 implementation and numerous RISC-V
+  implementations.
+
+  The RISC-V implementations are based around a variety of execution
+  pipelines of varying lengths, with replaceable instruction
+  decoders. This permits a breadth of embedded RISC-V implementations
+  to be created, supporting a range of RV32 ISA sets (such as RV32E,
+  RV32IMAC, etc). The pipelines are customizable with user instruction
+  encodings as well.
 
 * csrs
 
@@ -69,6 +79,10 @@ The modules are grouped into separate directories based on function.
   this is an implementation of the BBC microcomputer model B, with
   video, ROMs, and floppy disk controller, that runs at 50MHz on a the
   Cyclone V.
+
+  A 'Picoriscv' implementation is at a conceptual level; it is not
+  clear if this is worth moving forward with outside of the RISC-V CPU
+  directory, at present.
 
 * network
 

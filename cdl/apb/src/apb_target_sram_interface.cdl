@@ -11,11 +11,11 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  *
- * @file   apb_target_timer.cdl
- * @brief  Simple timer target for an APB bus
+ * @file   apb_target_sram_interface.cdl
+ * @brief  APB bus target to drive an SRAM read/write request
  *
- * CDL implementation of a simple timer target on an APB bus, derived
- * from an original GIP version.
+ * CDL implementation of a simple APB target to interface to an SRAM
+ * read/write request/response bus.
  *
  */
 /*a Includes
@@ -34,11 +34,11 @@ include "srams.h"
  *
  */
 typedef enum [8] {
-    apb_address_address   = 0,
-    apb_address_data      = 1,
-    apb_address_control   = 2,
-    apb_address_data_inc  = 4, // up to 128
-    apb_address_windowed  = 128
+    apb_address_address   = 0      "APB address for SRAM transaction request address",
+    apb_address_data      = 1      "APB address for SRAM transaction request data; reading/writing makes an SRAM request occur",
+    apb_address_control   = 2      "APB address for 32-bit SRAM control register",
+    apb_address_data_inc  = 4      "Start of APB address range for data-with-autoincrement-of-address; reading/writing makes an SRAM request occur", // up to 128
+    apb_address_windowed  = 128    "Start of APB address range for data addressed-by-window; reading/writing makes an SRAM request occur"
 } t_apb_address;
 
 /*t t_access
@@ -46,17 +46,17 @@ typedef enum [8] {
  * APB access that is in progress; a decode of psel and paddr
  */
 typedef enum [4] {
-    access_none,
-    access_write_address,
-    access_read_address,
-    access_write_control,
-    access_read_control,
-    access_read_data,
-    access_read_data_inc,
-    access_read_data_windowed,
-    access_write_data,
-    access_write_data_inc,
-    access_write_data_windowed,
+    access_none                   "No APB access",
+    access_write_address          "Write SRAM address",
+    access_read_address           "Read SRAM address",
+    access_write_control          "Write SRAM control register",
+    access_read_control           "Read SRAM control register",
+    access_read_data              "Read SRAM data - by issuing SRAM transaction",
+    access_read_data_inc          "Read SRAM data - by issuing SRAM transaction - and increment SRAM address",
+    access_read_data_windowed     "Read SRAM data using paddr[7;0] as offset to address register - by issuing SRAM transaction",
+    access_write_data             "Write SRAM data - by issuing SRAM transaction",
+    access_write_data_inc         "Write SRAM data - by issuing SRAM transaction - and increment SRAM address",
+    access_write_data_windowed    "Write SRAM data using paddr[7;0] as offset to address register - by issuing SRAM transaction",
 } t_access;
 
 /*t t_req_resp_state
@@ -67,12 +67,12 @@ typedef enum [4] {
  */
 typedef struct
 {
-    t_access access  "Access being performed";
-    bit[32] address  "32 bit SRAM address";
-    bit[32] control  "32 control bits to go to the SRAM";
-    bit[32] data     "Data returned by SRAM read";
-    bit     in_progress;
-    bit     data_valid;
+    t_access access      "Access being performed";
+    bit[32] address      "32 bit SRAM address";
+    bit[32] control      "32 control bits to go to the SRAM";
+    bit[32] data         "Data returned by SRAM read";
+    bit     in_progress  "SRAM access in progress";
+    bit     data_valid   "Asserted when SRAM read data is valid";
 } t_req_resp_state;
 
 /*a Module */
@@ -88,7 +88,23 @@ module apb_target_sram_interface( clock clk         "System clock",
                                   input  t_sram_access_resp sram_access_resp "SRAM access response"
     )
 """
-Generate SRAM read/write requests
+APB target peripheral that generates SRAM read/write requests
+
+The module maintains a 32-bit SRAM address that is used in the
+requests, which is a read/write register. There is also a 32-bit
+control register, that can be used for any purpose by the client.
+
+SRAM requests occur when the data register is accessed; it can be
+accessed in one of three different ways. Firstly, it may be accessed
+simply read/write, with either generating the appropriate SRAM request
+to the address given by the SRAM address register. Secondly, it may be
+accessed with a post-increment, where the SRAM address register value
+is used as-is in the request, but it is incremented ready for a
+subsequent transaction. Thirdly, it may be accessed 'windowed'; in
+this manner the bottom 7 bits of the APB address are used in
+conjunction with the top 25 bits of the SRAM address register to
+generate the address for the SRAM request.
+
 """
 {
     /*b Clock and reset */
@@ -161,6 +177,13 @@ Generate SRAM read/write requests
 
     /*b Handle SRAM requests */
     sram_request_logic """
+    While an SRAM request is in progress the APB side is ignored; it
+    should be held as busy. Hence an acknowledged valid request can be
+    removed, and a valid SRAM response completes the SRAM request in
+    progress.
+
+    If an SRAM request is not in progress then one may be started,
+    depending on the APB access being presented.
     """: {
         sram_access_req.id <= 0;
         sram_access_req.byte_enable <= 8h0f;
