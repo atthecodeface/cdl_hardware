@@ -548,7 +548,8 @@ It provides the registers defined in the RISC-V Debug specificaiton
 revision 0.13.
 
 We need a way to force it out of command busy, in case we reset the HART under its feet.
-Or the hart is just bloody minded and never finishes its execution
+Or the hart is just bloody minded and never finishes its execution.
+This is by taking dmactive low.
 
 """
 {
@@ -615,7 +616,10 @@ Or the hart is just bloody minded and never finishes its execution
                                debug_combs.dmstatus.dev_tree_valid,
                                debug_combs.dmstatus.version // 4 bits
             );
-        debug_combs.dmcontrol_data = bundle(31b0,
+        debug_combs.dmcontrol_data = bundle(10b0,
+                                            debug_state.hart_sel,
+                                            14b0,
+                                            debug_state.ndmreset,
                                             debug_state.dmactive);
         debug_combs.abstractcs = bundle(3b0,
                                         5b1, // progbuf size
@@ -704,6 +708,14 @@ Or the hart is just bloody minded and never finishes its execution
             debug_state.resumed        <= debug_combs.next_resumed        & valid_hart_mask;
             debug_state.hit_breakpoint <= debug_combs.next_hit_breakpoint & valid_hart_mask;
         }
+
+        /*b Turn stuff off if not active */
+        if (!debug_state.dmactive) {
+            debug_state.halted <= 0;
+            debug_state.resumed <= 0;
+            debug_state.hit_breakpoint <= 0;
+        }
+        
     }
 
     /*b APB interface logic */
@@ -715,7 +727,7 @@ Or the hart is just bloody minded and never finishes its execution
             apb_state.read_select <= read_select_dmcontrol;
         }
         case dm_addr_dmstatus: {
-            apb_state.read_select <= read_select_dmstatus;
+            apb_state.read_select <= read_select_dmstatus; // must be readable when not active
         }
         case dm_addr_abstractcs: {  // progbufsize, cmd_busy, cmd_err, data count (clear cmd_err on write of 1)
             apb_state.read_select <= read_select_abstractcs;
@@ -870,6 +882,15 @@ Or the hart is just bloody minded and never finishes its execution
             debug_state.command.fsm_state <= command_fsm_idle;
         }
         }
+
+        /*b Turn stuff off if not active */
+        if (!debug_state.dmactive) {
+            debug_state.abstractcs_busy <= 0;
+            debug_state.abstractcs_cmderr <= 0;
+            debug_state.command.fsm_state <= command_fsm_idle;
+            debug_state.command.valid <= 0;
+        }
+        
     }
 
 }
