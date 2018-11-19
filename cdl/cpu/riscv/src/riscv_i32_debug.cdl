@@ -709,7 +709,7 @@ Or the hart is just bloody minded and never finishes its execution
     /*b APB interface logic */
     apb_interface : {
         /*b Decode APB interface to produce (registered) read select and write action */
-        part_switch (apb_request.paddr) {
+        part_switch (apb_request.paddr[8;0]) {
         case dm_addr_dmcontrol: {  // does all sorts of stuff
             apb_state.write_action <= write_action_control;
             apb_state.read_select <= read_select_dmcontrol;

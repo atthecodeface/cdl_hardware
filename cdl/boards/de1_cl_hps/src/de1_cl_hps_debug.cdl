@@ -114,11 +114,14 @@ module de1_cl_hps_debug( clock clk,
     net t_axi_read_response lw_axi_r;
 
 
+    net  t_apb_request jtag_apb_request;
+    comb t_apb_request jtag_mod_apb_request;
     net  t_apb_request riscv_apb_request;
     net  t_apb_request axi_apb_request;
     net  t_apb_request proc_apb_request;
 
-    net t_apb_request  rp_apb_request;
+    net t_apb_request  jp_apb_request;
+    net t_apb_request  rjp_apb_request;
     net t_apb_request  apb_request;
     comb bit[4]        apb_request_sel;
     comb t_apb_request timer_apb_request;
@@ -130,6 +133,7 @@ module de1_cl_hps_debug( clock clk,
     comb t_apb_request rv_sram_apb_request;
     comb t_apb_request fb_sram_apb_request;
     comb t_apb_request ps2_apb_request;
+    comb t_apb_request debug_apb_request;
 
     net t_apb_response  timer_apb_response;
     net t_apb_response  gpio_apb_response;
@@ -140,12 +144,15 @@ module de1_cl_hps_debug( clock clk,
     net t_apb_response  rv_sram_apb_response;
     net t_apb_response  fb_sram_apb_response;
     net t_apb_response  ps2_apb_response;
+    net t_apb_response  debug_apb_response;
     comb t_apb_response apb_response;
 
-    net t_apb_response rp_apb_response;
+    net t_apb_response jp_apb_response;
+    net t_apb_response rjp_apb_response;
     net t_apb_response axi_apb_response;
     net t_apb_response proc_apb_response;
     net t_apb_response riscv_apb_response;
+    net t_apb_response jtag_apb_response;
 
     net t_de1_cl_inputs_control de1_cl_inputs_control "Signals to the shift register etc on the DE1 CL daughterboard";
     net t_de1_cl_user_inputs    de1_cl_user_inputs    "";
@@ -222,15 +229,64 @@ module de1_cl_hps_debug( clock clk,
     clocked bit[32][4] lcd_counters={*=0};
 
     /*b RISC-V */
+    net   t_riscv_debug_mst debug_mst;
+    net   t_riscv_debug_tgt debug_tgt;
+    net bit[5]ir;
+    net t_jtag_action dr_action;
+    net bit[50]dr_in;
+    net  bit[50]dr_tdi_mask;
+    net  bit[50]dr_out;
+    comb t_jtag jtag;
+    net bit jtag_tdo;
+    clocked clock clk bit jtag_tck_go_reg = 0;
+    comb bit jtag_tck_go;
+    comb bit jtag_tck_enable;
+    gated_clock clock clk active_high jtag_tck_enable jtag_tck;
     riscv_instance: {
+        
         riscv_config = {*=0};
         riscv_config.e32   = 0;
         riscv_config.i32c  = 1;
+        riscv_config.debug_enable = rv_sram_ctrl[12]; // 8-11 are JTAG, 0 is reset
         irqs = {*=0};
         irqs.mtip = timer_value.irq;
         timer_control = {*=0};
         timer_control.enable_counter = 1;
         timer_control.integer_adder = 20; // 50MHz
+
+        jtag_tap tap( jtag_tck <- jtag_tck,
+                      reset_n <= reset_n,
+                      jtag <= jtag,
+                      tdo => jtag_tdo,
+
+                      ir => ir,
+                      dr_action => dr_action,
+                      dr_in => dr_in,
+                      dr_tdi_mask <= dr_tdi_mask,
+                      dr_out <= dr_out );
+
+        riscv_jtag_apb_dm dm_apb( jtag_tck <- jtag_tck,
+                      reset_n <= reset_n,
+
+                      ir <= ir,
+                      dr_action <= dr_action,
+                      dr_in <= dr_in,
+                      dr_tdi_mask => dr_tdi_mask,
+                      dr_out => dr_out,
+
+                      apb_clock <- clk,
+                      apb_request => jtag_apb_request,
+                      apb_response <= jtag_apb_response );
+
+        riscv_i32_debug dm( clk <- clk,
+                            reset_n <= reset_n,
+
+                            apb_request <= debug_apb_request,
+                            apb_response => debug_apb_response,
+
+                            debug_mst  => debug_mst,
+                            debug_tgt <= debug_tgt 
+            );
 
         riscv_i32_minimal riscv( clk <- lw_axi_clock_clk,
                                proc_reset_n <= reset_n & rv_sram_ctrl[0],
@@ -240,6 +296,8 @@ module de1_cl_hps_debug( clock clk,
                                data_access_resp <= data_access_resp,
                                sram_access_req <= rv_sram_access_req,
                                sram_access_resp => rv_sram_access_resp,
+                               debug_mst <= debug_mst,
+                               debug_tgt => debug_tgt,
                                riscv_config <= riscv_config,
                                trace => riscv_trace
                          );
@@ -301,24 +359,44 @@ module de1_cl_hps_debug( clock clk,
 
     /*b APB master multiplexing and decode */
     apb_multiplexing_decode: {
-        apb_master_mux apb_mux_rp( clk <- lw_axi_clock_clk,
+        // jtag_apb_request is 8b0, Sel[8;0], 8b0, Reg[8;0]
+        // Sel is 0 for RISC-V debug, too
+        // our request is (12b0, Sel[4], Reg[14;0], 2b0)
+        jtag_mod_apb_request = jtag_apb_request;
+        jtag_mod_apb_request.paddr = bundle(12b0,
+                                            4h9 ^ jtag_apb_request.paddr[4;16],
+                                            6b0,
+                                            jtag_apb_request.paddr[8;0],
+                                            2b0);
+        apb_master_mux apb_mux_jp( clk <- lw_axi_clock_clk,
                                reset_n <= reset_n,
-                               apb_request_0 <= riscv_apb_request,
+                               apb_request_0 <= jtag_mod_apb_request,
                                apb_request_1 <= proc_apb_request,
 
-                               apb_response_0 => riscv_apb_response,
+                               apb_response_0 => jtag_apb_response,
                                apb_response_1 => proc_apb_response,
 
-                               apb_request =>  rp_apb_request,
-                               apb_response <= rp_apb_response );
+                               apb_request =>  jp_apb_request,
+                               apb_response <= jp_apb_response );
+
+        apb_master_mux apb_mux_rjp( clk <- lw_axi_clock_clk,
+                               reset_n <= reset_n,
+                               apb_request_0 <= riscv_apb_request,
+                               apb_request_1 <= jp_apb_request,
+
+                               apb_response_0 => riscv_apb_response,
+                               apb_response_1 => jp_apb_response,
+
+                               apb_request =>  rjp_apb_request,
+                               apb_response <= rjp_apb_response );
 
         apb_master_mux apb_mux_ap( clk <- lw_axi_clock_clk,
                                reset_n <= reset_n,
                                apb_request_0 <= axi_apb_request,
-                               apb_request_1 <= rp_apb_request,
+                               apb_request_1 <= rjp_apb_request,
 
                                apb_response_0 => axi_apb_response,
-                               apb_response_1 => rp_apb_response,
+                               apb_response_1 => rjp_apb_response,
 
                                apb_request =>  apb_request,
                                apb_response <= apb_response );
@@ -333,6 +411,7 @@ module de1_cl_hps_debug( clock clk,
         rv_sram_apb_request    = apb_request;
         fb_sram_apb_request    = apb_request;
         ps2_apb_request        = apb_request;
+        debug_apb_request      = apb_request;
 
         timer_apb_request.paddr      = apb_request.paddr >> 2;
         gpio_apb_request.paddr       = apb_request.paddr >> 2;
@@ -342,6 +421,7 @@ module de1_cl_hps_debug( clock clk,
         rv_sram_apb_request.paddr    = apb_request.paddr >> 2;
         fb_sram_apb_request.paddr    = apb_request.paddr >> 2;
         ps2_apb_request.paddr        = apb_request.paddr >> 2;
+        debug_apb_request.paddr      = apb_request.paddr >> 2;
 
         timer_apb_request.psel       = apb_request.psel && (apb_request_sel==0);
         gpio_apb_request.psel        = apb_request.psel && (apb_request_sel==1);
@@ -352,6 +432,7 @@ module de1_cl_hps_debug( clock clk,
         inputs_apb_request.psel      = apb_request.psel && (apb_request_sel==6);
         fb_sram_apb_request.psel     = apb_request.psel && (apb_request_sel==7);
         ps2_apb_request.psel         = apb_request.psel && (apb_request_sel==8);
+        debug_apb_request.psel       = apb_request.psel && (apb_request_sel==9);
         csr_apb_request.paddr[16;16] = bundle(12b0,apb_request.paddr[4;12]);
         csr_apb_request.paddr[16;0]  = bundle( 6b0,apb_request.paddr[10;2]);
 
@@ -364,6 +445,7 @@ module de1_cl_hps_debug( clock clk,
         if (apb_request_sel==6) { apb_response = inputs_apb_response; }
         if (apb_request_sel==7) { apb_response = fb_sram_apb_response; }
         if (apb_request_sel==8) { apb_response = ps2_apb_response; }
+        if (apb_request_sel==9) { apb_response = debug_apb_response; }
     }
 
     /*b Dprintf requesting */
@@ -733,9 +815,17 @@ module de1_cl_hps_debug( clock clk,
                                           sr_divider <= sr_divider );
 
         gpio_input <= {*=0};
-        gpio_input[4;0]  <= de1_keys;
-        gpio_input[10;4] <= de1_switches;
-        gpio_input[14]   <= de1_irda_rxd;
+        jtag_tck_go     = rv_sram_ctrl[8];
+        jtag.ntrst      = rv_sram_ctrl[9];
+        jtag.tms        = rv_sram_ctrl[10];
+        jtag.tdi        = rv_sram_ctrl[11];
+        jtag_tck_go_reg <= jtag_tck_go;
+        jtag_tck_enable  = jtag_tck_go && !jtag_tck_go_reg;
+
+        gpio_input[0]   <= jtag_tdo;
+        gpio_input[4;1]  <= de1_keys;
+        gpio_input[10;5] <= de1_switches;
+        gpio_input[15]   <= de1_irda_rxd;
 
         de1_ps2_out <= ps2_out;
         de1_ps2b_out = {*=0};

@@ -1,15 +1,15 @@
 include "types/apb.h"
 include "types/jtag.h"
 extern module jtag_tap( clock jtag_tck,
-                 input bit reset_n,
-                 input t_jtag jtag,
-                 output bit tdo,
+                        input bit reset_n,
+                        input t_jtag jtag,
+                        output bit tdo,
 
-                 output bit[5]ir,
-                 output t_jtag_action dr_action,
-                 output bit[50]dr_in,
-                 input  bit[50]dr_tdi_mask,
-                 input  bit[50]dr_out
+                        output bit[5]ir,
+                        output t_jtag_action dr_action,
+                        output bit[50]dr_in,
+                        input  bit[50]dr_tdi_mask,
+                        input  bit[50]dr_out
     )
 {
     timing to rising clock jtag_tck jtag, dr_tdi_mask, dr_out;

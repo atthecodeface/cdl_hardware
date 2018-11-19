@@ -203,6 +203,10 @@ class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
         pass
     #f __init__
     def __init__(self, dump_filename, hw_cls=None, test_memory="dmem", num_cycles=1000, options={}, **kwargs):
+        self.force_debug_enable = False
+        if hasattr(hw_cls,"force_debug_enable") and hw_cls.force_debug_enable:
+            self.force_debug_enable = True
+            pass
         self.needs_jtag_startup = False
         if hasattr(hw_cls,"needs_jtag_startup") and hw_cls.needs_jtag_startup:
             self.needs_jtag_startup = True
@@ -216,6 +220,9 @@ class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
         pass
     #f run_start
     def run_start(self):
+        if self.force_debug_enable:
+            self.debug_enable.reset(1)
+            pass
         if self.needs_jtag_startup:
             self.jtag_init()
             self.jtag_start_riscv()
@@ -522,7 +529,7 @@ class riscv_i32_minimal_test_hw(simple_tb.cdl_test_hw):
                }
     th_forces = { "th.clock":"clk",
                   "th.inputs":("tdo"),
-                  "th.outputs":("jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
+                  "th.outputs":("debug_enable jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
                   }
     clocks = {"jtag_tck":(0,1,1),
               "clk":(0,1,1),
@@ -548,7 +555,7 @@ class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
                }
     th_forces = { "th.clock":"clk",
                   "th.inputs":("tdo"),
-                  "th.outputs":("jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
+                  "th.outputs":("debug_enable jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
                   }
     clocks = {"jtag_tck":(0,1,1),
               "clk":(0,1,1),
@@ -706,6 +713,16 @@ class riscv_i32c_minimal(riscv_base):
     test_memory = "dut.mem"
     pass
 
+#c riscv_i32c_minimal_with_debug
+class riscv_i32c_minimal_with_debug(riscv_base):
+    supports = ["compressed"]
+    hw = riscv_i32c_minimal_test_hw
+    cycles_scale = 1.3
+    test_memory = "dut.mem"
+    force_debug_enable = True
+    needs_jtag_startup = True
+    pass
+
 #c riscv_i32c_pipeline3
 class riscv_i32c_pipeline3(riscv_base):
     supports = ["compressed"]
@@ -740,7 +757,7 @@ riscv_jtag_regression_tests = {#"jtag_simple":("",10*1000,["jtag"],{}),
                                }
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[],{}),
                                "traps":("traps.dump",10*1000,[],{}),
-                               "timer_irqs":("timer_irqs.dump",40*1000,["rv_timer"],{}),
+                               "timer_irqs":("timer_irqs.dump",42*1000,["rv_timer"],{}),
                                #"data_access":("data_access.dump",10*1000,["apb_timer"],{}),
                                "data":("data.dump",10*1000,[],{}),
                                "c_dprintf":("c_dprintf.dump",10*1000,["compressed"],{}),
@@ -811,6 +828,7 @@ for (test_dir,tests) in [(riscv_zephyr_dir,riscv_atcf_zephyr),
         dump_file = test_dir+dump_file
         for test_class in [ riscv_i32_minimal,                  
                                   riscv_i32c_minimal,             
+                                  riscv_i32c_minimal_with_debug,             
                                   riscv_i32c_pipeline3,           
                                   riscv_i32mc_pipeline3,          
                                   ]:

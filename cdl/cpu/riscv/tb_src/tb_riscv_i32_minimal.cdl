@@ -30,9 +30,9 @@ include "apb/apb_masters.h"
 constant integer i32c_force_disable=1;
 
 /*a External modules */
-extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_enable, input bit tdo )
+extern module se_test_harness( clock clk, output bit debug_enable, output t_jtag jtag, output bit tck_enable, input bit tdo )
 {
-    timing from rising clock clk jtag, tck_enable;
+    timing from rising clock clk jtag, tck_enable, debug_enable;
     timing to rising clock clk tdo;
 }
 
@@ -74,6 +74,8 @@ module tb_riscv_i32_minimal( clock clk,
     comb t_timer_control timer_control;
     net t_timer_value timer_value;
 
+    net bit debug_enable;
+    
     /*b Instantiate RISC-V
      */
     net t_riscv_i32_trace trace;
@@ -82,9 +84,11 @@ module tb_riscv_i32_minimal( clock clk,
         riscv_config = {*=0};
         riscv_config.e32   = 0;
         riscv_config.i32c  = !i32c_force_disable;
+        riscv_config.debug_enable = debug_enable;
         irqs = {*=0};
         irqs.mtip = timer_value.irq;
-        th_apb_request = jtag_apb_request;
+        th_apb_request    = jtag_apb_request;
+        th_apb_request.paddr = bundle(16b0, 4h2, jtag_apb_request.paddr[10;0],2b0);
         jtag_apb_response = th_apb_response;
         riscv_i32_minimal_apb rv_apb( clk <- clk,
                                       reset_n <= reset_n,
@@ -155,7 +159,7 @@ module tb_riscv_i32_minimal( clock clk,
                                            sram_access_req => sram_access_req,
                                            sram_access_resp <= sram_access_resp );
 
-        se_test_harness th(clk <- jtag_tck, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
+        se_test_harness th(clk <- jtag_tck, debug_enable => debug_enable, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
         
         jtag_tap tap( jtag_tck <- jtag_tck_gated,
                       reset_n <= reset_n,
