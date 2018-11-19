@@ -66,6 +66,7 @@ typedef struct {
     bit attention;
     bit hit_breakpoint;
     bit[16] arg;
+    bit[6] rv_select;
     t_riscv_debug_resp resp "Response from a requested op - only one op should be requested for each response";
     t_riscv_word data0      "Data from a completed transaction; 0 otherwise";
 } t_debug_state;
@@ -203,6 +204,9 @@ a RISC-V debug module.
         if (debug_mst.valid && (rv_select==debug_mst.select)) {
             debug_state.drive_response <= 1;
         }
+        if (debug_state.rv_select!=0) {
+            debug_state.rv_select <= rv_select;
+        }
 
         debug_tgt = {*=0};
         if (debug_state.drive_attention) {
@@ -210,7 +214,7 @@ a RISC-V debug module.
         }
         if (debug_state.drive_response) {
             debug_tgt.valid          = 1;
-            debug_tgt.selected       = rv_select;
+            debug_tgt.selected       = debug_state.rv_select;
             debug_tgt.halted         = debug_state.halted;
             debug_tgt.resumed        = debug_state.resumed;
             debug_tgt.hit_breakpoint = debug_state.hit_breakpoint;

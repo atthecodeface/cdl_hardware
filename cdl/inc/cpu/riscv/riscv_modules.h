@@ -36,15 +36,17 @@ include "srams.h"
  */
 extern
 module riscv_i32_minimal( clock clk,
-                           input bit reset_n,
-                           input bit proc_reset_n,
-                           input t_riscv_irqs             irqs               "Interrupts in to the CPU",
-                           output t_riscv_mem_access_req  data_access_req,
-                           input  t_riscv_mem_access_resp data_access_resp,
+                          input bit reset_n,
+                          input bit proc_reset_n,
+                          input t_riscv_irqs             irqs               "Interrupts in to the CPU",
+                          output t_riscv_mem_access_req  data_access_req,
+                          input  t_riscv_mem_access_resp data_access_resp,
                           input t_sram_access_req sram_access_req,
                           output t_sram_access_resp sram_access_resp,
-                           input  t_riscv_config          riscv_config,
-                           output t_riscv_i32_trace       trace
+                          input  t_riscv_debug_mst               debug_mst,
+                          output t_riscv_debug_tgt               debug_tgt,
+                          input  t_riscv_config          riscv_config,
+                          output t_riscv_i32_trace       trace
 )
 {
     timing from rising clock clk data_access_req;
@@ -52,6 +54,8 @@ module riscv_i32_minimal( clock clk,
     timing to   rising clock clk sram_access_req;
     timing from rising clock clk sram_access_resp;
     timing to   rising clock clk riscv_config;
+    timing to   rising clock clk debug_mst;
+    timing from rising clock clk debug_tgt;
     timing to   rising clock clk irqs;
     timing from rising clock clk trace;
     timing comb input riscv_config;
@@ -82,7 +86,7 @@ extern module riscv_i32_pipeline_control( clock clk,
     timing to   rising clock clk debug_mst;
     timing from rising clock clk pipeline_control;
     timing from rising clock clk debug_tgt;
-    timing comb input rv_select, riscv_config, csrs;
+    timing comb input riscv_config, csrs;
     timing comb output pipeline_control, debug_tgt;
 }
 

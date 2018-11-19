@@ -328,6 +328,28 @@ class c_riscv_minimal_test_jtag_prog(c_riscv_minimal_test_dump):
         self.jtag_reset()
         self.jtag_write_irs(ir_bits = bits_of_n(5,0x11)) # Send in 0x11 (apb_access)
         self.jtag_dm_write(0x10, 1) # Enable
+
+        self.jtag_dm_write(0x20, 0x42483) # prog0 = some load
+        self.jtag_dm_write(0x04, 0x1234) # data0 = address
+        self.jtag_dm_write(0x17, 0x00271008) # Abstract command to Write data0 to s0 and exec the load
+        abstractcs = ((self.jtag_dm_read_slow(0x16)>>2)&0xffffffff) # Read abstractcs
+        print "%d: Abstractcs %08x"%(self.global_cycle(), abstractcs)
+        abstractcs = ((self.jtag_dm_read_slow(0x16)>>2)&0xffffffff) # Read abstractcs
+        print "%d: Abstractcs %08x"%(self.global_cycle(), abstractcs)
+        self.jtag_dm_write(0x04, 0) # data0 = Initial PC
+
+        self.jtag_dm_write(0x20, 0x942024) # prog0 = some store
+        self.jtag_dm_write(0x04, 0xfeedcafe) # data0 = address
+        self.jtag_dm_write(0x17, 0x00231009) # Abstract command to Write data0 to s1
+        self.jtag_dm_write(0x04, 0x1234) # data0 = address
+        self.jtag_dm_write(0x17, 0x00271008) # Abstract command to Write data0 to s0 and exec the load
+        abstractcs = ((self.jtag_dm_read_slow(0x16)>>2)&0xffffffff) # Read abstractcs
+        print "%d: Abstractcs %08x"%(self.global_cycle(), abstractcs)
+        abstractcs = ((self.jtag_dm_read_slow(0x16)>>2)&0xffffffff) # Read abstractcs
+        print "%d: Abstractcs %08x"%(self.global_cycle(), abstractcs)
+        self.jtag_dm_write(0x04, 0) # data0 = Initial PC
+
+
         self.jtag_dm_write(0x04, 0) # data0 = Initial PC
         self.jtag_dm_write(0x17, 0x002307b1) # Abstract command to Write data0 to DEPC
         #self.jtag_dm_write(0x20, 0x12345678) # progbuf0
@@ -499,9 +521,12 @@ class riscv_i32_minimal_test_hw(simple_tb.cdl_test_hw):
     loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
                }
     th_forces = { "th.clock":"clk",
-                  "th.inputs":("a"),
-                  "th.outputs":("b"),
+                  "th.inputs":("tdo"),
+                  "th.outputs":("jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
                   }
+    clocks = {"jtag_tck":(0,1,1),
+              "clk":(0,1,1),
+              }
     module_name = "tb_riscv_i32_minimal"
     #f __init__
     def __init__(self, test):
@@ -522,9 +547,12 @@ class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
     loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
                }
     th_forces = { "th.clock":"clk",
-                  "th.inputs":("a"),
-                  "th.outputs":("b"),
+                  "th.inputs":("tdo"),
+                  "th.outputs":("jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
                   }
+    clocks = {"jtag_tck":(0,1,1),
+              "clk":(0,1,1),
+              }
     module_name = "tb_riscv_i32c_minimal"
     #f __init__
     def __init__(self, test):

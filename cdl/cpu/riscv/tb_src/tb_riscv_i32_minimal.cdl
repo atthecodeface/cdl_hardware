@@ -30,14 +30,16 @@ include "apb/apb_masters.h"
 constant integer i32c_force_disable=1;
 
 /*a External modules */
-extern module se_test_harness( clock clk, input bit a, output bit b )
+extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_enable, input bit tdo )
 {
-    timing to rising clock clk a;
+    timing from rising clock clk jtag, tck_enable;
+    timing to rising clock clk tdo;
 }
 
 /*a Module
  */
 module tb_riscv_i32_minimal( clock clk,
+                             clock jtag_tck,
                              input bit reset_n
 )
 {
@@ -55,16 +57,20 @@ module tb_riscv_i32_minimal( clock clk,
     comb t_riscv_config riscv_config;
     default clock clk;
     default reset active_low reset_n;
+    net  t_apb_request  jtag_apb_request;
     comb t_apb_request  th_apb_request;
     net t_apb_request   data_access_apb_request;
     net t_apb_request   mux_apb_request;
     comb t_apb_request  timer_apb_request;
     comb t_apb_request  sram_apb_request;
+    comb t_apb_request  debug_apb_request;
     net  t_apb_response timer_apb_response;
     net  t_apb_response sram_apb_response;
+    net  t_apb_response debug_apb_response;
     comb t_apb_response mux_apb_response;
     net  t_apb_response data_access_apb_response;
     net  t_apb_response th_apb_response;
+    comb t_apb_response jtag_apb_response;
     comb t_timer_control timer_control;
     net t_timer_value timer_value;
 
@@ -78,7 +84,8 @@ module tb_riscv_i32_minimal( clock clk,
         riscv_config.i32c  = !i32c_force_disable;
         irqs = {*=0};
         irqs.mtip = timer_value.irq;
-        th_apb_request = {*=0};
+        th_apb_request = jtag_apb_request;
+        jtag_apb_response = th_apb_response;
         riscv_i32_minimal_apb rv_apb( clk <- clk,
                                       reset_n <= reset_n,
                                       data_access_req  <= data_access_req,
@@ -86,8 +93,21 @@ module tb_riscv_i32_minimal( clock clk,
                                       apb_request  => data_access_apb_request,
                                       apb_response <= data_access_apb_response );
     }
+    net t_jtag jtag;
+    net bit tdo;
+    net bit[5]ir;
+    net t_jtag_action dr_action;
+    net bit[50]dr_in;
+    net bit[50]dr_tdi_mask;
+    net bit[50]dr_out;
+    net bit tck_enable;
+    comb bit tck_enable_fix;
+    gated_clock clock jtag_tck active_high tck_enable_fix jtag_tck_gated;
+    net   t_riscv_debug_mst debug_mst;
+    net   t_riscv_debug_tgt debug_tgt;
     apb_peripherals:
     {
+        tck_enable_fix = tck_enable;
 
         timer_control = {*=0};
         timer_control.enable_counter = 1;
@@ -105,16 +125,20 @@ module tb_riscv_i32_minimal( clock clk,
                                apb_response <= mux_apb_response
             );
 
-        sram_apb_request  = mux_apb_request;
         timer_apb_request = mux_apb_request;
+        sram_apb_request  = mux_apb_request;
+        debug_apb_request = mux_apb_request;
 
         timer_apb_request.psel = mux_apb_request.psel && (mux_apb_request.paddr[4;12]==0);
         sram_apb_request.psel  = mux_apb_request.psel && (mux_apb_request.paddr[4;12]==1);
+        debug_apb_request.psel = mux_apb_request.psel && (mux_apb_request.paddr[4;12]==2);
         timer_apb_request.paddr = mux_apb_request.paddr >> 2;
-        sram_apb_request.paddr = mux_apb_request.paddr >> 2;
+        sram_apb_request.paddr  = mux_apb_request.paddr >> 2;
+        debug_apb_request.paddr = mux_apb_request.paddr >> 2;
 
         mux_apb_response = timer_apb_response;
-        if (sram_apb_request.psel) { mux_apb_response = sram_apb_response; }
+        if (sram_apb_request.psel)  { mux_apb_response = sram_apb_response; }
+        if (debug_apb_request.psel) { mux_apb_response = debug_apb_response; }
 
         apb_target_rv_timer timer( clk <- clk,
                                    reset_n <= reset_n,
@@ -131,8 +155,42 @@ module tb_riscv_i32_minimal( clock clk,
                                            sram_access_req => sram_access_req,
                                            sram_access_resp <= sram_access_resp );
 
-        se_test_harness th( clk <- clk, a<=0 );
+        se_test_harness th(clk <- jtag_tck, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
         
+        jtag_tap tap( jtag_tck <- jtag_tck_gated,
+                      reset_n <= reset_n,
+                      jtag <= jtag,
+                      tdo => tdo,
+
+                      ir => ir,
+                      dr_action => dr_action,
+                      dr_in => dr_in,
+                      dr_tdi_mask <= dr_tdi_mask,
+                      dr_out <= dr_out );
+
+        riscv_jtag_apb_dm dm_apb( jtag_tck <- jtag_tck_gated,
+                      reset_n <= reset_n,
+
+                      ir <= ir,
+                      dr_action <= dr_action,
+                      dr_in <= dr_in,
+                      dr_tdi_mask => dr_tdi_mask,
+                      dr_out => dr_out,
+
+                      apb_clock <- clk,
+                      apb_request => jtag_apb_request,
+                      apb_response <= jtag_apb_response );
+
+        riscv_i32_debug dm( clk <- clk,
+                            reset_n <= reset_n,
+
+                            apb_request <= debug_apb_request,
+                            apb_response => debug_apb_response,
+
+                            debug_mst  => debug_mst,
+                            debug_tgt <= debug_tgt 
+            );
+
         riscv_i32_minimal dut( clk <- clk,
                                proc_reset_n <= reset_n & !sram_ctrl[0],
                                reset_n <= reset_n,
@@ -141,9 +199,12 @@ module tb_riscv_i32_minimal( clock clk,
                                data_access_resp <= data_access_resp,
                                sram_access_req <= sram_access_req,
                                sram_access_resp => sram_access_resp,
+                               debug_mst <= debug_mst,
+                               debug_tgt => debug_tgt,
                                riscv_config <= riscv_config,
                                trace => trace
                          );
+
         riscv_i32_trace trace(clk <- clk,
                               reset_n <= reset_n,
                               riscv_clk_enable <= 1,

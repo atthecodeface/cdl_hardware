@@ -123,6 +123,8 @@ module riscv_i32_minimal( clock clk,
                           input  t_riscv_mem_access_resp data_access_resp,
                           input  t_sram_access_req       sram_access_req,
                           output t_sram_access_resp      sram_access_resp,
+                          input  t_riscv_debug_mst       debug_mst,
+                          output t_riscv_debug_tgt       debug_tgt,
                           input  t_riscv_config          riscv_config,
                           output t_riscv_i32_trace       trace
 )
@@ -150,7 +152,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     net t_riscv_csr_controls      csr_controls;
     net t_riscv_csr_data          csr_data;
     net t_riscv_csr_access        csr_access;
-    comb  t_riscv_config          riscv_config_pipe;
+    clocked t_riscv_config          riscv_config_pipe={*=0};
     net  t_riscv_mem_access_req  dmem_access_req;
     comb t_riscv_mem_access_resp dmem_access_resp;
     net t_riscv_pipeline_control     pipeline_control;
@@ -469,12 +471,11 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     }
 
     /*b Pipeline */
-    comb t_riscv_debug_mst debug_mst;
+    net t_riscv_debug_tgt debug_tgt;
     pipeline: {
         coproc_response = {*=0};
-        riscv_config_pipe = riscv_config;
-        riscv_config_pipe.i32m = 0;
-        debug_mst = {*=0};
+        riscv_config_pipe      <= riscv_config;
+        riscv_config_pipe.i32m <= 0;
         riscv_i32_pipeline_control pc(clk <- riscv_clk,
                                       reset_n          <= proc_reset_n,
                                       riscv_clk_enable <= 1,
@@ -485,7 +486,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                       riscv_config     <= riscv_config_pipe,
                                       trace            <= trace_pipe,
                                       debug_mst        <= debug_mst,
-                                      //debug_tgt       => ,
+                                      debug_tgt        => debug_tgt,
                                       rv_select <= 0 );
 
         riscv_i32_pipeline_control_fetch_req pc_fetch_req( pipeline_control <= pipeline_control,

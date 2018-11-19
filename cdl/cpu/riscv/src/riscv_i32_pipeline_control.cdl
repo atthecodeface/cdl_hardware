@@ -122,6 +122,7 @@ typedef struct {
     t_riscv_word data0      "Data from a completed transaction; 0 otherwise";
     bit instruction_debug_valid "Asserted if instructino debug is valid (should only happen when halted";
     t_riscv_i32_inst_debug_op instruction_debug_op;
+    bit[6] rv_select;
     bit waiting_for_read_write;
     bit read_write_completed;
 } t_debug_control;
@@ -337,6 +338,11 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         }
         }
 
+        /*b Record hart id */
+        if (rv_select!=0) {
+            debug_state.control.rv_select <= rv_select;
+        }
+        
         /*b Kill debug state if debugger not enabled */
         if (ifetch_combs.debug_disabled) {
             debug_state.control   <= debug_state.control;
@@ -499,7 +505,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         }
         if (debug_state.drive.response) {
             debug_tgt.valid          = 1;
-            debug_tgt.selected       = rv_select;
+            debug_tgt.selected       = debug_state.control.rv_select;
             debug_tgt.halted         = debug_state.control.halted;
             debug_tgt.resumed        = debug_state.control.resumed;
             debug_tgt.hit_breakpoint = debug_state.control.hit_breakpoint;
