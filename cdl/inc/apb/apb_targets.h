@@ -26,6 +26,7 @@ include "types/axi.h"
 include "types/dprintf.h"
 include "types/sram.h"
 include "types/ps2.h"
+include "types/jtag.h"
 
 /*a Modules - see also csr_target_apb, csr_master_apb in csr_interface.h */
 /*m apb_target_timer */
@@ -157,6 +158,25 @@ module apb_target_ps2_host( clock clk         "System clock",
 
     timing to   rising clock clk ps2_in;
     timing from rising clock clk ps2_out;
+}
+
+/*m apb_target_jtag */
+extern module apb_target_jtag( clock clk         "System clock",
+                               input bit reset_n "Active low reset",
+
+                               input  t_apb_request  apb_request  "APB request",
+                               output t_apb_response apb_response "APB response",
+
+                               output bit             jtag_tck_enable,
+                               output t_jtag          jtag,
+                               input  bit             jtag_tdo
+
+    )
+{
+    timing to   rising clock clk apb_request;
+    timing from rising clock clk apb_response;
+    timing from rising clock clk jtag_tck_enable, jtag;
+    timing to   rising clock clk jtag_tdo;
 }
 
 /*a Editor preferences and notes

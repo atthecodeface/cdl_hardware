@@ -148,6 +148,7 @@ cdl cdl/input_devices/tb_src     tb_input_devices  inc:cdl/inc
 cdl cdl/apb/src  apb_master_mux   inc:cdl/inc
 cdl cdl/apb/src  apb_master_axi   inc:cdl/inc
 cdl cdl/apb/src  apb_target_gpio   inc:cdl/inc
+cdl cdl/apb/src  apb_target_jtag   inc:cdl/inc
 cdl cdl/apb/src  apb_target_timer  inc:cdl/inc
 cdl cdl/apb/src  apb_target_rv_timer  inc:cdl/inc
 cdl cdl/apb/src  apb_target_dprintf  inc:cdl/inc
@@ -177,6 +178,7 @@ cdl cdl/boards/de1_cl/tb_src       tb_de1_cl_controls    inc:cdl/inc
 
 cdl cdl/boards/de1_cl_hps/src        de1_cl_hps_debug     inc:cdl/inc
 cdl cdl/boards/de1_cl_hps/tb_src  tb_de1_cl_hps_debug  inc:cdl/boards/de1_cl_hps/tb_src inc:cdl/inc rit:tb_de1_cl_hps_generic.de1_cl_hps_generic=de1_cl_hps_debug rmn:tb_de1_cl_hps_generic=tb_de1_cl_hps_debug
+cdl cdl/boards/de1_hps/tb_src     tb_de1_hps_generic     inc:cdl/boards/de1_hps/tb_src inc:cdl/inc rit:tb_de1_hps_generic.de1_hps_generic=de1_hps_debug rmn:tb_de1_hps_generic=tb_de1_hps_debug
 
 cdl cdl/boards/de1_hps/src         de1_hps_debug     inc:cdl/inc
 

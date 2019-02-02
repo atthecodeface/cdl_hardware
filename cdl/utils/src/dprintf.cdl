@@ -277,9 +277,9 @@ A code of 255 terminates the string.
         format_combs.byte_is_control_hex     = (format_combs.byte[2;6]==2b10);
         format_combs.byte_is_control_decimal = (format_combs.byte[2;6]==2b11);
         format_combs.hex_top_nybble          = 8h30 | bundle(4b0, format_combs.byte[4;4]);
-        if (format_combs.byte[4;4]>9) {format_combs.hex_top_nybble = 8d55 + bundle(4b0, format_combs.byte[4;4]);}
+        if (format_combs.byte[4;4]>9) {format_combs.hex_top_nybble = /*8d55*/8h37 + bundle(4b0, format_combs.byte[4;4]);}
         format_combs.hex_bottom_nybble         = 8h30 | bundle(4b0, format_combs.byte[4;0]);
-        if (format_combs.byte[4;0]>9) {format_combs.hex_bottom_nybble = 8d55 + bundle(4b0, format_combs.byte[4;0]);}
+        if (format_combs.byte[4;0]>9) {format_combs.hex_bottom_nybble = /*8d55*/8h37 + bundle(4b0, format_combs.byte[4;0]);}
 
         /*b Determine action given current FSM state and working byte */
         format_combs.action = action_none;
