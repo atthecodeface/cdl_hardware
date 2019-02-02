@@ -1,0 +1,204 @@
+/** @copyright (C) 2016-2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_target_jtag.cdl
+ * @brief  Simple target for an APB bus to drive the jtag request
+ *
+ * CDL implementation of a simple APB target to drive a jtag request
+ *
+ */
+/*a Includes
+ */
+include "types/jtag.h"
+include "types/apb.h"
+
+/*a Types */
+/*t t_apb_address
+ *
+ * APB address map, used to decode paddr
+ */
+typedef enum [3] {
+    apb_address_status         = 0  "Status including state of jtag pins and number of valid tdo bits",
+    apb_address_tdo            = 2  "TDO shift register",
+    apb_address_tdo_clear      = 3  "TDO shift register with atomic clear",
+    apb_address_data1          = 4  "One character",
+    apb_address_data2          = 5  "Two characters",
+    apb_address_data3          = 6  "Three characters",
+    apb_address_data4          = 7  "Four characters"
+} t_apb_address;
+
+/*t t_access
+ *
+ * APB access that is in progress; a decode of psel and paddr
+ */
+typedef enum [3] {
+    access_none                  "No APB access",
+    access_read_status           "Read the address register",
+    access_read_tdo              "Read the tdo register",
+    access_read_tdo_clear        "Read the tdo register and clear count",
+    access_write_data            "Write N characters",
+} t_access;
+
+/*t t_jtag_state */
+typedef struct {
+    bit tck_enable;
+    bit tdi;
+    bit tms;
+    bit tdo;
+    bit[32] tdo_sr;
+    bit[6] num_valid_tdo;
+    bit[3] num_bytes_valid;
+    bit[32] bytes;
+    bit busy;
+    bit cycle;
+} t_jtag_state;
+
+/*a Module */
+module apb_target_jtag( clock clk         "System clock",
+                           input bit reset_n "Active low reset",
+
+                           input  t_apb_request  apb_request  "APB request",
+                           output t_apb_response apb_response "APB response",
+
+                           output bit             jtag_tck_enable,
+                           output t_jtag          jtag,
+                           input  bit             jtag_tdo
+    )
+"""
+Simple OCD-style jtag master with an APB interface.
+
+OCD uses character streams to interact with JTAG
+
+A character in '01234567' sets TDI to bit 0, TMS to bit 1, and enables
+the jtag clock for one tick if TMS bit 2 is set.  A character 'R'
+reads back tdo
+
+This module maintains a shift register and count of TDO bits read back.
+Characters can be written 1, 2, 3 or 4 bytes at a time; unknown characters are skipped.
+
+The number of valid TDO bits can be read.
+The TDO bits can be read, and atomically read-and-clear # TDO bits.
+
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Decode APB interface */
+    clocked t_access access=access_none   "Access being performed by APB";
+
+    /*b Jtag state */
+    clocked t_jtag_state jtag_state={*=0};
+
+    /*b APB interface */
+    apb_interface_logic """
+    The APB interface is decoded to @a access when @p psel is asserted
+    and @p penable is deasserted - this is the first cycle of an APB
+    access. This permits the access type to be registered, so that the
+    APB @p prdata can be driven from registers, and so that writes
+    will occur correctly when @p penable is asserted.
+
+    The APB read data @p prdata can then be generated based on @a
+    access.
+    """ : {
+        /*b Decode access */
+        access <= access_none;
+        part_switch (apb_request.paddr[3;0]) {
+        case apb_address_status:    { access <= apb_request.pwrite ? access_none : access_read_status; }
+        case apb_address_tdo:       { access <= apb_request.pwrite ? access_none : access_read_tdo; }
+        case apb_address_tdo_clear: { access <= apb_request.pwrite ? access_none : access_read_tdo_clear; }
+        case apb_address_data1:     { access <= apb_request.pwrite ? access_write_data : access_none; }
+        case apb_address_data2:     { access <= apb_request.pwrite ? access_write_data : access_none; }
+        case apb_address_data3:     { access <= apb_request.pwrite ? access_write_data : access_none; }
+        case apb_address_data4:     { access <= apb_request.pwrite ? access_write_data : access_none; }
+        }
+        if (!apb_request.psel || jtag_state.busy ) {
+            access <= access_none;
+        }
+
+        /*b Handle APB read data */
+        apb_response = {*=0, pready=!jtag_state.busy};
+        part_switch (access) {
+        case access_read_status: {
+            apb_response.prdata = bundle(5b0,
+                                         jtag_state.tdo,
+                                         jtag_state.tdi,
+                                         jtag_state.tms,
+                                         18b0,jtag_state.num_valid_tdo);
+        }
+        case access_read_tdo: {
+            apb_response.prdata = jtag_state.tdo_sr;
+        }
+        case access_read_tdo_clear: {
+            apb_response.prdata = jtag_state.tdo_sr;
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b Handle the jtag */
+    jtag_state_logic """
+        The @a jtag_state 
+    """: {
+        jtag_state.tck_enable <= 0;
+        if (jtag_state.num_bytes_valid>0) {
+            if ((jtag_state.bytes[8;0]&0xf8) == 0x30) { // ASCII 0-7
+                jtag_state.tdi <= jtag_state.bytes[0];
+                jtag_state.tms <= jtag_state.bytes[1];
+                if (jtag_state.cycle==1) {
+                    jtag_state.tck_enable <= jtag_state.bytes[2];
+                }
+            }
+            if (jtag_state.bytes[8;0] == 0x52) { // ASCII R
+                if (jtag_state.cycle==1) {
+                    jtag_state.tdo_sr <= (jtag_state.tdo_sr>>1) | (jtag_tdo ? 32h80000000 : 0);
+                    jtag_state.num_valid_tdo <= jtag_state.num_valid_tdo + 1;
+                }
+            }
+            if (jtag_state.cycle==1) {
+                jtag_state.bytes           <= jtag_state.bytes >> 8;
+                jtag_state.num_bytes_valid <= jtag_state.num_bytes_valid-1;
+            }
+            jtag_state.cycle <= jtag_state.cycle+1;
+        } else {
+            jtag_state.busy            <= 0;
+        }
+        jtag_state.tdo <= jtag_tdo;
+        if (access==access_write_data) {
+            jtag_state.num_bytes_valid <= bundle(1b0,apb_request.paddr[2;0])+1;
+            jtag_state.bytes           <= apb_request.pwdata;
+            jtag_state.busy            <= 1;
+            jtag_state.cycle           <= 0;
+        }
+        if (access==access_read_tdo_clear) {
+            jtag_state.tdo_sr <= 0;
+            jtag_state.num_valid_tdo <= 0;
+        }
+        jtag.ntrst = 1;
+        jtag.tdi = jtag_state.tdi;
+        jtag.tms = jtag_state.tms;
+        jtag_tck_enable = jtag_state.tck_enable;
+    }
+
+    /*b Done
+     */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/

@@ -1,0 +1,161 @@
+/** Copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_de1_hps_generic.cdl
+ * @brief Generic testbench for DE1 HPS
+ *
+ */
+/*a Includes */
+include "types/axi.h"
+include "axi/axi_masters.h"
+include "boards/de1.h"
+include "boards/de1/de1_hps.h"
+
+/*a Modules */
+/*m extern for axi_master with extra connections */
+extern
+module axi_master_de1(clock aclk,
+                     input bit areset_n,
+                     output t_axi_request ar,
+                     input bit awready,
+                     output t_axi_request aw,
+                     input bit arready,
+                     input bit wready,
+                     output t_axi_write_data w,
+                     output bit bready,
+                     input t_axi_write_response b,
+                     output bit rready,
+                     input t_axi_read_response r,
+
+                     output  t_de1_audio de1_audio_adc,
+                     input t_de1_audio de1_audio_dac,
+
+                     output t_de1_inputs de1_inputs,
+                     input t_de1_leds de1_leds,
+
+                     output t_ps2_pins   de1_ps2_in,
+                     input t_ps2_pins  de1_ps2_out,
+                     output t_ps2_pins   de1_ps2b_in,
+                     input t_ps2_pins  de1_ps2b_out
+                  
+    )
+{
+    timing from rising clock aclk ar, aw, w, bready, rready;
+    timing to rising clock aclk awready, arready, wready, b, r;
+
+    timing from rising clock aclk de1_audio_adc, de1_inputs, de1_ps2_in, de1_ps2b_in;
+    timing to   rising clock aclk de1_audio_dac, de1_leds, de1_ps2_out, de1_ps2b_out;
+}
+
+/*m tb_de1_hps_generic */
+module tb_de1_hps_generic( clock clk,
+                            input bit reset_n
+)
+{
+
+    /*b Nets */
+    net t_axi_request    lw_axi_ar;
+    net bit             lw_axi_arready;
+    net t_axi_request    lw_axi_aw;
+    net bit             lw_axi_awready;
+    net bit             lw_axi_wready;
+    net t_axi_write_data lw_axi_w;
+    net bit              lw_axi_bready;
+    net t_axi_write_response lw_axi_b;
+    net bit lw_axi_rready;
+    net t_axi_read_response lw_axi_r;
+
+    net   t_de1_audio de1_audio_adc;
+    net   t_de1_audio de1_audio_dac;
+
+    net  t_de1_inputs de1_inputs;
+    net  t_de1_leds   de1_leds;
+
+    net  t_ps2_pins  de1_ps2_in;
+    net  t_ps2_pins  de1_ps2_out;
+    net  t_ps2_pins  de1_ps2b_in;
+    net  t_ps2_pins  de1_ps2b_out;
+
+    net t_adv7123 de1_vga;
+
+    /*b Instantiations */
+    instantiations: {
+        axi_master_de1 th( aclk <- clk, // called th as that is what simple_tb expects to give a test 'object' to
+                           areset_n <= reset_n,
+
+                           ar      => lw_axi_ar,
+                           arready <= lw_axi_arready,
+                           aw      => lw_axi_aw,
+                           awready <= lw_axi_awready,
+                           w       => lw_axi_w,
+                           wready  <= lw_axi_wready,
+                           b       <= lw_axi_b,
+                           bready  => lw_axi_bready,
+                           r       <= lw_axi_r,
+                           rready  => lw_axi_rready,
+
+                           de1_inputs     => de1_inputs,
+                           de1_leds       <= de1_leds,
+                           de1_audio_adc  => de1_audio_adc,
+                           de1_audio_dac  <= de1_audio_dac,
+
+                           de1_ps2_in     => de1_ps2_in,
+                           de1_ps2_out    <= de1_ps2_out,
+                           de1_ps2b_in    => de1_ps2b_in,
+                           de1_ps2b_out   <= de1_ps2b_out
+            );
+
+        de1_hps_generic dut( clk <- clk,
+                             reset_n <= reset_n,
+
+                             lw_axi_clock_clk <- clk,
+                             lw_axi_ar      <= lw_axi_ar,
+                             lw_axi_arready => lw_axi_arready,
+                             lw_axi_aw      <= lw_axi_aw,
+                             lw_axi_awready => lw_axi_awready,
+                             lw_axi_w       <= lw_axi_w,
+                             lw_axi_wready  => lw_axi_wready,
+                             lw_axi_b       => lw_axi_b,
+                             lw_axi_bready  <= lw_axi_bready,
+                             lw_axi_r       => lw_axi_r,
+                             lw_axi_rready  <= lw_axi_rready,
+
+                             de1_audio_bclk <- clk,
+                             de1_audio_adc  <= de1_audio_adc,
+                             de1_audio_dac  => de1_audio_dac,
+                                
+                             de1_inputs <= de1_inputs,
+                             de1_leds   => de1_leds,
+
+                             de1_ps2_in     <= de1_ps2_in,
+                             de1_ps2_out    => de1_ps2_out,
+                             de1_ps2b_in    <= de1_ps2b_in,
+                             de1_ps2b_out   => de1_ps2b_out,
+
+                             de1_vga_clock <- clk,
+                             de1_vga_reset_n <= reset_n,
+                             de1_vga => de1_vga
+
+            );
+    }
+
+    /*b All done */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/
