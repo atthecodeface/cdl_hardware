@@ -17,14 +17,21 @@ trace = csv.reader(csvfile, delimiter=',', quotechar='"')
 for row in trace:
     if (row[2]==args.module):
         if False: # branch + trap flow
-            if (row[3] == '1'):
-                flow = int(row[5]) + int(row[6])*2
-                print flow
+            if (row[3] == '0'): #timestamp,id,dut.trace,0="PC",7,"pc","branch_taken","trap","ret","jalr","branch_target","instr"
+
+                pc = int(row[5])
+                branch_taken = row[6]
+                trap         = row[7]
+                ret          = row[8]
+                jalr         = row[9]
+                print "%08x %d %d %d %d"%(pc,branch_taken,trap,ret,jalr)
                 pass
             pass
         else: # rfw retirement flow
-            if (row[3] == '2') and (row[5] == '1'):
-                print row[6], row[7] # rd, data
+            if (row[3] == '1') and (row[5] == '1'): #timestamp,id,dut.trace,1="retire",3,"rfw","rd","data"
+                rfw_rd   = row[6]
+                rfw_data = row[7]
+                print rfw_rd, rfw_data
                 pass
             pass
         pass

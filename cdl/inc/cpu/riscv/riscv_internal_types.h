@@ -661,22 +661,6 @@ typedef struct {
     bit          cannot_complete "Early in cycle: if deasserted the module is performing a calculation that has not produced a valid result yet (feeds back in to controls alu_cannot_complete)";
 } t_riscv_i32_coproc_response;
 
-/*t t_riscv_i32_trace
- */
-typedef struct {
-    bit                instr_valid;
-    bit[32]            instr_pc   "Program counter of the instruction";
-    t_riscv_i32_inst   instruction "Instruction word being decoded";
-    bit                rfw_retire "Asserted if an instruction is being retired";
-    bit                rfw_data_valid;
-    bit[5]             rfw_rd;
-    t_riscv_word       rfw_data   "Result of ALU/memory operation for the instruction";
-    bit                branch_taken "Asserted if a branch is being taken";
-    bit[32]            branch_target "Target of branch if being taken";
-    bit                trap;
-    // Needs tag
-} t_riscv_i32_trace;
-
 /*a Dmem access */
 /*t t_riscv_i32_dmem_exec */
 typedef struct {
@@ -771,6 +755,7 @@ typedef struct {
     bit cannot_complete "Asserted if the pipeline cannot complet - not dependent on coprocessors (if any)";
     bit interrupt_ack;
     bit branch_taken;
+    bit jalr;
     t_riscv_i32_trap trap;
     bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
     t_riscv_i32_inst instruction;

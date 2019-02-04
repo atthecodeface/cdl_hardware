@@ -132,6 +132,10 @@ module tb_riscv_i32c_pipeline3( clock clk,
     net t_riscv_i32_trace trace;
     comb t_riscv_debug_mst debug_mst;
     comb bit riscv_clk_enable;
+    comb t_riscv_compressed_trace_control trace_control;
+    net t_riscv_i32_compressed_trace compressed_trace;
+    net t_riscv_i32_decompressed_trace decompressed_trace;
+    net bit[5] nybbles_consumed;
     riscv_instance: {
         se_test_harness th( clk <- clk, a<=0 );
         riscv_config = {*=0};
@@ -202,5 +206,19 @@ module tb_riscv_i32c_pipeline3( clock clk,
                               reset_n <= reset_n,
                               riscv_clk_enable <= riscv_clk_enable,
                               trace <= trace );
+        trace_control = {enable=1,
+                         enable_control=1,
+                         enable_pc=1, // priority over rfd?
+                         enable_rfd=0,
+                         enable_breakpoint=1,
+                         valid = riscv_clk_enable};
+        riscv_i32_trace_compression trace_compression(clk <- clk,
+                                                      reset_n <= reset_n,
+                                                      trace_control <= trace_control,
+                                                      trace <= trace,
+                                                      compressed_trace => compressed_trace );
+        riscv_i32_trace_decompression trace_decompression( compressed_nybbles <= compressed_trace.nybbles.data,
+                                                           decompressed_trace => decompressed_trace,
+                                                           nybbles_consumed => nybbles_consumed );
     }
 }

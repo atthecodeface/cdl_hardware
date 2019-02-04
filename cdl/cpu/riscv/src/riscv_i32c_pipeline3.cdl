@@ -469,6 +469,7 @@ An example implementation of could be
         pipeline_response.exec.predicted_branch   = alu_state.predicted_branch;
         pipeline_response.exec.pc_if_mispredicted = alu_control_flow.jalr ? alu_result.branch_target : alu_state.pc_if_mispredicted;
         pipeline_response.exec.branch_taken       = alu_control_flow.branch_taken;
+        pipeline_response.exec.jalr               = alu_control_flow.jalr && (alu_state.idecode.rs1!=0);
         pipeline_response.exec.trap               = alu_control_flow.trap;
 
         pipeline_response.rfw.valid      = rfw_state.valid;

@@ -284,10 +284,13 @@ while ((pc_i<len(pc_events)) or (rfw_i<len(rfw_events))):
         pass
     if (o[0]<=rfw_ts):
         (timestamp,n,event_args) = o
-        pc = event_args[0]
-        branch_taken  = event_args[1]
-        branch_nonpredicted = event_args[2]
-        instr_data   = event_args[3]
+        pc                   = event_args[0]
+        branch_taken         = event_args[1]
+        trap                 = event_args[2]
+        ret                  = event_args[3]
+        jalr                 = event_args[4]
+        instr_data           = event_args[6]
+        flow = ( (trap<<2) | (ret<<3) | (jalr<<1) | (branch_taken<<0) )
         c = rv_instr.from_binary(pc, instr_data)
         rfw_str = ""
         if timestamp==rfw_ts: rfw_str=rfw
@@ -295,7 +298,7 @@ while ((pc_i<len(pc_events)) or (rfw_i<len(rfw_events))):
         if args.timestamps:
             timestamp_str = "%7d : "%timestamp
             pass
-        print "%s%08x : %30s : %15s"%(timestamp_str,pc,c.disassemble(), rfw_str)
+        print "%s%08x : %1d : %30s : %15s"%(timestamp_str,pc,flow,c.disassemble(), rfw_str)
         pc_i += 1
         if timestamp==rfw_ts: rfw_i+=1
         pass
@@ -305,7 +308,7 @@ while ((pc_i<len(pc_events)) or (rfw_i<len(rfw_events))):
         if args.timestamps:
             timestamp_str = "%7d : "%timestamp
             pass
-        print "%s         : %30s : %15s"%(timestamp_str,"", rfw)
+        print "%s             : %30s : %15s"%(timestamp_str,"", rfw)
         rfw_i+=1
         pass
     pass

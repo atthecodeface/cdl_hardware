@@ -273,6 +273,8 @@ stage the multiply cannot support fused operations
         pipeline_response.exec.pc_if_mispredicted = decexecrfw_alu_result.branch_target; // correct for jalr and branch
         pipeline_response.exec.branch_taken       = decexecrfw_control_flow.branch_taken;
         pipeline_response.exec.trap               = decexecrfw_control_flow.trap;
+        pipeline_response.exec.jalr               = decexecrfw_control_flow.jalr && (decexecrfw_combs.idecode.rs1!=0);
+        
 
         pipeline_response.rfw = rfw_state;
 

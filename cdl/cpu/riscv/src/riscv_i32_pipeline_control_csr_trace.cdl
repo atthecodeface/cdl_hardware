@@ -133,13 +133,17 @@ module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_control    p
         trace = {*=0};
         trace.instr_valid    = pipeline_response.exec.valid && !pipeline_response.exec.cannot_complete && !coproc_response_cfg.cannot_complete;
         trace.instr_pc       = pipeline_response.exec.pc;
-        trace.instruction    = pipeline_response.exec.instruction;
+        trace.instruction    = pipeline_response.exec.instruction.data;
         trace.rfw_retire     = pipeline_response.rfw.valid;
         trace.rfw_data_valid = pipeline_response.rfw.rd_written;
         trace.rfw_rd         = pipeline_response.rfw.rd;
         trace.rfw_data       = pipeline_response.rfw.data;
         trace.branch_taken   = pipeline_response.exec.branch_taken;
         trace.trap           = pipeline_response.exec.trap.valid;
+        trace.ret            = pipeline_response.exec.trap.ret;
+        trace.jalr           = pipeline_response.exec.jalr;
         trace.branch_target  = pipeline_fetch_data.pc;
+        trace.bkpt_valid     = 0;
+        trace.bkpt_reason    = 0;
     }
 }

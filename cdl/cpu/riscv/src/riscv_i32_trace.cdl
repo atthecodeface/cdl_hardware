@@ -26,14 +26,6 @@ include "cpu/riscv/riscv.h"
 
 /*a Types
  */
-typedef struct {
-    bit[2]         must_be_ones "Bits that must be one for a valid RISCV I32 base instruction";
-    bit            is_imm_op "Asserted if the instruction is an immediate operation";
-    bit[5]         opc     "Opcode field from 32-bit instruction";
-    bit[7]         funct7  "7-bit function field of instruction";
-    bit[3]         funct3  "3-bit function field of instruction";
-    t_riscv_word   imm_signed "Sign-extension word, basically instruction[31] replicated";
-} t_combs;
 
 /*a Module
  */
@@ -58,9 +50,11 @@ Trace instruction execution
                 log("PC",
                     "pc",trace.instr_pc,
                     "branch_taken",trace.branch_taken,
+                    "trap",trace.trap,
+                    "ret",trace.ret,
+                    "jalr",trace.jalr,
                     "branch_target",trace.branch_target,
-                    "instr",trace.instruction.data);
-                log("flow", "branch_taken", trace.branch_taken, "trap", trace.trap);
+                    "instr",trace.instruction);
             }
             if (trace.rfw_retire) {
                 log("retire", "rfw", trace.rfw_data_valid, "rd", trace.rfw_rd, "data", trace.rfw_data );

@@ -1,0 +1,138 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_trace.cdl
+ * @brief  Instruction trace for RISC-V implementation
+ *
+ * CDL implementation of RISC-V instruction trace based on the RISC-V
+ * specification v2.1.
+ *
+ */
+
+/*a Includes
+ */
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+
+/*a Types
+ */
+/*t t_trace_combs */
+typedef struct {
+    bit[48] data_nybbles     "Nybbles to be parsed for the data field";
+    bit nonseq_valid;
+    bit[2] nonseq;
+    bit[5]  nybbles_consumed "Nybbles consumed priort to parsing the data field";
+} t_trace_combs;
+
+/*a Module
+ */
+module riscv_i32_trace_decompression( input bit[64] compressed_nybbles "Nybbles from compressed trace",
+                                      output t_riscv_i32_decompressed_trace decompressed_trace "Decompressed trace",
+                                      output bit[5] nybbles_consumed "number of nybbles (from bit 0) consumed by current decompression"
+)
+"""
+Trace decompression
+
+This takes the input nybbles and combinatorially decodes the nybbles to a trace
+
+The input data can come from a shift register, which can be shifted down by nybbles_consumed
+
+The output decompression can be registered and used for tracing
+"""
+{
+
+    comb    t_trace_combs  trace_combs;
+
+    /*b Compressed trace out */
+    compressed_trace_out """
+    Present the state - but bytes_valid is combinatorial from the state
+    """: {
+        decompressed_trace = {*=0};
+
+        decompressed_trace.seq         = compressed_nybbles[3;0];
+        trace_combs.nonseq_valid   = 0;
+        trace_combs.nonseq         = compressed_nybbles[2;0];
+        decompressed_trace.bkpt_reason = compressed_nybbles[4;4];
+        trace_combs.data_nybbles       = compressed_nybbles[48;0];
+        trace_combs.nybbles_consumed   = 0;
+        if (compressed_nybbles[3]==0) {
+            decompressed_trace.seq_valid = 1;
+            trace_combs.nybbles_consumed   = 1;
+            trace_combs.data_nybbles     = compressed_nybbles[48;4];
+            if (compressed_nybbles[2;6]==2b10) { // nonseq
+                trace_combs.nonseq_valid = 1;
+                trace_combs.nonseq       = compressed_nybbles[2;4];
+                trace_combs.data_nybbles        = compressed_nybbles[48;8];
+                trace_combs.nybbles_consumed   = 2;
+                if (compressed_nybbles[4;8]==4b1101) { // seq, nonseq then breakpoint
+                    decompressed_trace.bkpt_valid = 1;
+                    decompressed_trace.bkpt_reason = compressed_nybbles[4;12];
+                    trace_combs.data_nybbles       = compressed_nybbles[48;16];
+                    trace_combs.nybbles_consumed   = 4;
+                } 
+            } else { // seq and not nonseq
+                if (compressed_nybbles[4;4]==4b1101) { // seq then breakpoint
+                    decompressed_trace.bkpt_valid = 1;
+                    decompressed_trace.bkpt_reason = compressed_nybbles[4;8];
+                    trace_combs.data_nybbles       = compressed_nybbles[48;12];
+                    trace_combs.nybbles_consumed   = 3;
+                } 
+            }
+        } elsif (compressed_nybbles[2;2]==2b10) { // nonseq but without seq a start
+                trace_combs.nonseq_valid = 1;
+                trace_combs.nonseq       = compressed_nybbles[2;0];
+                trace_combs.data_nybbles        = compressed_nybbles[48;4];
+                trace_combs.nybbles_consumed   = 1;
+                if (compressed_nybbles[4;4]==4b1101) { // nonseq then breakpoint
+                    decompressed_trace.bkpt_valid = 1;
+                    decompressed_trace.bkpt_reason = compressed_nybbles[4;8];
+                    trace_combs.data_nybbles       = compressed_nybbles[48;12];
+                    trace_combs.nybbles_consumed   = 3;
+                } 
+        } elsif (compressed_nybbles[4;0]==4b1101) { // breakpoint at start
+                decompressed_trace.bkpt_valid = 1;
+                decompressed_trace.bkpt_reason = compressed_nybbles[4;4];
+                trace_combs.data_nybbles       = compressed_nybbles[48;8];
+                trace_combs.nybbles_consumed   = 2;
+        }
+        if (trace_combs.nonseq_valid) {
+            decompressed_trace.branch_taken = (trace_combs.nonseq==0);
+            decompressed_trace.jalr         = (trace_combs.nonseq==1);
+            decompressed_trace.trap         = (trace_combs.nonseq==2);
+            decompressed_trace.ret          = (trace_combs.nonseq==3);
+        }
+        decompressed_trace.pc = trace_combs.data_nybbles[32;8];
+        decompressed_trace.rfw_data = trace_combs.data_nybbles[32; 8];
+        decompressed_trace.rfw_rd   = trace_combs.data_nybbles[ 5;43];
+        nybbles_consumed = trace_combs.nybbles_consumed;        
+        if ((trace_combs.data_nybbles[4;0]==4b1100) || (trace_combs.data_nybbles[3;1]==3b111)) {
+            nybbles_consumed = trace_combs.nybbles_consumed + 4 + bundle(1b0, trace_combs.data_nybbles[3;4], 1b0);
+            decompressed_trace.pc_valid       = !trace_combs.data_nybbles[7];
+            decompressed_trace.rfw_data_valid =  trace_combs.data_nybbles[7];
+        }
+
+        if (compressed_nybbles[4;0]==0) {
+            decompressed_trace.seq_valid = 0;
+            decompressed_trace.pc_valid = 0;
+            decompressed_trace.rfw_data_valid = 0;
+            decompressed_trace.bkpt_valid = 0;
+            decompressed_trace.branch_taken = 0;
+            decompressed_trace.trap = 0;
+            decompressed_trace.ret  = 0;
+            decompressed_trace.jalr = 0;
+            nybbles_consumed = (compressed_nybbles==0)?-1:1;
+        }
+    }
+
+    /*b All done */
+}

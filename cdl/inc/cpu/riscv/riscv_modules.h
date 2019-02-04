@@ -258,6 +258,28 @@ module riscv_i32_trace( clock clk            "Clock for the CPU",
     timing to rising clock clk trace;
 }
 
+/*m riscv_i32_trace_compression */
+extern module riscv_i32_trace_compression( clock clk            "Free-running clock",
+                                    input bit reset_n     "Active low reset",
+                                    input t_riscv_compressed_trace_control trace_control      "Control of trace",
+                                    input t_riscv_i32_trace trace "Trace signals",
+                                    output t_riscv_i32_compressed_trace compressed_trace "Compressed trace"
+)
+{
+    timing to   rising clock clk trace_control, trace;
+    timing from rising clock clk compressed_trace;
+}
+
+/*m riscv_i32_trace_decompression */
+extern module riscv_i32_trace_decompression( input bit[64] compressed_nybbles "Nybbles from compressed trace",
+                                             output t_riscv_i32_decompressed_trace decompressed_trace "Decompressed trace",
+                                             output bit[5] nybbles_consumed "number of nybbles (from bit 0) consumed by current decompression"
+)
+{
+    timing comb input compressed_nybbles;
+    timing comb output decompressed_trace, nybbles_consumed;
+}
+
 /*m riscv_csrs_minimal  */
 extern
 module riscv_csrs_minimal( clock clk                                   "RISC-V clock",

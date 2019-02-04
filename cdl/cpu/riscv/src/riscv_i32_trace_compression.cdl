@@ -1,0 +1,191 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_trace.cdl
+ * @brief  Instruction trace for RISC-V implementation
+ *
+ * CDL implementation of RISC-V instruction trace based on the RISC-V
+ * specification v2.1.
+ *
+ */
+
+/*a Includes
+ */
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+
+/*a Types
+ */
+/*t t_trace_state */
+typedef struct {
+    bit enabled;
+    bit pc_required;
+    bit[3] data_nybble "Nybble at which data nybbles will start in compressed stream, if required";
+    t_riscv_i32_compressed_trace compressed;
+} t_trace_state;
+
+/*t t_trace_combs */
+typedef struct {
+    bit[3] current_seq;
+    bit[3] next_seq;
+    bit    next_seq_valid;
+    bit    next_nonseq_valid;
+    bit    next_bkpt_valid;
+    bit    next_data_valid;
+} t_trace_combs;
+
+/*a Module
+ */
+module riscv_i32_trace_compression( clock clk            "Free-running clock",
+                                    input bit reset_n     "Active low reset",
+                                    input t_riscv_compressed_trace_control trace_control      "Control of trace",
+                                    input t_riscv_i32_trace trace "Trace signals",
+                                    output t_riscv_i32_compressed_trace compressed_trace "Compressed trace"
+)
+"""
+Trace instruction execution
+"""
+{
+
+    default clock clk;
+    default reset active_low reset_n;
+    comb    t_trace_combs  trace_combs;
+    clocked t_trace_state  trace_state = {*=0, pc_required=1};
+
+    /*b Compressed trace out */
+    compressed_trace_out """
+    Present the state - but bytes_valid is combinatorial from the state
+    """: {
+        compressed_trace = trace_state.compressed;
+        compressed_trace.data_num_bytes = 4;
+        if (compressed_trace.data[ 8;32]==0) {compressed_trace.data_num_bytes = 3;}
+        if (compressed_trace.data[16;24]==0) {compressed_trace.data_num_bytes = 2;}
+        if (compressed_trace.data[24;16]==0) {compressed_trace.data_num_bytes = 1;}
+        if (compressed_trace.data[32; 8]==0) {compressed_trace.data_num_bytes = 0;}
+
+        compressed_trace.nybbles = {*=0};
+        compressed_trace.nybbles.valid = bundle(2b0, trace_state.data_nybble);
+        if (trace_state.compressed.data_valid) {
+            compressed_trace.nybbles.valid = compressed_trace.nybbles.valid + 5h4 + bundle(compressed_trace.data_num_bytes,1b0);
+        }
+
+        full_switch (bundle(trace_state.compressed.bkpt_valid,
+                       trace_state.compressed.nonseq_valid,
+                       trace_state.compressed.seq_valid) ) {
+        case 3b000: { compressed_trace.nybbles.data = 0; }
+        case 3b001: { compressed_trace.nybbles.data = bundle(60b0, 1b0, trace_state.compressed.seq); }
+        case 3b010: { compressed_trace.nybbles.data = bundle(60b0, 2b10, trace_state.compressed.nonseq); }
+        case 3b011: { compressed_trace.nybbles.data = bundle(56b0, 2b10, trace_state.compressed.nonseq, 1b0, trace_state.compressed.seq); }
+        case 3b100: { compressed_trace.nybbles.data = bundle(56b0, trace_state.compressed.bkpt, 4b1101); }
+        case 3b110: { compressed_trace.nybbles.data = bundle(52b0, trace_state.compressed.bkpt, 4b1101, 2b10, trace_state.compressed.nonseq); }
+        case 3b111: { compressed_trace.nybbles.data = bundle(48b0, trace_state.compressed.bkpt, 4b1101, 2b10, trace_state.compressed.nonseq, 1b0, trace_state.compressed.seq); }
+        case 3b101: { compressed_trace.nybbles.data = bundle(52b0, trace_state.compressed.bkpt, 4b1101, 1b0, trace_state.compressed.seq); }
+        }
+        if (trace_state.compressed.data_valid) {
+            full_switch (trace_state.data_nybble) {
+            case  0: { compressed_trace.nybbles.data |= bundle(16b0, compressed_trace.data[40; 0], compressed_trace.data_reason, compressed_trace.data_num_bytes[3;0], 4b1110); }
+            case  1: { compressed_trace.nybbles.data |= bundle(12b0, compressed_trace.data[40; 0], compressed_trace.data_reason, compressed_trace.data_num_bytes[3;0], 4b1110,  4b0); }
+            case  2: { compressed_trace.nybbles.data |= bundle( 8b0, compressed_trace.data[40; 0], compressed_trace.data_reason, compressed_trace.data_num_bytes[3;0], 4b1110,  8b0); }
+            case  3: { compressed_trace.nybbles.data |= bundle( 4b0, compressed_trace.data[40; 0], compressed_trace.data_reason, compressed_trace.data_num_bytes[3;0], 4b1110, 12b0); }
+            case  4: { compressed_trace.nybbles.data |= bundle(      compressed_trace.data[40; 0], compressed_trace.data_reason, compressed_trace.data_num_bytes[3;0], 4b1110, 16b0); }
+            }
+        }
+
+    }
+    
+    /*b trace state */
+    trace_state_logic """
+    Probably a trap can happen even if trace.instr_valid is not asserted
+    """: {
+        trace_combs.current_seq = trace_state.compressed.seq;
+        if (trace_state.compressed.seq_valid) {
+            trace_combs.current_seq = 0;
+            trace_state.compressed.seq <= 0;
+        }
+
+        trace_combs.next_seq = trace_combs.current_seq;
+        trace_combs.next_seq_valid = 0;
+        trace_combs.next_nonseq_valid = 0;
+        trace_combs.next_bkpt_valid = 0;
+        trace_combs.next_data_valid = 0;
+
+        if (trace_state.enabled && trace_control.valid) {
+            if (trace.bkpt_valid) {
+                trace_combs.next_bkpt_valid = 1;
+                trace_state.compressed.bkpt <= trace.bkpt_reason;
+            }
+            if (trace_control.enable_rfd && trace.rfw_data_valid) {
+                trace_combs.next_data_valid  = 1;
+                trace_state.compressed.data_reason <= 1;
+                trace_state.compressed.data        <= bundle(trace.rfw_data, 3b0, trace.rfw_rd);
+                trace_state.compressed.data_num_bytes <= 0; // provided from the state
+            }
+            if (trace.instr_valid) {
+                trace_state.pc_required <= 0;
+                if (trace.branch_taken | trace.jalr |
+                    trace.trap | trace.ret ) {
+                    trace_state.pc_required <= 1;
+                    trace_combs.next_nonseq_valid = 1;
+                    trace_combs.next_seq_valid = (trace_combs.current_seq!=0);
+                }
+                trace_combs.next_seq = trace_combs.current_seq+1;
+                if (trace_combs.current_seq==6) { // hence next_seq is 7
+                    trace_combs.next_seq_valid = 1;
+                }
+                // Note priority order!
+                if (trace.branch_taken) { trace_state.compressed.nonseq<=0; }
+                if (trace.jalr)         { trace_state.compressed.nonseq<=1; }
+                if (trace.trap)         { trace_state.compressed.nonseq<=2; }
+                if (trace.ret)          { trace_state.compressed.nonseq<=3; }
+                if (trace_control.enable_pc && trace_state.pc_required) { // Note - higher priority than rfw
+                    trace_combs.next_data_valid  = 1;
+                    trace_state.compressed.data_reason <= 0;
+                    trace_state.compressed.data        <= bundle(8b0,trace.instr_pc);
+                    trace_state.compressed.data_num_bytes <= 0; // provided from the state
+                }
+            }
+        }
+        if (!trace_control.enable_breakpoint) {
+            trace_combs.next_bkpt_valid   = 0;
+        }
+        if (!trace_control.enable_control) {
+            trace_combs.next_seq_valid    = 0;
+            trace_combs.next_nonseq_valid = 0;
+        }
+
+        if (trace_state.enabled) {
+            trace_state.compressed.seq_valid     <= trace_combs.next_seq_valid;
+            trace_state.compressed.nonseq_valid  <= trace_combs.next_nonseq_valid;
+            trace_state.compressed.bkpt_valid    <= trace_combs.next_bkpt_valid;
+            trace_state.compressed.data_valid    <= trace_combs.next_data_valid;
+            trace_state.compressed.seq           <= trace_combs.next_seq;
+            trace_state.data_nybble              <= ( bundle(2b0, trace_combs.next_seq_valid) +
+                                                      bundle(2b0, trace_combs.next_nonseq_valid) +
+                                                      bundle(1b0, trace_combs.next_bkpt_valid, 1b0));
+        }
+        
+        /*b Handle the enable */
+        if (trace_control.enable) {
+            trace_state.enabled <= 1;
+        } else {
+            trace_state <= {*=0,pc_required=1};
+        }
+
+        /*b Clock gate state */
+        if (!trace_control.enable && !trace_state.enabled) {
+            trace_state <= trace_state;
+        }
+    }
+
+    /*b All done */
+}
