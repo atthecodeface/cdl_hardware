@@ -142,7 +142,7 @@ module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_control    p
         trace.trap           = pipeline_response.exec.trap.valid;
         trace.ret            = pipeline_response.exec.trap.ret;
         trace.jalr           = pipeline_response.exec.jalr;
-        trace.branch_target  = pipeline_fetch_data.pc;
+        trace.branch_target  = pipeline_fetch_data.pc;//ifetch_request.pc;// ;
         trace.bkpt_valid     = 0;
         trace.bkpt_reason    = 0;
     }

@@ -140,6 +140,9 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    p
         ifetch_req.pc_if_mispredicted = ifetch_combs.pc_if_mispredicted;
         ifetch_req.flush_pipeline = 1;
         ifetch_req.req_type = rv_fetch_none;
+        ifetch_req.address  = pipeline_control.decode_pc; // == ifetch_state.pc
+        ifetch_req.mode     = rv_mode_debug;
+
         full_switch (pipeline_control.fetch_action) {
         case rv_pc_fetch_action_restart_at_pc: {
             ifetch_req.flush_pipeline = 1;
@@ -149,7 +152,7 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    p
         case rv_pc_fetch_action_retry: {
             ifetch_req.flush_pipeline = 0;
             ifetch_req.req_type       = rv_fetch_repeat;
-            ifetch_req.address        = ifetch_combs.fetch_next_pc; // early address - must be same as last time since the data is all the same
+            ifetch_req.address        = pipeline_control.decode_pc; // ifetch_combs.fetch_next_pc; // early address - must be same as last time since the data is all the same
         }
         case rv_pc_fetch_action_continue_fetching: {
             ifetch_req.flush_pipeline = 0;
