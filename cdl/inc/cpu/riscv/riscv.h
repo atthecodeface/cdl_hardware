@@ -95,17 +95,17 @@ typedef enum[3] {
     rv_mode_debug      = 3b111, // all 1s so that it is a superset of machine mode
 } t_riscv_mode;
 
-/*t t_riscv_fetch_req
+/*t t_riscv_fetch_req_type
  *
  *
  *
  */
 typedef enum[3] {
-    rv_fetch_none           = 3b000,
-    rv_fetch_nonsequential  = 3b001,
-    rv_fetch_sequential_32  = 3b010,
-    rv_fetch_repeat         = 3b011,
-    rv_fetch_sequential_16  = 3b110,
+    rv_fetch_none           = 3b000, // address is invalid - next non-none request MUST be nonsequential
+    rv_fetch_nonsequential  = 3b001, // address is anything, and will be valid late in the cycle
+    rv_fetch_sequential_32  = 3b010, // address=+4 from last cycle
+    rv_fetch_repeat         = 3b011, // address will be same as last cycle
+    rv_fetch_sequential_16  = 3b110, // address=+2 from last cycle
 } t_riscv_fetch_req_type;
 
 /*t t_riscv_fetch_req

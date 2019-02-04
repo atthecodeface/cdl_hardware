@@ -511,7 +511,7 @@ module de1_cl_hps_debug( clock clk,
             dprintf_req[9] <= {valid=1, address=360,
                     data_0=bundle(32h52_56_49_3a, 32h_00_00_00_87), // RVI:%08x %08x (pc inst)
                     data_1=bundle(riscv_trace.instr_pc,  32h200087),
-                    data_2=bundle(riscv_trace.instruction.data, 8hff, 24h000000) };
+                    data_2=bundle(riscv_trace.instruction, 8hff, 24h000000) };
         }
         if (riscv_apb_request.psel) {
             dprintf_req[10] <= {valid=1, address=400,

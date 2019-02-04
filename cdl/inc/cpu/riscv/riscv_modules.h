@@ -22,7 +22,6 @@ include "types/jtag.h"
 include "utils/jtag_modules.h"
 include "cpu/riscv/riscv.h"
 include "cpu/riscv/riscv_internal_types.h"
-include "srams.h"
 
 /*a Implementations */
 /*m riscv_i32_minimal
@@ -32,8 +31,8 @@ include "srams.h"
 
  alternatively submodules may be built with appropriate force's set to
  force discard of logic.
-
- */
+*/
+include "srams.h"
 extern
 module riscv_i32_minimal( clock clk,
                           input bit reset_n,

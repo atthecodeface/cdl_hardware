@@ -409,11 +409,15 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
             }
         }
         case ifetch_fsm_restarting, ifetch_fsm_fetching, ifetch_fsm_retry: { // present request, decode should be valid, pipeline not empty
-            ifetch_state.state <= ifetch_fsm_retry; // retry next means that the decode NOW is valid and blocked. possibly it should also work for decode NOW invalid and fetch data is invalid in which case the address may need to be hacked
+            ifetch_state.state <= ifetch_fsm_retry;
+            // retry next means that the decode NOW is valid and blocked.
+            // possibly it should also work for decode NOW invalid and fetch data is invalid in which case the address may need to be hacked
             ifetch_combs.fetch_action   = rv_pc_fetch_action_continue_fetching;
             if (ifetch_state.state == ifetch_fsm_restarting) {
                 ifetch_combs.fetch_action   = rv_pc_fetch_action_restart_at_pc;
-                ifetch_state.state <= ifetch_fsm_fetching;
+                if (!pipeline_fetch_data.valid || pipeline_response.decode.blocked) {
+                    ifetch_state.state         <= ifetch_fsm_retry;
+                }
             }
             if (ifetch_state.state == ifetch_fsm_retry) {
                 ifetch_combs.fetch_action   = rv_pc_fetch_action_retry; // note that decode MUST be valid here with same data as last cycle hence if we feed in same PC we get the same fetch request
