@@ -25,45 +25,34 @@ class c_rom_th(simple_tb.base_th, apb_rom.rom):
 
 #c c_axi_test_base
 class c_axi_test_base(simple_tb.base_th):
-    #f simple_write
-    def simple_write(self, address, data, req_id=0, size=32, byte_enables=None, wait_fn=None):
-        if byte_enables is None:
-            byte_enables = 1<<(address & 3)
-            if size==32: byte_enables=0xff
-            if size==64: byte_enables=0xffff
+    #f Wait for pending requests
+    def wait_for_pending_requests(self, wait_fn=None):
+        if wait_fn is None: wait_fn = lambda: self.bfm_wait(10)
+        while len(self.axi_pending_reqs)!=0:
+            while self.axi_wresp.empty() and self.axi_rresp.empty():
+                wait_fn()
+                pass
+            if not self.axi_wresp.empty():
+                self.axi_wresp.dequeue()
+                id=self.axi_wresp.get("id")
+                if id in self.axi_pending_reqs:
+                    self.axi_pending_reqs[id](self.axi_wresp)
+                    del self.axi_pending_reqs[id]
+                    pass
+                pass
+            if not self.axi_rresp.empty():
+                self.axi_rresp.dequeue()
+                id=self.axi_rresp.get("id")
+                if id in self.axi_pending_reqs:
+                    self.axi_pending_reqs[id](self.axi_rresp)
+                    del self.axi_pending_reqs[id]
+                    pass
+                pass
             pass
+        pass
+    #f enqueue_read_req
+    def enqueue_read_req(self, address, req_id=0, size=32, callback_fn=None):
         axi_size = {1:0, 2:1, 4:2, 8:3, 16:4, 32:5, 64:6, 128:7}[size]
-        if wait_fn is None:
-            wait_fn = lambda: self.bfm_wait(10)
-        self.axi_wreq.set("id",     req_id)
-        self.axi_wreq.set("addr",   address)
-        self.axi_wreq.set("len",    0)
-        self.axi_wreq.set("size",   axi_size)
-        self.axi_wreq.set("burst",  0)
-        self.axi_wreq.set("lock",   0)
-        self.axi_wreq.set("cache",  0)
-        self.axi_wreq.set("prot",   0)
-        self.axi_wreq.set("qos",    0)
-        self.axi_wreq.set("region", 0)
-        self.axi_wreq.set("user", 0)
-        self.axi_wdata.set("id",    req_id+1)
-        self.axi_wdata.set("data",  data)
-        self.axi_wdata.set("strb",  byte_enables)
-        self.axi_wdata.set("last",  1)
-        self.axi_wdata.set("user",  0)
-
-        self.axi_wreq.enqueue_write()
-        self.axi_wdata.enqueue()
-        while self.axi_wresp.empty():
-            wait_fn()
-            pass
-        self.axi_wresp.dequeue()
-        return self.axi_wresp.get("resp")
-    #f simple_read
-    def simple_read(self, address, req_id=0, size=32, wait_fn=None):
-        axi_size = {1:0, 2:1, 4:2, 8:3, 16:4, 32:5, 64:6, 128:7}[size]
-        if wait_fn is None:
-            wait_fn = lambda: self.bfm_wait(10)
         self.axi_rreq.set("id",     req_id)
         self.axi_rreq.set("addr",   address)
         self.axi_rreq.set("len",    0)
@@ -77,6 +66,60 @@ class c_axi_test_base(simple_tb.base_th):
         self.axi_rreq.set("user", 0)
 
         self.axi_rreq.enqueue_read()
+        if callback_fn is not None:
+            self.axi_pending_reqs[req_id] = callback_fn
+            pass
+        pass
+    #f enqueue_write_req
+    def enqueue_write_req(self, address, req_id=0, size=32, callback_fn=None):
+        axi_size = {1:0, 2:1, 4:2, 8:3, 16:4, 32:5, 64:6, 128:7}[size]
+        self.axi_wreq.set("id",     req_id)
+        self.axi_wreq.set("addr",   address)
+        self.axi_wreq.set("len",    0)
+        self.axi_wreq.set("size",   axi_size)
+        self.axi_wreq.set("burst",  0)
+        self.axi_wreq.set("lock",   0)
+        self.axi_wreq.set("cache",  0)
+        self.axi_wreq.set("prot",   0)
+        self.axi_wreq.set("qos",    0)
+        self.axi_wreq.set("region", 0)
+        self.axi_wreq.set("user", 0)
+        self.axi_wreq.enqueue_write()
+        if callback_fn is not None:
+            self.axi_pending_reqs[req_id] = callback_fn
+            pass
+        pass
+    #f enqueue_write_data
+    def enqueue_write_data(self, address, data, req_id=0, size=32, byte_enables=None):
+        if byte_enables is None:
+            byte_enables = 1<<(address & 3)
+            if size==32: byte_enables=0xff
+            if size==64: byte_enables=0xffff
+            pass
+        self.axi_wdata.set("id",    req_id)
+        self.axi_wdata.set("data",  data)
+        self.axi_wdata.set("strb",  byte_enables)
+        self.axi_wdata.set("last",  1)
+        self.axi_wdata.set("user",  0)
+        self.axi_wdata.enqueue()
+        pass
+    #f simple_write
+    def simple_write(self, address, data, req_id=0, size=32, byte_enables=None, wait_fn=None):
+        self.enqueue_write_req(address, req_id, size, callback_fn=None)
+        #self.bfm_wait(10)
+        self.enqueue_write_data(address, data, req_id+1, size, byte_enables)
+        if wait_fn is None:
+            wait_fn = lambda: self.bfm_wait(10)
+        while self.axi_wresp.empty():
+            wait_fn()
+            pass
+        self.axi_wresp.dequeue()
+        return self.axi_wresp.get("resp")
+    #f simple_read
+    def simple_read(self, address, req_id=0, size=32, wait_fn=None):
+        self.enqueue_read_req(address, req_id, size, callback_fn=None)
+        if wait_fn is None:
+            wait_fn = lambda: self.bfm_wait(10)
         while self.axi_rresp.empty():
             wait_fn()
             pass
@@ -86,6 +129,7 @@ class c_axi_test_base(simple_tb.base_th):
     def run_start(self):
         simple_tb.base_th.run_start(self)
         self.sim_msg = self.sim_message()
+        self.axi_pending_reqs = {}
         self.axi_bfm.axi_request("axi_wreq")
         self.axi_bfm.axi_request("axi_rreq")
         self.axi_bfm.axi_write_data("axi_wdata")

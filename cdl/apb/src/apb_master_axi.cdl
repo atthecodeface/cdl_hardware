@@ -162,6 +162,7 @@ transaction input really.
             }
         }
         case axi_wr_get_data: {
+            awready <= 0;
             wready <= 1;
             if (w.valid) {
                 if (!w.last) {
@@ -210,6 +211,7 @@ transaction input really.
             }
         }
         case axi_rd_do_apb: {
+            arready <= 0;
             if (axi_wr_state.state == axi_wr_idle) {
                 apb_access_start_read = 1;
                 axi_rd_state.state <= axi_rd_wait_apb;

@@ -60,6 +60,8 @@ module axi_master_de1(clock aclk,
 
 /*m tb_de1_hps_generic */
 module tb_de1_hps_generic( clock clk,
+                           clock vga_clk,
+                           clock aud_clk,
                             input bit reset_n
 )
 {
@@ -131,7 +133,7 @@ module tb_de1_hps_generic( clock clk,
                              lw_axi_r       => lw_axi_r,
                              lw_axi_rready  <= lw_axi_rready,
 
-                             de1_audio_bclk <- clk,
+                             de1_audio_bclk <- aud_clk,
                              de1_audio_adc  <= de1_audio_adc,
                              de1_audio_dac  => de1_audio_dac,
                                 
@@ -143,7 +145,7 @@ module tb_de1_hps_generic( clock clk,
                              de1_ps2b_in    <= de1_ps2b_in,
                              de1_ps2b_out   => de1_ps2b_out,
 
-                             de1_vga_clock <- clk,
+                             de1_vga_clock <- vga_clk,
                              de1_vga_reset_n <= reset_n,
                              de1_vga => de1_vga
 
