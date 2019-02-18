@@ -132,7 +132,8 @@ module tb_riscv_i32c_pipeline3( clock clk,
     net t_riscv_i32_trace trace;
     comb t_riscv_debug_mst debug_mst;
     comb bit riscv_clk_enable;
-    comb t_riscv_compressed_trace_control trace_control;
+    comb t_riscv_packed_trace_control trace_control;
+    net t_riscv_i32_packed_trace packed_trace;
     net t_riscv_i32_compressed_trace compressed_trace;
     net t_riscv_i32_decompressed_trace decompressed_trace;
     net bit[5] nybbles_consumed;
@@ -212,12 +213,14 @@ module tb_riscv_i32c_pipeline3( clock clk,
                          enable_rfd=0,
                          enable_breakpoint=1,
                          valid = riscv_clk_enable};
-        riscv_i32_trace_compression trace_compression(clk <- clk,
-                                                      reset_n <= reset_n,
-                                                      trace_control <= trace_control,
-                                                      trace <= trace,
+        riscv_i32_trace_pack trace_pack(clk <- clk,
+                                        reset_n <= reset_n,
+                                        trace_control <= trace_control,
+                                        trace <= trace,
+                                        packed_trace => packed_trace );
+        riscv_i32_trace_compression trace_compression(packed_trace<=packed_trace,
                                                       compressed_trace => compressed_trace );
-        riscv_i32_trace_decompression trace_decompression( compressed_nybbles <= compressed_trace.nybbles.data,
+        riscv_i32_trace_decompression trace_decompression( compressed_nybbles <= compressed_trace.data,
                                                            decompressed_trace => decompressed_trace,
                                                            nybbles_consumed => nybbles_consumed );
     }

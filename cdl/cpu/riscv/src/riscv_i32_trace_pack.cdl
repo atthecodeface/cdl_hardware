@@ -1,0 +1,161 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_trace.cdl
+ * @brief  Instruction trace for RISC-V implementation
+ *
+ * CDL implementation of RISC-V instruction trace based on the RISC-V
+ * specification v2.1.
+ *
+ */
+
+/*a Includes
+ */
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+
+/*a Types
+ */
+/*t t_trace_state */
+typedef struct {
+    bit enabled;
+    bit pc_required;
+    t_riscv_i32_packed_trace packed_trace;
+} t_trace_state;
+
+/*t t_trace_combs */
+typedef struct {
+    bit[3] current_seq;
+    bit[3] next_seq;
+    bit    next_seq_valid;
+    bit    next_nonseq_valid;
+    bit    next_bkpt_valid;
+    bit    next_data_valid;
+} t_trace_combs;
+
+/*a Module
+ */
+module riscv_i32_trace_pack( clock clk            "Free-running clock",
+                             input bit reset_n     "Active low reset",
+                             input t_riscv_packed_trace_control trace_control      "Control of trace",
+                             input t_riscv_i32_trace          trace        "Trace signals",
+                             output t_riscv_i32_packed_trace  packed_trace "Packed trace"
+)
+"""
+Packs an instruction trace according to the control passed in
+"""
+{
+
+    default clock clk;
+    default reset active_low reset_n;
+    comb    t_trace_combs  trace_combs;
+    clocked t_trace_state  trace_state = {*=0, pc_required=1};
+
+    /*b Compressed trace out */
+    compressed_trace_out """
+    Present the state - but bytes_valid is combinatorial from the state
+    """: {
+        packed_trace = trace_state.packed_trace;
+        packed_trace.compressed_data_num_bytes = 4;
+        if (packed_trace.data[ 8;32]==0) {packed_trace.compressed_data_num_bytes = 3;}
+        if (packed_trace.data[16;24]==0) {packed_trace.compressed_data_num_bytes = 2;}
+        if (packed_trace.data[24;16]==0) {packed_trace.compressed_data_num_bytes = 1;}
+        if (packed_trace.data[32; 8]==0) {packed_trace.compressed_data_num_bytes = 0;}
+    }
+    
+    /*b trace state */
+    trace_state_logic """
+    Probably a trap can happen even if trace.instr_valid is not asserted
+    """: {
+        trace_combs.current_seq = trace_state.packed_trace.seq;
+        if (trace_state.packed_trace.seq_valid) {
+            trace_combs.current_seq = 0;
+            trace_state.packed_trace.seq <= 0;
+        }
+
+        trace_combs.next_seq = trace_combs.current_seq;
+        trace_combs.next_seq_valid = 0;
+        trace_combs.next_nonseq_valid = 0;
+        trace_combs.next_bkpt_valid = 0;
+        trace_combs.next_data_valid = 0;
+
+        if (trace_state.enabled && trace_control.valid) {
+            if (trace.bkpt_valid) {
+                trace_combs.next_bkpt_valid = 1;
+                trace_state.packed_trace.bkpt <= trace.bkpt_reason;
+            }
+            if (trace_control.enable_rfd && trace.rfw_data_valid) {
+                trace_combs.next_data_valid  = 1;
+                trace_state.packed_trace.data_reason <= 1;
+                trace_state.packed_trace.data        <= bundle(trace.rfw_data, 3b0, trace.rfw_rd);
+                trace_state.packed_trace.compressed_data_num_bytes <= 0; // provided from the state
+            }
+            if (trace.instr_valid) {
+                trace_state.pc_required <= 0;
+                if (trace.branch_taken | trace.jalr |
+                    trace.trap | trace.ret ) {
+                    trace_state.pc_required <= 1;
+                    trace_combs.next_nonseq_valid = 1;
+                    trace_combs.next_seq_valid = (trace_combs.current_seq!=0);
+                }
+                trace_combs.next_seq = trace_combs.current_seq+1;
+                if (trace_combs.current_seq==6) { // hence next_seq is 7
+                    trace_combs.next_seq_valid = 1;
+                }
+                // Note priority order!
+                if (trace.branch_taken) { trace_state.packed_trace.nonseq<=0; }
+                if (trace.jalr)         { trace_state.packed_trace.nonseq<=1; }
+                if (trace.trap)         { trace_state.packed_trace.nonseq<=2; }
+                if (trace.ret)          { trace_state.packed_trace.nonseq<=3; }
+                if (trace_control.enable_pc && trace_state.pc_required) { // Note - higher priority than rfw
+                    trace_combs.next_data_valid  = 1;
+                    trace_state.packed_trace.data_reason <= 0;
+                    trace_state.packed_trace.data        <= bundle(8b0,trace.instr_pc);
+                    trace_state.packed_trace.compressed_data_num_bytes <= 0; // provided from the state
+                }
+            } // else on timeout insert seq?
+        }
+        if (!trace_control.enable_breakpoint) {
+            trace_combs.next_bkpt_valid   = 0;
+        }
+        if (!trace_control.enable_control) {
+            trace_combs.next_seq_valid    = 0;
+            trace_combs.next_nonseq_valid = 0;
+        }
+
+        if (trace_state.enabled) {
+            trace_state.packed_trace.seq_valid     <= trace_combs.next_seq_valid;
+            trace_state.packed_trace.nonseq_valid  <= trace_combs.next_nonseq_valid;
+            trace_state.packed_trace.bkpt_valid    <= trace_combs.next_bkpt_valid;
+            trace_state.packed_trace.data_valid    <= trace_combs.next_data_valid;
+            trace_state.packed_trace.seq           <= trace_combs.next_seq;
+            trace_state.packed_trace.compressed_data_nybble <= ( bundle(2b0, trace_combs.next_seq_valid) +
+                                                        bundle(2b0, trace_combs.next_nonseq_valid) +
+                                                        bundle(1b0, trace_combs.next_bkpt_valid, 1b0));
+        }
+        
+        /*b Handle the enable */
+        if (trace_control.enable) {
+            trace_state.enabled <= 1;
+        } else {
+            trace_state <= {*=0,pc_required=1};
+        }
+
+        /*b Clock gate state */
+        if (!trace_control.enable && !trace_state.enabled) {
+            trace_state <= trace_state;
+        }
+    }
+
+    /*b All done */
+}

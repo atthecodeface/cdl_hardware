@@ -83,6 +83,7 @@ cdl cdl/cpu/riscv/src    riscv_i32_debug_decode     inc:cdl/inc
 
 # These modules are suitable for i/e32[c][m]
 cdl cdl/cpu/riscv/src    riscv_i32_trace_compression inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_trace_pack        inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_trace_decompression inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_trace             inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_alu               inc:cdl/inc

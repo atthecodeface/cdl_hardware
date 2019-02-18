@@ -257,16 +257,25 @@ module riscv_i32_trace( clock clk            "Clock for the CPU",
     timing to rising clock clk trace;
 }
 
-/*m riscv_i32_trace_compression */
-extern module riscv_i32_trace_compression( clock clk            "Free-running clock",
-                                    input bit reset_n     "Active low reset",
-                                    input t_riscv_compressed_trace_control trace_control      "Control of trace",
-                                    input t_riscv_i32_trace trace "Trace signals",
-                                    output t_riscv_i32_compressed_trace compressed_trace "Compressed trace"
+/*m riscv_i32_trace_pack */
+extern module riscv_i32_trace_pack( clock clk            "Free-running clock",
+                                           input bit reset_n     "Active low reset",
+                                           input t_riscv_packed_trace_control trace_control      "Control of trace",
+                                           input t_riscv_i32_trace trace "Trace signals",
+                                           output t_riscv_i32_packed_trace packed_trace "Packed trace"
 )
 {
     timing to   rising clock clk trace_control, trace;
-    timing from rising clock clk compressed_trace;
+    timing from rising clock clk packed_trace;
+}
+
+/*m riscv_i32_trace_compression */
+extern module riscv_i32_trace_compression( input t_riscv_i32_packed_trace packed_trace      "Control of trace",
+                                           output t_riscv_i32_compressed_trace compressed_trace "Compressed trace"
+)
+{
+    timing comb input packed_trace;
+    timing comb output compressed_trace;
 }
 
 /*m riscv_i32_trace_decompression */

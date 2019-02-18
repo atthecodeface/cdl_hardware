@@ -241,7 +241,7 @@ typedef struct {
     // Needs tag?
 } t_riscv_i32_trace;
 
-/*t t_riscv_compressed_trace_control
+/*t t_riscv_packed_trace_control
  */
 typedef struct {
     bit enable     "Global enable";
@@ -250,7 +250,28 @@ typedef struct {
     bit enable_rfd;
     bit enable_breakpoint;
     bit valid;
-} t_riscv_compressed_trace_control;
+} t_riscv_packed_trace_control;
+
+/*t t_riscv_i32_packed_trace
+  The packed trace takes an i32 trace
+*/
+typedef struct {
+    bit                seq_valid;
+    bit[3]             seq;
+
+    bit                nonseq_valid;
+    bit[2]             nonseq;
+
+    bit                bkpt_valid;
+    bit[4]             bkpt;
+
+    bit                data_valid;
+    bit                data_reason;
+    bit[40]            data;
+
+    bit[3]             compressed_data_nybble "Nybble at which data nybbles will start in compressed stream, if required";
+    bit[4]             compressed_data_num_bytes "Extra";
+} t_riscv_i32_packed_trace;
 
 /*t t_riscv_i32_compressed_trace
   The compressed trace is designed to come out as a sequence of nybbles.
@@ -291,23 +312,6 @@ typedef struct {
 typedef struct {
     bit[5]  valid;
     bit[64] data;
-} t_riscv_i32_compressed_nybbles;
-typedef struct {
-    bit                seq_valid;
-    bit[3]             seq;
-
-    bit                nonseq_valid;
-    bit[2]             nonseq;
-
-    bit                bkpt_valid;
-    bit[4]             bkpt;
-
-    bit                data_valid;
-    bit                data_reason;
-    bit[4]             data_num_bytes;
-    bit[40]            data;
-
-    t_riscv_i32_compressed_nybbles nybbles;
 } t_riscv_i32_compressed_trace;
 
 /*t t_riscv_i32_decompressed_trace
