@@ -26,17 +26,53 @@ constant integer RISCV_INSTR_ADDR_WIDTH = 14;
 
 /*a Basic types
  */
+/*t t_riscv_mem_access_req_type
+ *
+ * For an implementation that does not support atomics only 2 bits are used
+ *
+ */
+typedef enum[5] {
+    rv_mem_access_idle        = 5b00000,
+    rv_mem_access_read        = 5b00001,
+    rv_mem_access_write       = 5b00010,
+    rv_mem_access_atomic_lr   = 5b10000,
+    rv_mem_access_atomic_sc   = 5b10001,
+    rv_mem_access_atomic_swap = 5b10010,
+    rv_mem_access_atomic_and  = 5b10100,
+    rv_mem_access_atomic_or   = 5b10101,
+    rv_mem_access_atomic_xor  = 5b10110,
+    rv_mem_access_atomic_add  = 5b11000,
+    rv_mem_access_atomic_umin = 5b11100,
+    rv_mem_access_atomic_smin = 5b11101,
+    rv_mem_access_atomic_umax = 5b11110,
+    rv_mem_access_atomic_smax = 5b11111,
+    rv_mem_access_nonatomic_mask = 5b00011
+} t_riscv_mem_access_req_type;
+
 /*t t_riscv_mem_access_req
+ *
+ * add atomic_aq and atomic_rl bits for atomics
+ * atomic_aq means that all memory requests *after* this atomic must only be observable after the atomic is observable
+ * atomic_rl means that all memory requests *prior* to this atomic must be observable before the atomic is observable
+ *
  */
 typedef struct {
-    bit[32]  address;
-    bit[4]   byte_enable;
-    bit      write_enable;
-    bit      read_enable;
-    bit[32]  write_data;
+    bit[32]  address       "Address of transaction - aligned to a word for atomics";
+    bit[4]   byte_enable   "Byte enables for writes, 0 for atomics";
+    bit      write_enable  "Change to req_type";
+    bit      read_enable   "Change to req_type";
+    bit[32]  write_data    "Data for writing, or to be used in the atomic";
 } t_riscv_mem_access_req;
 
 /*t t_riscv_mem_access_resp
+ *
+ * This structure contains the response to a memory request, and memory return data
+ *
+ * Each request must be acknowledged
+ * In the cycle following an acknowledged request an abort may be raised, which will force a data trap
+ *
+ * Responses can include an error indication?
+ * Responses for atomics are the original read data, or the result of an 'store conditional'
  *
  * Note that the response in some circumstances is defined to be valid in the same cycle as the request.
  * In other circumstances it is defined to be valid in the cycle following a request.

@@ -62,6 +62,24 @@ RV32E indicates an illegal instruction if a register outside 0-15 is accessed.
 
 RV32M provides decode of multiply and divide; if it is not desired
 then the instructions are decoded as illegal.
+
+25-bit opcode spaces should chose one of the standard R/I/S/U encodings
+R is Rd, Rs1, Rs2           plus 10 bits for encoding
+I is Rd, Rs1, imm(12 bits)  plus 3 bits for encoding
+S is Rs1, Rs2, imm(12 bits) plus 3 bits for encoding
+U is Rd, imm(20 bits starting at bit 12) with no spare bits
+
+Custom-0 is a 25-bit opcode space with instruction bottom bits of 7b0001011
+Custom-1 is a 25-bit opcode space with instruction bottom bits of 7b0101011
+Custom-2 is a 25-bit opcode space with instruction bottom bits of 7b1011011; this conflicts with RV-128 but is available for RV-32
+Custom-3 is a 25-bit opcode space with instruction bottom bits of 7b1111011; this conflicts with RV-128 but is available for RV-32
+
+22-bit opcode spaces are parts of the standard 25-bit opcode spaces
+There are 2 unused branch encodings (funct3 of 3b010, 3b011)
+There are 2 unused ALU-immediate encodings (funct3 of 3b001, 3b101)
+
+Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic type; this has a standard 3-register encoding
+
 """
 {
 

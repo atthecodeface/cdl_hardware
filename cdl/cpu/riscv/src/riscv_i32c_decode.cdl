@@ -59,6 +59,9 @@ Instruction decoder for RISC-V I16 instruction set.
 
 This is based on the RISC-V v2.2 specification (hence figure numbers
 are from that specification)
+
+Note that custom opcodes are available
+
 """
 {
 
