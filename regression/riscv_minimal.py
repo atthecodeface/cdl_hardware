@@ -542,6 +542,11 @@ class riscv_i32_minimal_test_hw(simple_tb.cdl_test_hw):
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
         self.th_forces["dut.mem.filename"] = mif_filename
+        self.th_forces["dut.checker_trace.match_filename"] = "match.trace"
+        self.th_forces["dut.checker_trace.match_ignore_start_pc"]  = 0
+        self.th_forces["dut.checker_trace.match_ignore_end_pc"]    = 0
+        self.th_forces["dut.checker_trace.match_ignore_mode_mask"] = 128
+        self.th_forces["dut.checker_trace.match_ignore_beyond_trace"] = 1
         simple_tb.cdl_test_hw.__init__(self,test)
         pass
     pass
@@ -568,6 +573,11 @@ class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
         self.th_forces["dut.mem.filename"] = mif_filename
+        self.th_forces["dut.checker_trace.capture_filename"] = "match.trace"
+        #self.th_forces["dut.checker_trace.match_ignore_start_pc"]  = 0
+        #self.th_forces["dut.checker_trace.match_ignore_end_pc"]    = 0
+        #self.th_forces["dut.checker_trace.match_ignore_mode_mask"] = 128
+        #self.th_forces["dut.checker_trace.match_ignore_beyond_trace"] = 1
         simple_tb.cdl_test_hw.__init__(self,test)
         pass
     pass
@@ -592,6 +602,11 @@ class riscv_i32c_pipeline3_test_hw(simple_tb.cdl_test_hw):
         mif_filename = test.get_image()
         self.th_forces["imem.filename"] = mif_filename
         self.th_forces["dmem.filename"] = mif_filename
+        self.th_forces["checker_trace.capture_filename"] = "a.trace"
+        self.th_forces["checker_trace.match_filename"] = "match.trace"
+        self.th_forces["checker_trace.match_ignore_start_pc"]  = 0
+        self.th_forces["checker_trace.match_ignore_end_pc"]    = 0
+        self.th_forces["checker_trace.match_ignore_mode_mask"] = 0
         simple_tb.cdl_test_hw.__init__(self,test)
         pass
     pass
@@ -619,6 +634,11 @@ class riscv_i32mc_pipeline3_test_hw(simple_tb.cdl_test_hw):
         mif_filename = test.get_image()
         self.th_forces["imem.filename"] = mif_filename
         self.th_forces["dmem.filename"] = mif_filename
+        self.th_forces["checker_trace.match_filename"] = "match.trace"
+        self.th_forces["checker_trace.match_ignore_start_pc"]  = 0
+        self.th_forces["checker_trace.match_ignore_end_pc"]    = 0
+        self.th_forces["checker_trace.match_ignore_mode_mask"] = 128
+        self.th_forces["checker_trace.match_ignore_beyond_trace"] = 1
         simple_tb.cdl_test_hw.__init__(self,test)
         pass
     pass
@@ -761,7 +781,7 @@ riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[],{}),
                                #"data_access":("data_access.dump",10*1000,["apb_timer"],{}),
                                "data":("data.dump",10*1000,[],{}),
                                "c_dprintf":("c_dprintf.dump",10*1000,["compressed"],{}),
-                               "c_arith":("c_arith.dump",2*1000,["compressed"],{}),
+                               "c_arith":("c_arith.dump",3000,["compressed"],{}),
                                "c_stack":("c_stack.dump",2*1000,["compressed"],{}),
                                "c_jump":("c_jump.dump",2*1000,["compressed"],{}),
                                "c_branch":("c_branch.dump",2*1000,["compressed"],{}),

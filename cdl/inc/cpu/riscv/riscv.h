@@ -223,9 +223,10 @@ typedef struct {
 typedef struct {
     // Following are valid at commit stage of pipeline
     bit                instr_valid;
-    bit[32]            instr_pc   "Program counter of the instruction";
-    bit[32]            instruction "Instruction word being decoded - without debug";
-    bit                branch_taken "Asserted if a branch is being taken";
+    t_riscv_mode       mode          "Mode of instruction";
+    bit[32]            instr_pc      "Program counter of the instruction";
+    bit[32]            instruction   "Instruction word being decoded - without debug";
+    bit                branch_taken  "Asserted if a branch is being taken";
     bit[32]            branch_target "Target of branch if being taken";
     bit                trap          "Asserted if a trap is taken (including interrupt) - nonseq";
     bit                ret           "Asserted if an [m]ret instruction is taken - nonseq";

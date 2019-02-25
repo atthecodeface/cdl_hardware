@@ -21,6 +21,7 @@
 include "srams.h"
 include "cpu/riscv/riscv.h"
 include "cpu/riscv/riscv_modules.h"
+include "cpu/riscv/chk_riscv.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk, input bit a, output bit b )
@@ -223,5 +224,18 @@ module tb_riscv_i32c_pipeline3( clock clk,
         riscv_i32_trace_decompression trace_decompression( compressed_nybbles <= compressed_trace.data,
                                                            decompressed_trace => decompressed_trace,
                                                            nybbles_consumed => nybbles_consumed );
+
+
+        chk_riscv_ifetch checker_ifetch( clk <- riscv_clk,
+                                         fetch_req <= rv_imem_access_req,
+                                         fetch_resp <= rv_imem_access_resp
+                                         //error_detected =>,
+                                         //cycle => ,
+            );
+        chk_riscv_trace checker_trace( clk <- riscv_clk,
+                                       trace <= trace
+                                         //error_detected =>,
+                                         //cycle => ,
+            );
     }
 }

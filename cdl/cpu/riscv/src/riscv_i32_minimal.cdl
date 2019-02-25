@@ -61,6 +61,7 @@
  */
 include "cpu/riscv/riscv.h"
 include "cpu/riscv/riscv_modules.h"
+include "cpu/riscv/chk_riscv.h"
 include "cpu/riscv/riscv_submodules.h"
 include "srams.h"
 
@@ -532,6 +533,17 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         trace = trace_pipe;
         trace.instr_valid    = trace_pipe.instr_valid    && riscv_clk_enable;
         trace.rfw_data_valid = trace_pipe.rfw_data_valid && riscv_clk_enable;
+        chk_riscv_ifetch checker_ifetch( clk <- riscv_clk,
+                                         fetch_req <= ifetch_req,
+                                         fetch_resp <= ifetch_resp
+                                         //error_detected =>,
+                                         //cycle => ,
+            );
+        chk_riscv_trace checker_trace( clk <- riscv_clk,
+                                       trace <= trace
+                                         //error_detected =>,
+                                         //cycle => ,
+            );
     }
 
     /*b All done */
