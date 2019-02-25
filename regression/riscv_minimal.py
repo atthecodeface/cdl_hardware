@@ -520,8 +520,35 @@ class c_riscv_jtag_debug_simple(c_riscv_jtag_debug_base):
         pass
 
 #a Hardware classes
+#c riscv_base_hw
+class riscv_base_hw(simple_tb.cdl_test_hw):
+    def add_th_forces_for_checkers(self, test, check_base):
+        return
+        self.th_forces[checker_base + "checker_trace.capture_filename"] = "a.trace"
+        self.th_forces[checker_base + "checker_trace.match_filename"]   = "match.trace"
+        self.th_forces[checker_base + "checker_trace.match_ignore_start_pc"]  = 0
+        self.th_forces[checker_base + "checker_trace.match_ignore_end_pc"]    = 0
+        self.th_forces[checker_base + "checker_trace.match_ignore_mode_mask"] = 0
+
+        self.th_forces[checker_base + "checker_trace.match_filename"] = "match.trace"
+        self.th_forces[checker_base + "checker_trace.match_ignore_start_pc"]  = 0
+        self.th_forces[checker_base + "checker_trace.match_ignore_end_pc"]    = 0
+        self.th_forces[checker_base + "checker_trace.match_ignore_mode_mask"] = 128
+        self.th_forces[checker_base + "checker_trace.match_ignore_beyond_trace"] = 1
+
+        self.th_forces[check_base + "checker_trace.match_filename"] = "match.trace"
+        self.th_forces[check_base + "checker_trace.match_ignore_start_pc"]  = 0
+        self.th_forces[check_base + "checker_trace.match_ignore_end_pc"]    = 0
+        self.th_forces[check_base + "checker_trace.match_ignore_mode_mask"] = 128
+        self.th_forces[check_base + "checker_trace.match_ignore_beyond_trace"] = 1
+        #self.th_forces[check_base + "checker_trace.capture_filename"] = "match.trace"
+        self.th_forces[check_base + "checker_trace.match_ignore_start_pc"]  = 0
+        self.th_forces[check_base + "checker_trace.match_ignore_end_pc"]    = 0
+        #self.th_forces[check_base + "checker_trace.match_ignore_mode_mask"] = 128
+        #self.th_forces[check_base + "checker_trace.match_ignore_beyond_trace"] = 1
+    pass
 #c riscv_i32_minimal_test_hw
-class riscv_i32_minimal_test_hw(simple_tb.cdl_test_hw):
+class riscv_i32_minimal_test_hw(riscv_base_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
@@ -542,17 +569,13 @@ class riscv_i32_minimal_test_hw(simple_tb.cdl_test_hw):
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
         self.th_forces["dut.mem.filename"] = mif_filename
-        self.th_forces["dut.checker_trace.match_filename"] = "match.trace"
-        self.th_forces["dut.checker_trace.match_ignore_start_pc"]  = 0
-        self.th_forces["dut.checker_trace.match_ignore_end_pc"]    = 0
-        self.th_forces["dut.checker_trace.match_ignore_mode_mask"] = 128
-        self.th_forces["dut.checker_trace.match_ignore_beyond_trace"] = 1
-        simple_tb.cdl_test_hw.__init__(self,test)
+        self.add_th_forces_for_checkers(test, "dut.")
+        riscv_base_hw.__init__(self,test)
         pass
     pass
 
 #c riscv_i32c_minimal_test_hw
-class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
+class riscv_i32c_minimal_test_hw(riscv_base_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
@@ -573,17 +596,13 @@ class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
         self.th_forces["dut.mem.filename"] = mif_filename
-        self.th_forces["dut.checker_trace.capture_filename"] = "match.trace"
-        #self.th_forces["dut.checker_trace.match_ignore_start_pc"]  = 0
-        #self.th_forces["dut.checker_trace.match_ignore_end_pc"]    = 0
-        #self.th_forces["dut.checker_trace.match_ignore_mode_mask"] = 128
-        #self.th_forces["dut.checker_trace.match_ignore_beyond_trace"] = 1
-        simple_tb.cdl_test_hw.__init__(self,test)
+        self.add_th_forces_for_checkers(test, "dut.")
+        riscv_base_hw.__init__(self,test)
         pass
     pass
 
 #c riscv_i32c_pipeline3_test_hw
-class riscv_i32c_pipeline3_test_hw(simple_tb.cdl_test_hw):
+class riscv_i32c_pipeline3_test_hw(riscv_base_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
@@ -602,17 +621,13 @@ class riscv_i32c_pipeline3_test_hw(simple_tb.cdl_test_hw):
         mif_filename = test.get_image()
         self.th_forces["imem.filename"] = mif_filename
         self.th_forces["dmem.filename"] = mif_filename
-        self.th_forces["checker_trace.capture_filename"] = "a.trace"
-        self.th_forces["checker_trace.match_filename"] = "match.trace"
-        self.th_forces["checker_trace.match_ignore_start_pc"]  = 0
-        self.th_forces["checker_trace.match_ignore_end_pc"]    = 0
-        self.th_forces["checker_trace.match_ignore_mode_mask"] = 0
-        simple_tb.cdl_test_hw.__init__(self,test)
+        self.add_th_forces_for_checkers(test, "")
+        riscv_base_hw.__init__(self,test)
         pass
     pass
 
 #c riscv_i32mc_pipeline3_test_hw
-class riscv_i32mc_pipeline3_test_hw(simple_tb.cdl_test_hw):
+class riscv_i32mc_pipeline3_test_hw(riscv_base_hw):
     """
     Simple instantiation of RISCV minimal testbench for i32mc pipeline3
     """
@@ -634,33 +649,8 @@ class riscv_i32mc_pipeline3_test_hw(simple_tb.cdl_test_hw):
         mif_filename = test.get_image()
         self.th_forces["imem.filename"] = mif_filename
         self.th_forces["dmem.filename"] = mif_filename
-        self.th_forces["checker_trace.match_filename"] = "match.trace"
-        self.th_forces["checker_trace.match_ignore_start_pc"]  = 0
-        self.th_forces["checker_trace.match_ignore_end_pc"]    = 0
-        self.th_forces["checker_trace.match_ignore_mode_mask"] = 128
-        self.th_forces["checker_trace.match_ignore_beyond_trace"] = 1
-        simple_tb.cdl_test_hw.__init__(self,test)
-        pass
-    pass
-
-#c OLD riscv_minimal_single_memory_test_hw
-class old_riscv_minimal_single_memory_test_hw(simple_tb.cdl_test_hw):
-    """
-    Simple instantiation of RISCV minimal testbench
-    """
-    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
-               }
-    th_forces = { "th.clock":"clk",
-                  "th.inputs":("a"),
-                  "th.outputs":("b"),
-                  }
-    module_name = "tb_riscv_minimal_single_memory"
-    #f __init__
-    def __init__(self, test):
-        self.th_forces = self.th_forces.copy()
-        mif_filename = test.get_image()
-        self.th_forces["mem.filename"] = mif_filename
-        simple_tb.cdl_test_hw.__init__(self,test)
+        self.add_th_forces_for_checkers(test, "")
+        riscv_base_hw.__init__(self,test)
         pass
     pass
 

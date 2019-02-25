@@ -724,7 +724,7 @@ typedef struct {
     // add in exec_wfi_continues, and exec_take_interrupt
     bit      valid;
     t_riscv_pipeline_control_fetch_action fetch_action;
-    bit[32]  decode_pc "PC of instruction to be fetched";
+    bit[32]  fetch_pc "PC of instruction to be fetched";
     t_riscv_mode mode "Mode the pipeline is executing in";
     bit          error;
     t_riscv_pipeline_tag tag;
@@ -742,6 +742,7 @@ typedef struct {
 typedef struct {
     bit      valid             "Asserted if branch_target and idecode are valid";
     bit      blocked           "Asserted only if decode is valid, and it cannot progress";
+    bit[32]  pc                "PC of instruction in decode stage";
     bit[32]  branch_target     "Used if predict_branch";
     t_riscv_i32_decode idecode "Decode of instruction (if valid)";
     bit enable_branch_prediction "Asserted if branch prediction (and hence branch_target) is to be used";

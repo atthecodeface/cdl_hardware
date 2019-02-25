@@ -226,6 +226,7 @@ c_chk_riscv_ifetch::c_chk_riscv_ifetch( class c_engine *eng, void *eng_handle )
     memset(&input, 0, sizeof(input));
     memset(&verify, 0, sizeof(verify));
     connected_okay = 0;
+    verify.hier_mem = NULL;
 
     engine->register_prepreclock_fn( engine_handle, (void *)this, chk_riscv_ifetch_prepreclock_fn );
     engine->register_preclock_fns( engine_handle, (void *)this, "clk", chk_riscv_ifetch_preclock_posedge_clk_fn, (t_engine_callback_fn) NULL );
@@ -271,7 +272,10 @@ c_chk_riscv_ifetch::~c_chk_riscv_ifetch()
 */
 t_sl_error_level c_chk_riscv_ifetch::delete_instance( void )
 {
-    if (verify.hier_mem) { sl_hier_mem_free(verify.hier_mem); }
+    if (verify.hier_mem) {
+        sl_hier_mem_free(verify.hier_mem);
+        verify.hier_mem = NULL;
+    }
     return error_level_okay;
 }
 
@@ -318,6 +322,7 @@ c_chk_riscv_ifetch::verify_reset(void)
 {
     if (verify.hier_mem) {
         sl_hier_mem_free(verify.hier_mem);
+        verify.hier_mem = NULL;
         verify_create_memory();
     }
     verify.last_req_type = rv_fetch_none;
