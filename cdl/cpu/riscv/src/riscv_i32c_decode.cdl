@@ -241,14 +241,13 @@ Note that custom opcodes are available
         idecode.rs1_valid = 0;
         idecode.rs2_valid = 0;
         idecode.rd_written = 0;
-        idecode.requires_machine_mode = 0;
-        idecode.memory_read_unsigned = 0;
-        idecode.memory_width         = mw_word;
+        idecode.minimum_mode = rv_mode_user;
         idecode.csr_access = {*=0};
         idecode.csr_access.access  = riscv_csr_access_none;
         idecode.op = riscv_op_illegal;;
         idecode.illegal = 1;
         idecode.subop = riscv_subop_valid; // so only opc has to be set to 'valid'
+        idecode.funct7 = 0;
 
         /*b Decode by quadrant (bottom 2 bits of instruction, 11 -> not 16-bit ) */
         part_switch(combs.quadrant) {
@@ -274,13 +273,15 @@ Note that custom opcodes are available
             }
             case riscv_opcc0_lw: { // load word (ld rd', imm(rs1'))
                 idecode.illegal = 0;
-                idecode.op         = riscv_op_load;
+                idecode.op         = riscv_op_mem;
+                idecode.subop = riscv_subop_lw;
                 idecode.rs1_valid  = 1;
                 idecode.rd_written = 1;
             }
             case riscv_opcc0_sw: { // store word (st r2', imm(rs1'))
                 idecode.illegal = 0;
-                idecode.op = riscv_op_store;
+                idecode.op = riscv_op_mem;
+                idecode.subop = riscv_subop_sw;
                 idecode.rs1_valid = 1;
                 idecode.rs2_valid = 1;
                 idecode.rd_written = 0;
@@ -447,7 +448,8 @@ Note that custom opcodes are available
             }
             case riscv_opcc2_lwsp: { // lw rd, ofs(x2) (rd==0 reserved)
                 idecode.illegal = 0;
-                idecode.op = riscv_op_load;
+                idecode.op = riscv_op_mem;
+                idecode.subop = riscv_subop_lw;
                 idecode.rs1 = riscv_abi_sp; // x2
                 idecode.rs1_valid = 1;
                 idecode.rs2_valid = 0;
@@ -455,7 +457,8 @@ Note that custom opcodes are available
             }
             case riscv_opcc2_swsp: { // sw rs2, ofs(x2)
                 idecode.illegal = 0;
-                idecode.op = riscv_op_store;
+                idecode.op = riscv_op_mem;
+                idecode.subop = riscv_subop_sw;
                 idecode.rs1 = riscv_abi_sp; // x2
                 idecode.rs1_valid = 1;
                 idecode.rs2_valid = 1;

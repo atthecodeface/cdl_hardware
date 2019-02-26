@@ -43,8 +43,9 @@ module riscv_i32_dmem_request( input  t_riscv_i32_dmem_exec     dmem_exec,
 {
     comb t_dmem_combs dmem_combs;
     code : {
+        
         dmem_request.access.address   = dmem_exec.arith_result;
-        dmem_combs.word_offset    = dmem_exec.arith_result[2;0];
+        dmem_combs.word_offset        = dmem_exec.arith_result[2;0];
 
         dmem_request.access.byte_enable  = 4hf << dmem_combs.word_offset;
         dmem_combs.dmem_misaligned       = (dmem_combs.word_offset!=0); // valid for words
@@ -54,19 +55,19 @@ module riscv_i32_dmem_request( input  t_riscv_i32_dmem_exec     dmem_exec,
         dmem_request.read_data_byte_clear  = 4hf;
         dmem_request.sign_extend_half = 0;
         dmem_request.sign_extend_byte = 0;
-        part_switch (dmem_exec.idecode.memory_width) {
-            case mw_byte: { // always single cycle!
+        part_switch (dmem_exec.idecode.subop & riscv_subop_ls_size_mask) {
+        case riscv_subop_ls_byte: { // always single cycle!
             dmem_combs.dmem_misaligned = 0;
             dmem_request.access.byte_enable  = 4h1 << dmem_combs.word_offset;
             dmem_request.read_data_byte_enable = 4h1;
-            dmem_request.sign_extend_byte = !dmem_exec.idecode.memory_read_unsigned;
+            dmem_request.sign_extend_byte = ((dmem_exec.idecode.subop & riscv_subop_ls_unsigned)==0);
             dmem_request.multicycle = 0;
         }
-        case mw_half: {
+        case riscv_subop_ls_half: {
             dmem_combs.dmem_misaligned = dmem_combs.word_offset[0];
             dmem_request.access.byte_enable  = 4h3 << dmem_combs.word_offset;
             dmem_request.read_data_byte_enable = 4h3;
-            dmem_request.sign_extend_half = !dmem_exec.idecode.memory_read_unsigned;
+            dmem_request.sign_extend_half = ((dmem_exec.idecode.subop & riscv_subop_ls_unsigned)==0);
             dmem_request.multicycle = (dmem_combs.word_offset==2b11);
         }
         default: {
@@ -76,9 +77,9 @@ module riscv_i32_dmem_request( input  t_riscv_i32_dmem_exec     dmem_exec,
         }
         }
 
-        dmem_request.access.read_enable  = (dmem_exec.idecode.op == riscv_op_load);
-        dmem_request.access.write_enable = (dmem_exec.idecode.op == riscv_op_store);
-        if (!dmem_exec.exec_committed) {
+        dmem_request.access.read_enable  = ((dmem_exec.idecode.subop & riscv_subop_ls_store)==0);
+        dmem_request.access.write_enable = ((dmem_exec.idecode.subop & riscv_subop_ls_store)!=0);
+        if ((dmem_exec.idecode.op!=riscv_op_mem) | (!dmem_exec.exec_committed)) {
             dmem_request.access.read_enable  = 0;
             dmem_request.access.write_enable = 0;
         }

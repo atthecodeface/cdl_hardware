@@ -14,7 +14,7 @@
 
 #a Imports
 import pycdl
-import sys, os, unittest, tempfile
+import sys, os, os.path, unittest, tempfile
 import simple_tb
 import dump
 import jtag_support
@@ -38,14 +38,16 @@ def bits_of_n(nbits, n):
     return bits
 
 #a Globals
-import os
 riscv_zephyr_dir          = "../riscv_tests_built/"
 riscv_regression_dir      = "../riscv_tests_built/isa/"
 riscv_atcf_regression_dir = "../riscv-atcf-tests/build/dump/"
+riscv_trace_dir           = "riscv_trace/"
 if "RISCV_REGRESSION_DIR" in os.environ.keys():
     riscv_regression_dir      = os.environ["RISCV_REGRESSION_DIR"]+"/"
 if "RISCV_ATCF_REGRESSION_DIR" in os.environ.keys():
     riscv_atcf_regression_dir      = os.environ["RISCV_ATCF_REGRESSION_DIR"]+"/build/dump/"
+if "RISCV_TRACE_DIR" in os.environ.keys():
+    riscv_trace_dir      = os.environ["RISCV_TRACE_DIR"]
 
 #a Test classes
 #c c_riscv_minimal_test_base
@@ -55,6 +57,10 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
     base_address = 0
     test_memory = "dmem"
     memory_expectation = {}
+    test_name = None
+    #f get_test_name
+    def get_test_name(self):
+        return self.test_name
     #f get_image
     def get_image(self):
         self.mif = None
@@ -203,6 +209,8 @@ class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
         pass
     #f __init__
     def __init__(self, dump_filename, hw_cls=None, test_memory="dmem", num_cycles=1000, options={}, **kwargs):
+        print dump_filename
+        self.test_name = os.path.splitext(os.path.basename(dump_filename))[0]
         self.force_debug_enable = False
         if hasattr(hw_cls,"force_debug_enable") and hw_cls.force_debug_enable:
             self.force_debug_enable = True
@@ -522,30 +530,18 @@ class c_riscv_jtag_debug_simple(c_riscv_jtag_debug_base):
 #a Hardware classes
 #c riscv_base_hw
 class riscv_base_hw(simple_tb.cdl_test_hw):
-    def add_th_forces_for_checkers(self, test, check_base):
+    def add_th_forces_for_checkers(self, test, checker_base):
+        self.trace_filename = "%s%s.trace"%(riscv_trace_dir,test.get_test_name())
+        if "RISCV_CAPTURE_TRACE" in os.environ:
+            self.th_forces[checker_base + "checker_trace.capture_filename"] = self.trace_filename
+            pass
+        if "RISCV_MATCH_TRACE" in os.environ:
+            self.th_forces[checker_base + "checker_trace.match_filename"]   = self.trace_filename
+            self.th_forces[checker_base + "checker_trace.match_ignore_start_pc"]  = 0
+            self.th_forces[checker_base + "checker_trace.match_ignore_end_pc"]    = 0
+            self.th_forces[checker_base + "checker_trace.match_ignore_mode_mask"] = 0
+            pass
         return
-        self.th_forces[checker_base + "checker_trace.capture_filename"] = "a.trace"
-        self.th_forces[checker_base + "checker_trace.match_filename"]   = "match.trace"
-        self.th_forces[checker_base + "checker_trace.match_ignore_start_pc"]  = 0
-        self.th_forces[checker_base + "checker_trace.match_ignore_end_pc"]    = 0
-        self.th_forces[checker_base + "checker_trace.match_ignore_mode_mask"] = 0
-
-        self.th_forces[checker_base + "checker_trace.match_filename"] = "match.trace"
-        self.th_forces[checker_base + "checker_trace.match_ignore_start_pc"]  = 0
-        self.th_forces[checker_base + "checker_trace.match_ignore_end_pc"]    = 0
-        self.th_forces[checker_base + "checker_trace.match_ignore_mode_mask"] = 128
-        self.th_forces[checker_base + "checker_trace.match_ignore_beyond_trace"] = 1
-
-        self.th_forces[check_base + "checker_trace.match_filename"] = "match.trace"
-        self.th_forces[check_base + "checker_trace.match_ignore_start_pc"]  = 0
-        self.th_forces[check_base + "checker_trace.match_ignore_end_pc"]    = 0
-        self.th_forces[check_base + "checker_trace.match_ignore_mode_mask"] = 128
-        self.th_forces[check_base + "checker_trace.match_ignore_beyond_trace"] = 1
-        #self.th_forces[check_base + "checker_trace.capture_filename"] = "match.trace"
-        self.th_forces[check_base + "checker_trace.match_ignore_start_pc"]  = 0
-        self.th_forces[check_base + "checker_trace.match_ignore_end_pc"]    = 0
-        #self.th_forces[check_base + "checker_trace.match_ignore_mode_mask"] = 128
-        #self.th_forces[check_base + "checker_trace.match_ignore_beyond_trace"] = 1
     pass
 #c riscv_i32_minimal_test_hw
 class riscv_i32_minimal_test_hw(riscv_base_hw):

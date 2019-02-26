@@ -198,13 +198,15 @@ typedef enum[4] {
     riscv_op_system,
     riscv_op_csr,
     riscv_op_misc_mem,
-    riscv_op_load,
-    riscv_op_store,
+    riscv_op_mem,
     riscv_op_alu,
     riscv_op_muldiv,
     riscv_op_auipc,
     riscv_op_lui,
-    riscv_op_ext, // for custom extensions
+    riscv_op_custom_0, // for custom extensions
+    riscv_op_custom_1, // for custom extensions
+    riscv_op_custom_2, // for custom extensions
+    riscv_op_custom_3, // for custom extensions
     riscv_op_illegal
 } t_riscv_op;
 
@@ -245,10 +247,16 @@ typedef enum[4] {
     riscv_subop_lw  = 2,
     riscv_subop_lbu = 4,
     riscv_subop_lhu = 5,
-
-    riscv_subop_sb  = 0, // same as rvi_f3_store
-    riscv_subop_sh  = 1,
-    riscv_subop_sw  = 2,
+    riscv_subop_sb  = 8, // same as rvi_f3_store but with bit[3] set
+    riscv_subop_sh  = 9,
+    riscv_subop_sw  = 10,
+    riscv_subop_atomic = 12,
+    riscv_subop_ls_store     = 8,
+    riscv_subop_ls_unsigned  = 4,
+    riscv_subop_ls_size_mask = 3,
+    riscv_subop_ls_byte      = 0,
+    riscv_subop_ls_half      = 1,
+    riscv_subop_ls_word      = 2,
 
     riscv_subop_ecall  = 0,
     riscv_subop_ebreak = 1,
@@ -618,9 +626,8 @@ typedef struct {
     bit          immediate_valid       "Asserted if immediate data is valid and therefore to be used instead of source register 2";
     t_riscv_op     op                  "Operation class of the instruction";
     t_riscv_subop  subop               "Subclass of the operation class";
-    bit          requires_machine_mode "Indicates that in non-machine-mode the instruction is illlegal";
-    bit          memory_read_unsigned  "if a memory read (op is riscv_opc_load), this indicates an unsigned read; otherwise ignored";
-    t_riscv_mem_width  memory_width    "ignored unless @a memory_read or @a memory_write; indicates size of memory transfer";
+    bit[7]         funct7              "Otions for subop - in part handled by decode, but used for shifts and custom instructions";
+    t_riscv_mode  minimum_mode         "Minimum mode that is required for the instruction";
     bit           illegal              "asserted if an illegal opcode";
     bit           illegal_pc           "asserted if the PC was not legal (e.g. not word aligned if C mode not supported";
     bit           is_compressed        "asserted if from an i32-c decode, clear otherwise (effects link register)";
