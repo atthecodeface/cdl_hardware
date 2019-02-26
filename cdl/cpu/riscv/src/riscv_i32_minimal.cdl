@@ -114,6 +114,13 @@ typedef enum[3] {
     riscv_clock_action_ifetch_second16, // Only used if compressed is supported by config AND i32c_force_disable is low
 } t_riscv_clock_action;
 
+typedef struct {
+    bit read_enable;
+    bit write_enable;
+    bit[32] address;
+    bit[4] byte_enable;
+    bit[32] write_data;
+} t_mem_access_req;
 /*a Module
  */
 module riscv_i32_minimal( clock clk,
@@ -165,14 +172,16 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     clocked bit[32] data_access_read_reg = 0  "Only used if RV32IC is enabled and configured";
 
     comb  t_riscv_mem_access_req    data_sram_access_req;
-    clocked t_riscv_mem_access_req  data_access_req = {*=0};
-    comb bit                        data_access_completing "Asserted if either data_access read or write and the response wait is deasserted";
-    comb bit                        data_access_wait       "Asserted if either data_access read or write and the response wait is asserted";
+    clocked t_riscv_mem_access_req  data_access_req = {*=0} "Access for non-SRAM";
+    clocked bit                     data_access_read_in_progress = 0 "Set until valid read data from the data access bus, for valid data reads";
+    comb bit                        data_access_request_wait      "Asserted if either data_access read or write and the response wait is asserted";
+    comb bit                        data_access_read_completing   "Asserted if a data_access read and the read data response is valid";
+    comb bit                        data_access_completing        "Asserted if no data_access in progress or data_access_read_completing";
 
     /*b State and comb
      */
     net bit[32] mem_read_data;
-    comb t_riscv_mem_access_req   mem_access_req;
+    comb t_mem_access_req   mem_access_req;
     comb t_ifetch_src ifetch_src;
     comb t_data_src data_src;
     comb bit sram_access_ack;
@@ -196,27 +205,25 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     """ : {
         data_sram_access_req = dmem_access_req;
         if (dmem_access_req.address[12;20]!=0) {
-            data_sram_access_req.read_enable = 0;
-            data_sram_access_req.write_enable = 0;
+            data_sram_access_req.valid = 0;
         }
 
-        data_access_completing = (data_access_req.read_enable || data_access_req.write_enable) && !data_access_resp.wait;
-        data_access_wait       = (data_access_req.read_enable || data_access_req.write_enable) && data_access_resp.wait;
+        data_access_read_completing  = data_access_read_in_progress && data_access_resp.read_data_valid;
+        data_access_request_wait     = data_access_req.valid && (!data_access_resp.ack);
+        data_access_completing       = (!data_access_req.valid) && ((!data_access_read_in_progress) || data_access_resp.read_data_valid);
             
         if (riscv_clk_high) { // first cycle of riscv_clk
-            data_access_req.read_enable <= 0;
-            data_access_req.write_enable <= 0;
-            if (dmem_access_req.read_enable || dmem_access_req.write_enable) {
+            data_access_req.valid <= 0;
+            data_access_read_in_progress <= 0;
+            if (dmem_access_req.valid && (dmem_access_req.address[12;20]!=0)) {
                 data_access_req <= dmem_access_req;
             }
-            if (dmem_access_req.address[12;20]==0) {
-                data_access_req.read_enable  <= 0;
-                data_access_req.write_enable <= 0;
-            }
         } else {
-            if (data_access_completing) {
-                data_access_req.read_enable <= 0;
-                data_access_req.write_enable <= 0;
+            if (data_access_req.valid && data_access_req.req_type == rv_mem_access_read) {
+                data_access_read_in_progress <= 1;
+            }
+            if (!data_access_request_wait) {
+                data_access_req.valid <= 0;
             }
         }
     }
@@ -271,9 +278,9 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                     }
                 }
             } else {
-                if (data_sram_access_req.read_enable) {
+                if (data_sram_access_req.valid && (data_sram_access_req.req_type==rv_mem_access_read)) {
                     riscv_clock_action = riscv_clock_action_dread;
-                } elsif (data_sram_access_req.write_enable) {
+                } elsif (data_sram_access_req.valid && (data_sram_access_req.req_type==rv_mem_access_write)) {
                     riscv_clock_action = riscv_clock_action_dwrite;
                 }
             }
@@ -281,18 +288,18 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         case rcp_clock_low: {
             ifetch_src = ifetch_src_reg;
             riscv_clock_action = riscv_clock_action_rise;
-            if (data_access_wait) {
+            if (!data_access_completing) {
                 riscv_clock_action = riscv_clock_action_wait;
             }
         }
         case rcp_ifetch_in_progress: { // a data read/write access may complete in this cycle
             riscv_clock_action = riscv_clock_action_rise;
-            if (data_access_wait) {
+            if (!data_access_completing) {
                 riscv_clock_action = riscv_clock_action_wait;
             }
-            if (data_sram_access_req.read_enable) {
+            if (data_sram_access_req.valid && (data_sram_access_req.req_type==rv_mem_access_read)) {
                 riscv_clock_action = riscv_clock_action_dread;
-            } elsif (data_sram_access_req.write_enable) {
+            } elsif (data_sram_access_req.valid && (data_sram_access_req.req_type==rv_mem_access_write)) {
                 riscv_clock_action = riscv_clock_action_dwrite;
             }
         }
@@ -306,12 +313,12 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             }
             riscv_clock_action = riscv_clock_action_rise;
             ifetch_src = ifetch_src_reg16;
-            if (data_access_wait) {
+            if (!data_access_completing) {
                 riscv_clock_action = riscv_clock_action_wait;
             }
-            if (data_sram_access_req.read_enable) {
+            if (data_sram_access_req.valid && (data_sram_access_req.req_type==rv_mem_access_read)) {
                 riscv_clock_action = riscv_clock_action_dread;
-            } elsif (data_sram_access_req.write_enable) {
+            } elsif (data_sram_access_req.valid && (data_sram_access_req.req_type==rv_mem_access_write)) {
                 riscv_clock_action = riscv_clock_action_dwrite;
             }
         }
@@ -451,10 +458,15 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                 }
             }
         }
-        dmem_access_resp.wait = 0;
+
+        dmem_access_resp.ack_if_seq = 1;
+        dmem_access_resp.ack        = 1;
+        dmem_access_resp.abort_req  = 0;
+
+        dmem_access_resp.read_data_valid = 1;
         dmem_access_resp.read_data = data_access_resp.read_data;
         if ((i32c_force_disable==0) && (riscv_config.i32c) ){
-            if (data_access_completing) {
+            if (data_access_read_completing) {
                 data_access_read_reg <= data_access_resp.read_data;
             }
         }

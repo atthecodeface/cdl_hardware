@@ -130,9 +130,13 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                                   address        <= imem_access_req.address[14;2],
                                   write_data     <= 0,
                                   data_out       => imem_mem_read_data );
+
+        dmem_access_resp.ack        = 1;
+        dmem_access_resp.ack_if_seq = 1;
+        dmem_access_resp.abort_req  = 0;
         if (riscv_clk_cycle_2) {
-            dmem_select         <= (dmem_access_req.read_enable || dmem_access_req.write_enable);
-            dmem_read_not_write <= !dmem_access_req.write_enable;
+            dmem_select         <= dmem_access_req.valid && dmem_access_resp.ack;
+            dmem_read_not_write <= (dmem_access_req.req_type != rv_mem_access_write);
             dmem_address        <= dmem_access_req.address[14;2];
             dmem_write_data     <= dmem_access_req.write_data;
             }
@@ -143,7 +147,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                                       address        <= dmem_address,
                                       write_data     <= dmem_write_data,
                                       data_out       => main_mem_read_data );
-        dmem_access_resp.wait       = 0;
+        dmem_access_resp.read_data_valid = 1;
         dmem_access_resp.read_data  = main_mem_read_data;
     }
 

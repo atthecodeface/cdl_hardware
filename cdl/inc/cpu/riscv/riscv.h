@@ -57,10 +57,11 @@ typedef enum[5] {
  *
  */
 typedef struct {
+    bit valid              "Asserted if a valid access request";
+    t_riscv_mem_access_req_type req_type "Type of request";
     bit[32]  address       "Address of transaction - aligned to a word for atomics";
+    bit      sequential    "Asserted if the transaction is guaranteed to be to the next word after the last access - this is a hint only";
     bit[4]   byte_enable   "Byte enables for writes, 0 for atomics";
-    bit      write_enable  "Change to req_type";
-    bit      read_enable   "Change to req_type";
     bit[32]  write_data    "Data for writing, or to be used in the atomic";
 } t_riscv_mem_access_req;
 
@@ -97,8 +98,11 @@ typedef struct {
  *
  */
 typedef struct {
-    bit                  wait       "Valid in the same cycle as read_data";
-    bit[32]              read_data  "Data returned from reading the requested address";
+    bit                  ack_if_seq        "Asserted if a sequential access request (if valid) would be taken";
+    bit                  ack               "Asserted if an access request (if valid) would be taken; if this is asserted, ack_if_seq should be asserted too";
+    bit                  abort_req         "If asserted (in the cycle after an acked request) then the data transaction must abort";
+    bit                  read_data_valid   "Valid in the same cycle as read_data";
+    bit[32]              read_data         "Data returned from reading the requested address";
 } t_riscv_mem_access_resp;
 
 /*t t_riscv_word

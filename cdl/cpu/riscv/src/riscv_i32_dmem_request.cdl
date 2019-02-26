@@ -44,7 +44,9 @@ module riscv_i32_dmem_request( input  t_riscv_i32_dmem_exec     dmem_exec,
     comb t_dmem_combs dmem_combs;
     code : {
         
+        dmem_request.access.valid     = 0;
         dmem_request.access.address   = dmem_exec.arith_result;
+        dmem_request.access.sequential = 0; // Do not detect sequential yet - would be same rs with immediate+4 from last
         dmem_combs.word_offset        = dmem_exec.arith_result[2;0];
 
         dmem_request.access.byte_enable  = 4hf << dmem_combs.word_offset;
@@ -77,16 +79,24 @@ module riscv_i32_dmem_request( input  t_riscv_i32_dmem_exec     dmem_exec,
         }
         }
 
-        dmem_request.access.read_enable  = ((dmem_exec.idecode.subop & riscv_subop_ls_store)==0);
-        dmem_request.access.write_enable = ((dmem_exec.idecode.subop & riscv_subop_ls_store)!=0);
-        if ((dmem_exec.idecode.op!=riscv_op_mem) | (!dmem_exec.exec_committed)) {
-            dmem_request.access.read_enable  = 0;
-            dmem_request.access.write_enable = 0;
-        }
-        dmem_request.reading = dmem_request.access.read_enable;
+        dmem_request.access.req_type  = rv_mem_access_idle;
+        dmem_request.load_address_misaligned  = 0;
+        dmem_request.store_address_misaligned = 0;
 
-        dmem_request.load_address_misaligned  = (dmem_request.access.read_enable && dmem_combs.dmem_misaligned);
-        dmem_request.store_address_misaligned = (dmem_request.access.write_enable && dmem_combs.dmem_misaligned);
+        if (dmem_exec.idecode.op==riscv_op_mem) {
+            dmem_request.access.valid     = 1;
+            dmem_request.access.req_type  = rv_mem_access_read;
+            dmem_request.load_address_misaligned  = dmem_combs.dmem_misaligned;
+            if (dmem_exec.idecode.subop & riscv_subop_ls_store) {
+                dmem_request.access.req_type  = rv_mem_access_write;
+                dmem_request.store_address_misaligned = dmem_combs.dmem_misaligned;
+                dmem_request.load_address_misaligned  = 0;
+            }
+        }
+        if (!dmem_exec.exec_committed) {
+            dmem_request.access.valid     = 0;
+        }
+        dmem_request.reading = dmem_request.access.valid && (dmem_request.access.req_type == rv_mem_access_read);
 
         // Little-endian 
         // data=AABBCCDD: bus data for offset (row) in cycle 1 and cycle 2 (columns)
