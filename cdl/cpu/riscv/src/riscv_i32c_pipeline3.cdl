@@ -435,7 +435,7 @@ An example implementation of could be
         alu_combs.dmem_exec = { idecode        = alu_state.idecode,
                                 arith_result   = alu_result.arith_result, // address of access
                                 rs2            = alu_combs.rs2,    // data for access (before rotation)
-                                exec_committed = alu_state.valid && !alu_control_flow.async_cancel, // alu_combs.exec_cancelled,
+                                exec_committed = alu_state.valid, // alu_combs.exec_cancelled,
                                 first_cycle = 1
         };
         riscv_i32_dmem_request dmem_req( dmem_exec    <= alu_combs.dmem_exec,

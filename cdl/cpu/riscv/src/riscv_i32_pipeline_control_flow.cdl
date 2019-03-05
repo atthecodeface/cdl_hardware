@@ -28,8 +28,10 @@ include "cpu/riscv/riscv.h"
 /*a Module
  */
 module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state     pipeline_state,
-                                    input  t_riscv_pipeline_response  pipeline_response,
-                                    output  t_riscv_pipeline_control  pipeline_control
+                                        input  t_riscv_pipeline_response  pipeline_response,
+                                        input  t_riscv_mem_access_req     pipeline_dmem_access_req, // should be part of pipeline response?
+                                        output t_riscv_pipeline_control   pipeline_control,
+                                        output  t_riscv_mem_access_req     dmem_access_req
     )
 """
 
@@ -49,8 +51,10 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state     pipeli
         pipeline_control.interrupt_to_mode = pipeline_state.interrupt_to_mode;
         pipeline_control.instruction_data = pipeline_state.instruction_data;
         pipeline_control.instruction_debug = pipeline_state.instruction_debug;
-        if (pipeline_response.rfw.valid) {
-        pipeline_control.instruction_debug = pipeline_state.instruction_debug;
-        }
+        pipeline_control.async_cancel    = pipeline_response.exec.cannot_complete;
+        pipeline_control.exec_committed  = pipeline_response.exec.valid && !pipeline_response.exec.cannot_complete;
+
+        dmem_access_req = pipeline_dmem_access_req;
+        dmem_access_req.valid = pipeline_dmem_access_req.valid && pipeline_control.exec_committed;
     }
 }

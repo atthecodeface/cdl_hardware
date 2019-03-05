@@ -95,12 +95,14 @@ extern module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_state
 /*m riscv_i32_pipeline_control_flow
  */
 extern module riscv_i32_pipeline_control_flow( input t_riscv_pipeline_state       pipeline_state,
+                                               input  t_riscv_mem_access_req     pipeline_dmem_access_req,
                                                input t_riscv_pipeline_response    pipeline_response,
-                                               output t_riscv_pipeline_control    pipeline_control
+                                               output t_riscv_pipeline_control    pipeline_control,
+                                               output  t_riscv_mem_access_req     dmem_access_req
 )
 {
-    timing comb input pipeline_state, pipeline_response;
-    timing comb output pipeline_control;
+    timing comb input pipeline_state, pipeline_response, pipeline_dmem_access_req;
+    timing comb output pipeline_control, dmem_access_req;
 }
 
 /*m riscv_i32c_pipeline
@@ -147,6 +149,6 @@ module riscv_i32c_pipeline3( clock clk,
     timing to   rising clock clk dmem_access_resp, pipeline_state, pipeline_control, pipeline_fetch_data, coproc_response, csr_read_data;
     timing to   rising clock clk riscv_config;
     timing comb input riscv_config, pipeline_state, coproc_response;
-    timing comb output pipeline_response, dmem_access_req, csr_access;
+    timing comb output pipeline_response, csr_access;
 }
 

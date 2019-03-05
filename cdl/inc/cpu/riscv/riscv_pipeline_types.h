@@ -69,6 +69,8 @@ typedef struct {
     t_riscv_mode interrupt_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
     t_riscv_word           instruction_data;
     t_riscv_i32_inst_debug instruction_debug;
+    bit async_cancel;
+    bit exec_committed;
 } t_riscv_pipeline_control;
 
 /*t t_riscv_pipeline_response_decode
