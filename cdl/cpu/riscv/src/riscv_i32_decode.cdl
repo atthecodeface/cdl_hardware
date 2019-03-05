@@ -237,6 +237,7 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
             // Spec 2.2 section 2.6
             idecode.op = riscv_op_mem;
             idecode.subop = bundle(1b1, combs.funct3);
+            idecode.rs1_valid = 1;
             idecode.rs2_valid = 1;
             idecode.illegal = 0;
         }
