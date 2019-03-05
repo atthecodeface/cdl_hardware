@@ -51,7 +51,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state     pipeli
         pipeline_control.interrupt_to_mode = pipeline_state.interrupt_to_mode;
         pipeline_control.instruction_data = pipeline_state.instruction_data;
         pipeline_control.instruction_debug = pipeline_state.instruction_debug;
-        pipeline_control.async_cancel    = pipeline_response.exec.cannot_complete;
+        pipeline_control.async_cancel    = pipeline_response.exec.async_cancel;//cannot_complete;
         pipeline_control.exec_committed  = pipeline_response.exec.valid && !pipeline_response.exec.cannot_complete;
 
         dmem_access_req = pipeline_dmem_access_req;

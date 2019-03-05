@@ -101,6 +101,7 @@ typedef struct {
     bit[32]  pc              "Actual PC of execution instruction";
     bit          predicted_branch   "From pipeline_fetch_data associated with the decode of this instruction";
     t_riscv_word pc_if_mispredicted "From pipeline_fetch_data associated with the decode of this instruction";
+    bit async_cancel;
 } t_riscv_pipeline_response_exec;
 
 /*t t_riscv_pipeline_response_rfw
