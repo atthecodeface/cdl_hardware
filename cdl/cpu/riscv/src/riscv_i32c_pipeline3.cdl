@@ -157,14 +157,12 @@ typedef struct {
  */
 module riscv_i32c_pipeline3( clock clk,
                              input bit reset_n,
-                             output t_riscv_mem_access_req  dmem_access_req,
                              input  t_riscv_mem_access_resp dmem_access_resp,
                              input t_riscv_pipeline_state       pipeline_state,
                              input t_riscv_pipeline_control     pipeline_control,
                              output t_riscv_pipeline_response   pipeline_response,
                              input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
                              input t_riscv_i32_coproc_response   coproc_response,
-                             output t_riscv_csr_access          csr_access,
                              input t_riscv_word                 csr_read_data,
                              input  t_riscv_config          riscv_config
 )
@@ -334,8 +332,7 @@ An example implementation of could be
         /*b Record state */
         alu_state.valid <= 0;
         alu_state.idecode.rd_written <= 0; // Ensure it is cleared if invalid
-        if (alu_combs.cannot_complete && !alu_control_flow.async_cancel) {
-        //if (alu_combs.blocked_by_mem && !pipeline_control.async_cancel) {
+        if (alu_combs.cannot_complete && !pipeline_control.async_cancel) {
             if (!alu_combs.cannot_start) {
                 alu_state.first_cycle <= 0;
             }
@@ -421,7 +418,6 @@ An example implementation of could be
             alu_combs.csr_access.access = riscv_csr_access_none;
         }
         alu_combs.csr_access.access_cancelled =  alu_control_flow.async_cancel;
-        csr_access = alu_combs.csr_access;
 
         /*b ALU stage result */
         alu_combs.result_data = alu_result.result | coproc_response_cfg.result;
@@ -441,7 +437,6 @@ An example implementation of could be
         };
         riscv_i32_dmem_request dmem_req( dmem_exec    <= alu_combs.dmem_exec,
                                          dmem_request => alu_combs_dmem_request );
-        dmem_access_req = alu_combs_dmem_request.access;
 
         /*b Control flow - depends on alu result */
         alu_combs.control_data = { instruction_data = alu_state.instruction.data,
@@ -462,6 +457,8 @@ An example implementation of could be
 
 
         /*b Pipeline response from exec */
+        pipeline_response.exec.dmem_access_req = alu_combs_dmem_request.access;
+        pipeline_response.exec.csr_access      = alu_combs.csr_access;
         pipeline_response.exec.valid           = alu_state.valid;
         pipeline_response.exec.async_cancel    = alu_control_flow.async_cancel;
         pipeline_response.exec.cannot_start    = alu_combs.blocked_by_mem;

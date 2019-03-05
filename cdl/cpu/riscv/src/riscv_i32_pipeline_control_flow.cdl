@@ -29,9 +29,9 @@ include "cpu/riscv/riscv.h"
  */
 module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state     pipeline_state,
                                         input  t_riscv_pipeline_response  pipeline_response,
-                                        input  t_riscv_mem_access_req     pipeline_dmem_access_req, // should be part of pipeline response?
                                         output t_riscv_pipeline_control   pipeline_control,
-                                        output  t_riscv_mem_access_req     dmem_access_req
+                                        output  t_riscv_mem_access_req     dmem_access_req,
+                                        output  t_riscv_csr_access         csr_access
     )
 """
 
@@ -54,7 +54,9 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state     pipeli
         pipeline_control.async_cancel    = pipeline_response.exec.async_cancel;//cannot_complete;
         pipeline_control.exec_committed  = pipeline_response.exec.valid && !pipeline_response.exec.cannot_complete;
 
-        dmem_access_req = pipeline_dmem_access_req;
-        dmem_access_req.valid = pipeline_dmem_access_req.valid && pipeline_control.exec_committed;
+        dmem_access_req = pipeline_response.exec.dmem_access_req;
+        dmem_access_req.valid = pipeline_response.exec.dmem_access_req.valid && pipeline_control.exec_committed;
+
+        csr_access = pipeline_response.exec.csr_access;
     }
 }

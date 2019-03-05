@@ -41,7 +41,6 @@ module tb_riscv_i32c_pipeline3( clock clk,
     /*b Nets
      */
     net  t_riscv_mem_access_req  dmem_access_req;
-    net  t_riscv_mem_access_req  pipeline_dmem_access_req;
     comb t_riscv_mem_access_resp dmem_access_resp;
 
     net  t_riscv_fetch_req  rv_imem_access_req;
@@ -184,9 +183,9 @@ module tb_riscv_i32c_pipeline3( clock clk,
                                                              pipeline_fetch_data => pipeline_fetch_data );
         riscv_i32_pipeline_control_flow cf( pipeline_state <= pipeline_state,
                                             pipeline_response <= pipeline_response,
-                                            pipeline_dmem_access_req <= pipeline_dmem_access_req,
                                             pipeline_control => pipeline_control,
-                                            dmem_access_req => dmem_access_req
+                                            dmem_access_req => dmem_access_req,
+                                            csr_access     => csr_access
         );
 
         riscv_i32_pipeline_control_csr_trace pc_csr_trace( pipeline_state <= pipeline_state,
@@ -204,10 +203,8 @@ module tb_riscv_i32c_pipeline3( clock clk,
                                   pipeline_control <= pipeline_control,
                                   pipeline_response => pipeline_response,
                                   pipeline_fetch_data <= pipeline_fetch_data,
-                                  dmem_access_req => pipeline_dmem_access_req,
                                   dmem_access_resp <= dmem_access_resp,
                                   coproc_response <= coproc_response,
-                                  csr_access       => csr_access,
                                   csr_read_data    <= csr_data.read_data,
                                   riscv_config <= riscv_config);
 

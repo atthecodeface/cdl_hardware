@@ -102,6 +102,8 @@ typedef struct {
     bit          predicted_branch   "From pipeline_fetch_data associated with the decode of this instruction";
     t_riscv_word pc_if_mispredicted "From pipeline_fetch_data associated with the decode of this instruction";
     bit async_cancel;
+    t_riscv_mem_access_req dmem_access_req;
+    t_riscv_csr_access     csr_access;
 } t_riscv_pipeline_response_exec;
 
 /*t t_riscv_pipeline_response_rfw
