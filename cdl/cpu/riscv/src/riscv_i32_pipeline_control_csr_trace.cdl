@@ -59,6 +59,7 @@
 
 /*a Includes
  */
+include "cpu/riscv/riscv_pipeline_types.h"
 include "cpu/riscv/riscv_internal_types.h"
 
 /*a Constants
@@ -83,7 +84,7 @@ typedef struct {
 
 /*a Module
  */
-module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_control    pipeline_control,
+module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_state    pipeline_state,
                                              input t_riscv_pipeline_response   pipeline_response,
                                              input t_riscv_pipeline_fetch_data pipeline_fetch_data,
                                              input  t_riscv_config             riscv_config,
@@ -115,7 +116,7 @@ module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_control    p
         }
 
         coproc_controls.dec_idecode        = pipeline_response.decode.idecode;
-        coproc_controls.dec_idecode_valid  = pipeline_response.decode.valid && !pipeline_control.interrupt_req;
+        coproc_controls.dec_idecode_valid  = pipeline_response.decode.valid && !pipeline_state.interrupt_req;
         coproc_controls.dec_to_alu_blocked = pipeline_response.exec.cannot_complete || coproc_response_cfg.cannot_complete;
         coproc_controls.alu_rs1 = pipeline_response.exec.rs1;
         coproc_controls.alu_rs2 = pipeline_response.exec.rs2;
@@ -134,7 +135,7 @@ module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_control    p
         trace = {*=0};
         trace.instr_valid    = pipeline_response.exec.valid && !pipeline_response.exec.cannot_complete && !coproc_response_cfg.cannot_complete;
         trace.instr_pc       = pipeline_response.exec.pc;
-        trace.mode           = pipeline_control.mode;
+        trace.mode           = pipeline_state.mode;
         trace.instruction    = pipeline_response.exec.instruction.data;
         trace.rfw_retire     = pipeline_response.rfw.valid;
         trace.rfw_data_valid = pipeline_response.rfw.rd_written;

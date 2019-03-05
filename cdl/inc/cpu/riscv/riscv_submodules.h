@@ -19,6 +19,7 @@
 /*a Includes
  */
 include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_pipeline_types.h"
 include "cpu/riscv/riscv_internal_types.h"
 
 /*a Modules
@@ -92,12 +93,12 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
 }
 
 /*m riscv_i32_control_flow */
-extern module riscv_i32_control_flow( input  t_riscv_pipeline_control  pipeline_control,
+extern module riscv_i32_control_flow( input  t_riscv_pipeline_state  pipeline_state,
                                input  t_riscv_i32_control_data  control_data,
                                output t_riscv_i32_control_flow  control_flow
     )
 {
-    timing comb input pipeline_control, control_data;
+    timing comb input pipeline_state, control_data;
     timing comb output control_flow;
 }
    

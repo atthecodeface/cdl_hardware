@@ -97,8 +97,10 @@ test_regress_riscv: ${TARGET_DIR}/py_engine.so
 	${REGRESS_ALL} regression.riscv_minimal
 
 .PHONY: regression_rv
-regression_rv: non_bbc_roms
-	$(MAKE) clean ALL
+regression_rv:
+	#$(MAKE) clean ALL
+	rm $(PREFIX_OBJ_DIR)/osx/*riscv*
+	$(MAKE) ALL
 	${REGRESS_ALL} regression.riscv_minimal
 
 #a Operational targets

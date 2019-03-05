@@ -836,7 +836,7 @@ for (test_dir,tests) in [(riscv_zephyr_dir,riscv_atcf_zephyr),
                                   #riscv_i32c_minimal,             
                                   #riscv_i32c_minimal_with_debug,             
                                   riscv_i32c_pipeline3,           
-                                  riscv_i32mc_pipeline3,          
+                                  #riscv_i32mc_pipeline3,          
                                   ]:
             can_do = True
             for t in tags:

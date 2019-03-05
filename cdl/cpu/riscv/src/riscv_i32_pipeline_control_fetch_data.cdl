@@ -59,12 +59,13 @@
 
 /*a Includes
  */
+include "cpu/riscv/riscv_pipeline_types.h"
 include "cpu/riscv/riscv_internal_types.h"
 
 /*a Module
  */
 constant integer RV32I_EBREAK=0x00100073;
-module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_control     pipeline_control,
+module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_state     pipeline_state,
                                               input  t_riscv_fetch_req           ifetch_req,
                                               input  t_riscv_fetch_resp          ifetch_resp,
                                               input  t_riscv_pipeline_response   pipeline_response,
@@ -73,7 +74,7 @@ module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_control    
 {
     /*b Pipeline control
      */
-    pipeline_control_logic
+    pipeline_state_logic
     """
     The instruction fetch request derives from the
     decode/execute stage (the instruction address that is required
@@ -87,15 +88,15 @@ module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_control    
     valid instruction to decode) then the current PC is requested.
     """:
     {
-        pipeline_fetch_data.valid = pipeline_control.valid && ifetch_resp.valid && (ifetch_req.req_type != rv_fetch_none);
+        pipeline_fetch_data.valid = pipeline_state.valid && ifetch_resp.valid && (ifetch_req.req_type != rv_fetch_none);
         pipeline_fetch_data.pc    = ifetch_req.address;
         pipeline_fetch_data.instruction  = {data=ifetch_resp.data, debug={*=0}};
         if (ifetch_req.debug_fetch) {
             if (ifetch_req.address[8;0]==0) {
-                pipeline_fetch_data.valid = pipeline_control.valid;
-                pipeline_fetch_data.instruction.data=pipeline_control.instruction_data;
+                pipeline_fetch_data.valid = pipeline_state.valid;
+                pipeline_fetch_data.instruction.data=pipeline_state.instruction_data;
             } else {
-                pipeline_fetch_data.valid = pipeline_control.valid;
+                pipeline_fetch_data.valid = pipeline_state.valid;
                 pipeline_fetch_data.instruction.data=RV32I_EBREAK;
             }
         }
@@ -116,10 +117,10 @@ module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_control    
             pipeline_fetch_data.valid = 0;
         }
 
-        if (pipeline_control.instruction_debug.valid) {
+        if (pipeline_state.instruction_debug.valid) {
             pipeline_fetch_data.valid = 1;
-            pipeline_fetch_data.instruction.debug  = pipeline_control.instruction_debug;
-            pipeline_fetch_data.instruction.data   = pipeline_control.instruction_data;
+            pipeline_fetch_data.instruction.debug  = pipeline_state.instruction_debug;
+            pipeline_fetch_data.instruction.data   = pipeline_state.instruction_data;
         }
     }
 }

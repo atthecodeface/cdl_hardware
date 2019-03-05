@@ -59,6 +59,7 @@
 
 /*a Includes
  */
+include "cpu/riscv/riscv_pipeline_types.h"
 include "cpu/riscv/riscv_internal_types.h"
 
 /*a Constants
@@ -84,7 +85,7 @@ typedef struct {
 
 /*a Module
  */
-module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    pipeline_control,
+module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_state    pipeline_state,
                                              input t_riscv_pipeline_response   pipeline_response,
                                              output t_riscv_fetch_req          ifetch_req
 )
@@ -93,7 +94,7 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    p
 
     /*b Pipeline control
      */
-    pipeline_control_logic
+    pipeline_state_logic
     """
     The instruction fetch request derives from the
     decode/execute stage (the instruction address that is required
@@ -107,8 +108,8 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    p
     valid instruction to decode) then the current PC is requested.
     """:
     {
-        //ifetch_combs.pc_plus_4     = pipeline_control.fetch_pc + 4;
-        //ifetch_combs.pc_plus_2     = pipeline_control.fetch_pc + 2;
+        //ifetch_combs.pc_plus_4     = pipeline_state.fetch_pc + 4;
+        //ifetch_combs.pc_plus_2     = pipeline_state.fetch_pc + 2;
         ifetch_combs.pc_plus_4     = pipeline_response.decode.pc + 4;
         ifetch_combs.pc_plus_2     = pipeline_response.decode.pc + 2;
         ifetch_combs.pc_plus_inst  = ifetch_combs.pc_plus_4;
@@ -142,19 +143,19 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    p
         ifetch_req.pc_if_mispredicted = ifetch_combs.pc_if_mispredicted;
         ifetch_req.flush_pipeline = 1;
         ifetch_req.req_type = rv_fetch_none;
-        ifetch_req.address  = pipeline_control.fetch_pc; // == ifetch_state.pc
+        ifetch_req.address  = pipeline_state.fetch_pc; // == ifetch_state.pc
         ifetch_req.mode     = rv_mode_debug;
 
-        full_switch (pipeline_control.fetch_action) {
+        full_switch (pipeline_state.fetch_action) {
         case rv_pc_fetch_action_restart_at_pc: {
             ifetch_req.flush_pipeline = 1;
             ifetch_req.req_type       = rv_fetch_nonsequential;
-            ifetch_req.address        = pipeline_control.fetch_pc;
+            ifetch_req.address        = pipeline_state.fetch_pc;
         }
         case rv_pc_fetch_action_retry: {
             ifetch_req.flush_pipeline = 0;
             ifetch_req.req_type       = rv_fetch_repeat;
-            ifetch_req.address        = pipeline_control.fetch_pc;
+            ifetch_req.address        = pipeline_state.fetch_pc;
         }
         case rv_pc_fetch_action_continue_fetching: {
             ifetch_req.flush_pipeline = 0;
@@ -172,9 +173,9 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_control    p
         }
         }
         ifetch_req.debug_fetch = 0;
-        if (pipeline_control.mode == rv_mode_debug) {
-            if ((pipeline_control.fetch_action!=rv_pc_fetch_action_idle) &&
-                (pipeline_control.fetch_action!=rv_pc_fetch_action_none) &&
+        if (pipeline_state.mode == rv_mode_debug) {
+            if ((pipeline_state.fetch_action!=rv_pc_fetch_action_idle) &&
+                (pipeline_state.fetch_action!=rv_pc_fetch_action_none) &&
                 (ifetch_req.address[24;8]==-1)) {
                 ifetch_req.req_type = rv_fetch_none;
                 ifetch_req.debug_fetch = 1;

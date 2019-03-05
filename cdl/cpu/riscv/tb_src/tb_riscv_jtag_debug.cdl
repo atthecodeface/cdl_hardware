@@ -21,6 +21,8 @@
 include "types/jtag.h"
 include "types/apb.h"
 include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_pipeline_types.h"
+include "cpu/riscv/riscv_pipeline.h"
 include "cpu/riscv/riscv_modules.h"
 
 /*a External modules */
@@ -66,13 +68,11 @@ module tb_riscv_jtag_debug( clock jtag_tck,
     comb  t_riscv_debug_tgt debug_tgt;
     net   t_riscv_debug_tgt debug_tgt0;
     net   t_riscv_debug_tgt debug_tgt1;
-    comb  t_riscv_pipeline_debug_response debug_response0;
-    comb  t_riscv_pipeline_debug_response debug_response1;
 
     /*b Instantiate APB timer
      */
-    net t_riscv_pipeline_control     pipeline_control0;
-    net t_riscv_pipeline_control     pipeline_control1;
+    net t_riscv_pipeline_state     pipeline_state0;
+    net t_riscv_pipeline_state     pipeline_state1;
     comb t_riscv_pipeline_response   pipeline_response;
     comb t_riscv_pipeline_fetch_data  pipeline_fetch_data;
     comb t_riscv_i32_trace trace;
@@ -86,8 +86,6 @@ module tb_riscv_jtag_debug( clock jtag_tck,
         pipeline_fetch_data = {*=0};
         trace = {*=0};
         csrs = {*=0};
-        debug_response0 = {*=0};
-        debug_response1 = {*=0};
         debug_tgt  = debug_tgt0;
         debug_tgt |= debug_tgt1;
         se_test_harness th(clk <- jtag_tck, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
@@ -129,7 +127,7 @@ module tb_riscv_jtag_debug( clock jtag_tck,
                                                  reset_n <= reset_n,
                                        riscv_clk_enable <= 1,
                                                  csrs <= csrs,
-                                                 pipeline_control => pipeline_control0,
+                                                 pipeline_state => pipeline_state0,
                                                  pipeline_response <= pipeline_response,
                                                  pipeline_fetch_data <= pipeline_fetch_data,
                                                  riscv_config     <= riscv_config,
@@ -141,7 +139,7 @@ module tb_riscv_jtag_debug( clock jtag_tck,
                                                  reset_n <= reset_n,
                                        riscv_clk_enable <= 1,
                                                  csrs                <= csrs,
-                                                 pipeline_control    => pipeline_control1,
+                                                 pipeline_state    => pipeline_state1,
                                                  pipeline_response   <= pipeline_response,
                                                  pipeline_fetch_data <= pipeline_fetch_data,
                                                  riscv_config        <= riscv_config,

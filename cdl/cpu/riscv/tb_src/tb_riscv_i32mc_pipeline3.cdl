@@ -21,6 +21,7 @@
 include "srams.h"
 include "cpu/riscv/riscv.h"
 include "cpu/riscv/riscv_modules.h"
+include "cpu/riscv/riscv_pipeline.h"
 include "cpu/riscv/riscv_submodules.h"
 include "cpu/riscv/chk_riscv.h"
 

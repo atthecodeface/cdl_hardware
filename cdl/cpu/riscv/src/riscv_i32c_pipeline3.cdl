@@ -159,6 +159,7 @@ module riscv_i32c_pipeline3( clock clk,
                              input bit reset_n,
                              output t_riscv_mem_access_req  dmem_access_req,
                              input  t_riscv_mem_access_resp dmem_access_resp,
+                             input t_riscv_pipeline_state       pipeline_state,
                              input t_riscv_pipeline_control     pipeline_control,
                              output t_riscv_pipeline_response   pipeline_response,
                              input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
@@ -452,9 +453,9 @@ An example implementation of could be
                                    first_cycle = 1
         };
         if (!alu_state.valid) {
-            alu_combs.control_data.pc = dec_state.valid ? dec_state.pc : pipeline_control.fetch_pc;
+            alu_combs.control_data.pc = dec_state.valid ? dec_state.pc : pipeline_state.fetch_pc;
         }
-        riscv_i32_control_flow control_flow( pipeline_control <= pipeline_control,
+        riscv_i32_control_flow control_flow( pipeline_state <= pipeline_state,
                                              control_data <= alu_combs.control_data,
                                              control_flow => alu_control_flow );
 
@@ -463,7 +464,7 @@ An example implementation of could be
         pipeline_response.exec.valid           = alu_state.valid;
         pipeline_response.exec.cannot_start    = alu_combs.blocked_by_mem;
         pipeline_response.exec.cannot_complete = alu_combs.blocked_by_mem || alu_control_flow.async_cancel;
-        pipeline_response.exec.interrupt_ack   = pipeline_control.interrupt_req;
+        pipeline_response.exec.interrupt_ack   = pipeline_state.interrupt_req;
         pipeline_response.exec.is_compressed   = alu_state.idecode.is_compressed;
         pipeline_response.exec.pc              = alu_state.pc;
         pipeline_response.exec.rs1             = alu_combs.rs1;

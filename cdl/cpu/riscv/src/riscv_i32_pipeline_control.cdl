@@ -176,7 +176,7 @@ module riscv_i32_pipeline_control( clock clk,
                                    input bit reset_n,
                                    input bit                           riscv_clk_enable   "Clock enable for the RISC-V core",
                                    input t_riscv_csrs_minimal          csrs,
-                                   output t_riscv_pipeline_control     pipeline_control,
+                                   output t_riscv_pipeline_state     pipeline_state,
                                    input t_riscv_pipeline_response     pipeline_response,
                                    input t_riscv_pipeline_fetch_data   pipeline_fetch_data,
                                    input  t_riscv_config               riscv_config,
@@ -353,7 +353,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
 
     /*b Pipeline control
      */
-    pipeline_control_logic
+    pipeline_state_logic
     """
     The instruction fetch request derives from the
     decode/execute stage (the instruction address that is required
@@ -450,7 +450,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                 ifetch_state.mode <= rv_mode_machine;
             }
             if (pipeline_response.exec.trap.valid) { // vector interrupts if required, late decision
-                if (pipeline_control.interrupt_to_mode == rv_mode_debug) {
+                if (pipeline_state.interrupt_to_mode == rv_mode_debug) {
                     ifetch_state.halt_req <= 0;
                     ifetch_state.state <= ifetch_fsm_halted;
                 } elsif (pipeline_response.exec.trap.ebreak_to_dbg) {
@@ -458,32 +458,32 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                 } else {
                     ifetch_state.state <= ifetch_fsm_restarting;
                 }
-                ifetch_state.mode <= pipeline_control.interrupt_to_mode;
+                ifetch_state.mode <= pipeline_state.interrupt_to_mode;
                 ifetch_state.pc <= bundle(csrs.mtvec.base, 2b0);
             }
             }   
         }
     }
     pc_logic: {
-        pipeline_control                   = {*=0};
-        pipeline_control.valid             = 1;
-        pipeline_control.fetch_pc          = ifetch_state.pc;
-        pipeline_control.fetch_action      = ifetch_combs.fetch_action;
-        pipeline_control.mode              = ifetch_state.mode;
-        pipeline_control.ebreak_to_dbg      = 0;
+        pipeline_state                   = {*=0};
+        pipeline_state.valid             = 1;
+        pipeline_state.fetch_pc          = ifetch_state.pc;
+        pipeline_state.fetch_action      = ifetch_combs.fetch_action;
+        pipeline_state.mode              = ifetch_state.mode;
+        pipeline_state.ebreak_to_dbg      = 0;
         full_switch (ifetch_state.mode) {
-        case rv_mode_debug:      { pipeline_control.ebreak_to_dbg = 1; }
-        case rv_mode_machine:    { pipeline_control.ebreak_to_dbg = csrs.dcsr.ebreakm; }
-        case rv_mode_supervisor: { pipeline_control.ebreak_to_dbg = csrs.dcsr.ebreaks; }
-        case rv_mode_user:       { pipeline_control.ebreak_to_dbg = csrs.dcsr.ebreaku; }
+        case rv_mode_debug:      { pipeline_state.ebreak_to_dbg = 1; }
+        case rv_mode_machine:    { pipeline_state.ebreak_to_dbg = csrs.dcsr.ebreakm; }
+        case rv_mode_supervisor: { pipeline_state.ebreak_to_dbg = csrs.dcsr.ebreaks; }
+        case rv_mode_user:       { pipeline_state.ebreak_to_dbg = csrs.dcsr.ebreaku; }
         }
-        if (ifetch_combs.debug_disabled) { pipeline_control.ebreak_to_dbg = 0; }
+        if (ifetch_combs.debug_disabled) { pipeline_state.ebreak_to_dbg = 0; }
         
-        pipeline_control.interrupt_req     = ifetch_combs.interrupt_req  || ifetch_state.halt_req;
-        pipeline_control.interrupt_number  = ifetch_combs.interrupt_number;
-        pipeline_control.interrupt_to_mode = ifetch_state.halt_req ? rv_mode_debug : ifetch_state.mode;
-        pipeline_control.instruction_data  = debug_state.control.data0;
-        pipeline_control.instruction_debug = {
+        pipeline_state.interrupt_req     = ifetch_combs.interrupt_req  || ifetch_state.halt_req;
+        pipeline_state.interrupt_number  = ifetch_combs.interrupt_number;
+        pipeline_state.interrupt_to_mode = ifetch_state.halt_req ? rv_mode_debug : ifetch_state.mode;
+        pipeline_state.instruction_data  = debug_state.control.data0;
+        pipeline_state.instruction_debug = {
             valid    = debug_state.control.instruction_debug_valid,
             debug_op = debug_state.control.instruction_debug_op,
             data     = debug_state.control.arg
