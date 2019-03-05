@@ -334,7 +334,7 @@ An example implementation of could be
         /*b Record state */
         alu_state.valid <= 0;
         alu_state.idecode.rd_written <= 0; // Ensure it is cleared if invalid
-        if (alu_combs.cannot_complete && !alu_control_flow.async_cancel) {
+        if (alu_combs.cannot_complete && !pipeline_control.async_cancel) {
             if (!alu_combs.cannot_start) {
                 alu_state.first_cycle <= 0;
             }
@@ -419,7 +419,7 @@ An example implementation of could be
         if (!alu_combs.valid_legal) {
             alu_combs.csr_access.access = riscv_csr_access_none;
         }
-        alu_combs.csr_access.access_cancelled = alu_control_flow.async_cancel;
+        alu_combs.csr_access.access_cancelled = pipeline_control.async_cancel;
         csr_access = alu_combs.csr_access;
 
         /*b ALU stage result */
