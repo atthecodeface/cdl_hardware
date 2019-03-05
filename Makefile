@@ -96,6 +96,11 @@ test_regress: ${TARGET_DIR}/py_engine.so
 test_regress_riscv: ${TARGET_DIR}/py_engine.so
 	${REGRESS_ALL} regression.riscv_minimal
 
+.PHONY: regression_rv
+regression_rv: non_bbc_roms
+	$(MAKE) clean ALL
+	${REGRESS_ALL} regression.riscv_minimal
+
 #a Operational targets
 .PHONY: bbc_data
 bbc_data:
