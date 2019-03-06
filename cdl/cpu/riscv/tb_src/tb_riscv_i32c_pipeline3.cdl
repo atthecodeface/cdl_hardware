@@ -64,6 +64,10 @@ module tb_riscv_i32c_pipeline3( clock clk,
     comb t_riscv_i32_coproc_response   coproc_response;
     net t_riscv_i32_coproc_response   pipeline_coproc_response;
 
+    net t_riscv_i32_coproc_controls  coproc_controls_b;
+    net t_riscv_csr_controls      csr_controls_b;
+    net t_riscv_i32_trace trace_b;
+
     /*b Clock divider
      */
     clocked clock clk reset active_low reset_n bit[2] clk_divider = 0;
@@ -181,17 +185,20 @@ module tb_riscv_i32c_pipeline3( clock clk,
         riscv_i32_pipeline_control_fetch_data pc_fetch_data( pipeline_state <= pipeline_state,
                                                              ifetch_req  <= rv_imem_access_req,
                                                              ifetch_resp <= rv_imem_access_resp,
-                                                           pipeline_response <= pipeline_response,
-                                                             pipeline_control <= pipeline_control,
+                                                             //pipeline_control <= pipeline_control,
                                                              pipeline_fetch_data => pipeline_fetch_data );
         riscv_i32_pipeline_control_flow cf( pipeline_state <= pipeline_state,
+                                            ifetch_req  <= rv_imem_access_req,
                                             pipeline_response <= pipeline_response,
                                             coproc_response <= coproc_response,
                                             pipeline_control => pipeline_control,
                                             dmem_access_req => dmem_access_req,
-            csr_access     => csr_access,
+                                            csr_access     => csr_access,
                                             pipeline_coproc_response => pipeline_coproc_response,
-            riscv_config <= riscv_config
+                                            coproc_controls  => coproc_controls_b,
+                                            csr_controls     => csr_controls_b,
+                                            trace            => trace_b,
+                                            riscv_config <= riscv_config
         );
 
         riscv_i32_pipeline_control_csr_trace pc_csr_trace( pipeline_state <= pipeline_state,

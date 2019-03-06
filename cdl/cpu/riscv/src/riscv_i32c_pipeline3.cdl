@@ -252,10 +252,10 @@ An example implementation of could be
         //pipeline_response.decode.blocked = dec_state.valid && alu_state.valid && alu_combs.cannot_complete;
 
         dec_state.valid <= 0;
-        if (pipeline_control.decode_cannot_complete && !pipeline_fetch_data.dec_flush_pipeline) {
+        if (pipeline_control.decode_cannot_complete && !pipeline_control.flush_decode) {
             dec_state <= dec_state;
         } else {
-            if (pipeline_fetch_data.valid) {
+            if (pipeline_fetch_data.valid && !pipeline_control.flush_fetch) {
                 dec_state.valid <= 1;
                 dec_state.pc <= pipeline_fetch_data.pc;
                 dec_state.instruction <= pipeline_fetch_data.instruction;
@@ -344,7 +344,7 @@ An example implementation of could be
             if (alu_state.rs2_from_mem) {
                 alu_state.rs2 <= rfw_state.mem_result;
             }
-        } elsif (pipeline_fetch_data.dec_flush_pipeline) {
+        } elsif (pipeline_control.flush_decode) {
             alu_state.valid               <= 0;
             alu_state.pc_if_mispredicted  <= pipeline_fetch_data.dec_pc_if_mispredicted;
             alu_state.predicted_branch    <= pipeline_fetch_data.dec_predicted_branch;

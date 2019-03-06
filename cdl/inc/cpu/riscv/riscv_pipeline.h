@@ -68,12 +68,11 @@ extern module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_state
 extern module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_state   pipeline_state,
                                                      input t_riscv_fetch_req          ifetch_req,
                                                      input t_riscv_fetch_resp         ifetch_resp,
-                                                     input t_riscv_pipeline_control     pipeline_control,
-                                                     input t_riscv_pipeline_response  pipeline_response,
+                                                     //input t_riscv_pipeline_control     pipeline_control,
                                                      output t_riscv_pipeline_fetch_data pipeline_fetch_data
 )
 {
-    timing comb input pipeline_state, pipeline_response, pipeline_control, ifetch_req, ifetch_resp;
+    timing comb input pipeline_state, ifetch_req, ifetch_resp;
     timing comb output pipeline_fetch_data;
 }
 
@@ -96,19 +95,24 @@ extern module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_state
 /*m riscv_i32_pipeline_control_flow
  */
 extern module riscv_i32_pipeline_control_flow( input t_riscv_pipeline_state       pipeline_state,
+                                               input t_riscv_fetch_req          ifetch_req,
                                                input t_riscv_pipeline_response    pipeline_response,
                                                input t_riscv_i32_coproc_response   coproc_response,
                                                output t_riscv_pipeline_control    pipeline_control,
                                                output  t_riscv_mem_access_req     dmem_access_req,
                                                output  t_riscv_csr_access         csr_access,
                                                output t_riscv_i32_coproc_response   pipeline_coproc_response,
+                                               output t_riscv_i32_coproc_controls   coproc_controls,
+                                               output t_riscv_csr_controls          csr_controls,
+                                               output t_riscv_i32_trace             trace,
                                                input  t_riscv_config              riscv_config
 )
 {
-    timing comb input pipeline_state, pipeline_response;
+    timing comb input pipeline_state, ifetch_req, pipeline_response;
     timing comb input coproc_response;
     timing comb input riscv_config;
     timing comb output pipeline_control, dmem_access_req, csr_access, pipeline_coproc_response;
+    timing comb output coproc_controls, csr_controls, trace;
 }
 
 /*m riscv_i32c_pipeline

@@ -33,12 +33,16 @@ constant integer debug_force_disable=0;
 /*a Module
  */
 module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pipeline_state,
+                                        input  t_riscv_fetch_req             ifetch_req,
                                         input  t_riscv_pipeline_response     pipeline_response,
                                         output t_riscv_pipeline_control      pipeline_control,
                                         input t_riscv_i32_coproc_response    coproc_response,
                                         output  t_riscv_mem_access_req       dmem_access_req,
                                         output  t_riscv_csr_access           csr_access,
                                         output t_riscv_i32_coproc_response   pipeline_coproc_response,
+                                        output t_riscv_i32_coproc_controls   coproc_controls,
+                                        output t_riscv_csr_controls          csr_controls,
+                                        output t_riscv_i32_trace             trace,
                                         input  t_riscv_config                riscv_config
     )
 """
@@ -161,5 +165,37 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
         }
         csr_access.access_cancelled =  pipeline_control.async_cancel;
 
+
+
+        //pipeline_control.alu_flush_pipeline     = ifetch_req.flush_pipeline;
+        pipeline_control.flush_decode     = ifetch_req.flush_pipeline;
+        pipeline_control.flush_fetch     = 0;
+        pipeline_control.flush_exec     = 0;
+
+        if (pipeline_response.exec.valid && (pipeline_control.branch_taken != pipeline_response.exec.predicted_branch)) {
+            pipeline_control.flush_fetch     = 1;
+            pipeline_control.flush_decode    = 1;
+        }
+        if (pipeline_control.trap.valid) {
+            pipeline_control.flush_fetch     = 1;
+            pipeline_control.flush_decode     = 1;
+        }
+        if (pipeline_control.trap.ret) {
+            pipeline_control.flush_fetch     = 1;
+            pipeline_control.flush_decode     = 1;
+        }
+        if (pipeline_state.instruction_debug.valid) {
+            pipeline_control.flush_fetch     = 0;
+        }
+
+        coproc_controls = {*=0};
+        csr_controls = {*=0};
+        trace = {*=0};
+        if (pipeline_state.instruction_debug.valid) {
+        coproc_controls = {*=0};
+        csr_controls = {*=0};
+        trace = {*=0};
+
+        }
     }
 }

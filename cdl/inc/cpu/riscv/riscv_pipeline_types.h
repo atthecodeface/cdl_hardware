@@ -79,6 +79,9 @@ typedef struct {
     bit branch_taken;
     bit jalr;
     t_riscv_i32_trap trap;
+    bit flush_fetch;
+    bit flush_decode;
+    bit flush_exec;
 } t_riscv_pipeline_control;
 
 /*t t_riscv_pipeline_response_decode
@@ -142,7 +145,6 @@ typedef struct {
     bit          valid;
     t_riscv_word pc;
     t_riscv_i32_inst instruction;
-    bit          dec_flush_pipeline;
     bit          dec_predicted_branch   "Not part of fetch - indicates that pipeline_control predicted a branch for the decode, so when the decode is executed this should match the execution - if not, a mispredict occurs";
     t_riscv_word dec_pc_if_mispredicted;
 } t_riscv_pipeline_fetch_data;

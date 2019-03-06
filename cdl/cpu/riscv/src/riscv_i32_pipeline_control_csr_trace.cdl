@@ -120,7 +120,7 @@ module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_state    pip
         coproc_controls.dec_to_alu_blocked = pipeline_response.exec.cannot_complete || coproc_response_cfg.cannot_complete;
         coproc_controls.alu_rs1 = pipeline_response.exec.rs1;
         coproc_controls.alu_rs2 = pipeline_response.exec.rs2;
-        coproc_controls.alu_flush_pipeline  = pipeline_fetch_data.dec_flush_pipeline;
+        coproc_controls.alu_flush_pipeline  = 0; // pipeline_control.flush_decode; // pipeline_fetch_data.dec_flush_pipeline;
         coproc_controls.alu_cannot_start    = pipeline_response.exec.cannot_start    || coproc_response_cfg.cannot_start;
         coproc_controls.alu_cannot_complete = pipeline_response.exec.cannot_complete || coproc_response_cfg.cannot_complete;
         if (coproc_force_disable || riscv_config.coproc_disable) {
