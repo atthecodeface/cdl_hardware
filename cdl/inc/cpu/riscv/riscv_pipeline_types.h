@@ -52,23 +52,9 @@ typedef struct {
     t_riscv_i32_inst_debug instruction_debug;
 } t_riscv_pipeline_state;
 
-/*t t_riscv_pipeline_control - early in clock cycle to affect response
+/*t t_riscv_pipeline_control - late in clock cycle to affect clocking
  */
 typedef struct {
-    // add in exec_wfi_continues, and exec_take_interrupt
-    bit      valid;
-    t_riscv_pipeline_control_fetch_action fetch_action;
-    bit[32]  fetch_pc "PC of instruction to be fetched";
-    t_riscv_mode mode "Mode the pipeline is executing in";
-    bit          error;
-    t_riscv_pipeline_tag tag;
-    bit    halt                    "Halt the CPU by 'faking' an ebreak";
-    bit    ebreak_to_dbg           "Breakpoint would go to debug mode (halt CPU)";
-    bit    interrupt_req;
-    bit[4] interrupt_number;
-    t_riscv_mode interrupt_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
-    t_riscv_word           instruction_data;
-    t_riscv_i32_inst_debug instruction_debug;
     bit decode_cannot_complete"Asserted if the decode has a valid instruction that either cannot be started or cannot complete";
     bit exec_committed;
     bit exec_cannot_start "Asserted if the instruction is blocked from starting; ignored unless valid and first_cycle; can be because of blocked_by_mem or coprocessor not ready";
