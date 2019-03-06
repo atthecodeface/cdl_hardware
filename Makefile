@@ -99,7 +99,7 @@ test_regress_riscv: ${TARGET_DIR}/py_engine.so
 .PHONY: regression_rv
 regression_rv:
 	#$(MAKE) clean ALL
-	rm $(PREFIX_OBJ_DIR)/osx/*riscv*
+	rm -f $(PREFIX_OBJ_DIR)/osx/*riscv*
 	$(MAKE) ALL
 	${REGRESS_ALL} regression.riscv_minimal
 
@@ -172,6 +172,8 @@ help_top:
 	@echo "make WAVES=1 SUITE=riscv_minimal.riscv_i32mc_pipeline3.test_c_arith test_regress"
 	@echo "and to view its instruction trace do"
 	@echo "PYTHONPATH=`pwd`/../cdl:\${DOLLAR}PYTHONPATH ./python/rv_trace.py --logfile=itrace.log"
+	@echo ""
+	@echo "To run a RISC-V test and capture a 'perfect' instruction trace use RISCV_CAPTURE_TRACE=1; to match against a previous trace use RISCV_MATCH_TRACE=1"
 	@echo ""
 	@echo "To run a suite with valgrind use make RP='PYTHONMALLOC=malloc valgrind python' SUITE=<suite> test_regress"
 	@echo ""
