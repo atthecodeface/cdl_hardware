@@ -674,7 +674,6 @@ typedef struct {
     t_riscv_i32_decode      idecode "Exec stage idecode";
     t_riscv_word            arith_result;
     t_riscv_word            rs2;
-    bit                     exec_committed "Must not be asserted if exec stage is invalid";
     bit                     first_cycle;
 } t_riscv_i32_dmem_exec;
 

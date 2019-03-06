@@ -179,6 +179,7 @@ module riscv_i32_pipeline_control( clock clk,
                                    output t_riscv_pipeline_state     pipeline_state,
                                    input t_riscv_pipeline_response     pipeline_response,
                                    input t_riscv_pipeline_fetch_data   pipeline_fetch_data,
+                                   input t_riscv_pipeline_control     pipeline_control,
                                    input  t_riscv_config               riscv_config,
                                    input t_riscv_i32_trace             trace,
 
@@ -422,14 +423,14 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
             // retry next means that the decode NOW is valid and blocked.
             // possibly it should also work for decode NOW invalid and fetch data is invalid in which case the address may need to be hacked
             if (ifetch_state.state == ifetch_fsm_restarting) {
-                if (!pipeline_fetch_data.valid || pipeline_response.decode.blocked) {
+                if (!pipeline_fetch_data.valid || pipeline_control.decode_cannot_complete) {
                     //ifetch_state.state         <= ifetch_fsm_retry;
                 }
             }
-            if (pipeline_fetch_data.valid && pipeline_response.decode.blocked) {
+            if (pipeline_fetch_data.valid && pipeline_control.decode_cannot_complete) {
                 //ifetch_state.pc <= ifetch_state.pc;
             }
-            if (pipeline_fetch_data.valid && !pipeline_response.decode.blocked) {
+            if (pipeline_fetch_data.valid && !pipeline_control.decode_cannot_complete) {
                 ifetch_state.pc    <= pipeline_fetch_data.pc;
                 ifetch_state.state <= ifetch_fsm_fetching;
             }
