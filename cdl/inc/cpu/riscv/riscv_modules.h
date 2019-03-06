@@ -73,7 +73,7 @@ module riscv_i32_minimal_apb( clock clk,
                               input  t_apb_response apb_response
 )
 {
-    timing comb input  apb_response, data_access_req;
+    timing comb input  apb_response; //, data_access_req;
     timing comb output data_access_resp;
     timing to   rising clock clk data_access_req, apb_response;
     timing from rising clock clk data_access_resp, apb_request;

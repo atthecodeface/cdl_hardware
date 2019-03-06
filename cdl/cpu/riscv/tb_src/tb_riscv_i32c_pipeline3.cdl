@@ -200,12 +200,11 @@ module tb_riscv_i32c_pipeline3( clock clk,
         
         riscv_i32c_pipeline3 dut( clk <- riscv_clk,
                                   reset_n <= reset_n,
-                                  pipeline_state <= pipeline_state,
                                   pipeline_control <= pipeline_control,
                                   pipeline_response => pipeline_response,
                                   pipeline_fetch_data <= pipeline_fetch_data,
                                   dmem_access_resp <= dmem_access_resp,
-                                  coproc_response <= coproc_response, // pipeline_coproc_response
+                                  coproc_response <= pipeline_coproc_response,
                                   csr_read_data    <= csr_data.read_data,
                                   riscv_config <= riscv_config);
 

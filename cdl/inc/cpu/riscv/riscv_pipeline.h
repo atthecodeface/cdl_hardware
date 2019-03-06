@@ -104,22 +104,20 @@ extern module riscv_i32_pipeline_control_flow( input t_riscv_pipeline_state     
 extern
 module riscv_i32c_pipeline( clock clk,
                             input bit reset_n,
-                            output t_riscv_mem_access_req      dmem_access_req,
-                            input  t_riscv_mem_access_resp     dmem_access_resp,
-                            input t_riscv_pipeline_state     pipeline_state,
-                            output t_riscv_pipeline_response   pipeline_response,
+                            input t_riscv_pipeline_control    pipeline_control,
                             input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
+                            input  t_riscv_mem_access_resp     dmem_access_resp,
+                            output t_riscv_pipeline_response   pipeline_response,
                             input t_riscv_i32_coproc_response  coproc_response,
-                            output t_riscv_csr_access          csr_access,
                             input t_riscv_word                 csr_read_data,
                             input  t_riscv_config              riscv_config
 )
 {
-    timing from rising clock clk dmem_access_req, pipeline_response, csr_access;
-    timing to   rising clock clk dmem_access_resp, pipeline_state, coproc_response, csr_read_data;
+    timing from rising clock clk pipeline_response;
+    timing to   rising clock clk dmem_access_resp, coproc_response, csr_read_data;
     timing to   rising clock clk riscv_config;
-    timing comb input riscv_config, pipeline_state;
-    timing comb output dmem_access_req, pipeline_response, csr_access;
+    timing comb input riscv_config;
+    timing comb output pipeline_response;
 }
 
 /*m riscv_i32c_pipeline3
@@ -127,7 +125,6 @@ module riscv_i32c_pipeline( clock clk,
 extern
 module riscv_i32c_pipeline3( clock clk,
                              input bit reset_n,
-                             input t_riscv_pipeline_state     pipeline_state,
                              input t_riscv_pipeline_control     pipeline_control,
                              output t_riscv_pipeline_response   pipeline_response,
                              input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
@@ -138,7 +135,7 @@ module riscv_i32c_pipeline3( clock clk,
 )
 {
     timing from rising clock clk pipeline_response;
-    timing to   rising clock clk dmem_access_resp, pipeline_state, pipeline_control, pipeline_fetch_data, coproc_response, csr_read_data;
+    timing to   rising clock clk dmem_access_resp, pipeline_control, pipeline_fetch_data, coproc_response, csr_read_data;
     timing to   rising clock clk riscv_config;
     timing comb input riscv_config;
     timing comb output pipeline_response;

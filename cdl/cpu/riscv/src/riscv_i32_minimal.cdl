@@ -60,6 +60,7 @@
 /*a Includes
  */
 include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_pipeline.h"
 include "cpu/riscv/riscv_modules.h"
 include "cpu/riscv/chk_riscv.h"
 include "cpu/riscv/riscv_submodules.h"
@@ -157,6 +158,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     net t_riscv_i32_trace       trace_pipe;
     net t_riscv_i32_coproc_controls  coproc_controls;
     comb t_riscv_i32_coproc_response   coproc_response;
+    net t_riscv_i32_coproc_response   pipeline_coproc_response;
     net t_riscv_csr_controls      csr_controls;
     net t_riscv_csr_data          csr_data;
     net t_riscv_csr_access        csr_access;
@@ -166,6 +168,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     net t_riscv_pipeline_control     pipeline_control;
     net t_riscv_pipeline_response   pipeline_response;
     net t_riscv_pipeline_fetch_data pipeline_fetch_data;
+    net t_riscv_pipeline_state     pipeline_state;
     net t_riscv_csrs_minimal csrs;
     clocked bit[32] ifetch_reg = 0;
     clocked bit[16] ifetch_last16_reg = 0     "Only used if RV32IC is enabled and configured";
@@ -493,44 +496,47 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                       reset_n          <= proc_reset_n,
                                       riscv_clk_enable <= riscv_clk_enable,
                                       csrs <= csrs,
-                                      pipeline_control => pipeline_control,
+                                      pipeline_state => pipeline_state,
                                       pipeline_response <= pipeline_response,
                                       pipeline_fetch_data <= pipeline_fetch_data,
+                                      pipeline_control <= pipeline_control,
                                       riscv_config     <= riscv_config_pipe,
                                       trace            <= trace_pipe,
                                       debug_mst        <= debug_mst,
                                       debug_tgt        => debug_tgt,
                                       rv_select <= 0 );
 
-        riscv_i32_pipeline_control_fetch_req pc_fetch_req( pipeline_control <= pipeline_control,
+        riscv_i32_pipeline_control_fetch_req pc_fetch_req( pipeline_state <= pipeline_state,
                                                            pipeline_response <= pipeline_response,
                                                            ifetch_req => ifetch_req );
 
-        riscv_i32_pipeline_control_fetch_data pc_fetch_data( pipeline_control <= pipeline_control,
+        riscv_i32_pipeline_control_fetch_data pc_fetch_data( pipeline_state <= pipeline_state,
                                                              ifetch_req <= ifetch_req,
                                                              ifetch_resp <= ifetch_resp,
-                                                             pipeline_response <= pipeline_response,
                                                              pipeline_fetch_data => pipeline_fetch_data );
 
-        riscv_i32_pipeline_control_csr_trace pc_csr_trace( pipeline_control <= pipeline_control,
-                                                           pipeline_response <= pipeline_response,
-                                                           pipeline_fetch_data <= pipeline_fetch_data,
-                                                           riscv_config     <= riscv_config_pipe,
-                                                           coproc_response <= coproc_response,
-                                                           coproc_controls  => coproc_controls,
-                                                           csr_controls     => csr_controls,
-                                                           trace            => trace_pipe );
+        riscv_i32_pipeline_control_flow cf( pipeline_state <= pipeline_state,
+                                            ifetch_req  <= ifetch_req,
+                                            pipeline_response <= pipeline_response,
+                                            coproc_response <= coproc_response,
+                                            pipeline_control => pipeline_control,
+                                            dmem_access_req => dmem_access_req,
+                                            csr_access     => csr_access,
+                                            pipeline_coproc_response => pipeline_coproc_response,
+                                            coproc_controls  => coproc_controls,
+                                            csr_controls     => csr_controls,
+                                            trace            => trace_pipe,
+                                            riscv_config <= riscv_config
+        );
         
         riscv_i32c_pipeline pipeline(clk              <- riscv_clk,
                                      reset_n          <= proc_reset_n,
                                      pipeline_control <= pipeline_control,
                                      pipeline_fetch_data <= pipeline_fetch_data,
                                      pipeline_response => pipeline_response,
-                                     dmem_access_req  => dmem_access_req,
                                      dmem_access_resp <= dmem_access_resp,
                                      coproc_response  <= coproc_response,
                                      riscv_config     <= riscv_config_pipe,
-                                     csr_access       => csr_access,
                                      csr_read_data    <= csr_data.read_data );
 
         riscv_csrs_minimal csrs( clk <- riscv_clk,

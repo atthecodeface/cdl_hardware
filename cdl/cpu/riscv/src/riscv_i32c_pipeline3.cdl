@@ -155,7 +155,6 @@ typedef struct {
 module riscv_i32c_pipeline3( clock clk,
                              input bit reset_n,
                              input  t_riscv_mem_access_resp dmem_access_resp,
-                             input t_riscv_pipeline_state       pipeline_state,
                              input t_riscv_pipeline_control     pipeline_control,
                              output t_riscv_pipeline_response   pipeline_response,
                              input t_riscv_pipeline_fetch_data  pipeline_fetch_data,
