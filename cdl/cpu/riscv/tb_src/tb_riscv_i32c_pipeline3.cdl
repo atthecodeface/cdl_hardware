@@ -182,6 +182,7 @@ module tb_riscv_i32c_pipeline3( clock clk,
                                                              ifetch_req  <= rv_imem_access_req,
                                                              ifetch_resp <= rv_imem_access_resp,
                                                            pipeline_response <= pipeline_response,
+                                                             pipeline_control <= pipeline_control,
                                                              pipeline_fetch_data => pipeline_fetch_data );
         riscv_i32_pipeline_control_flow cf( pipeline_state <= pipeline_state,
                                             pipeline_response <= pipeline_response,

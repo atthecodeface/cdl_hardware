@@ -446,20 +446,25 @@ An example implementation of could be
         pipeline_response.exec.dmem_access_req = alu_combs_dmem_request.access;
         pipeline_response.exec.csr_access      = alu_combs.csr_access;
         pipeline_response.exec.valid           = alu_state.valid;
-        pipeline_response.exec.async_cancel    = alu_control_flow.async_cancel;
-        pipeline_response.exec.cannot_start    = alu_combs.blocked_by_mem;
-        pipeline_response.exec.cannot_complete = alu_combs.blocked_by_mem || alu_control_flow.async_cancel;
+        pipeline_response.exec.first_cycle     = alu_state.first_cycle;
+        pipeline_response.exec.cannot_start    = alu_combs.blocked_by_mem; // Need not be valid if exec.valid is low
+        pipeline_response.exec.cannot_complete = 0; // This ALU can always complete (dmem access blocking is handled externally)
         pipeline_response.exec.interrupt_ack   = pipeline_state.interrupt_req;
         pipeline_response.exec.is_compressed   = alu_state.idecode.is_compressed;
         pipeline_response.exec.is_illegal      = alu_state.idecode.illegal;
+        pipeline_response.exec.idecode         = alu_state.idecode;
         pipeline_response.exec.pc              = alu_state.pc;
         pipeline_response.exec.rs1             = alu_combs.rs1;
         pipeline_response.exec.rs2             = alu_combs.rs2;
         pipeline_response.exec.instruction     = alu_state.instruction;
         pipeline_response.exec.predicted_branch   = alu_state.predicted_branch;
-        pipeline_response.exec.pc_if_mispredicted = alu_control_flow.jalr ? alu_result.branch_target : alu_state.pc_if_mispredicted;
-        pipeline_response.exec.branch_taken       = alu_control_flow.branch_taken;
-        pipeline_response.exec.jalr               = alu_control_flow.jalr && (alu_state.idecode.rs1!=0);
+        pipeline_response.exec.branch_condition_met = alu_result.branch_condition_met;
+        pipeline_response.exec.pc_if_mispredicted = alu_state.pc_if_mispredicted;
+
+        pipeline_response.exec.async_cancel       = 0;//alu_control_flow.async_cancel;
+        pipeline_response.exec.branch_taken       = 0;//alu_control_flow.branch_taken;
+        pipeline_response.exec.branch_target      = alu_result.branch_target;
+        pipeline_response.exec.jalr               = 0;//alu_control_flow.jalr && (alu_state.idecode.rs1!=0);
         pipeline_response.exec.trap               = alu_control_flow.trap;
 
         pipeline_response.rfw.valid      = rfw_state.valid;

@@ -69,11 +69,16 @@ typedef struct {
     t_riscv_mode interrupt_to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
     t_riscv_word           instruction_data;
     t_riscv_i32_inst_debug instruction_debug;
-    bit async_cancel;
     bit decode_cannot_complete"Asserted if the decode has a valid instruction that either cannot be started or cannot complete";
     bit exec_committed;
     bit exec_cannot_start "Asserted if the instruction is blocked from starting; ignored unless valid and first_cycle; can be because of blocked_by_mem or coprocessor not ready";
     bit exec_cannot_complete"Asserted if the ALU has a valid instruction that either cannot be started or cannot complete";
+
+    t_riscv_word pc_if_mispredicted "From pipeline_fetch_data associated with the decode of this instruction";
+    bit async_cancel;
+    bit branch_taken;
+    bit jalr;
+    t_riscv_i32_trap trap;
 } t_riscv_pipeline_control;
 
 /*t t_riscv_pipeline_response_decode
@@ -99,14 +104,18 @@ typedef struct {
     bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
     bit is_illegal;
     t_riscv_i32_inst instruction;
+    t_riscv_i32_decode idecode "Decode of instruction (if valid)";
     t_riscv_word rs1;
     t_riscv_word rs2;
     bit[32]  pc              "Actual PC of execution instruction";
     bit          predicted_branch   "From pipeline_fetch_data associated with the decode of this instruction";
     t_riscv_word pc_if_mispredicted "From pipeline_fetch_data associated with the decode of this instruction";
     bit async_cancel;
+    bit branch_condition_met;
+    bit first_cycle;
     t_riscv_mem_access_req dmem_access_req;
     t_riscv_csr_access     csr_access;
+    bit[32]  branch_target     "Used if predict_branch";
 } t_riscv_pipeline_response_exec;
 
 /*t t_riscv_pipeline_response_rfw

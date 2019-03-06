@@ -441,20 +441,20 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
             if (csrs.dcsr.step && pipeline_response.exec.valid) {
                 ifetch_state.halt_req <= 1;
             }
-            if (pipeline_response.exec.valid && (pipeline_response.exec.branch_taken != pipeline_response.exec.predicted_branch)) {
-                ifetch_state.pc <= pipeline_response.exec.pc_if_mispredicted; // late address, late decision
+            if (pipeline_response.exec.valid && (pipeline_control.branch_taken != pipeline_response.exec.predicted_branch)) {
+                ifetch_state.pc <= pipeline_control.pc_if_mispredicted; // late address, late decision
                 ifetch_state.state <= ifetch_fsm_restarting;
             }
-            if (pipeline_response.exec.trap.ret) { // late decision
+            if (pipeline_control.trap.ret) { // late decision
                 ifetch_state.pc <= csrs.mepc;
                 ifetch_state.state <= ifetch_fsm_restarting;
                 ifetch_state.mode <= rv_mode_machine;
             }
-            if (pipeline_response.exec.trap.valid) { // vector interrupts if required, late decision
+            if (pipeline_control.trap.valid) { // vector interrupts if required, late decision
                 if (pipeline_state.interrupt_to_mode == rv_mode_debug) {
                     ifetch_state.halt_req <= 0;
                     ifetch_state.state <= ifetch_fsm_halted;
-                } elsif (pipeline_response.exec.trap.ebreak_to_dbg) {
+                } elsif (pipeline_control.trap.ebreak_to_dbg) {
                     ifetch_state.state <= ifetch_fsm_halted;
                 } else {
                     ifetch_state.state <= ifetch_fsm_restarting;
