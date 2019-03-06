@@ -327,8 +327,8 @@ An example implementation of could be
         /*b Record state */
         alu_state.valid <= 0;
         alu_state.idecode.rd_written <= 0; // Ensure it is cleared if invalid
-        if (pipeline_control.exec.cannot_complete && !pipeline_control.async_cancel) {
-            if (!pipeline_control.exec.cannot_start) {
+        if (pipeline_control.exec.blocked && !pipeline_control.async_cancel) {
+            if (!pipeline_control.exec.blocked_start) {
                 alu_state.first_cycle <= 0;
             }
             alu_state <= alu_state;
@@ -469,7 +469,7 @@ An example implementation of could be
         mem_state.valid        <= 0;
         mem_state.rd_written   <= 0;
         mem_state.rd_from_mem  <= 0;
-        if (alu_combs.valid_legal && !pipeline_control.exec.cannot_complete && !pipeline_control.async_cancel) { // better if async control flow interrupt
+        if (alu_combs.valid_legal && !pipeline_control.exec.blocked && !pipeline_control.async_cancel) { // better if async control flow interrupt
             mem_state.valid         <= 1;
             mem_state.dmem_request  <= alu_combs_dmem_request;
             if (alu_combs_dmem_request.reading && alu_state.idecode.rd_written) { // && does not require another cycle?

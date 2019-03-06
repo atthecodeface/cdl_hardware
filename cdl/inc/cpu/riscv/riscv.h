@@ -160,9 +160,10 @@ typedef enum[3] {
 typedef struct {
     bit      flush_pipeline         "Asserted if prefetch should flush any pipeline";
     t_riscv_fetch_req_type req_type "Request type - none, nonseq, seq, repeat; if flush only none, nonseq";
-    bit      debug_fetch            "Asserted if fetch of a debug location (data0 or ebreak)";
     bit[32]  address;
     t_riscv_mode mode;
+
+    bit      debug_fetch            "Asserted if fetch of a debug location (data0 or ebreak)";
     bit     predicted_branch   "Only used if branch prediction is supported - so not for single cycle pipeline; for internal use really";
     bit[32] pc_if_mispredicted "Only used if branch prediction is supported - so not for single cycle pipeline for internal use really";
 } t_riscv_fetch_req;
@@ -172,10 +173,11 @@ typedef struct {
 typedef bit[2] t_riscv_fetch_tag;
 typedef struct {
     bit      valid;
-    bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
     bit[32]  data;
+    bit      error;
+
+    bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
     t_riscv_mode mode;
-    bit          error;
     t_riscv_fetch_tag tag;
 } t_riscv_fetch_resp;
 

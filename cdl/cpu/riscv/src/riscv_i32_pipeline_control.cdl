@@ -433,8 +433,8 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
             if (csrs.dcsr.step && pipeline_response.exec.valid) {
                 ifetch_state.halt_req <= 1;
             }
-            if (pipeline_response.exec.valid && (pipeline_control.exec.branch_taken != pipeline_response.exec.predicted_branch)) {
-                ifetch_state.pc <= pipeline_control.pc_if_mispredicted; // late address, late decision
+            if (pipeline_control.exec.mispredicted_branch) {
+                ifetch_state.pc <= pipeline_control.exec.pc_if_mispredicted; // late address, late decision
                 ifetch_state.state <= ifetch_fsm_restarting;
             }
             if (pipeline_control.trap.ret) { // late decision

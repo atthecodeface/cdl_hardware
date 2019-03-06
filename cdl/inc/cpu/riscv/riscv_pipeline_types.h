@@ -54,19 +54,28 @@ typedef struct {
 /*t t_riscv_pipeline_control_decode - late in clock cycle to affect clocking
  */
 typedef struct {
-    bit committed      "Asserted if decode is valid AND can pass on to exec";
+    bit completing     "Asserted if decode is valid AND will pass on to exec; if low, decode cannot progress: flushing decode empties it though";
+    bit blocked        "Asserted if decode is valid AND cannot pass on to exec; if low, decode can take from fetch (unless flushing fetch)";
+
     bit cannot_complete"Asserted if the decode has a valid instruction that either cannot be started or cannot complete";
 } t_riscv_pipeline_control_decode;
 
 /*t t_riscv_pipeline_control_exec - late in clock cycle to affect clocking
  */
 typedef struct {
-    bit committed       "Asserted if exec is valid AND will complete a cycle";
-    bit cannot_start    "Asserted if the instruction is blocked from starting; ignored unless valid and first_cycle; can be because of blocked_by_mem or coprocessor not ready";
-    bit cannot_complete "Asserted if the ALU has a valid instruction that either cannot be started or cannot complete";
-    bit branch_taken;
-    bit jalr;
-    bit ret;
+    bit completing_cycle  "Asserted if exec is valid AND will complete a cycle; if low, exec cannot progress: flushing exec empties it though";
+    bit completing        "Asserted if exec is valid AND will complete its last cycle AND hence passes it on to mem";
+    bit blocked_start     "Asserted if exec is valid and blocked from starting; can be because of exec or coprocessor are blocked from starting";
+    bit blocked           "Asserted if exec is valid AND cannot pass on to mem; if low, exec can take from decode (unless flushing decode)";
+
+    bit ret "Asserted for RET instructions - presumably needs an indication as to which mode to return to";
+    bit mispredicted_branch         "Asserted if the exec has a mispredicted branch - could be a JALR, or conditional branch that was not predicted to be taken";
+    t_riscv_word pc_if_mispredicted "Target for a mispredicted branch";
+
+    bit cannot_start    "Want to remove Asserted if the instruction is blocked from starting; ignored unless valid and first_cycle; can be because of blocked_by_mem or coprocessor not ready";
+    bit cannot_complete "Want to remove Asserted if the ALU has a valid instruction that either cannot be started or cannot complete";
+    bit jalr         "Only used inside control flow - remove from globals";
+    bit branch_taken "Only used inside control flow - remove from globals";
 } t_riscv_pipeline_control_exec;
 
 /*t t_riscv_pipeline_control_flush - late in clock cycle to affect clocking
@@ -80,7 +89,6 @@ typedef struct {
 /*t t_riscv_pipeline_control - late in clock cycle to affect clocking
  */
 typedef struct {
-    t_riscv_word pc_if_mispredicted "From pipeline_fetch_data associated with the decode of this instruction";
     bit async_cancel;
     t_riscv_i32_trap trap;
     t_riscv_pipeline_control_flush   flush;
