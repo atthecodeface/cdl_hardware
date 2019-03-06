@@ -465,7 +465,7 @@ An example implementation of could be
         pipeline_response.exec.branch_taken       = 0;//alu_control_flow.branch_taken;
         pipeline_response.exec.branch_target      = alu_result.branch_target;
         pipeline_response.exec.jalr               = 0;//alu_control_flow.jalr && (alu_state.idecode.rs1!=0);
-        pipeline_response.exec.trap               = alu_control_flow.trap;
+        pipeline_response.exec.trap               = {*=0};//alu_control_flow.trap;
 
         pipeline_response.rfw.valid      = rfw_state.valid;
         pipeline_response.rfw.rd_written = rfw_state.rd_written;

@@ -194,8 +194,8 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
     csr_controls : {
         /*b CSR controls - post trap detection */
         csr_controls = {*=0};
-        csr_controls.retire       = pipeline_response.exec.valid && !pipeline_response.exec.cannot_complete && !coproc_response_cfg.cannot_complete;
-        csr_controls.trap         = pipeline_response.exec.trap;
+        csr_controls.retire       = pipeline_response.exec.valid && pipeline_control.exec_committed;
+        csr_controls.trap         = pipeline_control.trap;
     }
 
     /*b Coprocessor interface */
@@ -204,19 +204,14 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
 
     Probably only legal if there is a decode stage - or if the coprocessor knows there is not
     """: {
-        coproc_response_cfg = coproc_response;
-        if (coproc_force_disable || riscv_config.coproc_disable) {
-            coproc_response_cfg = {*=0};
-        }
-
         coproc_controls.dec_idecode        = pipeline_response.decode.idecode;
         coproc_controls.dec_idecode_valid  = pipeline_response.decode.valid && !pipeline_state.interrupt_req;
-        coproc_controls.dec_to_alu_blocked = pipeline_response.exec.cannot_complete || coproc_response_cfg.cannot_complete;
+        coproc_controls.dec_to_alu_blocked = pipeline_response.exec.cannot_complete || coproc_response.cannot_complete;
         coproc_controls.alu_rs1 = pipeline_response.exec.rs1;
         coproc_controls.alu_rs2 = pipeline_response.exec.rs2;
-        coproc_controls.alu_flush_pipeline  = 0; // pipeline_control.flush_decode; // pipeline_fetch_data.dec_flush_pipeline;
-        coproc_controls.alu_cannot_start    = pipeline_response.exec.cannot_start    || coproc_response_cfg.cannot_start;
-        coproc_controls.alu_cannot_complete = pipeline_response.exec.cannot_complete || coproc_response_cfg.cannot_complete;
+        coproc_controls.alu_flush_pipeline  = pipeline_control.flush_decode; // pipeline_fetch_data.dec_flush_pipeline;
+        coproc_controls.alu_cannot_start    = pipeline_response.exec.cannot_start    || coproc_response.cannot_start;
+        coproc_controls.alu_cannot_complete = pipeline_response.exec.cannot_complete || coproc_response.cannot_complete;
         if (coproc_force_disable || riscv_config.coproc_disable) {
             coproc_controls = {*=0};
         }
@@ -227,7 +222,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
     Map the pipeline output to the trace
     """: {
         trace = {*=0};
-        trace.instr_valid    = pipeline_response.exec.valid && !pipeline_response.exec.cannot_complete && !coproc_response_cfg.cannot_complete;
+        trace.instr_valid    = pipeline_response.exec.valid && pipeline_control.exec_committed;
         trace.instr_pc       = pipeline_response.exec.pc;
         trace.mode           = pipeline_state.mode;
         trace.instruction    = pipeline_response.exec.instruction.data;
@@ -235,11 +230,11 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
         trace.rfw_data_valid = pipeline_response.rfw.rd_written;
         trace.rfw_rd         = pipeline_response.rfw.rd;
         trace.rfw_data       = pipeline_response.rfw.data;
-        trace.branch_taken   = pipeline_response.exec.branch_taken;
-        trace.trap           = pipeline_response.exec.trap.valid;
-        trace.ret            = pipeline_response.exec.trap.ret;
-        trace.jalr           = pipeline_response.exec.jalr;
-        trace.branch_target  = pipeline_fetch_data.pc;//ifetch_request.pc;// ;
+        trace.branch_taken   = pipeline_control.branch_taken;
+        trace.trap           = pipeline_control.trap.valid;
+        trace.ret            = pipeline_control.trap.ret;
+        trace.jalr           = pipeline_control.jalr;
+        trace.branch_target  = ifetch_req.address;
         trace.bkpt_valid     = 0;
         trace.bkpt_reason    = 0;
     }

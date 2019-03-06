@@ -64,10 +64,6 @@ module tb_riscv_i32c_pipeline3( clock clk,
     comb t_riscv_i32_coproc_response   coproc_response;
     net t_riscv_i32_coproc_response   pipeline_coproc_response;
 
-    net t_riscv_i32_coproc_controls  coproc_controls_b;
-    net t_riscv_csr_controls      csr_controls_b;
-    net t_riscv_i32_trace trace_b;
-
     /*b Clock divider
      */
     clocked clock clk reset active_low reset_n bit[2] clk_divider = 0;
@@ -195,20 +191,12 @@ module tb_riscv_i32c_pipeline3( clock clk,
                                             dmem_access_req => dmem_access_req,
                                             csr_access     => csr_access,
                                             pipeline_coproc_response => pipeline_coproc_response,
-                                            coproc_controls  => coproc_controls_b,
-                                            csr_controls     => csr_controls_b,
-                                            trace            => trace_b,
+                                            coproc_controls  => coproc_controls,
+                                            csr_controls     => csr_controls,
+                                            trace            => trace,
                                             riscv_config <= riscv_config
         );
 
-        riscv_i32_pipeline_control_csr_trace pc_csr_trace( pipeline_state <= pipeline_state,
-                                                           pipeline_response <= pipeline_response,
-                                                           pipeline_fetch_data <= pipeline_fetch_data,
-                                                           riscv_config     <= riscv_config,
-                                                           coproc_response <= pipeline_coproc_response,
-                                                           coproc_controls  => coproc_controls,
-                                                           csr_controls     => csr_controls,
-                                                           trace            => trace );
         
         riscv_i32c_pipeline3 dut( clk <- riscv_clk,
                                   reset_n <= reset_n,
