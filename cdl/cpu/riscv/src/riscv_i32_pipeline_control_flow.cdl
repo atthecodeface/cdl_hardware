@@ -99,7 +99,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
             control_flow.trap.cause = riscv_trap_cause_instruction_misaligned;
             control_flow.trap.value = control_data.pc;
         }
-        if (pipeline_state.interrupt_req && control_data.interrupt_ack) {
+        if (pipeline_state.interrupt_req && !pipeline_response.exec.interrupt_block) {
             control_flow.async_cancel = 1;
             control_flow.trap.valid = 1;
             control_flow.trap.ret = 0;
@@ -160,7 +160,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
         if (!pipeline_control.exec_committed) { dmem_access_req.valid = 0; }
 
         csr_access = pipeline_response.exec.csr_access;
-        if (!pipeline_response.exec.valid || pipeline_response.exec.is_illegal) {
+        if (!pipeline_response.exec.valid || pipeline_response.exec.idecode.illegal) {
             csr_access.access = riscv_csr_access_none;
         }
         csr_access.access_cancelled =  pipeline_control.async_cancel;

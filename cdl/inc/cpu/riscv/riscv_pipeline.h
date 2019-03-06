@@ -156,7 +156,7 @@ module riscv_i32c_pipeline3( clock clk,
     timing from rising clock clk pipeline_response;
     timing to   rising clock clk dmem_access_resp, pipeline_state, pipeline_control, pipeline_fetch_data, coproc_response, csr_read_data;
     timing to   rising clock clk riscv_config;
-    timing comb input riscv_config, pipeline_state;
+    timing comb input riscv_config;
     timing comb output pipeline_response;
 }
 

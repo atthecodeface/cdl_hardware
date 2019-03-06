@@ -100,12 +100,7 @@ typedef struct {
     bit valid;
     bit cannot_start    "Asserted if the pipeline cannot start - not dependent on coprocessors (if any)";
     bit cannot_complete "Asserted if the pipeline cannot complet - not dependent on coprocessors (if any)";
-    bit interrupt_ack;
-    bit branch_taken;
-    bit jalr;
-    t_riscv_i32_trap trap;
-    bit      is_compressed   "Asserted if a 16-bit instruction; else 32-bit";
-    bit is_illegal;
+    bit interrupt_block "In standard pipelines this must be low; it blocks interrupts";
     t_riscv_i32_inst instruction;
     t_riscv_i32_decode idecode "Decode of instruction (if valid)";
     t_riscv_word rs1;
@@ -113,7 +108,6 @@ typedef struct {
     bit[32]  pc              "Actual PC of execution instruction";
     bit          predicted_branch   "From pipeline_fetch_data associated with the decode of this instruction";
     t_riscv_word pc_if_mispredicted "From pipeline_fetch_data associated with the decode of this instruction";
-    bit async_cancel;
     bit branch_condition_met;
     bit first_cycle;
     t_riscv_mem_access_req dmem_access_req;

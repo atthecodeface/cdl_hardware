@@ -122,7 +122,6 @@ typedef struct {
     t_riscv_i32_dmem_exec dmem_exec;
     t_riscv_csr_access csr_access;
     t_riscv_word result_data;
-    t_riscv_i32_control_data control_data;
 } t_alu_combs;
 
 /*t t_mem_state */
@@ -230,7 +229,6 @@ An example implementation of could be
 
     comb t_dec_combs dec_combs;
     comb t_alu_combs alu_combs;
-    net     t_riscv_i32_control_flow alu_control_flow;
     comb t_mem_combs mem_combs;
     clocked t_dec_state     dec_state={*=0};
     clocked t_alu_state     alu_state={*=0};
@@ -407,7 +405,7 @@ An example implementation of could be
         alu_combs.csr_access = alu_result.csr_access;
 
         /*b ALU stage result */
-        alu_combs.result_data = alu_result.result | coproc_response.result; // ???
+        alu_combs.result_data = alu_result.result | coproc_response.result; // OR here may make the logic shorter
         if (coproc_response.result_valid) {
             alu_combs.result_data = coproc_response.result;
         }
@@ -419,53 +417,28 @@ An example implementation of could be
         alu_combs.dmem_exec = { idecode        = alu_state.idecode,
                                 arith_result   = alu_result.arith_result, // address of access
                                 rs2            = alu_combs.rs2,    // data for access (before rotation)
-                                first_cycle = 1
+                                first_cycle = alu_state.first_cycle
         };
         riscv_i32_dmem_request dmem_req( dmem_exec    <= alu_combs.dmem_exec,
                                          dmem_request => alu_combs_dmem_request );
 
-        /*b Control flow - depends on alu result */
-        alu_combs.control_data = { instruction_data = alu_state.instruction.data,
-                                   pc               = alu_state.pc,
-                                   alu_result       = alu_result,
-                                   interrupt_ack    = 1,
-                                   valid            = alu_state.valid,
-                                   exec_committed   = alu_state.valid && !alu_combs.blocked_by_mem,
-                                   idecode          = alu_state.idecode,
-                                   first_cycle = 1
-        };
-        if (!alu_state.valid) {
-            alu_combs.control_data.pc = dec_state.valid ? dec_state.pc : pipeline_state.fetch_pc;
-        }
-        riscv_i32_control_flow control_flow( pipeline_state <= pipeline_state,
-                                             control_data <= alu_combs.control_data,
-                                             control_flow => alu_control_flow );
-
-
         /*b Pipeline response from exec */
-        pipeline_response.exec.dmem_access_req = alu_combs_dmem_request.access;
-        pipeline_response.exec.csr_access      = alu_combs.csr_access;
-        pipeline_response.exec.valid           = alu_state.valid;
-        pipeline_response.exec.first_cycle     = alu_state.first_cycle;
-        pipeline_response.exec.cannot_start    = alu_combs.blocked_by_mem; // Need not be valid if exec.valid is low
-        pipeline_response.exec.cannot_complete = 0; // This ALU can always complete (dmem access blocking is handled externally)
-        pipeline_response.exec.interrupt_ack   = pipeline_state.interrupt_req;
-        pipeline_response.exec.is_compressed   = alu_state.idecode.is_compressed;
-        pipeline_response.exec.is_illegal      = alu_state.idecode.illegal;
-        pipeline_response.exec.idecode         = alu_state.idecode;
-        pipeline_response.exec.pc              = alu_state.pc;
-        pipeline_response.exec.rs1             = alu_combs.rs1;
-        pipeline_response.exec.rs2             = alu_combs.rs2;
-        pipeline_response.exec.instruction     = alu_state.instruction;
-        pipeline_response.exec.predicted_branch   = alu_state.predicted_branch;
-        pipeline_response.exec.branch_condition_met = alu_result.branch_condition_met;
+        pipeline_response.exec.valid              = alu_state.valid;
+        pipeline_response.exec.first_cycle        = alu_state.first_cycle;
+        pipeline_response.exec.cannot_complete    = 0; // This ALU can always complete (dmem access blocking is handled externally)
+        pipeline_response.exec.interrupt_block    = 0; // The standard pipeline cannot block interrupts
+        pipeline_response.exec.idecode            = alu_state.idecode;
+        pipeline_response.exec.pc                 = alu_state.pc;
         pipeline_response.exec.pc_if_mispredicted = alu_state.pc_if_mispredicted;
-
-        pipeline_response.exec.async_cancel       = 0;//alu_control_flow.async_cancel;
-        pipeline_response.exec.branch_taken       = 0;//alu_control_flow.branch_taken;
+        pipeline_response.exec.instruction        = alu_state.instruction;
+        pipeline_response.exec.predicted_branch   = alu_state.predicted_branch;
+        pipeline_response.exec.rs1                = alu_combs.rs1;
+        pipeline_response.exec.rs2                = alu_combs.rs2;
+        pipeline_response.exec.dmem_access_req    = alu_combs_dmem_request.access;
+        pipeline_response.exec.csr_access         = alu_combs.csr_access;
+        pipeline_response.exec.cannot_start       = alu_combs.blocked_by_mem; // Need not be valid if exec.valid is low
+        pipeline_response.exec.branch_condition_met = alu_result.branch_condition_met;
         pipeline_response.exec.branch_target      = alu_result.branch_target;
-        pipeline_response.exec.jalr               = 0;//alu_control_flow.jalr && (alu_state.idecode.rs1!=0);
-        pipeline_response.exec.trap               = {*=0};//alu_control_flow.trap;
 
         pipeline_response.rfw.valid      = rfw_state.valid;
         pipeline_response.rfw.rd_written = rfw_state.rd_written;
