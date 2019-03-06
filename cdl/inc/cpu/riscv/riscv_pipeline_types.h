@@ -71,11 +71,6 @@ typedef struct {
     bit ret "Asserted for RET instructions - presumably needs an indication as to which mode to return to";
     bit mispredicted_branch         "Asserted if the exec has a mispredicted branch - could be a JALR, or conditional branch that was not predicted to be taken";
     t_riscv_word pc_if_mispredicted "Target for a mispredicted branch";
-
-    bit cannot_start    "Want to remove Asserted if the instruction is blocked from starting; ignored unless valid and first_cycle; can be because of blocked_by_mem or coprocessor not ready";
-    bit cannot_complete "Want to remove Asserted if the ALU has a valid instruction that either cannot be started or cannot complete";
-    bit jalr         "Only used inside control flow - remove from globals";
-    bit branch_taken "Only used inside control flow - remove from globals";
 } t_riscv_pipeline_control_exec;
 
 /*t t_riscv_pipeline_control_flush - late in clock cycle to affect clocking
@@ -89,7 +84,6 @@ typedef struct {
 /*t t_riscv_pipeline_control - late in clock cycle to affect clocking
  */
 typedef struct {
-    bit async_cancel;
     t_riscv_i32_trap trap;
     t_riscv_pipeline_control_flush   flush;
     t_riscv_pipeline_control_exec    exec;
@@ -111,7 +105,8 @@ typedef struct {
 typedef struct {
     bit valid;
     bit cannot_start    "Asserted if the pipeline cannot start - not dependent on coprocessors (if any)";
-    bit cannot_complete "Asserted if the pipeline cannot complet - not dependent on coprocessors (if any)";
+    bit first_cycle     "Asserted if first clock cycles of exec stage; not changed if pipeline control indicates a cycle cannot complete";
+    bit last_cycle      "Asserted if no more clock cycles after this (if not blocked) are required to complete the exec stage";
     bit interrupt_block "In standard pipelines this must be low; it blocks interrupts";
     t_riscv_i32_inst instruction;
     t_riscv_i32_decode idecode "Decode of instruction (if valid)";
@@ -121,7 +116,6 @@ typedef struct {
     bit          predicted_branch   "From pipeline_fetch_data associated with the decode of this instruction";
     t_riscv_word pc_if_mispredicted "From pipeline_fetch_data associated with the decode of this instruction";
     bit branch_condition_met;
-    bit first_cycle;
     t_riscv_mem_access_req dmem_access_req;
     t_riscv_csr_access     csr_access;
     bit[32]  branch_target     "Used if predict_branch";

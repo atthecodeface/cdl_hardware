@@ -327,7 +327,7 @@ An example implementation of could be
         /*b Record state */
         alu_state.valid <= 0;
         alu_state.idecode.rd_written <= 0; // Ensure it is cleared if invalid
-        if (pipeline_control.exec.blocked && !pipeline_control.async_cancel) {
+        if (pipeline_control.exec.blocked && !pipeline_control.flush.exec) {
             if (!pipeline_control.exec.blocked_start) {
                 alu_state.first_cycle <= 0;
             }
@@ -425,11 +425,11 @@ An example implementation of could be
         /*b Pipeline response from exec */
         pipeline_response.exec.valid              = alu_state.valid;
         pipeline_response.exec.first_cycle        = alu_state.first_cycle;
-        pipeline_response.exec.cannot_complete    = 0; // This ALU can always complete (dmem access blocking is handled externally)
+        pipeline_response.exec.last_cycle         = 1; // Everything is single cycle so far...
         pipeline_response.exec.interrupt_block    = 0; // The standard pipeline cannot block interrupts
         pipeline_response.exec.idecode            = alu_state.idecode;
         pipeline_response.exec.pc                 = alu_state.pc;
-        pipeline_response.exec.pc_if_mispredicted = alu_state.pc_if_mispredicted;
+        pipeline_response.exec.pc_if_mispredicted = alu_state.pc_if_mispredicted; // Used for JAL and conditional branch
         pipeline_response.exec.instruction        = alu_state.instruction;
         pipeline_response.exec.predicted_branch   = alu_state.predicted_branch;
         pipeline_response.exec.rs1                = alu_combs.rs1;
@@ -438,7 +438,7 @@ An example implementation of could be
         pipeline_response.exec.csr_access         = alu_combs.csr_access;
         pipeline_response.exec.cannot_start       = alu_combs.blocked_by_mem; // Need not be valid if exec.valid is low
         pipeline_response.exec.branch_condition_met = alu_result.branch_condition_met;
-        pipeline_response.exec.branch_target      = alu_result.branch_target;
+        pipeline_response.exec.branch_target      = alu_result.branch_target; // Actually only need         case riscv_op_jalr:     { alu_result.branch_target = bundle(alu_combs.arith_result[31;1],1b0); }
 
         pipeline_response.rfw.valid      = rfw_state.valid;
         pipeline_response.rfw.rd_written = rfw_state.rd_written;
@@ -469,7 +469,7 @@ An example implementation of could be
         mem_state.valid        <= 0;
         mem_state.rd_written   <= 0;
         mem_state.rd_from_mem  <= 0;
-        if (alu_combs.valid_legal && !pipeline_control.exec.blocked && !pipeline_control.async_cancel) { // better if async control flow interrupt
+        if (alu_combs.valid_legal && !pipeline_control.exec.blocked && !pipeline_control.flush.exec) { // better if async control flow interrupt
             mem_state.valid         <= 1;
             mem_state.dmem_request  <= alu_combs_dmem_request;
             if (alu_combs_dmem_request.reading && alu_state.idecode.rd_written) { // && does not require another cycle?

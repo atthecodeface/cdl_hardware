@@ -691,24 +691,4 @@ typedef struct {
     bit    multicycle;
 } t_riscv_i32_dmem_request;
 
-/*t t_riscv_i32_control_data */
-typedef struct {
-    bit                     interrupt_ack;
-    bit                     valid;
-    bit                     exec_committed "Must not be asserted if exec stage is invalid";
-    bit                     first_cycle;
-    t_riscv_i32_decode      idecode "Exec stage idecode";
-    t_riscv_word            pc;
-    t_riscv_word            instruction_data;
-    t_riscv_i32_alu_result  alu_result;
-} t_riscv_i32_control_data;
-
-/*t t_riscv_i32_control_flow */
-typedef struct {
-    bit              async_cancel;
-    bit              branch_taken;
-    bit              jalr;
-    t_riscv_word     next_pc;
-    t_riscv_i32_trap trap;
-} t_riscv_i32_control_flow;
 
