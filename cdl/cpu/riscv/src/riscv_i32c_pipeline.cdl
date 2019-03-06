@@ -166,7 +166,7 @@ stage the multiply cannot support fused operations
     """: {
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
         decexecrfw_state.valid <= 0;
-        if (pipeline_fetch_data.valid) {
+        if (pipeline_fetch_data.valid && !pipeline_control.flush.fetch) {
             decexecrfw_state.pc <= pipeline_fetch_data.pc;
             decexecrfw_state.instruction <= pipeline_fetch_data.instruction;
             if (debug_force_disable || !riscv_config.debug_enable) {
