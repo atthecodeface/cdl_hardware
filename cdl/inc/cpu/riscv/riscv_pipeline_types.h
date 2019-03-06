@@ -37,7 +37,6 @@ typedef enum[3] {
 typedef bit[2] t_riscv_pipeline_tag;
 typedef struct {
     // add in exec_wfi_continues, and exec_take_interrupt
-    bit      valid;
     t_riscv_pipeline_control_fetch_action fetch_action;
     bit[32]  fetch_pc "PC of instruction to be fetched";
     t_riscv_mode mode "Mode the pipeline is executing in";
@@ -52,22 +51,41 @@ typedef struct {
     t_riscv_i32_inst_debug instruction_debug;
 } t_riscv_pipeline_state;
 
+/*t t_riscv_pipeline_control_decode - late in clock cycle to affect clocking
+ */
+typedef struct {
+    bit committed      "Asserted if decode is valid AND can pass on to exec";
+    bit cannot_complete"Asserted if the decode has a valid instruction that either cannot be started or cannot complete";
+} t_riscv_pipeline_control_decode;
+
+/*t t_riscv_pipeline_control_exec - late in clock cycle to affect clocking
+ */
+typedef struct {
+    bit committed       "Asserted if exec is valid AND will complete a cycle";
+    bit cannot_start    "Asserted if the instruction is blocked from starting; ignored unless valid and first_cycle; can be because of blocked_by_mem or coprocessor not ready";
+    bit cannot_complete "Asserted if the ALU has a valid instruction that either cannot be started or cannot complete";
+    bit branch_taken;
+    bit jalr;
+    bit ret;
+} t_riscv_pipeline_control_exec;
+
+/*t t_riscv_pipeline_control_flush - late in clock cycle to affect clocking
+ */
+typedef struct {
+    bit fetch;
+    bit decode;
+    bit exec;
+} t_riscv_pipeline_control_flush;
+
 /*t t_riscv_pipeline_control - late in clock cycle to affect clocking
  */
 typedef struct {
-    bit decode_cannot_complete"Asserted if the decode has a valid instruction that either cannot be started or cannot complete";
-    bit exec_committed;
-    bit exec_cannot_start "Asserted if the instruction is blocked from starting; ignored unless valid and first_cycle; can be because of blocked_by_mem or coprocessor not ready";
-    bit exec_cannot_complete"Asserted if the ALU has a valid instruction that either cannot be started or cannot complete";
-
     t_riscv_word pc_if_mispredicted "From pipeline_fetch_data associated with the decode of this instruction";
     bit async_cancel;
-    bit branch_taken;
-    bit jalr;
     t_riscv_i32_trap trap;
-    bit flush_fetch;
-    bit flush_decode;
-    bit flush_exec;
+    t_riscv_pipeline_control_flush   flush;
+    t_riscv_pipeline_control_exec    exec;
+    t_riscv_pipeline_control_decode  decode;
 } t_riscv_pipeline_control;
 
 /*t t_riscv_pipeline_response_decode

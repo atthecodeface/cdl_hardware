@@ -73,16 +73,16 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
 
         control_flow.trap = {*=0};
         control_flow.branch_taken = 0;
-        pipeline_control.branch_taken = 0;
+        pipeline_control.exec.branch_taken = 0;
         control_flow.jalr = 0;
         control_flow.next_pc = 0;
         control_flow.trap.pc = pc_to_record;
         control_flow.async_cancel = 0;
         control_flow.trap.to_mode = pipeline_state.interrupt_to_mode;
         part_switch (pipeline_response.exec.idecode.op) {
-        case riscv_op_branch:   { pipeline_control.branch_taken = pipeline_response.exec.branch_condition_met; }
-        case riscv_op_jal:      { pipeline_control.branch_taken=1; }
-        case riscv_op_jalr:     { pipeline_control.branch_taken=1; control_flow.jalr=1; }
+        case riscv_op_branch:   { pipeline_control.exec.branch_taken = pipeline_response.exec.branch_condition_met; }
+        case riscv_op_jal:      { pipeline_control.exec.branch_taken=1; }
+        case riscv_op_jalr:     { pipeline_control.exec.branch_taken=1; control_flow.jalr=1; }
         case riscv_op_system:   {
             if (pipeline_response.exec.idecode.subop==riscv_subop_mret) {
                 control_flow.trap.ret = 1;
@@ -100,11 +100,11 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
             }
         }
         }
-        if (!pipeline_control.exec_committed) {
+        if (!pipeline_control.exec.committed) {
             control_flow.trap.valid = 0;
             control_flow.trap.ret = 0;
             control_flow.trap.ebreak_to_dbg = 0;
-            pipeline_control.branch_taken = 0;
+            pipeline_control.exec.branch_taken = 0;
         }
         
         if (pipeline_response.exec.valid && pipeline_response.exec.idecode.illegal) {
@@ -130,20 +130,23 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
 
         pipeline_control.async_cancel       = control_flow.async_cancel;
         pipeline_control.pc_if_mispredicted = control_flow.jalr ? pipeline_response.exec.branch_target : pipeline_response.exec.pc_if_mispredicted;
-        pipeline_control.jalr               = control_flow.jalr && (pipeline_response.exec.idecode.rs1!=0);
+        pipeline_control.exec.jalr          = control_flow.jalr && (pipeline_response.exec.idecode.rs1!=0);
         pipeline_control.trap               = control_flow.trap;
+        pipeline_control.exec.ret          = control_flow.trap.ret;
     }
     code : {
-        pipeline_control.exec_cannot_start    = pipeline_response.exec.cannot_start     || pipeline_coproc_response.cannot_start;
-        pipeline_control.exec_cannot_complete = pipeline_response.exec.cannot_complete  || pipeline_coproc_response.cannot_complete;
-        if (pipeline_response.exec.first_cycle && pipeline_response.exec.valid && pipeline_control.exec_cannot_start) {
-            pipeline_control.exec_cannot_complete = 1;
+        pipeline_control.exec.cannot_start    = pipeline_response.exec.cannot_start     || pipeline_coproc_response.cannot_start;
+        pipeline_control.exec.cannot_complete = pipeline_response.exec.cannot_complete  || pipeline_coproc_response.cannot_complete;
+        if (pipeline_response.exec.first_cycle && pipeline_response.exec.valid && pipeline_control.exec.cannot_start) {
+            pipeline_control.exec.cannot_complete = 1;
         }
-        pipeline_control.exec_committed       = pipeline_response.exec.valid && !pipeline_control.exec_cannot_complete;
-        pipeline_control.decode_cannot_complete = pipeline_response.decode.valid && pipeline_response.exec.valid && pipeline_control.exec_cannot_complete;
+        pipeline_control.exec.committed       = pipeline_response.exec.valid && !pipeline_control.exec.cannot_complete;
+
+        pipeline_control.decode.cannot_complete = pipeline_response.decode.valid && pipeline_response.exec.valid && pipeline_control.exec.cannot_complete;
+        pipeline_control.decode.committed      = pipeline_response.decode.valid && !pipeline_control.decode.cannot_complete;
 
         dmem_access_req = pipeline_response.exec.dmem_access_req;
-        if (!pipeline_control.exec_committed) { dmem_access_req.valid = 0; }
+        if (!pipeline_control.exec.committed) { dmem_access_req.valid = 0; }
 
         csr_access = pipeline_response.exec.csr_access;
         if (!pipeline_response.exec.valid || pipeline_response.exec.idecode.illegal) {
@@ -154,24 +157,24 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
 
 
         //pipeline_control.alu_flush_pipeline     = ifetch_req.flush_pipeline;
-        pipeline_control.flush_decode     = ifetch_req.flush_pipeline;
-        pipeline_control.flush_fetch     = 0;
-        pipeline_control.flush_exec     = 0;
+        pipeline_control.flush.decode     = ifetch_req.flush_pipeline;
+        pipeline_control.flush.fetch     = 0;
+        pipeline_control.flush.exec     = 0;
 
-        if (pipeline_response.exec.valid && (pipeline_control.branch_taken != pipeline_response.exec.predicted_branch)) {
-            pipeline_control.flush_fetch     = 1;
-            pipeline_control.flush_decode    = 1;
+        if (pipeline_response.exec.valid && (pipeline_control.exec.branch_taken != pipeline_response.exec.predicted_branch)) {
+            pipeline_control.flush.fetch     = 1;
+            pipeline_control.flush.decode    = 1;
         }
         if (pipeline_control.trap.valid) {
-            pipeline_control.flush_fetch     = 1;
-            pipeline_control.flush_decode    = 1;
+            pipeline_control.flush.fetch     = 1;
+            pipeline_control.flush.decode    = 1;
         }
         if (pipeline_control.trap.ret) {
-            pipeline_control.flush_fetch     = 1;
-            pipeline_control.flush_decode    = 1;
+            pipeline_control.flush.fetch     = 1;
+            pipeline_control.flush.decode    = 1;
         }
         if (pipeline_state.instruction_debug.valid) {
-            pipeline_control.flush_fetch     = 0;
+            pipeline_control.flush.fetch     = 0;
         }
 
     }
@@ -180,7 +183,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
     csr_controls : {
         /*b CSR controls - post trap detection */
         csr_controls = {*=0};
-        csr_controls.retire       = pipeline_response.exec.valid && pipeline_control.exec_committed;
+        csr_controls.retire       = pipeline_response.exec.valid && pipeline_control.exec.committed;
         csr_controls.trap         = pipeline_control.trap;
     }
 
@@ -195,7 +198,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
         coproc_controls.dec_to_alu_blocked  = pipeline_response.exec.cannot_complete || coproc_response.cannot_complete;
         coproc_controls.alu_rs1             = pipeline_response.exec.rs1;
         coproc_controls.alu_rs2             = pipeline_response.exec.rs2;
-        coproc_controls.alu_flush_pipeline  = pipeline_control.flush_decode; // pipeline_fetch_data.dec_flush_pipeline;
+        coproc_controls.alu_flush_pipeline  = pipeline_control.flush.decode; // pipeline_fetch_data.dec_flush_pipeline;
         coproc_controls.alu_cannot_start    = pipeline_response.exec.cannot_start    || coproc_response.cannot_start;
         coproc_controls.alu_cannot_complete = pipeline_response.exec.cannot_complete || coproc_response.cannot_complete;
 
@@ -211,7 +214,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
     Map the pipeline output to the trace
     """: {
         trace = {*=0};
-        trace.instr_valid    = pipeline_response.exec.valid && pipeline_control.exec_committed;
+        trace.instr_valid    = pipeline_response.exec.valid && pipeline_control.exec.committed;
         trace.instr_pc       = pipeline_response.exec.pc;
         trace.mode           = pipeline_state.mode;
         trace.instruction    = pipeline_response.exec.instruction.data;
@@ -219,10 +222,10 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
         trace.rfw_data_valid = pipeline_response.rfw.rd_written;
         trace.rfw_rd         = pipeline_response.rfw.rd;
         trace.rfw_data       = pipeline_response.rfw.data;
-        trace.branch_taken   = pipeline_control.branch_taken;
+        trace.branch_taken   = pipeline_control.exec.branch_taken;
         trace.trap           = pipeline_control.trap.valid;
         trace.ret            = pipeline_control.trap.ret;
-        trace.jalr           = pipeline_control.jalr;
+        trace.jalr           = pipeline_control.exec.jalr;
         trace.branch_target  = ifetch_req.address;
         trace.bkpt_valid     = 0;
         trace.bkpt_reason    = 0;

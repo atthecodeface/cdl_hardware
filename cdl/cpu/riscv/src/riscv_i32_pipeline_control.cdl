@@ -422,15 +422,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
             ifetch_state.pc    <= pipeline_fetch_data.pc;
             // retry next means that the decode NOW is valid and blocked.
             // possibly it should also work for decode NOW invalid and fetch data is invalid in which case the address may need to be hacked
-            if (ifetch_state.state == ifetch_fsm_restarting) {
-                if (!pipeline_fetch_data.valid || pipeline_control.decode_cannot_complete) {
-                    //ifetch_state.state         <= ifetch_fsm_retry;
-                }
-            }
-            if (pipeline_fetch_data.valid && pipeline_control.decode_cannot_complete) {
-                //ifetch_state.pc <= ifetch_state.pc;
-            }
-            if (pipeline_fetch_data.valid && !pipeline_control.decode_cannot_complete) {
+            if (pipeline_fetch_data.valid && !pipeline_control.decode.cannot_complete) {
                 ifetch_state.pc    <= pipeline_fetch_data.pc;
                 ifetch_state.state <= ifetch_fsm_fetching;
             }
@@ -441,7 +433,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
             if (csrs.dcsr.step && pipeline_response.exec.valid) {
                 ifetch_state.halt_req <= 1;
             }
-            if (pipeline_response.exec.valid && (pipeline_control.branch_taken != pipeline_response.exec.predicted_branch)) {
+            if (pipeline_response.exec.valid && (pipeline_control.exec.branch_taken != pipeline_response.exec.predicted_branch)) {
                 ifetch_state.pc <= pipeline_control.pc_if_mispredicted; // late address, late decision
                 ifetch_state.state <= ifetch_fsm_restarting;
             }
@@ -467,7 +459,6 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
     }
     pc_logic: {
         pipeline_state                   = {*=0};
-        pipeline_state.valid             = 1;
         pipeline_state.fetch_pc          = ifetch_state.pc;
         pipeline_state.fetch_action      = ifetch_combs.fetch_action;
         pipeline_state.mode              = ifetch_state.mode;

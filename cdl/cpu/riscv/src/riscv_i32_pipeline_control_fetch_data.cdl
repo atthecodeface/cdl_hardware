@@ -88,15 +88,15 @@ module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_state     p
     valid instruction to decode) then the current PC is requested.
     """:
     {
-        pipeline_fetch_data.valid = pipeline_state.valid && ifetch_resp.valid && (ifetch_req.req_type != rv_fetch_none);
+        pipeline_fetch_data.valid = ifetch_resp.valid && (ifetch_req.req_type != rv_fetch_none);
         pipeline_fetch_data.pc    = ifetch_req.address;
         pipeline_fetch_data.instruction  = {data=ifetch_resp.data, debug={*=0}};
         if (ifetch_req.debug_fetch) {
             if (ifetch_req.address[8;0]==0) {
-                pipeline_fetch_data.valid = pipeline_state.valid;
+                pipeline_fetch_data.valid = 1;
                 pipeline_fetch_data.instruction.data=pipeline_state.instruction_data;
             } else {
-                pipeline_fetch_data.valid = pipeline_state.valid;
+                pipeline_fetch_data.valid = 1;
                 pipeline_fetch_data.instruction.data=RV32I_EBREAK;
             }
         }

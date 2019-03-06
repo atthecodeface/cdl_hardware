@@ -250,10 +250,10 @@ An example implementation of could be
         //pipeline_response.decode.blocked = dec_state.valid && alu_state.valid && alu_combs.cannot_complete;
 
         dec_state.valid <= 0;
-        if (pipeline_control.decode_cannot_complete && !pipeline_control.flush_decode) {
+        if (pipeline_control.decode.cannot_complete && !pipeline_control.flush.decode) {
             dec_state <= dec_state;
         } else {
-            if (pipeline_fetch_data.valid && !pipeline_control.flush_fetch) {
+            if (pipeline_fetch_data.valid && !pipeline_control.flush.fetch) {
                 dec_state.valid <= 1;
                 dec_state.pc <= pipeline_fetch_data.pc;
                 dec_state.instruction <= pipeline_fetch_data.instruction;
@@ -327,8 +327,8 @@ An example implementation of could be
         /*b Record state */
         alu_state.valid <= 0;
         alu_state.idecode.rd_written <= 0; // Ensure it is cleared if invalid
-        if (pipeline_control.exec_cannot_complete && !pipeline_control.async_cancel) {
-            if (!pipeline_control.exec_cannot_start) {
+        if (pipeline_control.exec.cannot_complete && !pipeline_control.async_cancel) {
+            if (!pipeline_control.exec.cannot_start) {
                 alu_state.first_cycle <= 0;
             }
             alu_state <= alu_state;
@@ -342,7 +342,7 @@ An example implementation of could be
             if (alu_state.rs2_from_mem) {
                 alu_state.rs2 <= rfw_state.mem_result;
             }
-        } elsif (pipeline_control.flush_decode) {
+        } elsif (pipeline_control.flush.decode) {
             alu_state.valid               <= 0;
             alu_state.pc_if_mispredicted  <= pipeline_fetch_data.dec_pc_if_mispredicted;
             alu_state.predicted_branch    <= pipeline_fetch_data.dec_predicted_branch;
@@ -469,7 +469,7 @@ An example implementation of could be
         mem_state.valid        <= 0;
         mem_state.rd_written   <= 0;
         mem_state.rd_from_mem  <= 0;
-        if (alu_combs.valid_legal && !pipeline_control.exec_cannot_complete && !pipeline_control.async_cancel) { // better if async control flow interrupt
+        if (alu_combs.valid_legal && !pipeline_control.exec.cannot_complete && !pipeline_control.async_cancel) { // better if async control flow interrupt
             mem_state.valid         <= 1;
             mem_state.dmem_request  <= alu_combs_dmem_request;
             if (alu_combs_dmem_request.reading && alu_state.idecode.rd_written) { // && does not require another cycle?
