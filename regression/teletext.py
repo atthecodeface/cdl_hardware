@@ -540,6 +540,8 @@ class framebuffer_teletext_hw(simple_tb.cdl_test_hw):
                                "video_bus__display_enable "+
                                "video_bus__hsync "+
                                "video_bus__vsync "+
+                               "video_bus__hs "+
+                               "video_bus__vs "+
                                "" ),
                   "th.outputs":("csr_request__data[32] "+
                                "csr_request__address[16] "+

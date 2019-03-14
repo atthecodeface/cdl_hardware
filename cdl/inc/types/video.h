@@ -44,12 +44,16 @@ typedef struct {
     bit will_display_enable "Asserted if the next clock will have @a display_enable asserted";
     bit display_enable      "Asserted if pixels should be presented to the output (i.e. outside the front and back porches both horizontally and vertically)";
     bit v_frame_last_line   "Asserted if ";
+    bit vs                  "Asserted high/low N scanlines starting at start of frame";
+    bit hs                  "Asserted for a single clock at the start of every scanline";
 } t_video_timing;
 
 /*t t_video_bus */
 typedef struct {
-    bit    vsync "Asserted for one whole line at start of back porch of frame, simultaneous with hsync";
-    bit    hsync "Asserted for one cycle at start of back porch";
+    bit    vsync          "Asserted for one whole line at start of back porch of frame, simultaneous with hsync";
+    bit    hsync          "Asserted for one cycle at start of back porch";
+    bit    vs             "Asserted high/low N scanlines starting at start of frame";
+    bit    hs             "Asserted for a single clock at the start of every scanline";
     bit    display_enable "Asserted after end of back porch for display pixels/lines";
     bit[8] red;
     bit[8] green;
