@@ -14,7 +14,7 @@
 
 #a Imports
 import pycdl
-import sys, os, unittest, tempfile
+import sys, os, os.path, unittest, tempfile
 import simple_tb
 import dump
 import jtag_support
@@ -38,14 +38,16 @@ def bits_of_n(nbits, n):
     return bits
 
 #a Globals
-import os
 riscv_zephyr_dir          = "../riscv_tests_built/"
 riscv_regression_dir      = "../riscv_tests_built/isa/"
 riscv_atcf_regression_dir = "../riscv-atcf-tests/build/dump/"
+riscv_trace_dir           = "riscv_trace/"
 if "RISCV_REGRESSION_DIR" in os.environ.keys():
     riscv_regression_dir      = os.environ["RISCV_REGRESSION_DIR"]+"/"
 if "RISCV_ATCF_REGRESSION_DIR" in os.environ.keys():
     riscv_atcf_regression_dir      = os.environ["RISCV_ATCF_REGRESSION_DIR"]+"/build/dump/"
+if "RISCV_TRACE_DIR" in os.environ.keys():
+    riscv_trace_dir      = os.environ["RISCV_TRACE_DIR"]
 
 #a Test classes
 #c c_riscv_minimal_test_base
@@ -55,6 +57,10 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
     base_address = 0
     test_memory = "dmem"
     memory_expectation = {}
+    test_name = None
+    #f get_test_name
+    def get_test_name(self):
+        return self.test_name
     #f get_image
     def get_image(self):
         self.mif = None
@@ -203,6 +209,8 @@ class c_riscv_minimal_test_dump(c_riscv_minimal_test_base):
         pass
     #f __init__
     def __init__(self, dump_filename, hw_cls=None, test_memory="dmem", num_cycles=1000, options={}, **kwargs):
+        print dump_filename
+        self.test_name = os.path.splitext(os.path.basename(dump_filename))[0]
         self.force_debug_enable = False
         if hasattr(hw_cls,"force_debug_enable") and hw_cls.force_debug_enable:
             self.force_debug_enable = True
@@ -520,8 +528,23 @@ class c_riscv_jtag_debug_simple(c_riscv_jtag_debug_base):
         pass
 
 #a Hardware classes
+#c riscv_base_hw
+class riscv_base_hw(simple_tb.cdl_test_hw):
+    def add_th_forces_for_checkers(self, test, checker_base):
+        self.trace_filename = "%s%s.trace"%(riscv_trace_dir,test.get_test_name())
+        if "RISCV_CAPTURE_TRACE" in os.environ:
+            self.th_forces[checker_base + "checker_trace.capture_filename"] = self.trace_filename
+            pass
+        if "RISCV_MATCH_TRACE" in os.environ:
+            self.th_forces[checker_base + "checker_trace.match_filename"]   = self.trace_filename
+            self.th_forces[checker_base + "checker_trace.match_ignore_start_pc"]  = 0
+            self.th_forces[checker_base + "checker_trace.match_ignore_end_pc"]    = 0
+            self.th_forces[checker_base + "checker_trace.match_ignore_mode_mask"] = 0
+            pass
+        return
+    pass
 #c riscv_i32_minimal_test_hw
-class riscv_i32_minimal_test_hw(simple_tb.cdl_test_hw):
+class riscv_i32_minimal_test_hw(riscv_base_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
@@ -542,12 +565,13 @@ class riscv_i32_minimal_test_hw(simple_tb.cdl_test_hw):
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
         self.th_forces["dut.mem.filename"] = mif_filename
-        simple_tb.cdl_test_hw.__init__(self,test)
+        self.add_th_forces_for_checkers(test, "dut.")
+        riscv_base_hw.__init__(self,test)
         pass
     pass
 
 #c riscv_i32c_minimal_test_hw
-class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
+class riscv_i32c_minimal_test_hw(riscv_base_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
@@ -568,12 +592,13 @@ class riscv_i32c_minimal_test_hw(simple_tb.cdl_test_hw):
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
         self.th_forces["dut.mem.filename"] = mif_filename
-        simple_tb.cdl_test_hw.__init__(self,test)
+        self.add_th_forces_for_checkers(test, "dut.")
+        riscv_base_hw.__init__(self,test)
         pass
     pass
 
 #c riscv_i32c_pipeline3_test_hw
-class riscv_i32c_pipeline3_test_hw(simple_tb.cdl_test_hw):
+class riscv_i32c_pipeline3_test_hw(riscv_base_hw):
     """
     Simple instantiation of RISCV minimal testbench
     """
@@ -592,12 +617,13 @@ class riscv_i32c_pipeline3_test_hw(simple_tb.cdl_test_hw):
         mif_filename = test.get_image()
         self.th_forces["imem.filename"] = mif_filename
         self.th_forces["dmem.filename"] = mif_filename
-        simple_tb.cdl_test_hw.__init__(self,test)
+        self.add_th_forces_for_checkers(test, "")
+        riscv_base_hw.__init__(self,test)
         pass
     pass
 
 #c riscv_i32mc_pipeline3_test_hw
-class riscv_i32mc_pipeline3_test_hw(simple_tb.cdl_test_hw):
+class riscv_i32mc_pipeline3_test_hw(riscv_base_hw):
     """
     Simple instantiation of RISCV minimal testbench for i32mc pipeline3
     """
@@ -619,28 +645,8 @@ class riscv_i32mc_pipeline3_test_hw(simple_tb.cdl_test_hw):
         mif_filename = test.get_image()
         self.th_forces["imem.filename"] = mif_filename
         self.th_forces["dmem.filename"] = mif_filename
-        simple_tb.cdl_test_hw.__init__(self,test)
-        pass
-    pass
-
-#c OLD riscv_minimal_single_memory_test_hw
-class old_riscv_minimal_single_memory_test_hw(simple_tb.cdl_test_hw):
-    """
-    Simple instantiation of RISCV minimal testbench
-    """
-    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
-               }
-    th_forces = { "th.clock":"clk",
-                  "th.inputs":("a"),
-                  "th.outputs":("b"),
-                  }
-    module_name = "tb_riscv_minimal_single_memory"
-    #f __init__
-    def __init__(self, test):
-        self.th_forces = self.th_forces.copy()
-        mif_filename = test.get_image()
-        self.th_forces["mem.filename"] = mif_filename
-        simple_tb.cdl_test_hw.__init__(self,test)
+        self.add_th_forces_for_checkers(test, "")
+        riscv_base_hw.__init__(self,test)
         pass
     pass
 
@@ -761,7 +767,7 @@ riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[],{}),
                                #"data_access":("data_access.dump",10*1000,["apb_timer"],{}),
                                "data":("data.dump",10*1000,[],{}),
                                "c_dprintf":("c_dprintf.dump",10*1000,["compressed"],{}),
-                               "c_arith":("c_arith.dump",2*1000,["compressed"],{}),
+                               "c_arith":("c_arith.dump",3000,["compressed"],{}),
                                "c_stack":("c_stack.dump",2*1000,["compressed"],{}),
                                "c_jump":("c_jump.dump",2*1000,["compressed"],{}),
                                "c_branch":("c_branch.dump",2*1000,["compressed"],{}),

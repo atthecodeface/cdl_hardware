@@ -73,6 +73,7 @@ constant integer debug_force_disable=0;
  */
 /*t t_decexecrfw_state */
 typedef struct {
+    bit[32]          pc            "PC of fetched instruction";
     t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
     bit valid                      "Asserted if @instr_data is a valid fetched instruction, whether misaligned or not";
 } t_decexecrfw_state;
@@ -171,6 +172,7 @@ stage the multiply cannot support fused operations
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
         decexecrfw_state.valid <= 0;
         if (pipeline_fetch_data.valid) {
+            decexecrfw_state.pc <= pipeline_fetch_data.pc;
             decexecrfw_state.instruction <= pipeline_fetch_data.instruction;
             if (debug_force_disable || !riscv_config.debug_enable) {
                 decexecrfw_state.instruction.debug <= {*=0};
@@ -214,7 +216,7 @@ stage the multiply cannot support fused operations
 
         /*b Execute ALU stage - post register read, parallel with CSR access */
         riscv_i32_alu alu( idecode <= decexecrfw_combs.idecode,
-                           pc  <= pipeline_control.decode_pc,
+                           pc  <= decexecrfw_state.pc,
                            rs1 <= decexecrfw_combs.rs1,
                            rs2 <= decexecrfw_combs.rs2,
                            alu_result => decexecrfw_alu_result );
@@ -239,7 +241,7 @@ stage the multiply cannot support fused operations
 
         /*b Control flow - post ALU for next PC & branch condition met, rest from decode */
         decexecrfw_combs.control_data = { instruction_data = decexecrfw_state.instruction.data,
-                                          pc = pipeline_control.decode_pc,
+                                          pc = decexecrfw_state.pc,
                                           alu_result = decexecrfw_alu_result,
                                           interrupt_ack = 1,
                                           valid            = decexecrfw_state.valid,
@@ -254,6 +256,7 @@ stage the multiply cannot support fused operations
         /*b Pipeline response from decode */
         // possible add in valid and illegal (if valid && illegal then pipeline will flush)
         pipeline_response.decode.valid          = decexecrfw_state.valid;
+        pipeline_response.decode.pc             = decexecrfw_state.pc;
         pipeline_response.decode.idecode        = decexecrfw_combs.idecode;
         pipeline_response.decode.blocked        = 0;
         pipeline_response.decode.branch_target  = 0; // used only if predict_branch - i.e. never in this pipeline
@@ -265,7 +268,7 @@ stage the multiply cannot support fused operations
         pipeline_response.exec.cannot_complete = !decexecrfw_combs.exec_committed;
         pipeline_response.exec.interrupt_ack   = pipeline_control.interrupt_req;
         pipeline_response.exec.is_compressed   = decexecrfw_combs.idecode.is_compressed;
-        pipeline_response.exec.pc              = pipeline_control.decode_pc;
+        pipeline_response.exec.pc              = decexecrfw_state.pc;
         pipeline_response.exec.instruction     = decexecrfw_state.instruction;
         pipeline_response.exec.rs1             = decexecrfw_combs.rs1;
         pipeline_response.exec.rs2             = decexecrfw_combs.rs2;
@@ -292,7 +295,7 @@ stage the multiply cannot support fused operations
         if (coproc_force_disable || riscv_config.coproc_disable) {
             decexecrfw_combs.rfw_write_data = decexecrfw_alu_result.result;
         }
-        if (dmem_access_req.read_enable) {
+        if (decexecrfw_dmem_request.reading) {
             decexecrfw_combs.rfw_write_data =  decexecrfw_dmem_read_data;
         }
         if (decexecrfw_combs.idecode.csr_access.access != riscv_csr_access_none) {

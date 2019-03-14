@@ -26,17 +26,54 @@ constant integer RISCV_INSTR_ADDR_WIDTH = 14;
 
 /*a Basic types
  */
+/*t t_riscv_mem_access_req_type
+ *
+ * For an implementation that does not support atomics only 2 bits are used
+ *
+ */
+typedef enum[5] {
+    rv_mem_access_idle        = 5b00000,
+    rv_mem_access_read        = 5b00001,
+    rv_mem_access_write       = 5b00010,
+    rv_mem_access_atomic_lr   = 5b10000,
+    rv_mem_access_atomic_sc   = 5b10001,
+    rv_mem_access_atomic_swap = 5b10010,
+    rv_mem_access_atomic_and  = 5b10100,
+    rv_mem_access_atomic_or   = 5b10101,
+    rv_mem_access_atomic_xor  = 5b10110,
+    rv_mem_access_atomic_add  = 5b11000,
+    rv_mem_access_atomic_umin = 5b11100,
+    rv_mem_access_atomic_smin = 5b11101,
+    rv_mem_access_atomic_umax = 5b11110,
+    rv_mem_access_atomic_smax = 5b11111,
+    rv_mem_access_nonatomic_mask = 5b00011
+} t_riscv_mem_access_req_type;
+
 /*t t_riscv_mem_access_req
+ *
+ * add atomic_aq and atomic_rl bits for atomics
+ * atomic_aq means that all memory requests *after* this atomic must only be observable after the atomic is observable
+ * atomic_rl means that all memory requests *prior* to this atomic must be observable before the atomic is observable
+ *
  */
 typedef struct {
-    bit[32]  address;
-    bit[4]   byte_enable;
-    bit      write_enable;
-    bit      read_enable;
-    bit[32]  write_data;
+    bit valid              "Asserted if a valid access request";
+    t_riscv_mem_access_req_type req_type "Type of request";
+    bit[32]  address       "Address of transaction - aligned to a word for atomics";
+    bit      sequential    "Asserted if the transaction is guaranteed to be to the next word after the last access - this is a hint only";
+    bit[4]   byte_enable   "Byte enables for writes, 0 for atomics";
+    bit[32]  write_data    "Data for writing, or to be used in the atomic";
 } t_riscv_mem_access_req;
 
 /*t t_riscv_mem_access_resp
+ *
+ * This structure contains the response to a memory request, and memory return data
+ *
+ * Each request must be acknowledged
+ * In the cycle following an acknowledged request an abort may be raised, which will force a data trap
+ *
+ * Responses can include an error indication?
+ * Responses for atomics are the original read data, or the result of an 'store conditional'
  *
  * Note that the response in some circumstances is defined to be valid in the same cycle as the request.
  * In other circumstances it is defined to be valid in the cycle following a request.
@@ -61,8 +98,11 @@ typedef struct {
  *
  */
 typedef struct {
-    bit                  wait       "Valid in the same cycle as read_data";
-    bit[32]              read_data  "Data returned from reading the requested address";
+    bit                  ack_if_seq        "Asserted if a sequential access request (if valid) would be taken";
+    bit                  ack               "Asserted if an access request (if valid) would be taken; if this is asserted, ack_if_seq should be asserted too";
+    bit                  abort_req         "If asserted (in the cycle after an acked request) then the data transaction must abort";
+    bit                  read_data_valid   "Valid in the same cycle as read_data";
+    bit[32]              read_data         "Data returned from reading the requested address";
 } t_riscv_mem_access_resp;
 
 /*t t_riscv_word
@@ -223,9 +263,10 @@ typedef struct {
 typedef struct {
     // Following are valid at commit stage of pipeline
     bit                instr_valid;
-    bit[32]            instr_pc   "Program counter of the instruction";
-    bit[32]            instruction "Instruction word being decoded - without debug";
-    bit                branch_taken "Asserted if a branch is being taken";
+    t_riscv_mode       mode          "Mode of instruction";
+    bit[32]            instr_pc      "Program counter of the instruction";
+    bit[32]            instruction   "Instruction word being decoded - without debug";
+    bit                branch_taken  "Asserted if a branch is being taken";
     bit[32]            branch_target "Target of branch if being taken";
     bit                trap          "Asserted if a trap is taken (including interrupt) - nonseq";
     bit                ret           "Asserted if an [m]ret instruction is taken - nonseq";

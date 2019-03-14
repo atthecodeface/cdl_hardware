@@ -83,26 +83,31 @@ module riscv_i32_minimal_apb( clock clk,
 
     apb_logic "": {
         data_access_resp = {*=0};
+        data_access_resp.ack = 1;
+        data_access_resp.ack_if_seq = 1;
+        data_access_resp.abort_req = 0;
+        data_access_resp.read_data_valid = 1;
         if (apb_request.penable) {
             data_access_resp.read_data = apb_response.prdata;
         }
 
         if (apb_request.psel) {
-            data_access_resp.wait = 1;
+            data_access_resp.ack = 0;
+            data_access_resp.ack_if_seq = 0;
+            data_access_resp.read_data_valid = 0;
             apb_request.penable <= 1;
             if (apb_request.penable && apb_response.pready) {
                 apb_request.psel <= 0;
                 apb_request.penable <= 0;
-                data_access_resp.wait = 0;
+                data_access_resp.read_data_valid = 1;
             }
         } else {
-            if (data_access_req.read_enable || data_access_req.write_enable) {
+            if (data_access_req.valid) {
                 apb_request.psel <= 1;
                 apb_request.penable <= 0;
                 apb_request.paddr <= data_access_req.address;
-                apb_request.pwrite <= data_access_req.write_enable;
+                apb_request.pwrite <= (data_access_req.req_type == rv_mem_access_write);
                 apb_request.pwdata <= data_access_req.write_data;
-                data_access_resp.wait = 1;
             }
         }
     }

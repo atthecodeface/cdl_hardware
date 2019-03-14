@@ -43,6 +43,8 @@ c_src cmodel/src     vnc_rfb         inc:cmodel/inc
 #c_src cmodel/src    bbc_display_vnc inc:cmodel/inc
 c_src cmodel/src     bbc_shm         inc:cmodel/inc
 cdl cdl/axi/tb_src tb_axi inc:cdl/inc
+c_model cmodel/src   chk_riscv_ifetch  inc:cmodel/inc
+c_model cmodel/src   chk_riscv_trace  inc:cmodel/inc
 
 cdl cdl/utils/src    hysteresis_switch    inc:cdl/inc
 cdl cdl/utils/src    dprintf              inc:cdl/inc

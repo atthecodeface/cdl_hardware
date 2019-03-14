@@ -22,6 +22,7 @@ include "srams.h"
 include "cpu/riscv/riscv.h"
 include "cpu/riscv/riscv_modules.h"
 include "cpu/riscv/riscv_submodules.h"
+include "cpu/riscv/chk_riscv.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_enable, input bit tdo )
@@ -106,7 +107,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
     clocked bit[32] dmem_write_data = 0;
     srams: {
         rv_imem_access_resp = {*=0};
-        rv_imem_access_resp.valid    = 1;
+        rv_imem_access_resp.valid    = (rv_imem_access_req.req_type!=rv_fetch_none);
         rv_imem_access_resp.data     = imem_mem_read_data;
         rv_imem_access_resp.mode     = rv_imem_access_req.mode;
         if (!rv_imem_access_req.address[1]) {
@@ -129,9 +130,13 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                                   address        <= imem_access_req.address[14;2],
                                   write_data     <= 0,
                                   data_out       => imem_mem_read_data );
+
+        dmem_access_resp.ack        = 1;
+        dmem_access_resp.ack_if_seq = 1;
+        dmem_access_resp.abort_req  = 0;
         if (riscv_clk_cycle_2) {
-            dmem_select         <= (dmem_access_req.read_enable || dmem_access_req.write_enable);
-            dmem_read_not_write <= !dmem_access_req.write_enable;
+            dmem_select         <= dmem_access_req.valid && dmem_access_resp.ack;
+            dmem_read_not_write <= (dmem_access_req.req_type != rv_mem_access_write);
             dmem_address        <= dmem_access_req.address[14;2];
             dmem_write_data     <= dmem_access_req.write_data;
             }
@@ -142,7 +147,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                                       address        <= dmem_address,
                                       write_data     <= dmem_write_data,
                                       data_out       => main_mem_read_data );
-        dmem_access_resp.wait       = 0;
+        dmem_access_resp.read_data_valid = 1;
         dmem_access_resp.read_data  = main_mem_read_data;
     }
 
@@ -265,5 +270,16 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
                               reset_n <= reset_n,
                               riscv_clk_enable <= riscv_clk_enable,
                               trace <= trace );
+        chk_riscv_ifetch checker_ifetch( clk <- riscv_clk,
+                                         fetch_req <= rv_imem_access_req,
+                                         fetch_resp <= rv_imem_access_resp
+                                         //error_detected =>,
+                                         //cycle => ,
+            );
+        chk_riscv_trace checker_trace( clk <- riscv_clk,
+                                       trace <= trace
+                                         //error_detected =>,
+                                         //cycle => ,
+            );
     }
 }

@@ -39,12 +39,15 @@ i32_op = [
     "riscv_op_system",
     "riscv_op_csr",
     "riscv_op_misc_mem",
-    "riscv_op_load",
-    "riscv_op_store",
+    "riscv_op_mem",
     "riscv_op_alu",
     "riscv_op_muldiv",
     "riscv_op_auipc",
     "riscv_op_lui",
+    "riscv_op_custom_0",
+    "riscv_op_custom_1",
+    "riscv_op_custom_2",
+    "riscv_op_custom_3",
     "riscv_op_illegal",
     ]
 
@@ -80,15 +83,21 @@ i32_subop = {
     "riscv_subop_rems": 6, #
     "riscv_subop_remu": 7, #
 
-    "riscv_subop_lb": 0, # // same as rvi_f3_load
-    "riscv_subop_lh": 1, #
-    "riscv_subop_lw": 2, #
-    "riscv_subop_lbu": 4, #
-    "riscv_subop_lhu": 5, #
-
-    "riscv_subop_sb": 0, # // same as rvi_f3_store
-    "riscv_subop_sh": 1, #
-    "riscv_subop_sw": 2, #
+    "riscv_subop_lb" :   0, # same as rvi_f3_load
+    "riscv_subop_lh" :   1,
+    "riscv_subop_lw" :   2,
+    "riscv_subop_lbu" :  4,
+    "riscv_subop_lhu" :  5,
+    "riscv_subop_sb" :   8, # same as rvi_f3_store but with bit[3] set
+    "riscv_subop_sh" :   9,
+    "riscv_subop_sw" :   10,
+    "riscv_subop_atomic" :  12,
+    "riscv_subop_ls_store" :      8,
+    "riscv_subop_ls_unsigned" :   4,
+    "riscv_subop_ls_size_mask" :  3,
+    "riscv_subop_ls_byte" :       0,
+    "riscv_subop_ls_half" :       1,
+    "riscv_subop_ls_word" :       2,
 
     "riscv_subop_ecall": 0, #
     "riscv_subop_ebreak": 1, #
@@ -178,14 +187,14 @@ i32_decode = {"rs1":5,
               "immediate_valid":1,
               "op":4,
               "subop":4,
-              "memory_read_unsigned":1,
-              "memory_width":2,
+              "funct7":7,
+              "minimum_mode":3,
               "csr_access":i32_csr_access,
               "illegal":1,
               "illegal_pc":1,
-              "requires_machine_mode":1,
               "is_compressed":1,
               "ext__dummy":1,
+
               }
 
 #v i32_coproc_response - signal widths for pycdl.wirebundle - must match implementation

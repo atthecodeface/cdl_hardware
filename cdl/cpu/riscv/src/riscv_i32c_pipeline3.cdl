@@ -70,8 +70,9 @@ typedef struct {
 
 /*t t_dec_state */
 typedef struct {
-    t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
-    bit valid                    "Asserted if @instruction is a valid fetched instruction, whether misaligned or not";
+    bit[32] pc                    "PC of instruction";
+    t_riscv_i32_inst instruction  "Fetched instruction, ready for decode, register fetch, execute and writeback";
+    bit valid                     "Asserted if @instruction is a valid fetched instruction, whether misaligned or not";
 } t_dec_state;
 
 /*t t_dec_combs
@@ -260,6 +261,7 @@ An example implementation of could be
         } else {
             if (pipeline_fetch_data.valid) {
                 dec_state.valid <= 1;
+                dec_state.pc <= pipeline_fetch_data.pc;
                 dec_state.instruction <= pipeline_fetch_data.instruction;
                 if (debug_force_disable || !riscv_config.debug_enable) {
                     dec_state.instruction.debug <= {*=0};
@@ -297,8 +299,9 @@ An example implementation of could be
 
         /*b Pipeline response from decode */
         pipeline_response.decode.valid                    = dec_state.valid;
+        pipeline_response.decode.pc                       = dec_state.pc;
         pipeline_response.decode.idecode                  = dec_combs.idecode;
-        pipeline_response.decode.branch_target            = pipeline_control.decode_pc + dec_combs.idecode.immediate;
+        pipeline_response.decode.branch_target            = dec_state.pc + dec_combs.idecode.immediate;
         pipeline_response.decode.enable_branch_prediction = 1;
 
         /*b Register forwarding determination */
@@ -353,7 +356,7 @@ An example implementation of could be
             alu_state.valid               <= 1;
             alu_state.first_cycle         <= 1;
             alu_state.idecode             <= dec_combs.idecode;
-            alu_state.pc                  <= pipeline_control.decode_pc;
+            alu_state.pc                  <= dec_state.pc;
             alu_state.pc_if_mispredicted  <= pipeline_fetch_data.dec_pc_if_mispredicted;
             alu_state.predicted_branch    <= pipeline_fetch_data.dec_predicted_branch;
             alu_state.rs1                 <= dec_combs.rs1;
@@ -449,7 +452,7 @@ An example implementation of could be
                                    first_cycle = 1
         };
         if (!alu_state.valid) {
-            alu_combs.control_data.pc = pipeline_control.decode_pc; // this is PC for decode OR next being fetched if that is not valid
+            alu_combs.control_data.pc = dec_state.valid ? dec_state.pc : pipeline_control.fetch_pc;
         }
         riscv_i32_control_flow control_flow( pipeline_control <= pipeline_control,
                                              control_data <= alu_combs.control_data,

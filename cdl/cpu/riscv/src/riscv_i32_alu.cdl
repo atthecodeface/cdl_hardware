@@ -97,8 +97,7 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
             alu_combs.arith_carry_in = 1;
         }
         if ((idecode.op == riscv_op_jalr) ||
-            (idecode.op == riscv_op_load) ||
-            (idecode.op == riscv_op_store)) {
+            (idecode.op == riscv_op_mem)) {
             alu_combs.arith_in_1     = idecode.immediate;
             alu_combs.arith_carry_in = 0;
         }

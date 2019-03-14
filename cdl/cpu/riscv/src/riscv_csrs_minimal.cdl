@@ -124,6 +124,26 @@ In debug mode WFI should be a NOP.
 
 WFI may always be a NOP.
 
+
+User mode interrupts
+--------------------
+
+For user mode interrupts there has to be support for delegating an interrupt to user mode - hence the medeleg and mideleg need support (read/write)
+
+User mode interrupts are disabled if mstatus.uie is clear
+
+When an interrupt/exception is delegated to user mode uepc/ucause/utval/mstatus.upie are set to the address, cause etc and mstatus.uie at the interrupt/exception
+mstatus.uie is a bit of mstatus that is CLEARED on a user interrupt/exception, and which is set to mstatus.upie on uret; mstatus.upie is then set
+
+uscratch is a 32-bit register for use in the trap handler (and outside it too, if necessary)
+
+utvec is a user vector base for vectored user interrupts
+
+mstatus.uie and mstatus.upie are visible (and only these 2 bits) in 'ustatus'
+
+On uret, uepc/ucause/utval can be cleared (i.e. they are guaranteed to be invalid outside of a user trap handler). mstatus.uie become mstatus.upie; mstatus.upie is set; pc becomes mstatus.uepc
+
+The following CSRs should therefore be supplied for user mode interrupts: ustatus, uie, utvec, uscratch, uepc, ucause, utval, uip.
 """
 {
 

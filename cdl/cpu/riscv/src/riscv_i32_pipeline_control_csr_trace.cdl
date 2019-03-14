@@ -127,12 +127,14 @@ module riscv_i32_pipeline_control_csr_trace( input t_riscv_pipeline_control    p
         }
     }
 
-    /*b Logging */
-    logging """
+    /*b Trace */
+    trace """
+    Map the pipeline output to the trace
     """: {
         trace = {*=0};
         trace.instr_valid    = pipeline_response.exec.valid && !pipeline_response.exec.cannot_complete && !coproc_response_cfg.cannot_complete;
         trace.instr_pc       = pipeline_response.exec.pc;
+        trace.mode           = pipeline_control.mode;
         trace.instruction    = pipeline_response.exec.instruction.data;
         trace.rfw_retire     = pipeline_response.rfw.valid;
         trace.rfw_data_valid = pipeline_response.rfw.rd_written;
