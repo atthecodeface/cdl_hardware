@@ -23,14 +23,7 @@
  */
 include "cpu/riscv/riscv_internal_types.h"
 include "cpu/riscv/riscv.h"
-
-/*a Constants - configuration */
-constant integer e32_force_enable=0;
-constant integer i32m_force_disable=0;
-constant integer i32_custom0_enable=0;
-constant integer i32_custom1_enable=0;
-constant integer i32_custom2_enable=0;
-constant integer i32_custom3_enable=0;
+include "cpu/riscv/riscv_config.h"
 
 /*a Types
  */
@@ -265,7 +258,7 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
             idecode.rs2_valid = !combs.is_imm_op;
             idecode.rd_written = 1;
             if ((combs.funct7==1) && (!combs.is_imm_op)){
-                if ((i32m_force_disable==0) && riscv_config.i32m) {
+                if ((rv_cfg_i32m_force_disable==0) && riscv_config.i32m) {
                     idecode.illegal = 0;
                     idecode.op = riscv_op_muldiv;
                     full_switch (combs.funct3) {
@@ -348,28 +341,28 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
             }
         }
         case riscv_opc_custom_0: {
-            if (i32_custom0_enable==1) {
+            if (rv_cfg_i32_custom0_enable==1) {
                 idecode.illegal = 0;
                 idecode.op = riscv_op_custom_0;
                 idecode.subop = bundle(1b0,combs.funct3);
             }
         }
         case riscv_opc_custom_1: {
-            if (i32_custom1_enable==1) {
+            if (rv_cfg_i32_custom1_enable==1) {
                 idecode.illegal = 0;
                 idecode.op = riscv_op_custom_1;
                 idecode.subop = bundle(1b0,combs.funct3);
             }
         }
         case riscv_opc_custom_2: {
-            if (i32_custom0_enable==1) {
+            if (rv_cfg_i32_custom0_enable==1) {
                 idecode.illegal = 0;
                 idecode.op = riscv_op_custom_2;
                 idecode.subop = bundle(1b0,combs.funct3);
             }
         }
         case riscv_opc_custom_3: {
-            if (i32_custom0_enable==1) {
+            if (rv_cfg_i32_custom0_enable==1) {
                 idecode.illegal = 0;
                 idecode.op = riscv_op_custom_3;
                 idecode.subop = bundle(1b0,combs.funct3);
@@ -390,7 +383,7 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
             idecode.rd_written = 0;
         }
 
-        if (riscv_config.e32 || e32_force_enable) {
+        if (riscv_config.e32 || rv_cfg_e32_force_enable) {
             if (idecode.rs1_valid && idecode.rs1[4]) {
                 idecode.illegal = 1;
             }

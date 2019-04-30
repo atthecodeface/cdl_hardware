@@ -132,7 +132,7 @@ module tb_riscv_i32c_pipeline3( clock clk,
                                       address        <= dmem_address,
                                       write_data     <= dmem_write_data,
                                       data_out       => main_mem_read_data );
-        dmem_access_resp.read_data_valid = 1;
+        dmem_access_resp.access_complete = 1;
         dmem_access_resp.read_data  = main_mem_read_data;
     }
 

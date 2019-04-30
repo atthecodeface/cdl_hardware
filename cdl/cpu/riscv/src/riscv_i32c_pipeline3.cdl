@@ -49,12 +49,7 @@
 include "cpu/riscv/riscv_internal_types.h"
 include "cpu/riscv/riscv.h"
 include "cpu/riscv/riscv_submodules.h"
-
-/*a Constants
- */
-constant integer i32c_force_disable=0;
-constant integer coproc_force_disable=0;
-constant integer debug_force_disable=0;
+include "cpu/riscv/riscv_config.h"
 
 /*a Types
  */
@@ -256,7 +251,7 @@ An example implementation of could be
                 dec_state.valid <= 1;
                 dec_state.pc <= pipeline_fetch_data.pc;
                 dec_state.instruction <= pipeline_fetch_data.instruction;
-                if (debug_force_disable || !riscv_config.debug_enable) {
+                if (rv_cfg_debug_force_disable || !riscv_config.debug_enable) {
                     dec_state.instruction.debug <= {*=0};
                 }
             }
@@ -277,12 +272,12 @@ An example implementation of could be
 
         /*b Select decode */
         dec_combs.idecode = idecode_i32;
-        if ((!i32c_force_disable) && riscv_config.i32c) {
+        if ((!rv_cfg_i32c_force_disable) && riscv_config.i32c) {
             if (dec_state.instruction.data[2;0]!=2b11) {
                 dec_combs.idecode = idecode_i32c;
             }
         }
-        if (!debug_force_disable && riscv_config.debug_enable && dec_state.instruction.debug.valid) {
+        if (!rv_cfg_debug_force_disable && riscv_config.debug_enable && dec_state.instruction.debug.valid) {
             dec_combs.idecode = idecode_debug;
         }
 
@@ -490,6 +485,10 @@ An example implementation of could be
         if (mem_state.dmem_request.reading) {
             mem_combs.result_data = mem_combs_dmem_read_data;
         }
+        /*b Pipeline response from decode */
+        pipeline_response.mem.valid  = mem_state.valid;
+        pipeline_response.mem.pc     = 0; //mem_state.pc;
+        pipeline_response.mem.addr   = 0; //mem_state.addr;
     }
 
     /*b RFW 'stage'

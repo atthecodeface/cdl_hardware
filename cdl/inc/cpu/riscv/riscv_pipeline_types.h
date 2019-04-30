@@ -121,6 +121,14 @@ typedef struct {
     bit[32]  branch_target     "Used if predict_branch";
 } t_riscv_pipeline_response_exec;
 
+/*t t_riscv_pipeline_response_mem
+ */
+typedef struct {
+    bit valid;
+    bit[32]  pc              "Actual PC of memory instruction";
+    bit[32]  addr            "Address being accessed";
+} t_riscv_pipeline_response_mem;
+
 /*t t_riscv_pipeline_response_rfw
  */
 typedef struct {
@@ -135,6 +143,7 @@ typedef struct {
 typedef struct {
     t_riscv_pipeline_response_decode decode;
     t_riscv_pipeline_response_exec   exec;
+    t_riscv_pipeline_response_mem    mem;
     t_riscv_pipeline_response_rfw    rfw;
     bit                              pipeline_empty;
 } t_riscv_pipeline_response;

@@ -20,13 +20,13 @@
 
 /*a Includes */
 include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv_config.h"
 
 /*a Constants that can be overridden */
 constant integer mimpid = 0;
 constant integer misa = 0;
 constant integer mvendorid = 0;
 constant integer mhartid = 0;
-constant integer debug_force_disable=0;
 
 /*a Types */
 /*t t_csr_write */
@@ -297,7 +297,7 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
             case rv_mode_supervisor: { trap_combs.s = 1; }
             case rv_mode_user:       { trap_combs.u = 1; }
             }
-            if (debug_force_disable) { trap_combs.m=1; }
+            if (rv_cfg_debug_force_disable) { trap_combs.m=1; }
         }
         ret_combs = {*=0};
         if (csr_controls.trap.ret) {
@@ -447,7 +447,7 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         csrs.dcsr.xdebug_ver <= 4;
 
         /*b Kill registers if debug not enabled */
-        if (debug_force_disable) {
+        if (rv_cfg_debug_force_disable) {
             csrs.depc <= 0;
             csrs.dscratch0 <= 0;
             csrs.dscratch1 <= 0;

@@ -211,9 +211,9 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             data_sram_access_req.valid = 0;
         }
 
-        data_access_read_completing  = data_access_read_in_progress && data_access_resp.read_data_valid;
+        data_access_read_completing  = data_access_read_in_progress && data_access_resp.access_complete;
         data_access_request_wait     = data_access_req.valid && (!data_access_resp.ack);
-        data_access_completing       = (!data_access_req.valid) && ((!data_access_read_in_progress) || data_access_resp.read_data_valid);
+        data_access_completing       = (!data_access_req.valid) && ((!data_access_read_in_progress) || data_access_resp.access_complete);
             
         if (riscv_clk_high) { // first cycle of riscv_clk
             data_access_req.valid <= 0;
@@ -466,7 +466,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         dmem_access_resp.ack        = 1;
         dmem_access_resp.abort_req  = 0;
 
-        dmem_access_resp.read_data_valid = 1;
+        dmem_access_resp.access_complete = 1;
         dmem_access_resp.read_data = data_access_resp.read_data;
         if ((i32c_force_disable==0) && (riscv_config.i32c) ){
             if (data_access_read_completing) {

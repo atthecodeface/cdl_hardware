@@ -20,14 +20,11 @@
  */
 include "srams.h"
 include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_config.h"
 include "cpu/riscv/riscv_modules.h"
 include "types/apb.h"
 include "apb/apb_targets.h"
 include "apb/apb_masters.h"
-
-/*a Constants
- */
-constant integer i32c_force_disable=1;
 
 /*a External modules */
 extern module se_test_harness( clock clk, output bit debug_enable, output t_jtag jtag, output bit tck_enable, input bit tdo )
@@ -83,7 +80,7 @@ module tb_riscv_i32_minimal( clock clk,
     riscv_instance: {
         riscv_config = {*=0};
         riscv_config.e32   = 0;
-        riscv_config.i32c  = !i32c_force_disable;
+        riscv_config.i32c  = !rv_cfg_i32c_force_disable;
         riscv_config.debug_enable = debug_enable;
         irqs = {*=0};
         irqs.mtip = timer_value.irq;

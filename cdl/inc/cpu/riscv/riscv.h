@@ -100,8 +100,8 @@ typedef struct {
 typedef struct {
     bit                  ack_if_seq        "Asserted if a sequential access request (if valid) would be taken";
     bit                  ack               "Asserted if an access request (if valid) would be taken; if this is asserted, ack_if_seq should be asserted too";
-    bit                  abort_req         "If asserted (in the cycle after an acked request) then the data transaction must abort";
-    bit                  read_data_valid   "Valid in the same cycle as read_data";
+    bit                  abort_req         "If asserted (in the cycle after an acked request) then the data transaction must abort. Can be configured to work until access_complete";
+    bit                  access_complete   "Valid in the same cycle as read_data; must be set on writes as well as reads, as it completes an access";
     bit[32]              read_data         "Data returned from reading the requested address";
 } t_riscv_mem_access_resp;
 
@@ -190,7 +190,8 @@ typedef struct {
     bit      i32m_fuse;
     bit      debug_enable;
     bit      coproc_disable;
-    bit      unaligned_mem; // if clear, trap on unaligned memory loads/stores
+    bit      unaligned_mem;   // if clear, trap on unaligned memory loads/stores
+    bit      mem_abort_late;  // if clear memory aborts must occur in the first cycle
 } t_riscv_config;
 
 /*t t_riscv_debug_op

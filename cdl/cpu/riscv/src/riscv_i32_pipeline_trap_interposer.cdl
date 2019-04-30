@@ -1,0 +1,167 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_i32_alu.cdl
+ * @brief  ALU for i32 RISC-V implementation
+ *
+ * CDL implementation of RISC-V i32 ALU based on the RISC-V
+ * specification v2.1.
+ *
+ */
+
+/*a Includes
+ */
+include "cpu/riscv/riscv_pipeline_types.h"
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_config.h"
+
+/*a Types
+ */
+/*t */
+typedef struct {
+    bit              async_cancel;
+    bit              branch_taken;
+    bit              jalr;
+    t_riscv_word     next_pc;
+    t_riscv_i32_trap trap;
+    bit[32] pc_to_record;
+
+    bit cannot_start    "Asserted if the exec stage cannot start due to exec or coprocessor being unwilling";
+    bit cannot_complete "Asserted if the exec stage cnnaot complete an operation";
+} t_control_flow_combs;
+
+/*a Module
+ */
+module riscv_i32_pipeline_trap_interposer( input  t_riscv_pipeline_state        pipeline_state,
+                                           input  t_riscv_pipeline_response     pipeline_response,
+                                           input  t_riscv_mem_access_resp       dmem_access_resp,
+                                           output t_riscv_i32_trap_request      trap_request,
+                                           input  t_riscv_config                riscv_config
+    )
+"""
+This module manages trap detection, and setting up of the trap values required.
+"""
+{
+    /*b Combinatorials for the possible options */
+    comb t_riscv_i32_trap_request memory_trap     "Trap from memory aborts";
+    comb t_riscv_i32_trap_request interrupt_trap  "Trap from interrupt";
+    comb t_riscv_i32_trap_request exec_trap       "Trap from exec stage";
+
+    /*b Determine if memory access stage should abort
+      Generates a load or store access fault (5 or 7)
+     */
+    memory_abort : {
+        memory_trap = {*=0};
+        memory_trap.to_mode = rv_mode_machine;
+        memory_trap.cause   = riscv_trap_cause_store_fault; // or load fault
+        memory_trap.pc      = pipeline_response.mem.pc;
+        memory_trap.value   = pipeline_response.mem.addr;
+        if (dmem_access_resp.abort_req) {
+            memory_trap.valid_from_mem   = 1;
+        }
+        if (rv_cfg_memory_abort_disable) {
+            memory_trap = {*=0};
+        }
+    }
+    
+    /*b Determine if interrupt should be taken (unless memory aborted) (and which PC to use) */
+    detect_interrupt : {
+        interrupt_trap = {*=0};
+        interrupt_trap.cause      = riscv_trap_cause_interrupt;
+        interrupt_trap.cause[4;0] = pipeline_state.interrupt_number;
+        interrupt_trap.value      = pipeline_state.fetch_pc;
+        interrupt_trap.to_mode    = pipeline_state.interrupt_to_mode;
+
+        if (pipeline_response.decode.valid) {
+            interrupt_trap.value =  pipeline_response.decode.pc;
+        }
+        if (pipeline_response.exec.valid) {
+            interrupt_trap.value = pipeline_response.exec.pc;
+        }
+
+        interrupt_trap.valid_from_int = pipeline_state.interrupt_req;
+        if (pipeline_response.exec.valid && pipeline_response.exec.interrupt_block) {
+            interrupt_trap.valid_from_int = 0;
+        }
+        
+    }
+
+    /*b Determine if exec stage should abort */
+    exec_stage_abort_detection : {
+        exec_trap = {*=0};
+        
+        part_switch (pipeline_response.exec.idecode.op) {
+        case riscv_op_system:   {
+            /* if user mode supported
+            if (pipeline_response.exec.idecode.subop==riscv_subop_uret) {
+                control_flow_combs.trap.ret = 1;
+                control_flow_combs.trap.cause = riscv_trap_cause_ret_uret;
+            }
+            */
+            /* if supervisor mode supported
+            if (pipeline_response.exec.idecode.subop==riscv_subop_sret) {
+                control_flow_combs.trap.ret = 1;
+                control_flow_combs.trap.cause = riscv_trap_cause_ret_sret;
+            }
+            */
+            // Following is an illegal instruction if in user mode or supervisor mode
+            if (pipeline_response.exec.idecode.subop==riscv_subop_mret) {
+                exec_trap.valid_from_exec = 1;
+                exec_trap.ret            = 1;
+                exec_trap.cause          = riscv_trap_cause_ret_mret;
+            }
+            if (pipeline_response.exec.idecode.subop==riscv_subop_ecall) {
+                exec_trap.valid_from_exec = 1;
+                exec_trap.cause          = riscv_trap_cause_mecall; // call from relevant mode (same inst in all modes)
+            }
+            // possible ebreak_to_dbg should only be set in machine mode
+            if (pipeline_response.exec.idecode.subop==riscv_subop_ebreak) {
+                exec_trap.valid_from_exec = 1;
+                exec_trap.ebreak_to_dbg = pipeline_state.ebreak_to_dbg;
+                exec_trap.cause         = riscv_trap_cause_breakpoint;
+                exec_trap.value         = pipeline_response.exec.pc; 
+            }
+        }
+        }
+        
+        if (pipeline_response.exec.valid && pipeline_response.exec.idecode.illegal) {
+            exec_trap.valid_from_exec = 1;
+            exec_trap.ret = 0;
+            exec_trap.ebreak_to_dbg = 0;
+            exec_trap.cause = riscv_trap_cause_illegal_instruction;
+            exec_trap.value = pipeline_response.exec.instruction.data; // optional in spec 2.2 - should be a configuration option
+        }
+        if (pipeline_response.exec.valid && pipeline_response.exec.idecode.illegal_pc) {
+            exec_trap.valid_from_exec = 1;
+            exec_trap.ret = 0;
+            exec_trap.ebreak_to_dbg = 0;
+            exec_trap.cause = riscv_trap_cause_instruction_misaligned;
+            // control_flow_combs.trap.value = pipeline_response.exec.instruction.data; // probably should not do this
+        }
+        if (!pipeline_response.exec.valid) {
+            exec_trap.valid_from_exec = 0;
+        }
+    }
+
+    /*b Combine */
+    combine_code : {
+        trap_request = exec_trap;
+        if (memory_trap.valid_from_mem) {
+            trap_request = memory_trap;
+        } elsif (interrupt_trap.valid_from_int) {
+            trap_request = interrupt_trap;
+        }
+    }
+
+}

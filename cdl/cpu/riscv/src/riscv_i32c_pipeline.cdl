@@ -252,7 +252,13 @@ stage the multiply cannot support fused operations
         pipeline_response.exec.cannot_start       = 0;
         pipeline_response.exec.branch_condition_met = decexecrfw_alu_result.branch_condition_met;
         pipeline_response.exec.branch_target        = decexecrfw_alu_result.branch_target; // uses branch and jalr?
+
+        /*b Pipeline response from memory */
+        pipeline_response.mem.valid  = decexecrfw_state.valid;
+        pipeline_response.mem.pc     = decexecrfw_state.pc;
+        pipeline_response.mem.addr   = decexecrfw_dmem_request.access.address;
         
+        /*b Pipeline response from rfw */
 
         pipeline_response.rfw = rfw_state;
 

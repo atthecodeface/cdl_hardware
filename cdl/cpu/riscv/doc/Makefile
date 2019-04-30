@@ -11,7 +11,7 @@ all: riscv_cpu_implementation.pdf
 
 %.pdf: %.md
 	@echo "Run pandoc on $*.md to generate $@"
-	@${PANDOC} $*.md -o $@
+	@${PANDOC} --toc $*.md -o $@
 
 
 riscv_cpu_implementation.pdf: pipeline.svg
