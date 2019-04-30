@@ -40,7 +40,7 @@ interfaces to the pipeline: instruction fetch (request and response);
 memory operation (request and response) and instruction
 commit/flow/completion (for trace).
 
-![Pipeline](pipeline.svg)
+![Pipeline](pipeline.svg "Pipeline"){ width=80% }
 
 Architecture Overview
 ---------------------

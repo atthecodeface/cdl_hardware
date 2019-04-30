@@ -1,0 +1,49 @@
+#style id=debug     border_color=red border=0.1
+#style id=base     font_size=3. border_round=0.5 border_color=black magnets_per_side=5 eval="n=.magnets 2 sub;e=.magnets 6 sub;s=.magnets 10 sub;w=.magnets 14 sub;"
+#style id=pipeline_and_control border_fill=0.95 border=0.1 padding=0.5
+#style id=pipeline             border_fill=0.9  border=0.1 padding=0.5
+#style id=pipeline_text  rotation=270 font_size=3. border=0.1 margin=0.5 padding=0.3
+#style id=pipeline_stage expand=1
+#style id=pipeline_gap   width=3
+#style id=pipeline_flow  stroke_width=0.2 eval="coords=.magnets 14 sub .magnets 6 sub;"
+#style id=control       border=0.1 padding=0.5
+#style id=ext_logic     border=0.3 padding=0.5
+#style id=reg           border_fill="1.0 0.7 0.3"
+#style id=comb          border_fill="0.7 1.0 0.3"
+#style id=top_spacer    width=3 height=8
+#style id=ext_io        width="3 100" height=3
+#style id=unidir        markers="stub arr"
+#style id=bidir         markers="rev_arr arr"
+#style id=bus_label     font_size=1.0
+#style id=base_path     color=black
+#style id=int_flow      stroke_width=0.3
+#style id=ext_flow      stroke_width=0.5
+
+;#rule style=debug
+#rule style=base
+#rule class=reg       style=reg
+#rule class=comb      style=comb
+#rule class=unidir    style=unidir
+#rule class=bidir     style=bidir
+#rule class=bus_label style=bus_label
+#rule tag=path style=base_path
+
+#rule id=pipeline_and_control       style=pipeline_and_control
+#rule id=pipeline       style=pipeline
+##rule tag=text         style=pipeline_text
+##rule class=pipe_stage style=pipeline_stage
+##rule class=pipe_gap   style=pipeline_gap
+##rule class=pipe_flow  style=pipeline_flow
+###apply style=unidir
+
+#rule class=control     style=control
+#rule class=ext_logic   style=ext_logic
+#rule class=int_flow    style=int_flow
+#rule class=ext_flow    style=ext_flow
+
+#style id=pipeline_control_state width=40 margin=0.5
+#rule  id=pipeline_control_state style=pipeline_control_state
+
+
+#rule class=ext_io      style=ext_io
+#rule class=top_spacer style=top_spacer

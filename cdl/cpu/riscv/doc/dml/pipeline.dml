@@ -1,0 +1,80 @@
+#text grid=1,1 id=prefetch  class="comb ext_logic" height=30 rotation=270 "Prefetch"
+
+#box{ id=pipeline_and_control grid=3,1,3,3
+
+#box class=top_spacer  grid=2,2
+#box class=top_spacer  grid=4,4
+#box class=top_spacer  grid=6,6
+
+#box{ id=pipeline grid=1,1,8,1
+#box class=pipe_gap   grid=2,1
+##path class="pipe_flow"
+#box class=pipe_gap   grid=4,1
+##path class="pipe_flow"
+#box class=pipe_gap   grid=6,1
+##path class="pipe_flow"
+#box class=pipe_gap   grid=8,1
+##path class="pipe_flow"
+
+#box id="p" class=pipe_stage grid=1,1
+##text grid=2,1 id="fetch_data_int" class="comb" "Fetch Data Interposer"
+
+#box id="d" class=pipe_stage grid=3,1
+##text grid=1,1 class="reg"  "PC + Instruction" "Register"
+##text grid=2,1 id=decode  class="comb" "Decode"
+##text grid=3,1 id=rfr     class="comb" "RF Read"
+
+#box id="e" class=pipe_stage grid=5,1
+##text grid=1,1 class="reg"  "Optional register"
+##text grid=2,1 id=exec class="comb" "Exec (ALU +" "Memory request)"
+
+#box id="m" class=pipe_stage grid=7,1
+##text grid=1,1 class="reg"  "Optional register"
+##text grid=2,1 id=access class="comb" "Memory" "Access"
+
+#box id="w" class=pipe_stage grid=9,1
+##text grid=1,1 class="reg"  "Optional register"
+##text grid=2,1 id=rfw class="comb" "RF Writeback"
+#box}
+
+
+#text grid=1,3 id=fetch_req_int class="comb control" "Fetch Request" "Interposer"
+
+#box grid=0,5 id=debugio class=ext_io
+##text class=bus_label "debug_mst" "debug_tgt"
+
+#text grid=1,5,3,1 id=pipeline_control_state class="reg control" eval="fetch_out=.magnets 1 sub;decode_in=.magnets 3 sub;debugio=.magnets 14 sub;"
+      "Pipeline Control" "State" 
+
+#text grid=5,3 id=trap_interposer class="comb control" "Trap Interposer"
+#text grid=5,5 id=control_flow_interposer class="comb control" "Control Flow Interposer"
+
+#text grid=7,3 id=trace class="reg control" "Trace"
+
+#box grid=5,7 id=exec_io
+##text grid=1,1 id=csrs   class="reg control" "CSRs"
+##box  grid=2,1 id=io     class=ext_io
+##text grid=3,1 id=coproc class="reg control" "Coproc"
+
+#path class="ext_flow bidir" eval="coords=^.pipeline_control_state.debugio ^.debugio.w;"
+#path class="int_flow unidir" eval="coords=^.fetch_req_int.n ^^.prefetch.s;"
+#path class="int_flow unidir" eval="coords=^^.prefetch.e ^.pipeline.p.fetch_data_int.w ;"
+
+#path class="int_flow unidir" eval="coords=^.pipeline.d.decode.s ^.fetch_req_int.e;"
+#path class="int_flow unidir" eval="coords=^.pipeline.d.decode.s ^.pipeline_control_state.decode_in;"
+#path class="int_flow unidir" eval="coords=^.pipeline_control_state.fetch_out ^.fetch_req_int.s;"
+#path class="int_flow unidir" eval="coords=^.fetch_req_int.n ^.pipeline.p.fetch_data_int.s;"
+
+#path class="int_flow unidir" eval="coords=^.pipeline.e.exec.s   ^.trap_interposer.n;"
+#path class="int_flow unidir" eval="coords=^.pipeline.m.access.s ^.trap_interposer.n;"
+
+#path class="int_flow unidir" eval="coords=^.pipeline.w.rfw.s ^.trace.n;"
+#path class="int_flow unidir" eval="coords=^.trap_interposer.e ^.trace.w;"
+
+#path class="int_flow unidir" eval="coords=^.trap_interposer.s ^.control_flow_interposer.n;"
+#path class="int_flow bidir" eval="coords=^.control_flow_interposer.s ^.exec_io.csrs.n;"
+#path class="int_flow bidir" eval="coords=^.control_flow_interposer.s ^.exec_io.coproc.n;"
+#path class="ext_flow bidir" eval="coords=^.control_flow_interposer.s ^.exec_io.io.s;"
+
+#text class=bus_label rotation=270 grid=3,2,1,3 "Valid; PC; Instruction decode;" "Branch target; is compressed;"
+#box}
