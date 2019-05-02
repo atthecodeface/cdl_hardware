@@ -45,6 +45,7 @@ module riscv_i32_dmem_request( input  t_riscv_i32_dmem_exec     dmem_exec,
     code : {
         
         dmem_request.access.valid     = 0;
+        dmem_request.access.mode      = dmem_exec.mode;
         dmem_request.access.address   = dmem_exec.arith_result;
         dmem_request.access.sequential = 0; // Do not detect sequential yet - would be same rs with immediate+4 from last
         dmem_combs.word_offset        = dmem_exec.arith_result[2;0];

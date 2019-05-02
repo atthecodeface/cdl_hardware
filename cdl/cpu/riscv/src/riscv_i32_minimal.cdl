@@ -168,7 +168,9 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     net t_riscv_pipeline_control     pipeline_control;
     net t_riscv_pipeline_response   pipeline_response;
     net t_riscv_pipeline_fetch_data pipeline_fetch_data;
+    net t_riscv_pipeline_fetch_req   pipeline_fetch_req;
     net t_riscv_pipeline_state     pipeline_state;
+    net t_riscv_pipeline_trap_request   pipeline_trap_request;
     net t_riscv_csrs_minimal csrs;
     clocked bit[32] ifetch_reg = 0;
     clocked bit[16] ifetch_last16_reg = 0     "Only used if RV32IC is enabled and configured";
@@ -465,6 +467,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         dmem_access_resp.ack_if_seq = 1;
         dmem_access_resp.ack        = 1;
         dmem_access_resp.abort_req  = 0;
+        dmem_access_resp.may_still_abort  = 0;
 
         dmem_access_resp.access_complete = 1;
         dmem_access_resp.read_data = data_access_resp.read_data;
@@ -508,18 +511,29 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
 
         riscv_i32_pipeline_control_fetch_req pc_fetch_req( pipeline_state <= pipeline_state,
                                                            pipeline_response <= pipeline_response,
+                                                           pipeline_fetch_req => pipeline_fetch_req,
                                                            ifetch_req => ifetch_req );
 
         riscv_i32_pipeline_control_fetch_data pc_fetch_data( pipeline_state <= pipeline_state,
                                                              ifetch_req <= ifetch_req,
                                                              ifetch_resp <= ifetch_resp,
+                                                             pipeline_fetch_req <= pipeline_fetch_req,
                                                              pipeline_fetch_data => pipeline_fetch_data );
 
+        riscv_i32_pipeline_trap_interposer ti( pipeline_state         <= pipeline_state,
+                                               pipeline_response      <= pipeline_response,
+                                               dmem_access_resp       <= dmem_access_resp,
+                                               pipeline_trap_request  => pipeline_trap_request,
+                                               riscv_config           <= riscv_config
+        );
+        
         riscv_i32_pipeline_control_flow cf( pipeline_state <= pipeline_state,
                                             ifetch_req  <= ifetch_req,
                                             pipeline_response <= pipeline_response,
+                                            pipeline_trap_request  <= pipeline_trap_request,
                                             coproc_response <= coproc_response,
                                             pipeline_control => pipeline_control,
+                                            dmem_access_resp <= dmem_access_resp,
                                             dmem_access_req => dmem_access_req,
                                             csr_access     => csr_access,
                                             pipeline_coproc_response => pipeline_coproc_response,

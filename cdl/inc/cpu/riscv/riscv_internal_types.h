@@ -340,21 +340,6 @@ typedef struct {
     bit             illegal_access;
 } t_riscv_csr_data;
 
-/*t t_riscv_i32_trap_request
-  From the trap interposer
- */
-typedef struct {
-    bit valid_from_mem;
-    bit valid_from_int;
-    bit valid_from_exec;
-    t_riscv_mode to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
-    t_riscv_trap_cause cause;
-    bit[32] pc;
-    bit[32] value;
-    bit ret;
-    bit ebreak_to_dbg "Asserted if the trap is a breakpoint and pipeline_control.ebreak_to_dbg was set";
-} t_riscv_i32_trap_request;
-
 /*t t_riscv_i32_trap */
 typedef struct {
     bit valid;
@@ -363,7 +348,6 @@ typedef struct {
     bit[32] pc;
     bit[32] value;
     bit ret;
-    bit vector;
     bit ebreak_to_dbg "Asserted if the trap is a breakpoint and pipeline_control.ebreak_to_dbg was set";
 } t_riscv_i32_trap;
 
@@ -686,6 +670,7 @@ typedef struct {
 /*a Dmem access */
 /*t t_riscv_i32_dmem_exec */
 typedef struct {
+    t_riscv_mode            mode;
     t_riscv_i32_decode      idecode "Exec stage idecode";
     t_riscv_word            arith_result;
     t_riscv_word            rs2;

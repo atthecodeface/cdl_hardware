@@ -21,6 +21,10 @@
 include "cpu/riscv/riscv.h"
 include "cpu/riscv/riscv_internal_types.h"
 
+/*a Constants
+ */
+constant integer RV32I_EBREAK=0x00100073;
+
 /*a RISC-V pipeline control interaction */
 /*t t_riscv_pipeline_control_fetch_action
  */
@@ -68,17 +72,24 @@ typedef struct {
     bit blocked_start     "Asserted if exec is valid and blocked from starting; can be because of exec or coprocessor are blocked from starting";
     bit blocked           "Asserted if exec is valid AND cannot pass on to mem; if low, exec can take from decode (unless flushing decode)";
 
-    bit ret "Asserted for RET instructions - presumably needs an indication as to which mode to return to";
-    bit mispredicted_branch         "Asserted if the exec has a mispredicted branch - could be a JALR, or conditional branch that was not predicted to be taken";
-    t_riscv_word pc_if_mispredicted "Target for a mispredicted branch";
+//    bit ret "Asserted for RET instructions - presumably needs an indication as to which mode to return to";
+    bit mispredicted_branch         "Used internally inside control_flow - should remove? Asserted if the exec has a mispredicted branch - could be a JALR, or conditional branch that was not predicted to be taken";
+    t_riscv_word pc_if_mispredicted "Target for a mispredicted branch - used in the state";
 } t_riscv_pipeline_control_exec;
+
+/*t t_riscv_pipeline_control_exec - late in clock cycle to affect clocking
+ */
+typedef struct {
+    bit blocked           "Asserted if mem stage is valid AND is not completing; if low, mem can take from exec (unless flushing exec)";
+} t_riscv_pipeline_control_mem;
 
 /*t t_riscv_pipeline_control_flush - late in clock cycle to affect clocking
  */
 typedef struct {
     bit fetch;
     bit decode;
-    bit exec;
+    bit exec  "If asserted then exec stage completes without comitting";
+    bit mem   "If asserted, mem stage is completing anyway, but does not write any RF";
 } t_riscv_pipeline_control_flush;
 
 /*t t_riscv_pipeline_control - late in clock cycle to affect clocking
@@ -86,8 +97,9 @@ typedef struct {
 typedef struct {
     t_riscv_i32_trap trap;
     t_riscv_pipeline_control_flush   flush;
-    t_riscv_pipeline_control_exec    exec;
     t_riscv_pipeline_control_decode  decode;
+    t_riscv_pipeline_control_exec    exec;
+    t_riscv_pipeline_control_mem     mem;
 } t_riscv_pipeline_control;
 
 /*t t_riscv_pipeline_response_decode
@@ -118,13 +130,13 @@ typedef struct {
     bit branch_condition_met;
     t_riscv_mem_access_req dmem_access_req;
     t_riscv_csr_access     csr_access;
-    bit[32]  branch_target     "Used if predict_branch";
 } t_riscv_pipeline_response_exec;
 
 /*t t_riscv_pipeline_response_mem
  */
 typedef struct {
     bit valid;
+    bit access_in_progress;
     bit[32]  pc              "Actual PC of memory instruction";
     bit[32]  addr            "Address being accessed";
 } t_riscv_pipeline_response_mem;
@@ -148,10 +160,35 @@ typedef struct {
     bit                              pipeline_empty;
 } t_riscv_pipeline_response;
 
+/*t t_riscv_pipeline_trap_request
+  From the trap interposer
+ */
+typedef struct {
+    bit valid_from_mem;
+    bit valid_from_int;
+    bit valid_from_exec;
+    bit flushes_exec     "Asserted if the exec stage gets flushed (e.g. for interrupts, illegal instruction, mem abort";
+    t_riscv_mode to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
+    t_riscv_trap_cause cause;
+    bit[32] pc;
+    bit[32] value;
+    bit ret;
+    bit ebreak_to_dbg "Asserted if the trap is a breakpoint and pipeline_control.ebreak_to_dbg was set";
+} t_riscv_pipeline_trap_request;
+
+/*t t_riscv_pipeline_fetch_req
+ */
+typedef struct {
+    bit      debug_fetch            "Asserted if fetch of a debug location (data0 or ebreak)";
+    bit     predicted_branch   "Only used if branch prediction is supported - so not for single cycle pipeline; for internal use really";
+    bit[32] pc_if_mispredicted "Only used if branch prediction is supported - so not for single cycle pipeline for internal use really";
+} t_riscv_pipeline_fetch_req;
+
 /*t t_riscv_pipeline_fetch_data
  */
 typedef struct {
     bit          valid;
+    t_riscv_mode mode "Mode the pipeline is executing in";
     t_riscv_word pc;
     t_riscv_i32_inst instruction;
     bit          dec_predicted_branch   "Not part of fetch - indicates that pipeline_control predicted a branch for the decode, so when the decode is executed this should match the execution - if not, a mispredict occurs";

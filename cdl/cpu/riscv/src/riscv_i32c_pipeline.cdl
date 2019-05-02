@@ -74,6 +74,7 @@ constant integer debug_force_disable=0;
 /*t t_decexecrfw_state */
 typedef struct {
     bit[32]          pc            "PC of fetched instruction";
+    t_riscv_mode     mode;
     t_riscv_i32_inst instruction   "Fetched instruction, ready for decode, register fetch, execute and writeback";
     bit valid                      "Asserted if @instr_data is a valid fetched instruction, whether misaligned or not";
 } t_decexecrfw_state;
@@ -167,6 +168,7 @@ stage the multiply cannot support fused operations
         /*b Instruction register - note all PC value are legal (bit 0 is cleared automatically though) */
         decexecrfw_state.valid <= 0;
         if (pipeline_fetch_data.valid && !pipeline_control.flush.fetch) {
+            decexecrfw_state.mode <= pipeline_fetch_data.mode;
             decexecrfw_state.pc <= pipeline_fetch_data.pc;
             decexecrfw_state.instruction <= pipeline_fetch_data.instruction;
             if (debug_force_disable || !riscv_config.debug_enable) {
@@ -220,7 +222,8 @@ stage the multiply cannot support fused operations
         decexecrfw_combs.dmem_exec = { idecode = decexecrfw_combs.idecode,
                                        arith_result   = decexecrfw_alu_result.arith_result, // address of access
                                        rs2            = decexecrfw_combs.rs2,    // data for access (before rotation)
-                                       first_cycle = 1
+                                       first_cycle = 1,
+                                       mode           = decexecrfw_state.mode // can use dec_state as pipeline is always in that mode
         };
         riscv_i32_dmem_request dmem_req( dmem_exec    <= decexecrfw_combs.dmem_exec,
                                          dmem_request => decexecrfw_dmem_request );
@@ -242,7 +245,7 @@ stage the multiply cannot support fused operations
         pipeline_response.exec.interrupt_block = 0;
         pipeline_response.exec.idecode         = decexecrfw_combs.idecode;
         pipeline_response.exec.pc              = decexecrfw_state.pc;
-        pipeline_response.exec.pc_if_mispredicted = decexecrfw_alu_result.branch_target; // correct for jalr and branch
+        pipeline_response.exec.pc_if_mispredicted = decexecrfw_alu_result.branch_target; // must be correct for jal(r) and branch
         pipeline_response.exec.instruction        = decexecrfw_state.instruction;
         pipeline_response.exec.predicted_branch   = 0;
         pipeline_response.exec.rs1                = decexecrfw_combs.rs1;
@@ -251,12 +254,12 @@ stage the multiply cannot support fused operations
         pipeline_response.exec.csr_access         = decexecrfw_alu_result.csr_access;
         pipeline_response.exec.cannot_start       = 0;
         pipeline_response.exec.branch_condition_met = decexecrfw_alu_result.branch_condition_met;
-        pipeline_response.exec.branch_target        = decexecrfw_alu_result.branch_target; // uses branch and jalr?
 
         /*b Pipeline response from memory */
         pipeline_response.mem.valid  = decexecrfw_state.valid;
         pipeline_response.mem.pc     = decexecrfw_state.pc;
         pipeline_response.mem.addr   = decexecrfw_dmem_request.access.address;
+        pipeline_response.mem.access_in_progress  = decexecrfw_state.valid && decexecrfw_dmem_request.access.valid;
         
         /*b Pipeline response from rfw */
 

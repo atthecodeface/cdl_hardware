@@ -54,13 +54,14 @@ extern module riscv_i32_pipeline_control( clock clk,
 
 /*m riscv_i32_pipeline_control_fetch_req
  */
-extern module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_state     pipeline_state,
-                                                    input t_riscv_pipeline_response  pipeline_response,
-                                                    output t_riscv_fetch_req           ifetch_req
+extern module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_state        pipeline_state,
+                                                    input t_riscv_pipeline_response     pipeline_response,
+                                                    output t_riscv_pipeline_fetch_req   pipeline_fetch_req,
+                                                    output t_riscv_fetch_req            ifetch_req
 )
 {
     timing comb input pipeline_state, pipeline_response;
-    timing comb output ifetch_req;
+    timing comb output ifetch_req, pipeline_fetch_req;
 }
 
 /*m riscv_i32_pipeline_control_fetch_data
@@ -68,12 +69,26 @@ extern module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_state
 extern module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_state   pipeline_state,
                                                      input t_riscv_fetch_req          ifetch_req,
                                                      input t_riscv_fetch_resp         ifetch_resp,
-                                                     //input t_riscv_pipeline_control     pipeline_control,
+                                                     input t_riscv_pipeline_fetch_req   pipeline_fetch_req,
                                                      output t_riscv_pipeline_fetch_data pipeline_fetch_data
 )
 {
-    timing comb input pipeline_state, ifetch_req, ifetch_resp;
+    timing comb input pipeline_state, ifetch_req, ifetch_resp, pipeline_fetch_req;
     timing comb output pipeline_fetch_data;
+}
+
+/*m riscv_i32_pipeline_trap_interposer
+ */
+extern module riscv_i32_pipeline_trap_interposer( input  t_riscv_pipeline_state   pipeline_state,
+                                           input  t_riscv_pipeline_response       pipeline_response,
+                                           input  t_riscv_mem_access_resp         dmem_access_resp,
+                                           output t_riscv_pipeline_trap_request   pipeline_trap_request,
+                                           input  t_riscv_config                  riscv_config
+    )
+{
+    timing comb input pipeline_state, pipeline_response, dmem_access_resp;
+    timing comb output pipeline_trap_request;
+    timing comb input riscv_config;
 }
 
 /*m riscv_i32_pipeline_control_flow
@@ -81,8 +96,10 @@ extern module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_stat
 extern module riscv_i32_pipeline_control_flow( input t_riscv_pipeline_state       pipeline_state,
                                                input t_riscv_fetch_req          ifetch_req,
                                                input t_riscv_pipeline_response    pipeline_response,
+                                               input  t_riscv_pipeline_trap_request pipeline_trap_request,
                                                input t_riscv_i32_coproc_response   coproc_response,
                                                output t_riscv_pipeline_control    pipeline_control,
+                                               input  t_riscv_mem_access_resp     dmem_access_resp,
                                                output  t_riscv_mem_access_req     dmem_access_req,
                                                output  t_riscv_csr_access         csr_access,
                                                output t_riscv_i32_coproc_response   pipeline_coproc_response,
@@ -92,7 +109,7 @@ extern module riscv_i32_pipeline_control_flow( input t_riscv_pipeline_state     
                                                input  t_riscv_config              riscv_config
 )
 {
-    timing comb input pipeline_state, ifetch_req, pipeline_response;
+    timing comb input pipeline_state, ifetch_req, pipeline_response, pipeline_trap_request, dmem_access_resp;
     timing comb input coproc_response;
     timing comb input riscv_config;
     timing comb output pipeline_control, dmem_access_req, csr_access, pipeline_coproc_response;

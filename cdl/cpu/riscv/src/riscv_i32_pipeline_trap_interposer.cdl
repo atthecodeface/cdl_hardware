@@ -28,7 +28,7 @@ include "cpu/riscv/riscv_config.h"
 
 /*a Types
  */
-/*t */
+/*t t_control_flow_combs */
 typedef struct {
     bit              async_cancel;
     bit              branch_taken;
@@ -43,20 +43,20 @@ typedef struct {
 
 /*a Module
  */
-module riscv_i32_pipeline_trap_interposer( input  t_riscv_pipeline_state        pipeline_state,
-                                           input  t_riscv_pipeline_response     pipeline_response,
-                                           input  t_riscv_mem_access_resp       dmem_access_resp,
-                                           output t_riscv_i32_trap_request      trap_request,
-                                           input  t_riscv_config                riscv_config
+module riscv_i32_pipeline_trap_interposer( input  t_riscv_pipeline_state         pipeline_state,
+                                           input  t_riscv_pipeline_response      pipeline_response,
+                                           input  t_riscv_mem_access_resp        dmem_access_resp,
+                                           output t_riscv_pipeline_trap_request  pipeline_trap_request,
+                                           input  t_riscv_config                 riscv_config
     )
 """
 This module manages trap detection, and setting up of the trap values required.
 """
 {
     /*b Combinatorials for the possible options */
-    comb t_riscv_i32_trap_request memory_trap     "Trap from memory aborts";
-    comb t_riscv_i32_trap_request interrupt_trap  "Trap from interrupt";
-    comb t_riscv_i32_trap_request exec_trap       "Trap from exec stage";
+    comb t_riscv_pipeline_trap_request memory_trap     "Trap from memory aborts";
+    comb t_riscv_pipeline_trap_request interrupt_trap  "Trap from interrupt";
+    comb t_riscv_pipeline_trap_request exec_trap       "Trap from exec stage";
 
     /*b Determine if memory access stage should abort
       Generates a load or store access fault (5 or 7)
@@ -67,11 +67,15 @@ This module manages trap detection, and setting up of the trap values required.
         memory_trap.cause   = riscv_trap_cause_store_fault; // or load fault
         memory_trap.pc      = pipeline_response.mem.pc;
         memory_trap.value   = pipeline_response.mem.addr;
+        memory_trap.flushes_exec   = 1;
         if (dmem_access_resp.abort_req) {
             memory_trap.valid_from_mem   = 1;
         }
         if (rv_cfg_memory_abort_disable) {
             memory_trap = {*=0};
+        }
+        if (riscv_config.mem_abort_late) {// actually not relevant, but stops a CDL warning
+            memory_trap = memory_trap;
         }
     }
     
@@ -82,6 +86,7 @@ This module manages trap detection, and setting up of the trap values required.
         interrupt_trap.cause[4;0] = pipeline_state.interrupt_number;
         interrupt_trap.value      = pipeline_state.fetch_pc;
         interrupt_trap.to_mode    = pipeline_state.interrupt_to_mode;
+        interrupt_trap.flushes_exec   = 1;
 
         if (pipeline_response.decode.valid) {
             interrupt_trap.value =  pipeline_response.decode.pc;
@@ -89,6 +94,7 @@ This module manages trap detection, and setting up of the trap values required.
         if (pipeline_response.exec.valid) {
             interrupt_trap.value = pipeline_response.exec.pc;
         }
+        interrupt_trap.pc = interrupt_trap.value; // PC is used for mepc and depc; value for mtval
 
         interrupt_trap.valid_from_int = pipeline_state.interrupt_req;
         if (pipeline_response.exec.valid && pipeline_response.exec.interrupt_block) {
@@ -100,6 +106,8 @@ This module manages trap detection, and setting up of the trap values required.
     /*b Determine if exec stage should abort */
     exec_stage_abort_detection : {
         exec_trap = {*=0};
+        exec_trap.to_mode  = pipeline_state.interrupt_to_mode;
+        exec_trap.pc       = pipeline_response.exec.pc;
         
         part_switch (pipeline_response.exec.idecode.op) {
         case riscv_op_system:   {
@@ -141,12 +149,14 @@ This module manages trap detection, and setting up of the trap values required.
             exec_trap.ebreak_to_dbg = 0;
             exec_trap.cause = riscv_trap_cause_illegal_instruction;
             exec_trap.value = pipeline_response.exec.instruction.data; // optional in spec 2.2 - should be a configuration option
+            exec_trap.flushes_exec   = 1;
         }
         if (pipeline_response.exec.valid && pipeline_response.exec.idecode.illegal_pc) {
             exec_trap.valid_from_exec = 1;
             exec_trap.ret = 0;
             exec_trap.ebreak_to_dbg = 0;
             exec_trap.cause = riscv_trap_cause_instruction_misaligned;
+            exec_trap.flushes_exec   = 1;
             // control_flow_combs.trap.value = pipeline_response.exec.instruction.data; // probably should not do this
         }
         if (!pipeline_response.exec.valid) {
@@ -156,11 +166,11 @@ This module manages trap detection, and setting up of the trap values required.
 
     /*b Combine */
     combine_code : {
-        trap_request = exec_trap;
+        pipeline_trap_request = exec_trap;
         if (memory_trap.valid_from_mem) {
-            trap_request = memory_trap;
+            pipeline_trap_request = memory_trap;
         } elsif (interrupt_trap.valid_from_int) {
-            trap_request = interrupt_trap;
+            pipeline_trap_request = interrupt_trap;
         }
     }
 

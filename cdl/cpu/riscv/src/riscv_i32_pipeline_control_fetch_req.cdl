@@ -85,9 +85,10 @@ typedef struct {
 
 /*a Module
  */
-module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_state      pipeline_state,
-                                             input t_riscv_pipeline_response   pipeline_response,
-                                             output t_riscv_fetch_req          ifetch_req
+module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_state        pipeline_state,
+                                             input t_riscv_pipeline_response     pipeline_response,
+                                             output t_riscv_pipeline_fetch_req   pipeline_fetch_req,
+                                             output t_riscv_fetch_req            ifetch_req
 )
 {
     comb t_ifetch_combs ifetch_combs;
@@ -136,11 +137,12 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_state      p
             ifetch_combs.pc_if_mispredicted = ifetch_combs.pc_plus_inst;
         }
 
-        /*b Determine ifetch_req */
+        /*b Determine ifetch_req and pipeline_fetch_req */
         ifetch_req                 = {*=0};
+        pipeline_fetch_req         = {*=0};
         
-        ifetch_req.predicted_branch   = ifetch_combs.predict_branch;
-        ifetch_req.pc_if_mispredicted = ifetch_combs.pc_if_mispredicted;
+        pipeline_fetch_req.predicted_branch   = ifetch_combs.predict_branch;
+        pipeline_fetch_req.pc_if_mispredicted = ifetch_combs.pc_if_mispredicted;
         ifetch_req.flush_pipeline = 1;
         ifetch_req.req_type = rv_fetch_none;
         ifetch_req.address  = pipeline_state.fetch_pc; // == ifetch_state.pc
@@ -172,13 +174,14 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_state      p
             ifetch_req.flush_pipeline = 1;
         }
         }
-        ifetch_req.debug_fetch = 0;
+
+        pipeline_fetch_req.debug_fetch = 0;
         if (pipeline_state.mode == rv_mode_debug) {
             if ((pipeline_state.fetch_action!=rv_pc_fetch_action_idle) &&
                 (pipeline_state.fetch_action!=rv_pc_fetch_action_none) &&
                 (ifetch_req.address[24;8]==-1)) {
                 ifetch_req.req_type = rv_fetch_none;
-                ifetch_req.debug_fetch = 1;
+                pipeline_fetch_req.debug_fetch = 1;
             }
         }
 

@@ -9,8 +9,7 @@ documentclass: book
 author: "Gavin J Stark"
 ---
 
-Overview
-========
+# Overview
 
 The RISC-V implementations here were originally designed to
 investigate the future development of the CDL language; to achieve
@@ -36,8 +35,7 @@ documentation.
 This document, then, is an implementation specification which is
 driving the final pipeline implementation.
 
-Pipeline architecture
-=====================
+# Pipeline architecture
 
 The basic architecture of the pipeline for the RISC-V implementation is
 fetch, decode, register file read, execute (ALU + memory request),
@@ -48,8 +46,7 @@ commit/flow/completion (for trace).
 
 ![Pipeline](pipeline.svg "Pipeline"){ width=80% }
 
-Architecture Overview
----------------------
+## Architecture Overview
 
 The RISC-V implementation is architected around the concept of a
 processing pipeline that may be broken into different stage lengths:
@@ -82,8 +79,7 @@ The architecture of the implementation of the RISC-V can then be
 discussed by looking at the steps involved in the pipeline, and
 separately looking at the pipeline control.
 
-Fetch stage
------------
+## Fetch stage
 
 The fetch stage - also known sometimes as the prefetch logic -
 provides the flow of instructions to the pipeline, in response to
@@ -179,8 +175,7 @@ error_type (*t_riscv_fetch_error_type*)
 data (32-bit)
 :  The data fetched. All 32 bits must be valid.
 
-Decode Stage
-------------
+## Decode Stage
 
 The decode stage in the pipeline requires a registered instruction
 word, that will have been fetched in the previous cycle.
@@ -256,8 +251,7 @@ idecode (instructon decode)
  'backward branch predict' and 'is_compressed' may be added to the
  response structure instead.*
 
-Register file read
-------------------
+## Register file read
 
 The register file read takes the decode of the instruction and
 combinatorially reads the register file.
@@ -271,8 +265,7 @@ In silicon and FPGA implementations, given the RISC-V decode logic,
 there is no point having a dedicated pipeline stage for register file
 reading; hence there is no provison for registering in this area.
 
-Execution stage
----------------
+## Execution stage
 
 The execution stage of the pipeline is responsible for gathering input
 data for the relevant units, and evaluating results and launching data
@@ -415,8 +408,7 @@ execution stage from completing its stage; block a data memory access;
 permit execution to complete and take decode; it needs to take the
 decoded instruction and record if it is a predicted branch or not
 
-Memory access stage
--------------------
+## Memory access stage
 
 The memory access stage of the pipeline is responsible for handling
 the response for data memory transactions; it can handle data access aborts (if
@@ -458,8 +450,7 @@ access_in_progress (bit)
 The pipeline control can: flush the memory stage; block the memory
 stage; permit it to take the execution stage output.
 
-Register file write stage
--------------------------
+## Register file write stage
 
 In a pipeline implementation that uses latches for register files
 there can be a need for the write to take place in a register file
@@ -468,8 +459,19 @@ CDL pipeline architecture has a register file write stage to record
 the data that has just been written to the register file and to record
 other information - this can be used for tracing instruction execution
 
-Modes
-=====
+# Pipeline implementation
+
+## Stuff
+
+### Debug master request
+
+The debug master request *t_riscv_debug_mst* structure:
+
+select (bit[6])
+:  Hart(s) to select
+
+
+# Modes
 
 A minimal RISC-V CPU implementation need only support the machine mode
 of execution. Although it is not clear yet (there are no public
@@ -479,8 +481,7 @@ Additionally the CPU must support illegal instruction, instruction
 address misaligned and environment call from machine mode exception
 traps.
 
-Rationale
----------
+## Rationale
 
 Most CPUs support various operating modes or privilege levels. The
 different privilege levels provide different degrees of system
@@ -516,8 +517,7 @@ The complete set of modes provided by a specific implementation
 may vary according to the needs of the system into which the
 implementation is placed.
 
-Machine mode
-------------
+## Machine mode
 
 Machine mode is the most basic mode in a RISC-V CPU. It is required to
 be supported in any RISC-V CPU, as it provides any abstraction
@@ -543,8 +543,7 @@ such instructions and executing the behaviour in, effectively,
 microcode. Similar areas of functionality cover support for unaligned
 load/store transactions and software page table walking.
 
-User mode
----------
+## User mode
 
 On an embedded CPU, with no need for anything other than basic CPU
 operation, machine mode is all that is required. For embedded CPUs
@@ -569,15 +568,13 @@ interaction. The user mode interrupt routines can interrupt user
 applications, but at any point the machine mode may take an interrupt
 at a higher priority level.
 
-Supervisor mode
----------------
+## Supervisor mode
 
 Supervisor mode is an intermediate privilege level between user mode
 and machine mode. Until the CDL RISC-V implementations support it,
 though, the reader should look at other documents to find out more.
 
-Debug mode
-----------
+## Debug mode
 
 Debug mode is the highest privilege mode in RISC-V, but it is not
 meant to be used as an operating mode. It enables support for
@@ -591,8 +588,7 @@ this purpose there are the *DPC* and *DCSR* registers.
 In general debug mode can only be entered by hardware mechanisms: a
 hardware breakpoint, or a debugger halting the RISC-V hart.
 
-Implementation
---------------
+## Implementation
 
 The CDL RISC-V implementations currently support just debug and machine modes; in
 the very near future it will cover also user mode.
@@ -619,16 +615,14 @@ target state machine; the pipeline can be halted and resumed, and when
 halted the pipeline control can be forced to run the pipeline with
 debug instructions.
 
-Exceptions and interrupts
-=========================
+# Exceptions and interrupts
 
 Clearly a bare minimal RISC-V CPU implementation must provide interrupts,
 exceptions and CSRs. This is a more complex implementation than a very
 simple embedded controller would require, but it supplies a baseline
 for the CDL RISC-V implementations.
 
-Synchronous exceptions
-----------------------
+## Synchronous exceptions
 
 One can view the exceptions that occur during instruction execution as
 synchronous exceptions. They will occur at the same point in the code
@@ -649,15 +643,13 @@ accesses; an access may be miasligned, or it may have fault (access
 fault or page fault). In the CDL RISC-V architecture this detection
 occurs in the data memory response stage of an instruction execution.
 
-Asynchronous exceptions
------------------------
+## Asynchronous exceptions
 
 Interrupt support is required by the RISC-V specification; these are
 asynchronous exceptions. They are handled in decreasing priority order
 of: external interrupts, software interrupts, timer interrupts.
 
-Exception processing
---------------------
+## Exception processing
 
 The second source of synchronous exceptions has to have the highest
 priority in the CDL RISC-V implementation, as these exceptions occur
@@ -671,8 +663,7 @@ memory access stage exceptions.
 Finally, the lowest priority is the first source of synchronous
 exceptions.
 
-Implementation
---------------
+## Implementation
 
 The pipeline control handles exceptions by combining the state of the
 pipeline stages (specifically the execution and memory access stages)
@@ -709,8 +700,7 @@ implements the exception detection logic. The pipeline control state
 machine has to handle the update of the CSR state due to the
 exception.
 
-Interrupt and Exception Delegation
-==================================
+# Interrupt and Exception Delegation
 
 Interrupts and exceptions are complicated by the RISC-V concept of
 *delegation*. This is a mechanism that permits the machine mode of the
@@ -805,8 +795,7 @@ can have caused the interrupt.
 For interrupts the logic is the same except the *mideleg* and
 *sideleg* registers are used. However, 
 
-Implementation
---------------
+## Implementation
 
 The CDL RISC-V implementations perform exception processing in the
 pipeline control flow module.
@@ -818,12 +807,10 @@ combining this with the data memory access response.
 ...
 
 CSRs
-====
 
 ...
 
-Pipeline control
-================
+# Pipeline control
 
 The pipeline control is implemented in the pipeline control state
 machine and various other combinatorial modules.
@@ -841,8 +828,7 @@ using the instruction fetch generation; when a trap occurs, though, it
 will move to a state that that flushes the pipeline and restarts the
 fetch at the new PC.
 
-Trap interposer
----------------
+## Trap interposer
 
 The trap interposer is responsible for determining whether and which trap is
 to be taken. It operates very early in the clock cycle.
@@ -862,8 +848,7 @@ Exec instruction illegal or fetched invalid
 
 Exec mret, ecall, ebreak
 
-Control flow interposer
------------------------
+## Control flow interposer
 
 The control flow interposer determines which stages of the pipeline
 should be blocked, flushed, or permitted to move on. It operates late
@@ -892,14 +877,12 @@ if the memory access stage is valid and it is not completing
 
 JALR or mispredicted branch
 
-Debug infrastructure
-====================
+# Debug infrastructure
 
 The RISC-V debug specification is not approved as of Jan 2019. The
 architecture of the debug, though, is probably not going to change.
 
-RISC-V debug specification
---------------------------
+## RISC-V debug specification
 
 The RISC-V debug infrastructure starts at the CPU itself. To support
 debug a *debug* execution mode is really required; this is a higher
@@ -927,8 +910,7 @@ executing 'load' instructions). It may then update any state also, and
 it can resume execution. This provides for pretty much any debugger
 requirements.
 
-RISC-V debug architecutre
--------------------------
+## RISC-V debug architecutre
 
 The RISC-V debug specification defines a *Debug Module* (DM) that interacts
 with one or more RISC-V hardware threads (harts); this is specified to
@@ -944,8 +926,7 @@ address/data/read/write semantics. It must be connected to a *Debug
 Transport Module* (DTM). This module provides a mapping from (for
 example) USB or JTAG to the DM register interactions.
 
-CDL RISC-V debug architecture
------------------------------
+## CDL RISC-V debug architecture
 
 The CDL hardware design repository provides a JTAG TAP controller
 harness and an APB master JTAG TAP controller that conforms to the
@@ -1048,7 +1029,7 @@ rv_debug_execute_progbuf
 
 ### Debug target response
 
-The debug target response *t_riscv_debug_tgt** structure:
+The debug target response (*t_riscv_debug_tgt*) structure:
 
 attention (bit)
 : Asserted by a hart while it has unacknowledged change in halted,
@@ -1097,8 +1078,7 @@ rv_debug_resp_read_write_complete
     the data read for the transaction
 
 
-Trace infrastructure
-====================
+# Trace infrastructure
 
 It can be very useful to get an execution trace from a CPU to aid
 debugging, particularly for embedded CPUs. The depth and breadth of
@@ -1131,8 +1111,7 @@ configurable so that the packed trace includes a full instruction
 flow, or perhaps the committed register file writes; it also permits
 optional tracking of traps and instructions marked as 'tracepoints'.
 
-Compressed trace
-----------------
+## Compressed trace
 
 The compressed trace in the CDL RISC-V implementations consists of a
 structured sequence of nybbles. The sequence has control nybbles, some
@@ -1185,8 +1164,7 @@ unless the second is a *Skip*. This provides a means for synchronizing
 streams, by inserting a standard number (say 4) of zero nybbles every,
 for example, 128 nybbles.
 
-Recording a compressed trace
-----------------------------
+## Recording a compressed trace
 
 A compressed trace is a sequence of nybbles. When recorded in larger
 bit strings (e.g. in a 32-bit word) they are defined to be recorded
@@ -1210,8 +1188,7 @@ may continue to overwrite the earliest trace data. On replay of the
 recording the trace can be decoded by synchronizing first and then
 uncompressing the packed trace nybbles.
 
-Extensions
-==========
+# Extensions
 
 Part of the benefit of RISC-V's open instruction set is the ability
 that this provides to hardware designers to extend the instruction
@@ -1220,8 +1197,7 @@ in code from hand-crafted libraries, but they may perform very
 task-specific operations that would otherwise take the CPU many
 cycles, or indeed not be possible.
 
-Extension mechanisms
---------------------
+## Extension mechanisms
 
 The CDL RISC-V implementations allow for any decoder to replace the
 standard instruction decoder modules; this is the most obvious way to
@@ -1251,8 +1227,7 @@ coprocessors; these are modules that run in parallel with the
 execution stages of the CDL RISC-V pipeline. They are described in
 more detail in the *Coprocessors* section.
 
-Compressed instruction extension
---------------------------------
+## Compressed instruction extension
 
 The RV32C compressed instruction extension provides a parallel
 instruction decoder to the RV32I decoder. It is normally instantiated
@@ -1267,8 +1242,7 @@ execution stage logic that utilize the *is_compressed* field of the
 instruction decode, or a configuration constant, to enable PC+2
 operations.
 
-Atomic memory operations extension
-----------------------------------
+## Atomic memory operations extension
 
 The RV32A atomic memory instructions can be added to the standard
 RV32I decoder, and disabled with a configuration constant if they are
@@ -1276,8 +1250,7 @@ not actually required to be supported. The only impact that these have
 on the design is in the execution stage where it affects the data
 memory access request that is presented.
 
-Bit mainpulation extension
---------------------------
+## Bit mainpulation extension
 
 There is no standard bit manipulation extension for RISC-V. There have
 been a few attempts at adding bit manipulation, most notably in
@@ -1293,8 +1266,7 @@ This extension will be an example of a configuration constant
 extension, and it will be extending the instruction decode (for RV32I
 only) and the ALU.
 
-Multiply divide extension
--------------------------
+## Multiply divide extension
 
 The base RV32I instruction set does not include multiply and
 divide. These are supplied by the RV32M instructions, which are
@@ -1306,8 +1278,7 @@ coprocessor is 4-bits-per-cycle multiply and 1-bit-per-cycle divide
 64-bit multiplication result or quotient/remainder.
 
 
-Coprocessors
-============
+# Coprocessors
 
 Coprocessors may be added to execute in parallel with the execution
 stage of a CDL RISC-V implementation.

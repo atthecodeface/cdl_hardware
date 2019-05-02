@@ -26,6 +26,15 @@ constant integer RISCV_INSTR_ADDR_WIDTH = 14;
 
 /*a Basic types
  */
+/*t t_riscv_mode
+ */
+typedef enum[3] {
+    rv_mode_user       = 3b000, // matches the encoding in table 1.1 of v1.10 privilege spec
+    rv_mode_supervisor = 3b001, // matches the encoding in table 1.1 of v1.10 privilege spec
+    rv_mode_machine    = 3b011, // matches the encoding in table 1.1 of v1.10 privilege spec
+    rv_mode_debug      = 3b111, // all 1s so that it is a superset of machine mode
+} t_riscv_mode;
+
 /*t t_riscv_mem_access_req_type
  *
  * For an implementation that does not support atomics only 2 bits are used
@@ -58,10 +67,11 @@ typedef enum[5] {
  */
 typedef struct {
     bit valid              "Asserted if a valid access request";
+    t_riscv_mode mode      "Mode of the access - usually the same as the pipeline execution, but not necessarily";
     t_riscv_mem_access_req_type req_type "Type of request";
     bit[32]  address       "Address of transaction - aligned to a word for atomics";
     bit      sequential    "Asserted if the transaction is guaranteed to be to the next word after the last access - this is a hint only";
-    bit[4]   byte_enable   "Byte enables for writes, 0 for atomics";
+    bit[4]   byte_enable   "Byte enables for writes, should be ignored by atomics";
     bit[32]  write_data    "Data for writing, or to be used in the atomic";
 } t_riscv_mem_access_req;
 
@@ -100,7 +110,8 @@ typedef struct {
 typedef struct {
     bit                  ack_if_seq        "Asserted if a sequential access request (if valid) would be taken";
     bit                  ack               "Asserted if an access request (if valid) would be taken; if this is asserted, ack_if_seq should be asserted too";
-    bit                  abort_req         "If asserted (in the cycle after an acked request) then the data transaction must abort. Can be configured to work until access_complete";
+    bit                  abort_req         "If asserted (in the cycle after an acked request) then the data transaction must abort. Can be configured to work until access_complete, in conjunction with may_still_abort";
+    bit                  may_still_abort   "If asserted (starting in the cycle after an acked request) then the data transaction may yet assert abort_req in a subsequent cycle (this blocks the starting of the exec stage of the following instruction). If pipeline is configured to not support late aborts then this signal is ignored.";
     bit                  access_complete   "Valid in the same cycle as read_data; must be set on writes as well as reads, as it completes an access";
     bit[32]              read_data         "Data returned from reading the requested address";
 } t_riscv_mem_access_resp;
@@ -125,15 +136,6 @@ typedef struct {
     bit msip          "Read-write in a memory-mapped register";
     bit[64] time      "Global time concept; may be tied low if user time CSR is not required";
 } t_riscv_irqs;
-
-/*t t_riscv_mode
- */
-typedef enum[3] {
-    rv_mode_user       = 3b000, // matches the encoding in table 1.1 of v1.10 privilege spec
-    rv_mode_supervisor = 3b001, // matches the encoding in table 1.1 of v1.10 privilege spec
-    rv_mode_machine    = 3b011, // matches the encoding in table 1.1 of v1.10 privilege spec
-    rv_mode_debug      = 3b111, // all 1s so that it is a superset of machine mode
-} t_riscv_mode;
 
 /*t t_riscv_fetch_req_type
  *
@@ -162,23 +164,14 @@ typedef struct {
     t_riscv_fetch_req_type req_type "Request type - none, nonseq, seq, repeat; if flush only none, nonseq";
     bit[32]  address;
     t_riscv_mode mode;
-
-    bit      debug_fetch            "Asserted if fetch of a debug location (data0 or ebreak)";
-    bit     predicted_branch   "Only used if branch prediction is supported - so not for single cycle pipeline; for internal use really";
-    bit[32] pc_if_mispredicted "Only used if branch prediction is supported - so not for single cycle pipeline for internal use really";
 } t_riscv_fetch_req;
 
 /*t t_riscv_fetch_resp
  */
-typedef bit[2] t_riscv_fetch_tag;
 typedef struct {
     bit      valid;
     bit[32]  data;
-    bit      error;
-
-    bit      debug  "Needs to permit register read/write encoding, break after execution, break before execution, execution mode, breakpoint-in-hardware-not-software; force-debug-subroutine-trap-before-execution";
-    t_riscv_mode mode;
-    t_riscv_fetch_tag tag;
+    bit[2]   error "One bit per 16-bits of the data";
 } t_riscv_fetch_resp;
 
 /*t t_riscv_config

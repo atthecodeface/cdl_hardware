@@ -437,22 +437,23 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                 ifetch_state.pc <= pipeline_control.exec.pc_if_mispredicted; // late address, late decision
                 ifetch_state.state <= ifetch_fsm_restarting;
             }
-            if (pipeline_control.trap.ret) { // late decision
-                ifetch_state.pc <= csrs.mepc;
-                ifetch_state.state <= ifetch_fsm_restarting;
-                ifetch_state.mode <= rv_mode_machine;
-            }
             if (pipeline_control.trap.valid) { // vector interrupts if required, late decision
-                if (pipeline_state.interrupt_to_mode == rv_mode_debug) {
-                    ifetch_state.halt_req <= 0;
-                    ifetch_state.state <= ifetch_fsm_halted;
-                } elsif (pipeline_control.trap.ebreak_to_dbg) {
-                    ifetch_state.state <= ifetch_fsm_halted;
-                } else {
+                if (pipeline_control.trap.ret) { // late decision
+                    ifetch_state.pc <= csrs.mepc;
                     ifetch_state.state <= ifetch_fsm_restarting;
+                    ifetch_state.mode <= rv_mode_machine;
+                } else {
+                    if (pipeline_state.interrupt_to_mode == rv_mode_debug) {
+                        ifetch_state.halt_req <= 0;
+                        ifetch_state.state <= ifetch_fsm_halted;
+                    } elsif (pipeline_control.trap.ebreak_to_dbg) {
+                        ifetch_state.state <= ifetch_fsm_halted;
+                    } else {
+                        ifetch_state.state <= ifetch_fsm_restarting;
+                    }
+                    ifetch_state.mode <= pipeline_state.interrupt_to_mode;
+                    ifetch_state.pc <= bundle(csrs.mtvec.base, 2b0);
                 }
-                ifetch_state.mode <= pipeline_state.interrupt_to_mode;
-                ifetch_state.pc <= bundle(csrs.mtvec.base, 2b0);
             }
             }   
         }

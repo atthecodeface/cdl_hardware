@@ -65,18 +65,12 @@ typedef enum {
 typedef struct t_chk_riscv_ifetch_inputs {
     t_sl_uint64 *fetch_req__flush_pipeline;
     t_sl_uint64 *fetch_req__req_type;
-    t_sl_uint64 *fetch_req__debug_fetch;
     t_sl_uint64 *fetch_req__address;
     t_sl_uint64 *fetch_req__mode;
-    t_sl_uint64 *fetch_req__predicted_branch;
-    t_sl_uint64 *fetch_req__pc_if_mispredicted;
 
     t_sl_uint64 *fetch_resp__valid;
-    t_sl_uint64 *fetch_resp__debug;
     t_sl_uint64 *fetch_resp__data;
-    t_sl_uint64 *fetch_resp__mode;
     t_sl_uint64 *fetch_resp__error;
-    t_sl_uint64 *fetch_resp__tag;
 } t_chk_riscv_ifetch_inputs;
 
 /*t t_chk_riscv_ifetch_outputs
@@ -241,18 +235,12 @@ c_chk_riscv_ifetch::c_chk_riscv_ifetch( class c_engine *eng, void *eng_handle )
 
     REGISTER_INPUT(fetch_req__flush_pipeline,1);
     REGISTER_INPUT(fetch_req__req_type,3);
-    REGISTER_INPUT(fetch_req__debug_fetch,1);
     REGISTER_INPUT(fetch_req__address,32);
     REGISTER_INPUT(fetch_req__mode,3);
-    REGISTER_INPUT(fetch_req__predicted_branch,1);
-    REGISTER_INPUT(fetch_req__pc_if_mispredicted,32);
     
     REGISTER_INPUT(fetch_resp__valid,1);
-    REGISTER_INPUT(fetch_resp__debug,1);
     REGISTER_INPUT(fetch_resp__data,32);
-    REGISTER_INPUT(fetch_resp__mode,3);
-    REGISTER_INPUT(fetch_resp__error,1);
-    REGISTER_INPUT(fetch_resp__tag,2);
+    REGISTER_INPUT(fetch_resp__error,2);
     
     REGISTER_OUTPUT(error_detected,1);
     REGISTER_OUTPUT(cycle,32);
@@ -474,33 +462,21 @@ t_sl_error_level c_chk_riscv_ifetch::capture_inputs( void )
         connected_okay = 1;
         if (inputs.fetch_req__flush_pipeline==NULL) connected_okay=-1;
         if (inputs.fetch_req__req_type==NULL) connected_okay=-1;
-        if (inputs.fetch_req__debug_fetch==NULL) connected_okay=-1;
         if (inputs.fetch_req__address==NULL) connected_okay=-1;
         if (inputs.fetch_req__mode==NULL) connected_okay=-1;
-        if (inputs.fetch_req__predicted_branch==NULL) connected_okay=-1;
-        if (inputs.fetch_req__pc_if_mispredicted==NULL) connected_okay=-1;
         if (inputs.fetch_resp__valid==NULL) connected_okay=-1;
-        if (inputs.fetch_resp__debug==NULL) connected_okay=-1;
         if (inputs.fetch_resp__data==NULL) connected_okay=-1;
-        if (inputs.fetch_resp__mode==NULL) connected_okay=-1;
         if (inputs.fetch_resp__error==NULL) connected_okay=-1;
-        if (inputs.fetch_resp__tag==NULL) connected_okay=-1;
     }
     if (connected_okay<0) { return error_level_okay; }
     input.fetch_req.flush_pipeline      = inputs.fetch_req__flush_pipeline[0];
     input.fetch_req.req_type            = inputs.fetch_req__req_type[0];
-    input.fetch_req.debug_fetch         = inputs.fetch_req__debug_fetch[0];
     input.fetch_req.address             = inputs.fetch_req__address[0];
     input.fetch_req.mode                = inputs.fetch_req__mode[0];
-    input.fetch_req.predicted_branch    = inputs.fetch_req__predicted_branch[0];
-    input.fetch_req.pc_if_mispredicted  = inputs.fetch_req__pc_if_mispredicted[0];
 
     input.fetch_resp.valid    = inputs.fetch_resp__valid[0];
-    input.fetch_resp.debug    = inputs.fetch_resp__debug[0];
     input.fetch_resp.data     = inputs.fetch_resp__data[0];
-    input.fetch_resp.mode     = inputs.fetch_resp__mode[0];
     input.fetch_resp.error    = inputs.fetch_resp__error[0];
-    input.fetch_resp.tag      = inputs.fetch_resp__tag[0];
 
     return error_level_okay;
 }

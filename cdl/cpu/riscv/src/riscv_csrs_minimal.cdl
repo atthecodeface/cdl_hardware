@@ -290,22 +290,22 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
     /*b Break out ret and trap */
     ret_trap_breakout: {
         trap_combs = {*=0};
-        if (csr_controls.trap.valid) {
-            full_switch (csr_controls.trap.to_mode) {
-            case rv_mode_debug:      { trap_combs.d = 1; }
-            case rv_mode_machine:    { trap_combs.m = 1; }
-            case rv_mode_supervisor: { trap_combs.s = 1; }
-            case rv_mode_user:       { trap_combs.u = 1; }
-            }
-            if (rv_cfg_debug_force_disable) { trap_combs.m=1; }
-        }
         ret_combs = {*=0};
-        if (csr_controls.trap.ret) {
-            full_switch (csr_controls.trap.cause) {
-            case riscv_trap_cause_ret_dret: { ret_combs.d = 1; }
-            case riscv_trap_cause_ret_mret: { ret_combs.m = 1; }
-            case riscv_trap_cause_ret_sret: { ret_combs.s = 1; }
-            case riscv_trap_cause_ret_uret: { ret_combs.u = 1; }
+        if (csr_controls.trap.valid) {
+            if (csr_controls.trap.ret) {
+                full_switch (csr_controls.trap.cause) {
+                case riscv_trap_cause_ret_dret: { ret_combs.d = 1; }
+                case riscv_trap_cause_ret_mret: { ret_combs.m = 1; }
+                case riscv_trap_cause_ret_sret: { ret_combs.s = 1; }
+                case riscv_trap_cause_ret_uret: { ret_combs.u = 1; }
+                }
+            } else {
+                full_switch (csr_controls.trap.to_mode) {
+                case rv_mode_debug:      { trap_combs.d = 1; }
+                case rv_mode_machine:    { trap_combs.m = 1; }
+                case rv_mode_supervisor: { trap_combs.s = 1; }
+                case rv_mode_user:       { trap_combs.u = 1; }
+                }
             }
         }
     }

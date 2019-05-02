@@ -54,7 +54,9 @@ module tb_riscv_i32c_pipeline3( clock clk,
     net t_riscv_pipeline_state     pipeline_state;
     net t_riscv_pipeline_control     pipeline_control;
     net t_riscv_pipeline_response   pipeline_response;
+    net t_riscv_pipeline_fetch_req  pipeline_fetch_req;
     net t_riscv_pipeline_fetch_data  pipeline_fetch_data;
+    net t_riscv_pipeline_trap_request pipeline_trap_request;
 
     /*b State and comb
      */
@@ -93,7 +95,6 @@ module tb_riscv_i32c_pipeline3( clock clk,
         rv_imem_access_resp = {*=0};
         rv_imem_access_resp.valid    = (rv_imem_access_req.req_type != rv_fetch_none);
         rv_imem_access_resp.data     = imem_mem_read_data;
-        rv_imem_access_resp.mode     = rv_imem_access_req.mode;
 
         if (!rv_imem_access_req.address[1]) {
             imem_access_req = rv_imem_access_req;
@@ -119,6 +120,7 @@ module tb_riscv_i32c_pipeline3( clock clk,
         dmem_access_resp.ack        = 1;
         dmem_access_resp.ack_if_seq = 1;
         dmem_access_resp.abort_req  = 0;
+        dmem_access_resp.may_still_abort  = 0;
         if (riscv_clk_cycle_2) {
             dmem_select         <= dmem_access_req.valid && dmem_access_resp.ack;
             dmem_read_not_write <= (dmem_access_req.req_type != rv_mem_access_write);
@@ -176,18 +178,29 @@ module tb_riscv_i32c_pipeline3( clock clk,
 
         riscv_i32_pipeline_control_fetch_req pc_fetch_req( pipeline_state <= pipeline_state,
                                                            pipeline_response <= pipeline_response,
+                                                           pipeline_fetch_req => pipeline_fetch_req,
                                                            ifetch_req => rv_imem_access_req );
 
         riscv_i32_pipeline_control_fetch_data pc_fetch_data( pipeline_state <= pipeline_state,
                                                              ifetch_req  <= rv_imem_access_req,
                                                              ifetch_resp <= rv_imem_access_resp,
-                                                             //pipeline_control <= pipeline_control,
+                                                             pipeline_fetch_req <= pipeline_fetch_req,
                                                              pipeline_fetch_data => pipeline_fetch_data );
+
+        riscv_i32_pipeline_trap_interposer ti( pipeline_state         <= pipeline_state,
+                                               pipeline_response      <= pipeline_response,
+                                               dmem_access_resp       <= dmem_access_resp,
+                                               pipeline_trap_request  => pipeline_trap_request,
+                                               riscv_config           <= riscv_config
+        );
+        
         riscv_i32_pipeline_control_flow cf( pipeline_state <= pipeline_state,
                                             ifetch_req  <= rv_imem_access_req,
                                             pipeline_response <= pipeline_response,
+                                            pipeline_trap_request  <= pipeline_trap_request,
                                             coproc_response <= coproc_response,
                                             pipeline_control => pipeline_control,
+                                            dmem_access_resp <= dmem_access_resp,
                                             dmem_access_req => dmem_access_req,
                                             csr_access     => csr_access,
                                             pipeline_coproc_response => pipeline_coproc_response,

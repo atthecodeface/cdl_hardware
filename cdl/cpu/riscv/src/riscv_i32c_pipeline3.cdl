@@ -66,6 +66,7 @@ typedef struct {
 /*t t_dec_state */
 typedef struct {
     bit[32] pc                    "PC of instruction";
+    t_riscv_mode     mode         "Mode that the whole pipeline is operating in";
     t_riscv_i32_inst instruction  "Fetched instruction, ready for decode, register fetch, execute and writeback";
     bit valid                     "Asserted if @instruction is a valid fetched instruction, whether misaligned or not";
 } t_dec_state;
@@ -249,6 +250,7 @@ An example implementation of could be
         } else {
             if (pipeline_fetch_data.valid && !pipeline_control.flush.fetch) {
                 dec_state.valid <= 1;
+                dec_state.mode <= pipeline_fetch_data.mode;
                 dec_state.pc <= pipeline_fetch_data.pc;
                 dec_state.instruction <= pipeline_fetch_data.instruction;
                 if (rv_cfg_debug_force_disable || !riscv_config.debug_enable) {
@@ -411,7 +413,8 @@ An example implementation of could be
         alu_combs.dmem_exec = { idecode        = alu_state.idecode,
                                 arith_result   = alu_result.arith_result, // address of access
                                 rs2            = alu_combs.rs2,    // data for access (before rotation)
-                                first_cycle = alu_state.first_cycle
+                                first_cycle    = alu_state.first_cycle,
+                                mode           = dec_state.mode // can use dec_state as pipeline is always in that mode
         };
         riscv_i32_dmem_request dmem_req( dmem_exec    <= alu_combs.dmem_exec,
                                          dmem_request => alu_combs_dmem_request );
@@ -424,6 +427,7 @@ An example implementation of could be
         pipeline_response.exec.idecode            = alu_state.idecode;
         pipeline_response.exec.pc                 = alu_state.pc;
         pipeline_response.exec.pc_if_mispredicted = alu_state.pc_if_mispredicted; // Used for JAL and conditional branch
+        if (alu_state.idecode.op==riscv_op_jalr) { pipeline_response.exec.pc_if_mispredicted = alu_result.branch_target;}
         pipeline_response.exec.instruction        = alu_state.instruction;
         pipeline_response.exec.predicted_branch   = alu_state.predicted_branch;
         pipeline_response.exec.rs1                = alu_combs.rs1;
@@ -432,12 +436,6 @@ An example implementation of could be
         pipeline_response.exec.csr_access         = alu_combs.csr_access;
         pipeline_response.exec.cannot_start       = alu_combs.blocked_by_mem; // Need not be valid if exec.valid is low
         pipeline_response.exec.branch_condition_met = alu_result.branch_condition_met;
-        pipeline_response.exec.branch_target      = alu_result.branch_target; // Actually only need         case riscv_op_jalr:     { alu_result.branch_target = bundle(alu_combs.arith_result[31;1],1b0); }
-
-        pipeline_response.rfw.valid      = rfw_state.valid;
-        pipeline_response.rfw.rd_written = rfw_state.rd_written;
-        pipeline_response.rfw.rd         = rfw_state.rd;
-        pipeline_response.rfw.data       = rfw_state.mem_result;
 
         pipeline_response.pipeline_empty = !dec_state.valid && !alu_state.valid && !mem_state.valid && !rfw_state.valid;
 
@@ -486,9 +484,10 @@ An example implementation of could be
             mem_combs.result_data = mem_combs_dmem_read_data;
         }
         /*b Pipeline response from decode */
-        pipeline_response.mem.valid  = mem_state.valid;
-        pipeline_response.mem.pc     = 0; //mem_state.pc;
-        pipeline_response.mem.addr   = 0; //mem_state.addr;
+        pipeline_response.mem.valid               = mem_state.valid;
+        pipeline_response.mem.pc                  = 0; //mem_state.pc;
+        pipeline_response.mem.addr                = 0; //mem_state.addr;
+        pipeline_response.mem.access_in_progress  = mem_state.valid && mem_state.dmem_request.access.valid;
     }
 
     /*b RFW 'stage'
@@ -510,6 +509,15 @@ An example implementation of could be
             }
         }
         registers[0] <= 0; // register 0 is always zero...
+
+        /*b Pipeline response
+         */
+        pipeline_response.rfw.valid      = rfw_state.valid;
+        pipeline_response.rfw.rd_written = rfw_state.rd_written;
+        pipeline_response.rfw.rd         = rfw_state.rd;
+        pipeline_response.rfw.data       = rfw_state.mem_result;
+
+        /*b All done */
     }
 
     /*b All done */
