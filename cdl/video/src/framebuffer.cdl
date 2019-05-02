@@ -282,6 +282,8 @@ Top 16 SRAM data bits [16; 132] are blue, bit[47] leftmost
 
         video_bus.vsync = video_timing.v_sync;
         video_bus.hsync = video_timing.h_sync;
+        video_bus.vs    = video_timing.vs;
+        video_bus.hs    = video_timing.hs;
         video_bus.display_enable = video_timing.display_enable;
         video_bus.red   = pixel_state.red;
         video_bus.green = pixel_state.green;
