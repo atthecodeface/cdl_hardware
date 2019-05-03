@@ -170,6 +170,7 @@ riscv_config = {"i32c":1,
                 "debug_enable":1,
                 "coproc_disable":1,
                 "unaligned_mem":1,
+                "mem_abort_late":1,
 }
 
 #v i32_csr_access - signal widths for pycdl.wirebundle - must match implementation
