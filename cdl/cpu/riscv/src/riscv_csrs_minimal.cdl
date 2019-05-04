@@ -242,7 +242,7 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
                       csrs.dcsr.prv );
                      
         mtvec = bundle(csrs.mtvec.base, 1b0, csrs.mtvec.vectored);
-        part_switch (csr_access.address) {
+        part_switch (csr_access.address) { // 12 bits: top 2 bits indicate read/write (2b00/01/10) or read-only (2b11); next 2 are lowest privilege level
         case CSR_ADDR_CYCLE     : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;0]; }
         case CSR_ADDR_CYCLEH    : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;32]; }
         case CSR_ADDR_MCYCLE    : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;0]; }
