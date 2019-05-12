@@ -274,15 +274,17 @@ typedef enum[4] {
 typedef enum[4] {
     riscv_shift_op_left_logical_zeros  = 4b0000, // standard
     riscv_shift_op_left_logical_ones   = 4b0001,
-    riscv_shift_op_left_reverse        = 4b1110, // reverse cannot be a 'list'
     riscv_shift_op_left_rotate         = 4b0011,
     riscv_shift_op_right_logical_zeros = 4b0100, // standard
     riscv_shift_op_right_logical_ones  = 4b0101,
     riscv_shift_op_right_arithmetic    = 4b0110, // standard
     riscv_shift_op_right_rotate        = 4b0111,
-    riscv_shift_op_count               = 4b1000,
+    riscv_shift_op_bit_insert          = 4b1000, // inserts must be a 'left'
+    riscv_shift_op_byte_insert         = 4b1001, // inserts must be a 'left'
+    riscv_shift_op_reverse             = 4b1100, // reverse cannot be a 'left'
+    riscv_shift_op_count               = 4b1010,
 
-    riscv_shift_op_mask_right           = 4b0100
+    riscv_shift_op_mask_right           = 4b0100 // used to determine if shift amount to  be negated
 } t_riscv_shift_op;
 
 /*t t_riscv_mcause

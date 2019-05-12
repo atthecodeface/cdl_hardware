@@ -21,6 +21,7 @@
 
 /*a Includes
  */
+include "cpu/riscv/riscv_config.h"
 include "cpu/riscv/riscv_internal_types.h"
 include "cpu/riscv/riscv.h"
 
@@ -31,12 +32,21 @@ typedef enum[2] {
     mask_type_none    = 2b00,
     mask_type_normal  = 2b01,
     mask_type_invert  = 2b11,
+    mask_type_rs2     = 2b10,
 } t_mask_type;
+
+/*t t_bbmask_type */
+typedef enum[2] {
+    bb_mask_type_all   = 2b00,
+    bb_mask_type_bit   = 2b01,
+    bb_mask_type_byte     = 2b11,
+} t_bb_mask_type;
 
 /*t t_shift_combs */
 typedef struct {
     t_mask_type and_mask_type;
     t_mask_type or_mask_type;
+    t_bb_mask_type bb_mask_type;
     bit[5]  shift_control;
     bit[5]  shift_amount;
     bit[32] rotate_in           "Data to rotate";
@@ -95,7 +105,8 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
     A rotate right by 
     """ : {
         shift_combs.and_mask_type = mask_type_none; // values for rotate (why not?)
-        shift_combs.or_mask_type = mask_type_none;
+        shift_combs.or_mask_type  = mask_type_none;
+        shift_combs.bb_mask_type  = bb_mask_type_all;
 
         /*b Decode shift op
           Mask is ffff0000 >> amount
@@ -106,27 +117,55 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
           shift right arithmetic is (rotate and ~mask) OR ([31]?mask:0)
           rotate right/left is rotate
           reverse is reverse output
+
+constant integer rv_cfg_i32_bitmap_enhanced_shift_enable=0;
+constant integer rv_cfg_i32_bitmap_others_enable=0;
+
          */
         part_switch (idecode.shift_op) {
         case riscv_shift_op_left_logical_zeros:   {
             shift_combs.and_mask_type = mask_type_normal;
             shift_combs.or_mask_type  = mask_type_none;
         }
-        case riscv_shift_op_left_logical_ones:   {
-            shift_combs.and_mask_type = mask_type_normal;
-            shift_combs.or_mask_type  = mask_type_invert;
-        }
         case riscv_shift_op_right_logical_zeros:   {
             shift_combs.and_mask_type = mask_type_invert;
             shift_combs.or_mask_type  = mask_type_none;
         }
-        case riscv_shift_op_right_logical_ones:   {
-            shift_combs.and_mask_type = mask_type_invert;
-            shift_combs.or_mask_type  = mask_type_normal;
-        }
         case riscv_shift_op_right_arithmetic:   {
             shift_combs.and_mask_type = mask_type_invert;
             shift_combs.or_mask_type  = rs1[31] ? mask_type_normal : mask_type_none;
+        }
+        case riscv_shift_op_left_logical_ones:   {
+            if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
+                shift_combs.and_mask_type = mask_type_normal;
+                shift_combs.or_mask_type  = mask_type_invert;
+            }
+        }
+        case riscv_shift_op_right_logical_ones:   {
+            if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
+                shift_combs.and_mask_type = mask_type_invert;
+                shift_combs.or_mask_type  = mask_type_normal;
+            }
+        }
+            case riscv_shift_op_left_rotate, riscv_shift_op_right_rotate, riscv_shift_op_reverse:   {
+            if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
+                shift_combs.and_mask_type = mask_type_none;
+                shift_combs.or_mask_type  = mask_type_none;
+            }
+        }
+        case riscv_shift_op_bit_insert:   {
+            if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
+                shift_combs.and_mask_type = mask_type_normal;
+                shift_combs.bb_mask_type  = bb_mask_type_bit;
+                shift_combs.or_mask_type  = mask_type_rs2;
+            }
+        }
+        case riscv_shift_op_byte_insert:   {
+            if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
+                shift_combs.and_mask_type = mask_type_normal;
+                shift_combs.bb_mask_type  = bb_mask_type_byte;
+                shift_combs.or_mask_type  = mask_type_rs2;
+            }
         }
         }
 
@@ -179,21 +218,35 @@ module riscv_i32_alu( input t_riscv_i32_decode      idecode,
 
         /*b Determine AND and OR masks */
         shift_combs.shift_and_mask = shift_combs.mask_out[32;0];
-        shift_combs.shift_or_mask  = shift_combs.mask_out[32;0];
         part_switch (shift_combs.and_mask_type) {
         case mask_type_none:   { shift_combs.shift_and_mask = -1; }
         case mask_type_invert: { shift_combs.shift_and_mask = ~shift_combs.shift_and_mask; }
         }
+        if (shift_combs.shift_control==0) {
+            shift_combs.shift_and_mask = -1;
+        }
+        if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
+            part_switch (shift_combs.and_mask_type) {
+            case bb_mask_type_byte: { shift_combs.shift_and_mask = shift_combs.shift_and_mask &~ (shift_combs.shift_and_mask<<8); }
+            case bb_mask_type_bit:  { shift_combs.shift_and_mask = shift_combs.shift_and_mask &~ (shift_combs.shift_and_mask<<1); }
+            }
+        }
+        shift_combs.shift_or_mask  = shift_combs.mask_out[32;0];
+        if (shift_combs.shift_control==0) {
+            shift_combs.shift_or_mask = 0;
+        }
         part_switch (shift_combs.or_mask_type) {
         case mask_type_none:   { shift_combs.shift_or_mask = 0; }
-        case mask_type_invert: { shift_combs.shift_or_mask = ~shift_combs.shift_or_mask; }
-        }
-        if (shift_combs.shift_amount==0) {
-            shift_combs.shift_and_mask = -1;
-            shift_combs.shift_or_mask = 0;
+        case mask_type_invert: { shift_combs.shift_or_mask = ~shift_combs.shift_and_mask; } // only for sllo
+        case mask_type_rs2:    { shift_combs.shift_or_mask = rs2 & ~shift_combs.shift_and_mask; }
         }
 
         shift_combs.shift_result = (shift_combs.rotate_out[32;0] & shift_combs.shift_and_mask) | shift_combs.shift_or_mask;
+        if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
+            if (idecode.shift_op==riscv_shift_op_reverse) {
+                shift_combs.shift_result = shift_combs.rotate_bit_reverse;
+            }
+        }
     }
 
     /*b ALU operation */
