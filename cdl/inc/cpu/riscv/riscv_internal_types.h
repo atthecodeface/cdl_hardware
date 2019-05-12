@@ -190,7 +190,7 @@ typedef enum[2] {
     mw_word
 } t_riscv_mem_width;
 
-/*t t_riscv_op - RISC-V decoded instruction operation class */
+/*t t_riscv_op - RISC-V decoded instruction operation class - no relationship to encodings */
 typedef enum[4] {
     riscv_op_branch,
     riscv_op_jal,
@@ -210,7 +210,7 @@ typedef enum[4] {
     riscv_op_illegal
 } t_riscv_op;
 
-/*t t_riscv_subop - RISC-V decoded instruciton operation class */
+/*t t_riscv_subop - RISC-V decoded instruciton operation class - mapping of f3 as much as possible */
 typedef enum[4] {
     riscv_subop_valid=0, // for op==illegal, really - means op==invalid is sufficient for illegal op
     riscv_subop_illegal = 0xf, // for many of the ops...
@@ -224,12 +224,11 @@ typedef enum[4] {
 
     riscv_subop_add    = 0, // same as riscv_op_f3, with bit[3] as the 'extra' ops
     riscv_subop_sub    = 0+8,
-    riscv_subop_sll    = 1,
+    riscv_subop_sll    = 1,  // => subop shift
     riscv_subop_slt    = 2,
     riscv_subop_sltu   = 3,
     riscv_subop_xor    = 4,
-    riscv_subop_srl    = 5,
-    riscv_subop_sra    = 5+8,
+    riscv_subop_srla   = 5,    // => subop shift
     riscv_subop_or     = 6,
     riscv_subop_and    = 7,
 
@@ -270,6 +269,21 @@ typedef enum[4] {
     riscv_subop_csrrs   = 2,
     riscv_subop_csrrc   = 3,
 } t_riscv_subop;
+
+/*t t_riscv_shift_op */
+typedef enum[4] {
+    riscv_shift_op_left_logical_zeros  = 4b0000, // standard
+    riscv_shift_op_left_logical_ones   = 4b0001,
+    riscv_shift_op_left_reverse        = 4b1110, // reverse cannot be a 'list'
+    riscv_shift_op_left_rotate         = 4b0011,
+    riscv_shift_op_right_logical_zeros = 4b0100, // standard
+    riscv_shift_op_right_logical_ones  = 4b0101,
+    riscv_shift_op_right_arithmetic    = 4b0110, // standard
+    riscv_shift_op_right_rotate        = 4b0111,
+    riscv_shift_op_count               = 4b1000,
+
+    riscv_shift_op_mask_right           = 4b0100
+} t_riscv_shift_op;
 
 /*t t_riscv_mcause
  * Non-interrupt MCAUSE reasons, from the spec
@@ -625,7 +639,8 @@ typedef struct {
     bit          immediate_valid       "Asserted if immediate data is valid and therefore to be used instead of source register 2";
     t_riscv_op     op                  "Operation class of the instruction";
     t_riscv_subop  subop               "Subclass of the operation class";
-    bit[7]         funct7              "Otions for subop - in part handled by decode, but used for shifts and custom instructions";
+    t_riscv_shift_op shift_op          "Only valid for shift operations (i.e. ignored if op is not alu and subop is not a shift)";
+    bit[7]         funct7              "Options for subop only to be used by custom instructions (so it can be optimized out)";
     t_riscv_mode  minimum_mode         "Minimum mode that is required for the instruction";
     bit           illegal              "asserted if an illegal opcode";
     bit           illegal_pc           "asserted if the PC was not legal (e.g. not word aligned if C mode not supported";

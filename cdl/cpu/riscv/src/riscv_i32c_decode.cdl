@@ -246,6 +246,7 @@ Note that custom opcodes are available
         idecode.illegal = 1;
         idecode.subop = riscv_subop_valid; // so only opc has to be set to 'valid'
         idecode.funct7 = 0;
+        idecode.shift_op = riscv_shift_op_right_logical_zeros;
 
         /*b Decode by quadrant (bottom 2 bits of instruction, 11 -> not 16-bit ) */
         part_switch(combs.quadrant) {
@@ -347,11 +348,13 @@ Note that custom opcodes are available
                 full_switch (instruction.data[2;10])
                 {
                 case 2b00: { // srli rd', rd', amt
-                    idecode.subop  = riscv_subop_srl;
+                    idecode.subop  = riscv_subop_srla;
+                    idecode.shift_op = riscv_shift_op_right_logical_zeros;
                     idecode.rs2_valid = 0;
                 }
                 case 2b01: { // srai rd', rd', amt
-                    idecode.subop  = riscv_subop_sra;
+                    idecode.subop  = riscv_subop_srla;
+                    idecode.shift_op = riscv_shift_op_right_arithmetic;
                     idecode.rs2_valid = 0;
                 }
                 case 2b10: { // andi rd', rd', imm
@@ -440,6 +443,7 @@ Note that custom opcodes are available
                 idecode.illegal = 0;
                 idecode.op     = riscv_op_alu;
                 idecode.subop  = riscv_subop_sll;
+                idecode.shift_op = riscv_shift_op_left_logical_zeros;
                 idecode.rs1_valid = 1;
                 idecode.rs2_valid = 0;
                 idecode.rd_written = 1;
