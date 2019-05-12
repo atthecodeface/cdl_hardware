@@ -240,12 +240,12 @@ Shift right, shifting in ones - srl/a with funct7 of 7b1100000
 Bit/byte/half-word swap - sll with funct7 of 7b0100000; half-word swap
 if shift amount[4] is set; byte swap if shift amount[3] is set; bit
 swap if shift amount[0] is set - so swap can be register or immediate
-Replace bit N of RS2 with data from RS1 - slli with funct7 of 7b0100001, N in shift amount
-Replace byte N of RS2 with data from RS1 - slli with funct7 of 7b0100010, N in shift amount, N should be multiple of 8
+Replace bit N of RS2 with data from RS1 - sll with funct7 of 7b0100001, N in shift amount
+Replace byte N of RS2 with data from RS1 - sll with funct7 of 7b0100010, N in shift amount, N should be multiple of 8
 
-Count leading zeros - srl/a with funct7 of 7b1010000
-Count leading ones - srl/a with funct7 of 7b1010001
-Count leading bit - srl/a with funct7 of 7b1010010
+Count leading zeros - srl/a with funct7 of 7b0100001
+Count leading ones  - srl/a with funct7 of 7b0100010
+Count leading bit   - srl/a with funct7 of 7b0100011
 
 ## Multiply divide extension
 

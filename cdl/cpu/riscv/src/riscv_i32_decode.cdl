@@ -190,7 +190,23 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
         idecode.csr_access.address = instruction.data[12;20];
         idecode.csr_access.access  = riscv_csr_access_none;
         combs.rs1_nonzero = (idecode.rs1 != 0);
+
+        //riscv_shift_op_count               = 4b1010,
         idecode.shift_op = riscv_shift_op_left_logical_zeros;
+        full_switch (combs.funct7[2;5]) {
+        case 2b00: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_logical_zeros; }
+        case 2b01: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_arithmetic;    }
+        case 2b10: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_rotate        : riscv_shift_op_right_rotate;        }
+        case 2b11: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_ones  : riscv_shift_op_right_logical_ones;  }
+        }
+        if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
+            part_switch (combs.funct7) {
+            case 7b0100000: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_reverse     : riscv_shift_op_right_arithmetic;  }
+            case 7b0100001: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_bit_insert  : riscv_shift_op_right_arithmetic;  }
+            case 7b0100010: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_byte_insert : riscv_shift_op_right_arithmetic;  }
+            }
+        }
+
         part_switch (combs.opc) {
         case riscv_opc_lui:    { // load upper immediate, uses u format
             // Spec 2.2 section 2.4 
@@ -285,12 +301,10 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
                 case riscv_f3_sll:    {
                     idecode.illegal = (combs.funct7!=0);
                     idecode.subop   = riscv_subop_sll;
-                    idecode.shift_op = riscv_shift_op_left_logical_zeros;
                 }
                 case riscv_f3_srlsra: {
                     idecode.illegal = (combs.funct7[5;0]!=0) || combs.funct7[6];
                     idecode.subop   =  riscv_subop_srla; // SRAI has funct7[5] set, else SRLI
-                    idecode.shift_op = combs.funct7[5] ? riscv_shift_op_right_arithmetic : riscv_shift_op_right_logical_zeros;
                 }
                 default:          {
                     idecode.illegal = 1;

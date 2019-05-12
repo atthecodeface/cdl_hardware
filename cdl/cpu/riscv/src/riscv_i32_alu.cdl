@@ -147,7 +147,7 @@ constant integer rv_cfg_i32_bitmap_others_enable=0;
                 shift_combs.or_mask_type  = mask_type_normal;
             }
         }
-            case riscv_shift_op_left_rotate, riscv_shift_op_right_rotate, riscv_shift_op_reverse:   {
+        case riscv_shift_op_left_rotate, riscv_shift_op_right_rotate, riscv_shift_op_reverse: {
             if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
                 shift_combs.and_mask_type = mask_type_none;
                 shift_combs.or_mask_type  = mask_type_none;
@@ -226,7 +226,7 @@ constant integer rv_cfg_i32_bitmap_others_enable=0;
             shift_combs.shift_and_mask = -1;
         }
         if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
-            part_switch (shift_combs.and_mask_type) {
+            part_switch (shift_combs.bb_mask_type) {
             case bb_mask_type_byte: { shift_combs.shift_and_mask = shift_combs.shift_and_mask &~ (shift_combs.shift_and_mask<<8); }
             case bb_mask_type_bit:  { shift_combs.shift_and_mask = shift_combs.shift_and_mask &~ (shift_combs.shift_and_mask<<1); }
             }
