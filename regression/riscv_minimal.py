@@ -136,6 +136,7 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
         self.bfm_wait(delay)
         #self.ios.b.drive(1)
         self.check_memory("Check memory after run complete (%d)"%self.global_cycle())
+        print "%d: Memory check completed"%(self.global_cycle())
         self.finishtest(0,"")
         pass
 
@@ -690,12 +691,12 @@ class riscv_base(simple_tb.base_test):
     hw = None
     cycles_scale = 1.0
     test_memory = None
-    default_test_class = c_riscv_minimal_test_dump
+    default_test_classes = {"":c_riscv_minimal_test_dump}
     @classmethod
-    def add_test_fn(cls, name, dump_file, num_cycles, options):
+    def add_test_fn(cls, subclass, name, dump_file, num_cycles, options):
         num_cycles = int(num_cycles * cls.cycles_scale)
         def test_fn(c):
-            test_class = cls.default_test_class
+            test_class = cls.default_test_classes[subclass]
             test = test_class(hw_cls        = cls,
                               dump_filename = dump_file,
                               test_memory   = cls.test_memory,
@@ -704,6 +705,7 @@ class riscv_base(simple_tb.base_test):
             hw = cls.hw(test)
             c.do_test_run(hw, hw.num_cycles)
             pass
+        if subclass!="": name=subclass+"_"+name
         setattr(cls, "test_"+name, test_fn)
         pass
 
@@ -748,8 +750,8 @@ class riscv_i32mc_pipeline3(riscv_base):
     test_memory = "dmem"
     cycles_scale = 1.5
     needs_jtag_startup = True
-    default_test_class = c_riscv_minimal_test_dump_with_pauses
-    #default_test_class = c_riscv_minimal_test_jtag_prog
+    default_test_classes = {"":c_riscv_minimal_test_dump,
+                            "jtag_pause":c_riscv_minimal_test_dump_with_pauses}
     def openocd(self):
         test = c_riscv_minimal_test_jtag_server(100*1000*1000) #0*1000*1000)
         hw = self.hw(test)
@@ -836,18 +838,19 @@ for (test_dir,tests) in [(riscv_zephyr_dir,riscv_atcf_zephyr),
     for tc in tests:
         (dump_file,num_cycles,tags,options) = tests[tc]
         dump_file = test_dir+dump_file
-        for test_class in [ riscv_i32_minimal,                  
-                                  riscv_i32c_minimal,             
-                                  riscv_i32c_minimal_with_debug,             
-                                  riscv_i32c_pipeline3,           
-                                  riscv_i32mc_pipeline3,          
-                                  ]:
+        for (test_class,subclass) in [ (riscv_i32_minimal,""),
+                                       (riscv_i32c_minimal, ""),
+                                       (riscv_i32c_minimal_with_debug, ""),
+                                       (riscv_i32c_pipeline3, ""),
+                                       (riscv_i32mc_pipeline3, ""),
+                                       (riscv_i32mc_pipeline3, "jtag_pause"),
+        ]:
             can_do = True
             for t in tags:
                 if t not in test_class.supports: can_do = False
                 pass
             if can_do:
-                test_class.add_test_fn(name=tc, dump_file=dump_file, num_cycles=num_cycles, options=options)
+                test_class.add_test_fn(subclass=subclass, name=tc, dump_file=dump_file, num_cycles=num_cycles, options=options)
                 pass
         pass
     pass
