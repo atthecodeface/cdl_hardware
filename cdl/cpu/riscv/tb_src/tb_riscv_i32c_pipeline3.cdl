@@ -11,8 +11,8 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  *
- * @file   tb_riscv_minimal.cdl
- * @brief  Testbench for minimal RISC-V
+ * @file   tb_riscv_i32c_pipeline3.cdl
+ * @brief  Small testbench for Reve-R pipeline supporting RV32IC
  *
  */
 
@@ -36,132 +36,119 @@ extern module se_test_harness( clock clk, input bit a, output bit b )
 module tb_riscv_i32c_pipeline3( clock clk,
                                 input bit reset_n
 )
+"""
+This is a simple test bench for the Reve-R pipeline using separate instruction and data memories.
+
+The clock for the Reve-R runs at one thrid of the system (and SRAM)
+clock speed.  In the first 'clk' cycle of the pipeline the Reve-R puts
+out its instruction fetch request.  The instruction SRAM has read
+requests presented in this cycle and the second 'clk' cycle, with the
+data being assembled and valid during the third 'clk' cycle, for the
+Reve-R to register at the end of its clock tick.
+
+Data memory accesses are registered at the end of the Reve-R clock
+cycle and performed for the whole (all three cloock ticks) of the
+access cycle.
+
+"""
 {
+    /*b Default clock and reset
+     */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Configuration and tie-offs
+     */
+    clocked t_riscv_config               riscv_config={*=0, i32c=1};
+    clocked t_riscv_i32_coproc_response  coproc_response={*=0};
+    clocked t_riscv_debug_mst            debug_mst = {*=0};
+    clocked t_riscv_irqs                 irqs= {*=0};
 
     /*b Nets
      */
     net  t_riscv_mem_access_req  dmem_access_req;
     comb t_riscv_mem_access_resp dmem_access_resp;
 
-    net  t_riscv_fetch_req  rv_imem_access_req;
-    comb t_riscv_fetch_req  imem_access_req;
-    comb t_riscv_fetch_resp rv_imem_access_resp;
-    comb t_riscv_config riscv_config;
-    net t_riscv_csr_controls      csr_controls;
-    net t_riscv_csr_data          csr_data;
-    net t_riscv_csr_access        csr_access;
-    net t_riscv_csrs_minimal csrs;
-    net t_riscv_pipeline_state     pipeline_state;
-    net t_riscv_pipeline_control     pipeline_control;
-    net t_riscv_pipeline_response   pipeline_response;
-    net t_riscv_pipeline_fetch_req  pipeline_fetch_req;
-    net t_riscv_pipeline_fetch_data  pipeline_fetch_data;
+    net  t_riscv_fetch_req       rv_imem_access_req;
+    comb t_riscv_fetch_req       imem_access_req;
+    comb t_riscv_fetch_resp      rv_imem_access_resp;
+    net t_riscv_csr_controls     csr_controls;
+    net t_riscv_csr_data         csr_data;
+    net t_riscv_csr_access       csr_access;
+    net t_riscv_csrs_minimal     csrs;
+
+    /*b Nets for the pipeline
+     */
+    net t_riscv_pipeline_state        pipeline_state;
+    net t_riscv_pipeline_control      pipeline_control;
+    net t_riscv_pipeline_response     pipeline_response;
+    net t_riscv_pipeline_fetch_req    pipeline_fetch_req;
+    net t_riscv_pipeline_fetch_data   pipeline_fetch_data;
     net t_riscv_pipeline_trap_request pipeline_trap_request;
+
+    /*b Data memory state and combs
+     */
+    clocked t_riscv_mem_access_req dmem_access_in_progress = {*=0};
 
     /*b State and comb
      */
     net bit[32] imem_mem_read_data;
     net bit[32] main_mem_read_data;
     net t_riscv_i32_coproc_controls  coproc_controls;
-    comb t_riscv_i32_coproc_response   coproc_response;
     net t_riscv_i32_coproc_response   pipeline_coproc_response;
 
-    /*b Clock divider
+    clocked bit[32] last_imem_mem_read_data=0;
+    net t_riscv_i32_trace trace;
+    comb t_riscv_packed_trace_control trace_control;
+    net t_riscv_i32_packed_trace packed_trace;
+    net t_riscv_i32_compressed_trace compressed_trace;
+    net t_riscv_i32_decompressed_trace decompressed_trace;
+    net bit[5] nybbles_consumed;
+
+    /*b Clock divider state
      */
+    comb bit riscv_clk_enable;
     clocked clock clk reset active_low reset_n bit[2] clk_divider = 0;
     clocked clock clk reset active_low reset_n bit riscv_clk_cycle_0 = 1;
     clocked clock clk reset active_low reset_n bit riscv_clk_cycle_1 = 0;
     clocked clock clk reset active_low reset_n bit riscv_clk_cycle_2 = 0;
     gated_clock clock clk active_high riscv_clk_cycle_2 riscv_clk;
+
+    /*b Configuration
+     */
+    configuration """
+    Tie-offs are best done as clocked signals, with the reset value and the assigned values being equal.
+    In synthesis the flops will be optimized out as tied-low or tied-high.
+    """ : {
+        riscv_config      <= {*=0};
+        riscv_config.i32c <= 1;
+        riscv_config.e32  <= 0;
+        riscv_config.i32m <= 0;
+
+        irqs <= {*=0};
+
+        coproc_response <= {*=0};
+        debug_mst       <= {*=0};
+    }
+
+    /*b Clock divider logic
+     */
     clock_divider """
+    The RISC-V clock is always three clock ticks long
+
+    This permits the instruction and data accesses to the memory to occur in cycles 
     """ : {
         riscv_clk_cycle_0 <= (clk_divider==2b10);
         riscv_clk_cycle_1 <= (clk_divider==2b00);
         riscv_clk_cycle_2 <= (clk_divider==2b01);
         clk_divider <= clk_divider + 1;
         if (riscv_clk_cycle_2) { clk_divider <= 0; }
-    }
-
-    /*b Instantiate srams
-     */
-    default clock clk;
-    default reset active_low reset_n;
-    clocked bit[32] last_imem_mem_read_data=0;
-    clocked bit dmem_select = 0;
-    clocked bit dmem_read_not_write = 0;
-    clocked bit[14] dmem_address = 0;
-    clocked bit[32] dmem_write_data = 0;
-    srams: {
-        rv_imem_access_resp = {*=0};
-        rv_imem_access_resp.valid    = (rv_imem_access_req.req_type != rv_fetch_none);
-        rv_imem_access_resp.data     = imem_mem_read_data;
-
-        if (!rv_imem_access_req.address[1]) {
-            imem_access_req = rv_imem_access_req;
-            rv_imem_access_resp.data = imem_mem_read_data;
-        } else {
-            if (riscv_clk_cycle_0) {
-                imem_access_req = rv_imem_access_req;
-            } else {
-                imem_access_req = rv_imem_access_req;
-                imem_access_req.address = rv_imem_access_req.address + 4;
-                rv_imem_access_resp.data = bundle(imem_mem_read_data[16;0], last_imem_mem_read_data[16;16]);
-            }
-        }
-        last_imem_mem_read_data <= imem_mem_read_data;
-        se_sram_srw_16384x32 imem(sram_clock <- clk,
-                                  select         <= (imem_access_req.req_type!=rv_fetch_none) & (riscv_clk_cycle_0 || riscv_clk_cycle_1),
-                                  read_not_write <= 1,
-                                  write_enable   <= -1,
-                                  address        <= imem_access_req.address[14;2],
-                                  write_data     <= 0,
-                                  data_out       => imem_mem_read_data );
-
-        dmem_access_resp.ack        = 1;
-        dmem_access_resp.ack_if_seq = 1;
-        dmem_access_resp.abort_req  = 0;
-        dmem_access_resp.may_still_abort  = 0;
-        if (riscv_clk_cycle_2) {
-            dmem_select         <= dmem_access_req.valid && dmem_access_resp.ack;
-            dmem_read_not_write <= (dmem_access_req.req_type != rv_mem_access_write);
-            dmem_address        <= dmem_access_req.address[14;2];
-            dmem_write_data     <= dmem_access_req.write_data;
-            }
-        se_sram_srw_16384x32_we8 dmem(sram_clock <- clk,
-                                      select         <= dmem_select,
-                                      read_not_write <= dmem_read_not_write,
-                                      write_enable   <= -1,
-                                      address        <= dmem_address,
-                                      write_data     <= dmem_write_data,
-                                      data_out       => main_mem_read_data );
-        dmem_access_resp.access_complete = 1;
-        dmem_access_resp.read_data  = main_mem_read_data;
-    }
-
-    /*b Instantiate RISC-V
-     */
-    comb t_riscv_irqs       irqs;
-    net t_riscv_i32_trace trace;
-    comb t_riscv_debug_mst debug_mst;
-    comb bit riscv_clk_enable;
-    comb t_riscv_packed_trace_control trace_control;
-    net t_riscv_i32_packed_trace packed_trace;
-    net t_riscv_i32_compressed_trace compressed_trace;
-    net t_riscv_i32_decompressed_trace decompressed_trace;
-    net bit[5] nybbles_consumed;
-    riscv_instance: {
-        se_test_harness th( clk <- clk, a<=0 );
-        riscv_config = {*=0};
-        riscv_config.i32c = 1;
-        riscv_config.e32  = 0;
-        riscv_config.i32m = 0;
-        irqs = {*=0};
-
         riscv_clk_enable = riscv_clk_cycle_2;        
+    }
 
-        coproc_response = {*=0};
-        debug_mst = {*=0};
-
+    /*b Instantiate Reve-R pipeline
+     */
+    reve_r_pipeline: {
         riscv_i32_pipeline_control pc(clk <- clk,
                                       reset_n          <= reset_n,
                                       riscv_clk_enable <= riscv_clk_enable,
@@ -221,6 +208,67 @@ module tb_riscv_i32c_pipeline3( clock clk,
                                   csr_read_data    <= csr_data.read_data,
                                   riscv_config <= riscv_config);
 
+    }
+        
+    /*b Instruction SRAM
+     */
+    instruction_sram: {
+        rv_imem_access_resp = {*=0};
+        rv_imem_access_resp.valid    = (rv_imem_access_req.req_type != rv_fetch_none);
+        rv_imem_access_resp.data     = imem_mem_read_data;
+
+        if (!rv_imem_access_req.address[1]) {
+            imem_access_req = rv_imem_access_req;
+            rv_imem_access_resp.data = imem_mem_read_data;
+        } else {
+            if (riscv_clk_cycle_0) {
+                imem_access_req = rv_imem_access_req;
+            } else {
+                imem_access_req = rv_imem_access_req;
+                imem_access_req.address = rv_imem_access_req.address + 4;
+                rv_imem_access_resp.data = bundle(imem_mem_read_data[16;0], last_imem_mem_read_data[16;16]);
+            }
+        }
+        last_imem_mem_read_data <= imem_mem_read_data;
+        se_sram_srw_16384x32 imem(sram_clock <- clk,
+                                  select         <= (imem_access_req.req_type!=rv_fetch_none) & (riscv_clk_cycle_0 || riscv_clk_cycle_1),
+                                  read_not_write <= 1,
+                                  write_enable   <= -1,
+                                  address        <= imem_access_req.address[14;2],
+                                  write_data     <= 0,
+                                  data_out       => imem_mem_read_data );
+    }
+
+    /*b Data memory
+     */
+    data_memory: {
+    
+        dmem_access_resp.ack        = 1;
+        dmem_access_resp.ack_if_seq = 1;
+        dmem_access_resp.abort_req  = 0;
+        dmem_access_resp.may_still_abort  = 0;
+        if (riscv_clk_cycle_2) {
+            dmem_access_in_progress <= dmem_access_req;
+            if (!dmem_access_resp.ack) {
+                dmem_access_in_progress.valid <= 0;
+            }
+        }
+        se_sram_srw_16384x32_we8 dmem(sram_clock <- clk,
+                                      select         <= dmem_access_in_progress.valid,
+                                      read_not_write <= (dmem_access_in_progress.req_type != rv_mem_access_write),
+                                      address        <= dmem_access_in_progress.address[14;2],
+                                      write_enable   <= dmem_access_in_progress.byte_enable,
+                                      write_data     <= dmem_access_in_progress.write_data,
+                                      data_out       => main_mem_read_data );
+        dmem_access_resp.access_complete = 1;
+        dmem_access_resp.read_data  = main_mem_read_data;
+    }
+
+    /*b Test harness and CSRs
+     */
+    test_harness_and_csrs: {
+        se_test_harness th( clk <- clk, a<=0 );
+
         riscv_csrs_minimal csrs( clk <- clk,
                                  reset_n <= reset_n,
                                  riscv_clk_enable <= riscv_clk_enable,
@@ -230,17 +278,21 @@ module tb_riscv_i32c_pipeline3( clock clk,
                                  csr_controls   <= csr_controls,
                                  csrs => csrs
             );
-
-        riscv_i32_trace trace(clk <- clk,
-                              reset_n <= reset_n,
-                              riscv_clk_enable <= riscv_clk_enable,
-                              trace <= trace );
+    }
+    
+    /*b Trace logic and modules
+     */
+    riscv_trace: {
         trace_control = {enable=1,
                          enable_control=1,
                          enable_pc=1, // priority over rfd?
                          enable_rfd=0,
                          enable_breakpoint=1,
                          valid = riscv_clk_enable};
+        riscv_i32_trace trace(clk <- clk,
+                              reset_n <= reset_n,
+                              riscv_clk_enable <= riscv_clk_enable,
+                              trace <= trace );
         riscv_i32_trace_pack trace_pack(clk <- clk,
                                         reset_n <= reset_n,
                                         trace_control <= trace_control,
@@ -251,8 +303,11 @@ module tb_riscv_i32c_pipeline3( clock clk,
         riscv_i32_trace_decompression trace_decompression( compressed_nybbles <= compressed_trace.data,
                                                            decompressed_trace => decompressed_trace,
                                                            nybbles_consumed => nybbles_consumed );
+    }
 
-
+    /*b Checkers - for matching trace etc
+     */
+    checkers: {
         chk_riscv_ifetch checker_ifetch( clk <- riscv_clk,
                                          fetch_req <= rv_imem_access_req,
                                          fetch_resp <= rv_imem_access_resp
@@ -265,4 +320,7 @@ module tb_riscv_i32c_pipeline3( clock clk,
                                          //cycle => ,
             );
     }
+
+    /*b All done
+     */
 }

@@ -172,6 +172,8 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
     CSR_ADDR_MARCHID
     CSR_ADDR_MIMPID
     CSR_ADDR_MHARTID
+
+    User mode interrupts requires uscratch, uepc, ucause, utval, uip; ustatus, uie, utvec
     """: {
 
         /*b Decode read data and 'illegal_access' for the CSR access */

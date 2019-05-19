@@ -120,6 +120,10 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
     #f run_start
     def run_start(self):
         pass
+    #f finishtest
+    def finishtest(self, code, msg):
+        self.release_image()
+        return simple_tb.base_th.finishtest(self, code, msg)
     #f run
     def run(self):
         self.sim_msg = self.sim_message()
