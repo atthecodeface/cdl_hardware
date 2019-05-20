@@ -687,6 +687,7 @@ typedef struct {
 /*a Dmem access */
 /*t t_riscv_i32_dmem_exec */
 typedef struct {
+    bit                     valid;
     t_riscv_mode            mode;
     t_riscv_i32_decode      idecode "Exec stage idecode";
     t_riscv_word            arith_result;

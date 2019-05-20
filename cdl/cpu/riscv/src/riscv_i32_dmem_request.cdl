@@ -85,7 +85,7 @@ module riscv_i32_dmem_request( input  t_riscv_i32_dmem_exec     dmem_exec,
         dmem_request.store_address_misaligned = 0;
 
         if (dmem_exec.idecode.op==riscv_op_mem) {
-            dmem_request.access.valid     = 1;
+            dmem_request.access.valid     = dmem_exec.valid;
             dmem_request.access.req_type  = rv_mem_access_read;
             dmem_request.load_address_misaligned  = dmem_combs.dmem_misaligned;
             if (dmem_exec.idecode.subop & riscv_subop_ls_store) {

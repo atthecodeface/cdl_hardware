@@ -264,11 +264,9 @@ access cycle.
         dmem_access_resp.read_data  = main_mem_read_data;
     }
 
-    /*b Test harness and CSRs
+    /*b CSRs
      */
-    test_harness_and_csrs: {
-        se_test_harness th( clk <- clk, a<=0 );
-
+    csr_instance: {
         riscv_csrs_minimal csrs( clk <- clk,
                                  reset_n <= reset_n,
                                  riscv_clk_enable <= riscv_clk_enable,
@@ -278,6 +276,12 @@ access cycle.
                                  csr_controls   <= csr_controls,
                                  csrs => csrs
             );
+    }
+    
+    /*b Test harness
+     */
+    test_harness_inst: {
+        se_test_harness th( clk <- clk, a<=0 );
     }
     
     /*b Trace logic and modules

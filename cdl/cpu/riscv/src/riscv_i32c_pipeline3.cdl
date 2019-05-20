@@ -128,6 +128,7 @@ typedef struct {
     bit rd_from_mem             "Asserted if Rd is to be written to with result of memory - so a following instruction must wait until this one reaches RFW";
     bit[5] rd                   "Destination register used by the instruction (if valid and rd_written are asserted)";
     t_riscv_i32_dmem_request dmem_request "Data memory request data";
+    bit[32] pc                  "PC for reporting aborts, if configured";
 } t_mem_state;
 
 /*t t_mem_combs
@@ -410,7 +411,8 @@ An example implementation of could be
         }
 
         /*b Memory access handling - must be valid before middle of cycle */
-        alu_combs.dmem_exec = { idecode        = alu_state.idecode,
+        alu_combs.dmem_exec = { valid          = alu_state.valid,
+                                idecode        = alu_state.idecode,
                                 arith_result   = alu_result.arith_result, // address of access
                                 rs2            = alu_combs.rs2,    // data for access (before rotation)
                                 first_cycle    = alu_state.first_cycle,
@@ -470,6 +472,7 @@ An example implementation of could be
             mem_state.rd_written   <= alu_state.idecode.rd_written;
             mem_state.rd           <= alu_state.idecode.rd;
             mem_state.alu_result   <= alu_combs.result_data;
+            mem_state.pc           <= alu_state.pc;
         }
 
         /*b Memory read handling */
@@ -483,10 +486,11 @@ An example implementation of could be
         if (mem_state.dmem_request.reading) {
             mem_combs.result_data = mem_combs_dmem_read_data;
         }
+
         /*b Pipeline response from decode */
         pipeline_response.mem.valid               = mem_state.valid;
-        pipeline_response.mem.pc                  = 0; //mem_state.pc;
-        pipeline_response.mem.addr                = 0; //mem_state.addr;
+        pipeline_response.mem.pc                  = mem_state.pc;
+        pipeline_response.mem.addr                = mem_state.dmem_request.access.address;
         pipeline_response.mem.access_in_progress  = mem_state.valid && mem_state.dmem_request.access.valid;
     }
 

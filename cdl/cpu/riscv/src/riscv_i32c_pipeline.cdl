@@ -219,7 +219,8 @@ stage the multiply cannot support fused operations
                            alu_result => decexecrfw_alu_result );
     
         /*b Memory access handling - post ALU - must be valid before middle of cycle */
-        decexecrfw_combs.dmem_exec = { idecode = decexecrfw_combs.idecode,
+        decexecrfw_combs.dmem_exec = { valid          = decexecrfw_state.valid,
+                                       idecode        = decexecrfw_combs.idecode,
                                        arith_result   = decexecrfw_alu_result.arith_result, // address of access
                                        rs2            = decexecrfw_combs.rs2,    // data for access (before rotation)
                                        first_cycle = 1,

@@ -655,6 +655,34 @@ class riscv_i32mc_pipeline3_test_hw(riscv_base_hw):
         pass
     pass
 
+#c riscv_i32mc_system_test_hw
+class riscv_i32mc_system_test_hw(riscv_base_hw):
+    """
+    Instantiation of RISCV system using pipeline3
+    """
+    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
+               }
+    th_forces = { "th.clock":"clk",
+                  "th.inputs":("tdo"),
+                  "th.outputs":("jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
+                  }
+    clocks = {"jtag_tck":(0,1,1),
+              "clk":(0,1,1),
+              }
+    module_name = "tb_riscv_i32mc_system"
+    #f __init__
+    def __init__(self, test):
+        self.num_cycles = test.num_cycles
+        self.options    = test.options
+        self.th_forces = self.th_forces.copy()
+        mif_filename = test.get_image()
+        self.th_forces["imem.filename"] = mif_filename
+        self.th_forces["dmem.filename"] = mif_filename
+        self.add_th_forces_for_checkers(test, "")
+        riscv_base_hw.__init__(self,test)
+        pass
+    pass
+
 #c riscv_jtag_debug_hw
 class riscv_jtag_debug_hw(simple_tb.cdl_test_hw):
     """
@@ -758,6 +786,21 @@ class riscv_i32mc_pipeline3(riscv_base):
         self.do_test_run(hw, hw.num_cycles)
     pass
 
+#c riscv_i32mc_system
+class riscv_i32mc_system(riscv_base):
+    supports = ["compressed", "muldiv", "jtag"]
+    hw = riscv_i32mc_system_test_hw
+    test_memory = "dmem"
+    cycles_scale = 0.5
+    needs_jtag_startup = True
+    default_test_classes = {"":c_riscv_minimal_test_dump,
+                            "jtag_pause":c_riscv_minimal_test_dump_with_pauses}
+    def openocd(self):
+        test = c_riscv_minimal_test_jtag_server(100*1000*1000) #0*1000*1000)
+        hw = self.hw(test)
+        self.do_test_run(hw, hw.num_cycles)
+    pass
+
 #c OLD riscv_minimal_single_memory
 class old_riscv_minimal_single_memory(riscv_base):
     pass
@@ -844,6 +887,7 @@ for (test_dir,tests) in [(riscv_zephyr_dir,riscv_atcf_zephyr),
                                        (riscv_i32c_pipeline3, ""),
                                        (riscv_i32mc_pipeline3, ""),
                                        (riscv_i32mc_pipeline3, "jtag_pause"),
+                                       (riscv_i32mc_system,    ""),
         ]:
             can_do = True
             for t in tags:
