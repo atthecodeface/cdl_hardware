@@ -19,6 +19,8 @@
 /*a Includes
  */
 include "srams.h"
+include "types/apb.h"
+include "apb/apb_targets.h"
 include "cpu/riscv/riscv.h"
 include "cpu/riscv/riscv_modules.h"
 include "cpu/riscv/riscv_pipeline.h"
@@ -66,13 +68,13 @@ typedef struct {
 /*t t_data_combs */
 typedef struct {
     t_sram_request sram_request;
-    bit access_completing;
+    bit apb_request_valid;
 } t_data_combs;
 
 /*t t_data_state */
 typedef struct {
     t_riscv_mem_access_req dmem_access_in_progress;
-    bit[32] read_data;
+    t_apb_request apb;
 } t_data_state;
 
 /*t t_arbiter_combs */
@@ -105,6 +107,7 @@ module tb_riscv_i32mc_system( clock jtag_tck,
      */
     clocked t_riscv_config riscv_config={*=0, i32c=1, i32m=1, i32m_fuse=1, coproc_disable=0, debug_enable=1} ;
     clocked t_riscv_irqs                 irqs= {*=0};
+    clocked t_timer_control timer_control = {*=0};
 
     /*b Nets
      */
@@ -119,8 +122,8 @@ module tb_riscv_i32mc_system( clock jtag_tck,
     comb bit tck_enable_fix;
     gated_clock clock jtag_tck active_high tck_enable_fix jtag_tck_gated;
 
-    net   t_apb_request  apb_request  "APB request";
-    net   t_apb_response apb_response "APB response";
+    net   t_apb_request  dm_apb_request  "APB request for debug";
+    net   t_apb_response dm_apb_response "APB response for debug";
     net   t_riscv_debug_mst debug_mst;
     comb  t_riscv_debug_tgt debug_tgt;
     net   t_riscv_debug_tgt debug_tgt0;
@@ -151,6 +154,11 @@ module tb_riscv_i32mc_system( clock jtag_tck,
     comb    t_data_combs data_combs;
     clocked t_data_state data_state = {*=0};
     comb    t_arbiter_combs arbiter_combs;
+    comb    t_apb_request   rv_apb_request;
+    comb    t_apb_response  rv_apb_response;
+    comb    t_apb_request   timer_apb_request;
+    net     t_apb_response  timer_apb_response;
+    net     t_timer_value   timer_value;
     net bit[32] sram_read_data;
 
     net t_riscv_i32_coproc_controls  coproc_controls;
@@ -178,7 +186,12 @@ module tb_riscv_i32mc_system( clock jtag_tck,
         riscv_config.coproc_disable <= 0;
         riscv_config.debug_enable <= 1;
 
+        timer_control <= {*=0};
+        timer_control.enable_counter   <= 1;
+        timer_control.fractional_adder <= 2;
+        timer_control.integer_adder    <= 0;
         irqs <= {*=0};
+        irqs.mtip <= timer_value.irq;
     }
 
     /*b SRAM and arbiter */
@@ -322,20 +335,82 @@ module tb_riscv_i32mc_system( clock jtag_tck,
     /*b Data memory
      */
     data_memory: {
-        data_combs.access_completing = 1;
-        // if data_combs io access in progress and wont complete 
-        data_combs.sram_request.valid          = dmem_access_req.valid;
+        /*b Decode data request */
+        data_combs.apb_request_valid       = 0;
+        data_combs.sram_request.valid      = 0;
         data_combs.sram_request.read_not_write = (dmem_access_req.req_type != rv_mem_access_write);
         data_combs.sram_request.address        = dmem_access_req.address;
         data_combs.sram_request.byte_enable    = dmem_access_req.byte_enable;
         data_combs.sram_request.write_data     = dmem_access_req.write_data;
+        if (dmem_access_req.valid) {
+            data_combs.sram_request.valid          = 1;
+            if (dmem_access_req.address[4;28]!=0) { // 3h0xxxxxxx is SRAM, rest is APB
+                data_combs.sram_request.valid      = 0;
+                data_combs.apb_request_valid       = 1;
+            }
+        }
 
-        data_state.dmem_access_in_progress <= dmem_access_req;
-        data_state.read_data <= 0;
+        /*b Generate dmem_access_resp and update APB transaction state */
         dmem_access_resp = {*=0};
-        dmem_access_resp.ack = 1;
+        dmem_access_resp.ack             = 1;
         dmem_access_resp.access_complete = 1;
-        dmem_access_resp.read_data  = sram_read_data;
+        dmem_access_resp.may_still_abort = 0;
+        dmem_access_resp.abort_req       = 0;
+        dmem_access_resp.read_data       = sram_read_data;
+        if (data_state.apb.penable) {
+            dmem_access_resp.read_data   = rv_apb_response.prdata;
+        }
+
+        if (data_state.apb.psel) {
+            dmem_access_resp.ack             = 0;
+            dmem_access_resp.access_complete = 0;
+            dmem_access_resp.may_still_abort = 1;
+            data_state.apb.penable <= 1;
+            if (data_state.apb.penable) {
+                dmem_access_resp.abort_req = rv_apb_response.perr;
+                if (rv_apb_response.pready || rv_apb_response.perr) {
+                    dmem_access_resp.ack             = 1;
+                    dmem_access_resp.access_complete = 1;
+                }
+            }
+        }
+
+        /*b Update state */
+        data_state.dmem_access_in_progress.valid <= 0;
+        if (dmem_access_resp.ack) {
+            data_state.apb.psel    <= 0;
+            data_state.apb.penable <= 0;
+            if (dmem_access_req.valid) {
+                data_state.dmem_access_in_progress <= dmem_access_req;
+                if (data_combs.apb_request_valid) {
+                    data_state.apb.psel    <= 1;
+                    data_state.apb.pwrite  <= (dmem_access_req.req_type == rv_mem_access_write);
+                    data_state.apb.pwdata  <= dmem_access_req.write_data;
+                    data_state.apb.paddr   <= dmem_access_req.address;
+                }
+            }
+        }
+
+        /*b APB request out */
+        rv_apb_request = data_state.apb;
+
+        /*b All done */
+    }
+
+    /*b RV APB targets */
+    rv_apb_targets : {
+        timer_apb_request = rv_apb_request;
+        timer_apb_request.psel  = rv_apb_request.psel && (rv_apb_request.paddr[4;12]==0);
+        timer_apb_request.paddr = rv_apb_request.paddr >> 2;
+
+        apb_target_rv_timer tim( clk <- clk,
+                                 reset_n <= reset_n,
+                                 timer_control  <= timer_control,
+
+                                 apb_request  <= timer_apb_request,
+                                 apb_response => timer_apb_response,
+                                 timer_value => timer_value );
+        rv_apb_response = timer_apb_response;
     }
 
     /*b Instantiate debug
@@ -365,14 +440,14 @@ module tb_riscv_i32mc_system( clock jtag_tck,
                       dr_out => dr_out,
 
                       apb_clock <- clk,
-                      apb_request => apb_request,
-                      apb_response <= apb_response );
+                      apb_request  => dm_apb_request,
+                      apb_response <= dm_apb_response );
 
         riscv_i32_debug dm( clk <- clk,
                             reset_n <= reset_n,
 
-                            apb_request <= apb_request,
-                            apb_response => apb_response,
+                            apb_request  <= dm_apb_request,
+                            apb_response => dm_apb_response,
 
                             debug_mst  => debug_mst,
                             debug_tgt <= debug_tgt 

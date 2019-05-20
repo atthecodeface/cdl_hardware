@@ -329,10 +329,12 @@ An example implementation of could be
                 alu_state.first_cycle <= 0;
             }
             alu_state <= alu_state;
-            alu_state.rs1_from_alu <= 0;
-            alu_state.rs2_from_alu <= 0;
-            alu_state.rs1_from_mem <= alu_state.rs1_from_alu;
-            alu_state.rs2_from_mem <= alu_state.rs2_from_alu;
+            if (!pipeline_control.mem.blocked) { // If memory is not blocked then shuffle down dependencies
+                alu_state.rs1_from_alu <= 0;
+                alu_state.rs2_from_alu <= 0;
+                alu_state.rs1_from_mem <= alu_state.rs1_from_alu;
+                alu_state.rs2_from_mem <= alu_state.rs2_from_alu;
+            }
             if (alu_state.rs1_from_mem) {
                 alu_state.rs1 <= rfw_state.mem_result;
             }
@@ -353,9 +355,15 @@ An example implementation of could be
             alu_state.rs1                 <= dec_combs.rs1;
             alu_state.rs2                 <= dec_combs.rs2;
             alu_state.rs1_from_alu        <= dec_combs.rs1_from_alu;
-            alu_state.rs1_from_mem        <= dec_combs.rs1_from_mem;
             alu_state.rs2_from_alu        <= dec_combs.rs2_from_alu;
+            alu_state.rs1_from_mem        <= dec_combs.rs1_from_mem;
             alu_state.rs2_from_mem        <= dec_combs.rs2_from_mem;
+            if (pipeline_control.mem.blocked) { // If memory is blocked then dependencies are one closer
+                alu_state.rs1_from_alu        <= dec_combs.rs1_from_mem;
+                alu_state.rs2_from_alu        <= dec_combs.rs2_from_mem;
+                alu_state.rs1_from_mem        <= 0;
+                alu_state.rs2_from_mem        <= 0;
+            }
 
             alu_state.instruction   <= dec_state.instruction;
         }
@@ -463,7 +471,9 @@ An example implementation of could be
         mem_state.valid        <= 0;
         mem_state.rd_written   <= 0;
         mem_state.rd_from_mem  <= 0;
-        if (alu_combs.valid_legal && !pipeline_control.exec.blocked && !pipeline_control.flush.exec) { // better if async control flow interrupt
+        if (pipeline_control.mem.blocked && !pipeline_control.flush.mem) {
+            mem_state <= mem_state;
+        } elsif (alu_combs.valid_legal && !pipeline_control.exec.blocked && !pipeline_control.flush.exec) { // better if async control flow interrupt
             mem_state.valid         <= 1;
             mem_state.dmem_request  <= alu_combs_dmem_request;
             if (alu_combs_dmem_request.reading && alu_state.idecode.rd_written) { // && does not require another cycle?
@@ -503,7 +513,7 @@ An example implementation of could be
         /*b RFW state */
         rfw_state.valid        <= 0;
         rfw_state.rd_written   <= 0;
-        if (mem_state.valid) {
+        if (mem_state.valid && !pipeline_control.mem.blocked && !pipeline_control.flush.mem) {
             rfw_state.valid        <= 1;
             rfw_state.rd_written   <= mem_state.rd_written;
             rfw_state.rd           <= mem_state.rd;

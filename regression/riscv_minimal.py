@@ -787,7 +787,7 @@ class riscv_i32mc_pipeline3(riscv_base):
 
 #c riscv_i32mc_system
 class riscv_i32mc_system(riscv_base):
-    supports = ["compressed", "muldiv", "jtag"]
+    supports = ["compressed", "muldiv", "jtag", "rv_timer"]
     hw = riscv_i32mc_system_test_hw
     test_memory = "mem"
     cycles_scale = 0.5

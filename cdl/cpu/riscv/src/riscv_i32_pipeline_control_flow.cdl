@@ -104,8 +104,8 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
         }
 
         /*b Pipeline control outputs */
-        pipeline_control.mem.blocked = 0;
-        pipeline_control.exec.blocked_start   = 0;
+        pipeline_control.mem.blocked           = control_flow_combs.mem_cannot_complete;
+        pipeline_control.exec.blocked_start    = 0;
         pipeline_control.exec.completing_cycle = 1;
         if (pipeline_response.exec.first_cycle && pipeline_response.exec.valid && control_flow_combs.exec_cannot_start) {
             pipeline_control.exec.blocked_start   = 1;
