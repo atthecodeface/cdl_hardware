@@ -34,15 +34,23 @@ typedef enum[2] {
     drop_data_all
 } t_drop_data;
 
+/*t t_sram_request */
+typedef struct {
+    bit     valid;
+    bit     read_not_write;
+    bit[32] address;
+    bit[4]  byte_enable;
+    bit[32] write_data;
+} t_sram_request;
+
 /*t t_inst_combs */
 typedef struct {
     bit[64] data_before_drop;
     bit[64] data_after_drop;
     bit[4] half_words_valid;
     bit[4] half_words_will_be_valid;
-    bit request;
+    t_sram_request sram_request;
     bit request_initial_half;
-    bit[32] address;
     t_drop_data drop_data;
 } t_inst_combs;
 
@@ -50,14 +58,28 @@ typedef struct {
 typedef struct {
     bit[4]  half_words_valid_before_reading;
     bit     sram_reading;
-    bit     sram_reading_initial_half;
+    bit     initial_half;
     bit[32] address;
     bit[64] data;
 } t_inst_state;
 
+/*t t_data_combs */
+typedef struct {
+    t_sram_request sram_request;
+    bit access_completing;
+} t_data_combs;
+
+/*t t_data_state */
+typedef struct {
+    t_riscv_mem_access_req dmem_access_in_progress;
+    bit[32] read_data;
+} t_data_state;
+
 /*t t_arbiter_combs */
 typedef struct {
-    bit grant_to_imem;
+    t_sram_request sram_request;
+    bit grant_to_inst;
+    bit grant_to_data;
 } t_arbiter_combs;
 
 /*a External modules */
@@ -122,17 +144,15 @@ module tb_riscv_i32mc_system( clock jtag_tck,
     net t_riscv_pipeline_fetch_data   pipeline_fetch_data;
     net t_riscv_pipeline_trap_request pipeline_trap_request;
 
-    /*b Data memory state and combs
-     */
-    clocked t_riscv_mem_access_req dmem_access_in_progress = {*=0};
-
     /*b State and comb
      */
     comb    t_inst_combs inst_combs;
     clocked t_inst_state inst_state = {*=0};
+    comb    t_data_combs data_combs;
+    clocked t_data_state data_state = {*=0};
     comb    t_arbiter_combs arbiter_combs;
     net bit[32] sram_read_data;
-    net bit[32] main_mem_read_data;
+
     net t_riscv_i32_coproc_controls  coproc_controls;
     net t_riscv_i32_coproc_response  coproc_response;
     net t_riscv_i32_coproc_response  pipeline_coproc_response;
@@ -161,6 +181,32 @@ module tb_riscv_i32mc_system( clock jtag_tck,
         irqs <= {*=0};
     }
 
+    /*b SRAM and arbiter */
+    sram_and_arbiter: {
+        arbiter_combs.grant_to_inst = 0;
+        arbiter_combs.grant_to_data = 0;
+
+        arbiter_combs.sram_request = data_combs.sram_request;
+        if (data_combs.sram_request.valid) {
+            arbiter_combs.grant_to_data = 1;
+            arbiter_combs.sram_request  = data_combs.sram_request;
+        } elsif (inst_combs.sram_request.valid) {
+            arbiter_combs.grant_to_inst = 1;
+            arbiter_combs.sram_request = inst_combs.sram_request;
+        } else {
+            arbiter_combs.sram_request.valid = 0;
+        }
+        
+        /*b SRAM instance */
+        se_sram_srw_16384x32_we8 mem(sram_clock     <- clk,
+                                     select         <= arbiter_combs.sram_request.valid,
+                                     read_not_write <= arbiter_combs.sram_request.read_not_write,
+                                     write_enable   <= arbiter_combs.sram_request.byte_enable,
+                                     address        <= arbiter_combs.sram_request.address[14;2],
+                                     write_data     <= arbiter_combs.sram_request.write_data,
+                                     data_out       => sram_read_data );
+    }
+
     /*b Instruction memory
      */
     comb bit riscv_clk_enable;
@@ -175,10 +221,10 @@ module tb_riscv_i32mc_system( clock jtag_tck,
             elsif (inst_state.half_words_valid_before_reading==1) { inst_combs.data_before_drop[32;16] = sram_read_data; }
             else                                                  { inst_combs.data_before_drop[32;32] = sram_read_data; }
             assert (inst_state.half_words_valid_before_reading<=2, "Incorrect value for half_words_valid_before_reading if we are reading");
-        }
-        if (inst_state.sram_reading_initial_half) {
-            inst_combs.data_before_drop[16;0] = sram_read_data[16;16];
-            inst_combs.half_words_valid = 1;
+            if (inst_state.initial_half) {
+                inst_combs.data_before_drop[16;0] = sram_read_data[16;16];
+                inst_combs.half_words_valid = 1;
+            }
         }
 
         /*b Decode amount of data to drop given request */
@@ -230,24 +276,27 @@ module tb_riscv_i32mc_system( clock jtag_tck,
         }
 
         /*b Decode address to fetch and whether it is valid */
-        inst_combs.request              = 0;
+        inst_combs.sram_request = {*=0};
         inst_combs.request_initial_half = 0;
-        inst_combs.address              = inst_state.address;
+        inst_combs.sram_request.read_not_write  = 1;
+        inst_combs.sram_request.address         = inst_state.address;
         full_switch (rv_imem_access_req.req_type) {
         case rv_fetch_none: {
-            inst_combs.request = 0;
+            inst_combs.sram_request.valid = 0;
             inst_combs.request_initial_half  = 0;
         }
         case rv_fetch_nonsequential: {
-            inst_combs.request              = 1;
-            inst_combs.request_initial_half = rv_imem_access_req.address[1];
-            inst_combs.address              = rv_imem_access_req.address;
+            inst_combs.sram_request.valid        = 1;
+            inst_combs.request_initial_half      = rv_imem_access_req.address[1];
+            inst_combs.sram_request.address      = rv_imem_access_req.address;
         }
         default: {
-            inst_combs.request  = (inst_combs.half_words_will_be_valid<=2);
-            inst_combs.address  = inst_state.address;
+            inst_combs.request_initial_half   = inst_state.initial_half;
+            inst_combs.sram_request.valid     = (inst_combs.half_words_will_be_valid<=2);
+            inst_combs.sram_request.address   = inst_state.address;
             if (inst_state.sram_reading) {
-                inst_combs.address       = inst_state.address+4;
+                inst_combs.request_initial_half   = 0;
+                inst_combs.sram_request.address   = inst_state.address+4;
             }
         }
         }
@@ -263,49 +312,30 @@ module tb_riscv_i32mc_system( clock jtag_tck,
 
         /*b Update state */
         inst_state.data                            <= inst_combs.data_after_drop;
-        inst_state.sram_reading                    <= arbiter_combs.grant_to_imem && inst_combs.request;
-        inst_state.sram_reading_initial_half       <= arbiter_combs.grant_to_imem && inst_combs.request_initial_half;
+        inst_state.sram_reading                    <= arbiter_combs.grant_to_inst && inst_combs.sram_request.valid;
+        inst_state.initial_half                    <= inst_combs.request_initial_half;
         inst_state.half_words_valid_before_reading <= inst_combs.half_words_will_be_valid;
-        inst_state.address <= inst_combs.address;
+        inst_state.address                         <= inst_combs.sram_request.address;
 
-        /*b SRAM instance */
-        arbiter_combs.grant_to_imem = inst_combs.request;
-        se_sram_srw_16384x32 imem(sram_clock     <- clk,
-                                  select         <= inst_combs.request,
-                                  read_not_write <= 1,
-                                  write_enable   <= 0,
-                                  address        <= inst_combs.address[14;2],
-                                  write_data     <= 0,
-                                  data_out       => sram_read_data );
     }
 
     /*b Data memory
      */
     data_memory: {
-        dmem_access_resp.ack        = 1;
-        dmem_access_resp.ack_if_seq = 1;
-        dmem_access_resp.abort_req  = 0;
-        dmem_access_resp.may_still_abort  = 0;
-        dmem_access_in_progress <= dmem_access_req;
-        if (!dmem_access_resp.ack) {
-            dmem_access_in_progress.valid <= 0;
-        }
-        //se_sram_srw_16384x32_we8 dmem(sram_clock <- clk,
-        //                              select         <= dmem_access_in_progress.valid,
-        //                              read_not_write <= (dmem_access_in_progress.req_type != rv_mem_access_write),
-        //                              address        <= dmem_access_in_progress.address[14;2],
-        //                              write_enable   <= dmem_access_in_progress.byte_enable,
-        //                              write_data     <= dmem_access_in_progress.write_data,
-        //                              data_out       => main_mem_read_data );
-        se_sram_srw_16384x32_we8 dmem(sram_clock <- clk,
-                                      select         <= dmem_access_req.valid,
-                                      read_not_write <= (dmem_access_req.req_type != rv_mem_access_write),
-                                      address        <= dmem_access_req.address[14;2],
-                                      write_enable   <= dmem_access_req.byte_enable,
-                                      write_data     <= dmem_access_req.write_data,
-                                      data_out       => main_mem_read_data );
+        data_combs.access_completing = 1;
+        // if data_combs io access in progress and wont complete 
+        data_combs.sram_request.valid          = dmem_access_req.valid;
+        data_combs.sram_request.read_not_write = (dmem_access_req.req_type != rv_mem_access_write);
+        data_combs.sram_request.address        = dmem_access_req.address;
+        data_combs.sram_request.byte_enable    = dmem_access_req.byte_enable;
+        data_combs.sram_request.write_data     = dmem_access_req.write_data;
+
+        data_state.dmem_access_in_progress <= dmem_access_req;
+        data_state.read_data <= 0;
+        dmem_access_resp = {*=0};
+        dmem_access_resp.ack = 1;
         dmem_access_resp.access_complete = 1;
-        dmem_access_resp.read_data  = main_mem_read_data;
+        dmem_access_resp.read_data  = sram_read_data;
     }
 
     /*b Instantiate debug
