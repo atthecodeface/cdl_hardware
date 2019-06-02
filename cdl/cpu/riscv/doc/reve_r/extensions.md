@@ -226,26 +226,51 @@ different values of funct7 to be illegal. The bit manipulation
 extension removes this check (saving logic), and uses these bits for
 the additional instruction encodings.
 
+Note that the RV32M encodings use 'R' encodings for ALU operations
+with funct7 7b0000001; hence it might be wise to utilizes the top 4
+bits of f7 as a 'minor shift opcode', with 4b0000 and 4b0100 reserved
+for SLL/SRL/SRA, and 4b0001 reserved for mul/div.
 
-Shift left, shifting in zeros - sll with funct7 of 7b0000000
-Shift right, shifting in zeros - srl/a with funct7 of 7b0000000
+In this mode 4b1000 can be shift in ones (left/right depending on f3).
+In this mode 4b1001 can be rotate (left/right depending on f3).
+In this mode 4b1010 can be bit/byte/half swap (sll)
+In this mode 4b1010 can be count leading bit (bit 31 of rs2) (srl)
+(can do count leading bits count leading ones, with 1 inst)
+In this mode 4b1100 can be replace byte (which byte in bottom 2 bits)
+Does replace byte work with immediate? Normally that provides the
+shift, but for this it would supply 12-bit immediate using f7, so that
+does not work. Hence replace byte ONLY works in 'R' encoding (like
+multiply).
+This is a similar argument for count leading. It only works in 'R' mode.
+
+Hence:
+Shift left, shifting in zeros    - sll with funct7   of 7b0000000
+Shift right, shifting in zeros   - srl/a with funct7 of 7b0000000
 Shift right, shifting in bit[31] - srl/a with funct7 of 7b0100000
 
-Rotate left - sll with funct7 of 7b1000000
-Rotate right - srl/a with funct7 of 7b1000000
+Shift left, shifting in ones  - sll with funct7   of 7b1000000
+Shift right, shifting in ones - srl/a with funct7 of 7b1000000
+ (was 7b1100000)
 
-Shift left, shifting in ones - sll with funct7 of 7b1100000
-Shift right, shifting in ones - srl/a with funct7 of 7b1100000
+Rotate left  - sll with funct7   of 7b1001000
+Rotate right - srl/a with funct7 of 7b1001000
 
-Bit/byte/half-word swap - sll with funct7 of 7b0100000; half-word swap
+Count leading bit - srl/a with funct7 of 7b1010000
+Bit/byte/half-word swap - sll with funct7 of 7b1010000; half-word swap
 if shift amount[4] is set; byte swap if shift amount[3] is set; bit
 swap if shift amount[0] is set - so swap can be register or immediate
-Replace bit N of RS2 with data from RS1 - sll with funct7 of 7b0100001, N in shift amount
-Replace byte N of RS2 with data from RS1 - sll with funct7 of 7b0100010, N in shift amount, N should be multiple of 8
 
-Count leading zeros - srl/a with funct7 of 7b0100001
-Count leading ones  - srl/a with funct7 of 7b0100010
-Count leading bit   - srl/a with funct7 of 7b0100011
+Replace byte 0 of RS2 with data from RS1 - sll with funct7 of 7b1100000
+Replace byte 1 of RS2 with data from RS1 - sll with funct7 of 7b1100001
+Replace byte 2 of RS2 with data from RS1 - sll with funct7 of 7b1100010
+Replace byte 3 of RS2 with data from RS1 - sll with funct7 of 7b1100011
+
+All bit manipulation extensions are SLL/SRA with funct7 top bit
+set. They can also be used for up to 128 bit operations since the
+bottom 2 bits of the f7 field for immediates is unused by then
+encoding, and insert byte would require 4b110x which are all available
+(to encode a 4-bit byte number). Also count leading bit can use bit 64
+if a 64-bit SRL variant is used.
 
 ## Multiply divide extension
 

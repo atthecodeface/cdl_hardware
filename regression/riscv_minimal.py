@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 #a Copyright
-#  
+#
 #  This file 'riscv_minimal.py' copyright Gavin J Stark 2017
-#  
+#
 #  This program is free software; you can redistribute it and/or modify it under
 #  the terms of the GNU General Public License as published by the Free Software
 #  Foundation, version 2.0.
-#  
+#
 #  This program is distributed in the hope that it will be useful,
 #  but WITHOUT ANY WARRANTY; without even implied warranty of MERCHANTABILITY
 #  or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
@@ -685,7 +685,7 @@ class riscv_i32mc_system_test_hw(riscv_base_hw):
 #c riscv_jtag_debug_hw
 class riscv_jtag_debug_hw(simple_tb.cdl_test_hw):
     """
-    
+
     """
     loggers = {}
     th_forces = { "th.clock":"clk",
@@ -814,6 +814,8 @@ riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[],{}),
                                "timer_irqs":("timer_irqs.dump",42*1000,["rv_timer"],{}),
                                #"data_access":("data_access.dump",10*1000,["apb_timer"],{}),
                                "data":("data.dump",10*1000,[],{}),
+                               "bit_manipulation_shift_rotate_reg":("bit_manipulation_shift_rotate_reg.dump",40*1000,[],{}),
+                               "bit_manipulation_swap_reg":("bit_manipulation_swap_reg.dump",40*1000,[],{}),
                                "c_dprintf":("c_dprintf.dump",10*1000,["compressed"],{}),
                                "c_arith":("c_arith.dump",3000,["compressed"],{}),
                                "c_stack":("c_stack.dump",2*1000,["compressed"],{}),

@@ -116,7 +116,7 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
     bit coming from the top bit of the instruction.  Hence @a
     combs.imm_signed is created as a 32 bit value of either all ones
     or all zeros, to be used as a sign extension bit vector as required.
-    
+
     The immediate variants of the RISC-V I32 base instruction (fig 2.4) are:
 
       I-type (12-bit sign extended using i[31], i[11;20]) (register-immediate, load, jalr)
@@ -200,22 +200,25 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
         case 2b11: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_ones  : riscv_shift_op_right_logical_ones;  }
         }
         if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
-            part_switch (combs.funct7) {
-            case 7b0100000: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_reverse     : riscv_shift_op_right_arithmetic;  }
-            case 7b0100001: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_bit_insert  : riscv_shift_op_right_arithmetic;  }
-            case 7b0100010: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_byte_insert : riscv_shift_op_right_arithmetic;  }
+            part_switch (combs.funct7[4;3]) { // 4b0000, 4b0100 standard; 4b0001 muldiv
+            case 4b0000: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_logical_zeros;  }
+            case 4b0100: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_arithmetic;  }
+            case 4b1000: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_ones  : riscv_shift_op_right_logical_ones;  }
+            case 4b1001: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_rotate        : riscv_shift_op_right_rotate;  }
+            case 4b1010: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_reverse            : riscv_shift_op_count;  }
+            case 4b1100: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_byte_insert        : riscv_shift_op_byte_insert;  }
             }
         }
 
         part_switch (combs.opc) {
         case riscv_opc_lui:    { // load upper immediate, uses u format
-            // Spec 2.2 section 2.4 
+            // Spec 2.2 section 2.4
             idecode.op = riscv_op_lui;
             idecode.rd_written = 1;
             idecode.illegal = 0;
         }
         case riscv_opc_auipc:  { // add upper immediate pc, uses u format
-            // Spec 2.2 section 2.4 
+            // Spec 2.2 section 2.4
             idecode.op = riscv_op_auipc;
             idecode.rd_written = 1;
             idecode.illegal = 0;
@@ -254,7 +257,7 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
         case riscv_opc_branch: { // branch if rs1 <=> rs2 to pc+imm, uses sb format, conditional branch to +-4kB
             // Spec 2.2 section 2.5
             // Note that Bxx is an ALU-time branch
-            idecode.op = riscv_op_branch;            
+            idecode.op = riscv_op_branch;
             idecode.rs1_valid = 1;
             idecode.rs2_valid = 1;
             idecode.subop = riscv_subop_illegal;
@@ -269,7 +272,7 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
             }
         }
         case riscv_opc_op, riscv_opc_op_imm: { // rd = rs1 op rs2/imm, uses r or i format
-            // Spec 2.2 section 2.4 
+            // Spec 2.2 section 2.4
             idecode.op = riscv_op_alu;
             idecode.rs1_valid = 1;
             idecode.rs2_valid = !combs.is_imm_op;
@@ -301,10 +304,16 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
                 case riscv_f3_sll:    {
                     idecode.illegal = (combs.funct7!=0);
                     idecode.subop   = riscv_subop_sll;
+                    if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
+                        if (combs.funct7[6]) { idecode.illegal = 0; } // bit manip extension legalizes all f7[6] set
+                    }
                 }
                 case riscv_f3_srlsra: {
-                    idecode.illegal = (combs.funct7[5;0]!=0) || combs.funct7[6];
+                    idecode.illegal = ((combs.funct7!=0) &&(combs.funct7!=7b0100000));
                     idecode.subop   =  riscv_subop_srla; // SRAI has funct7[5] set, else SRLI
+                    if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
+                        if (combs.funct7[6]) { idecode.illegal = 0; } // bit manip extension legalizes all f7[6] set
+                    }
                 }
                 default:          {
                     idecode.illegal = 1;
