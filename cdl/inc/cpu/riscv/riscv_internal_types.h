@@ -555,7 +555,7 @@ typedef struct {
     bit     vectored;
 } t_riscv_csr_tvec;
 
-/*t t_riscv_csrs_minimal
+/*t t_riscv_csrs
  *
  * Minimal set of RISC-V CSRs - actually not minimal... but some are hardwired 0 if minimal
  *
@@ -604,7 +604,7 @@ typedef struct {
     bit[32] depc;
     bit[32] dscratch0;
     bit[32] dscratch1;
-} t_riscv_csrs_minimal;
+} t_riscv_csrs;
 
 /*a I32 types */
 /*t t_riscv_i32_inst_debug_op

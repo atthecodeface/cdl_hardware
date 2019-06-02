@@ -75,7 +75,7 @@ access cycle.
     net t_riscv_csr_controls     csr_controls;
     net t_riscv_csr_data         csr_data;
     net t_riscv_csr_access       csr_access;
-    net t_riscv_csrs_minimal     csrs;
+    net t_riscv_csrs             csrs;
 
     /*b Nets for the pipeline
      */
@@ -136,14 +136,14 @@ access cycle.
     clock_divider """
     The RISC-V clock is always three clock ticks long
 
-    This permits the instruction and data accesses to the memory to occur in cycles 
+    This permits the instruction and data accesses to the memory to occur in cycles
     """ : {
         riscv_clk_cycle_0 <= (clk_divider==2b10);
         riscv_clk_cycle_1 <= (clk_divider==2b00);
         riscv_clk_cycle_2 <= (clk_divider==2b01);
         clk_divider <= clk_divider + 1;
         if (riscv_clk_cycle_2) { clk_divider <= 0; }
-        riscv_clk_enable = riscv_clk_cycle_2;        
+        riscv_clk_enable = riscv_clk_cycle_2;
     }
 
     /*b Instantiate Reve-R pipeline
@@ -180,7 +180,7 @@ access cycle.
                                                pipeline_trap_request  => pipeline_trap_request,
                                                riscv_config           <= riscv_config
         );
-        
+
         riscv_i32_pipeline_control_flow cf( pipeline_state <= pipeline_state,
                                             ifetch_req  <= rv_imem_access_req,
                                             pipeline_response <= pipeline_response,
@@ -197,7 +197,7 @@ access cycle.
                                             riscv_config <= riscv_config
         );
 
-        
+
         riscv_i32c_pipeline3 dut( clk <- riscv_clk,
                                   reset_n <= reset_n,
                                   pipeline_control <= pipeline_control,
@@ -209,7 +209,7 @@ access cycle.
                                   riscv_config <= riscv_config);
 
     }
-        
+
     /*b Instruction SRAM
      */
     instruction_sram: {
@@ -242,7 +242,7 @@ access cycle.
     /*b Data memory
      */
     data_memory: {
-    
+
         dmem_access_resp.ack        = 1;
         dmem_access_resp.ack_if_seq = 1;
         dmem_access_resp.abort_req  = 0;
@@ -267,23 +267,23 @@ access cycle.
     /*b CSRs
      */
     csr_instance: {
-        riscv_csrs_minimal csrs( clk <- clk,
-                                 reset_n <= reset_n,
-                                 riscv_clk_enable <= riscv_clk_enable,
-                                 irqs <= irqs,
-                                 csr_access     <= csr_access,
-                                 csr_data       => csr_data,
-                                 csr_controls   <= csr_controls,
-                                 csrs => csrs
+        riscv_csrs csrs( clk <- clk,
+                         reset_n <= reset_n,
+                         riscv_clk_enable <= riscv_clk_enable,
+                         irqs <= irqs,
+                         csr_access     <= csr_access,
+                         csr_data       => csr_data,
+                         csr_controls   <= csr_controls,
+                         csrs => csrs
             );
     }
-    
+
     /*b Test harness
      */
     test_harness_inst: {
         se_test_harness th( clk <- clk, a<=0 );
     }
-    
+
     /*b Trace logic and modules
      */
     riscv_trace: {

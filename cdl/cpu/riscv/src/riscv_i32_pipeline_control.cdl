@@ -129,7 +129,7 @@ typedef struct {
 
 /*t t_debug_state
  *
- * State of debugger 
+ * State of debugger
  *
  */
 typedef struct {
@@ -175,11 +175,11 @@ typedef struct {
 module riscv_i32_pipeline_control( clock clk,
                                    input bit reset_n,
                                    input bit                           riscv_clk_enable   "Clock enable for the RISC-V core",
-                                   input t_riscv_csrs_minimal          csrs,
-                                   output t_riscv_pipeline_state     pipeline_state,
+                                   input t_riscv_csrs                  csrs,
+                                   output t_riscv_pipeline_state       pipeline_state,
                                    input t_riscv_pipeline_response     pipeline_response,
                                    input t_riscv_pipeline_fetch_data   pipeline_fetch_data,
-                                   input t_riscv_pipeline_control     pipeline_control,
+                                   input t_riscv_pipeline_control      pipeline_control,
                                    input  t_riscv_config               riscv_config,
                                    input t_riscv_i32_trace             trace,
 
@@ -189,7 +189,7 @@ module riscv_i32_pipeline_control( clock clk,
                                    input bit[6] rv_select
 )
 """
-This is a fully synchronous pipeline debug module supporting the pipelines. 
+This is a fully synchronous pipeline debug module supporting the pipelines.
 
 It is designed to feed data in to a RISC-V pipeline (being merged with
 instruction fetch responses), and it takes commands and reports out to
@@ -343,7 +343,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         if (rv_select!=0) {
             debug_state.control.rv_select <= rv_select;
         }
-        
+
         /*b Kill debug state if debugger not enabled */
         if (ifetch_combs.debug_disabled) {
             debug_state.control   <= debug_state.control;
@@ -455,7 +455,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                     ifetch_state.pc <= bundle(csrs.mtvec.base, 2b0);
                 }
             }
-            }   
+            }
         }
     }
     pc_logic: {
@@ -471,7 +471,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         case rv_mode_user:       { pipeline_state.ebreak_to_dbg = csrs.dcsr.ebreaku; }
         }
         if (ifetch_combs.debug_disabled) { pipeline_state.ebreak_to_dbg = 0; }
-        
+
         pipeline_state.interrupt_req     = ifetch_combs.interrupt_req  || ifetch_state.halt_req;
         pipeline_state.interrupt_number  = ifetch_combs.interrupt_number;
         pipeline_state.interrupt_to_mode = ifetch_state.halt_req ? rv_mode_debug : ifetch_state.mode;

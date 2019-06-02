@@ -136,7 +136,7 @@ module tb_riscv_i32mc_system( clock jtag_tck,
     net t_riscv_csr_controls      csr_controls;
     net t_riscv_csr_data          csr_data;
     net t_riscv_csr_access        csr_access;
-    net t_riscv_csrs_minimal csrs;
+    net t_riscv_csrs              csrs;
 
     /*b Nets for the pipeline
      */
@@ -209,7 +209,7 @@ module tb_riscv_i32mc_system( clock jtag_tck,
         } else {
             arbiter_combs.sram_request.valid = 0;
         }
-        
+
         /*b SRAM instance */
         se_sram_srw_16384x32_we8 mem(sram_clock     <- clk,
                                      select         <= arbiter_combs.sram_request.valid,
@@ -450,7 +450,7 @@ module tb_riscv_i32mc_system( clock jtag_tck,
                             apb_response => dm_apb_response,
 
                             debug_mst  => debug_mst,
-                            debug_tgt <= debug_tgt 
+                            debug_tgt <= debug_tgt
             );
     }
 
@@ -488,7 +488,7 @@ module tb_riscv_i32mc_system( clock jtag_tck,
                                                pipeline_trap_request  => pipeline_trap_request,
                                                riscv_config           <= riscv_config
         );
-        
+
         riscv_i32_pipeline_control_flow cf( pipeline_state <= pipeline_state,
                                             ifetch_req  <= rv_imem_access_req,
                                             pipeline_response <= pipeline_response,
@@ -504,7 +504,7 @@ module tb_riscv_i32mc_system( clock jtag_tck,
                                             trace            => trace,
                                             riscv_config <= riscv_config
         );
-        
+
         riscv_i32c_pipeline3 dut( clk <- clk,
                                   reset_n <= reset_n,
                                   pipeline_control <= pipeline_control,
@@ -514,23 +514,23 @@ module tb_riscv_i32mc_system( clock jtag_tck,
                                   coproc_response <= pipeline_coproc_response,
                                   csr_read_data    <= csr_data.read_data,
                                   riscv_config <= riscv_config);
-        
+
     }
 
     /*b CSRs
      */
     csr_instance: {
-        riscv_csrs_minimal csrs( clk <- clk,
-                                 reset_n <= reset_n,
-                                 riscv_clk_enable <= riscv_clk_enable,
-                                 irqs <= irqs,
-                                 csr_access     <= csr_access,
-                                 csr_data       => csr_data,
-                                 csr_controls   <= csr_controls,
-                                 csrs => csrs
+        riscv_csrs csrs( clk <- clk,
+                         reset_n <= reset_n,
+                         riscv_clk_enable <= riscv_clk_enable,
+                         irqs <= irqs,
+                         csr_access     <= csr_access,
+                         csr_data       => csr_data,
+                         csr_controls   <= csr_controls,
+                         csrs => csrs
             );
     }
-    
+
     /*b Coprocessors
      */
     coprocessors: {
@@ -541,13 +541,13 @@ module tb_riscv_i32mc_system( clock jtag_tck,
                             riscv_config <= riscv_config );
 
     }
-    
+
     /*b Test harness
      */
     test_harness_inst: {
         se_test_harness th(clk <- jtag_tck, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
     }
-    
+
     /*b Trace logic and modules
      */
     riscv_trace: {

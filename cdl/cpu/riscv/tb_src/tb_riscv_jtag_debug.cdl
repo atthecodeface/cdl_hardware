@@ -76,7 +76,7 @@ module tb_riscv_jtag_debug( clock jtag_tck,
     comb t_riscv_pipeline_response   pipeline_response;
     comb t_riscv_pipeline_fetch_data  pipeline_fetch_data;
     comb t_riscv_i32_trace trace;
-    comb t_riscv_csrs_minimal csrs;
+    comb t_riscv_csrs csrs;
     comb t_riscv_config riscv_config;
     dut_instance: {
         tck_enable_fix = tck_enable;
@@ -121,7 +121,7 @@ module tb_riscv_jtag_debug( clock jtag_tck,
                             apb_response => apb_response,
 
                             debug_mst  => debug_mst,
-                            debug_tgt <= debug_tgt 
+                            debug_tgt <= debug_tgt
             );
         riscv_i32_pipeline_control pc0(clk <- apb_clock,
                                                  reset_n <= reset_n,

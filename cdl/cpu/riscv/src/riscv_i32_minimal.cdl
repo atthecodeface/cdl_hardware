@@ -171,7 +171,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     net t_riscv_pipeline_fetch_req   pipeline_fetch_req;
     net t_riscv_pipeline_state     pipeline_state;
     net t_riscv_pipeline_trap_request   pipeline_trap_request;
-    net t_riscv_csrs_minimal csrs;
+    net t_riscv_csrs csrs;
     clocked bit[32] ifetch_reg = 0;
     clocked bit[16] ifetch_last16_reg = 0     "Only used if RV32IC is enabled and configured";
     clocked bit[32] data_access_read_reg = 0  "Only used if RV32IC is enabled and configured";
@@ -216,7 +216,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         data_access_read_completing  = data_access_read_in_progress && data_access_resp.access_complete;
         data_access_request_wait     = data_access_req.valid && (!data_access_resp.ack);
         data_access_completing       = (!data_access_req.valid) && ((!data_access_read_in_progress) || data_access_resp.access_complete);
-            
+
         if (riscv_clk_high) { // first cycle of riscv_clk
             data_access_req.valid <= 0;
             data_access_read_in_progress <= 0;
@@ -343,26 +343,26 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         case riscv_clock_action_fall: {
             riscv_clock_phase <= rcp_clock_low;
         }
-        case riscv_clock_action_rise: { 
+        case riscv_clock_action_rise: {
             riscv_clock_phase <= rcp_clock_high;
             riscv_clk_enable = 1;
         }
-        case riscv_clock_action_wait: { 
+        case riscv_clock_action_wait: {
             riscv_clock_phase <= rcp_clock_low; // it is possibly already low; make sure it is there
         }
-        case riscv_clock_action_ifetch: { 
+        case riscv_clock_action_ifetch: {
             riscv_clock_phase <= rcp_ifetch_in_progress;
         }
-        case riscv_clock_action_ifetch_first16: { 
+        case riscv_clock_action_ifetch_first16: {
             riscv_clock_phase <= rcp_ifetch_first16_in_progress;
         }
-        case riscv_clock_action_ifetch_second16: { 
+        case riscv_clock_action_ifetch_second16: {
             riscv_clock_phase <= rcp_ifetch_second16_in_progress;
         }
-        case riscv_clock_action_dread: { 
+        case riscv_clock_action_dread: {
             riscv_clock_phase <= rcp_dread_in_progress;
         }
-        case riscv_clock_action_dwrite: { 
+        case riscv_clock_action_dwrite: {
             riscv_clock_phase <= rcp_dwrite_in_progress;
         }
         }
@@ -375,7 +375,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
      *
      * However, RISC-V could run a large number of stores or loads
      * So the SRAM access path can also usurp the dread/dwrite, and potentially hold them off
-     *  
+     *
      */
     srams: {
         sram_access_ack = 0;
@@ -395,8 +395,8 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         }
         default: {
             if (sram_access_req_r.valid) {
-                mem_access_req = {read_enable  = sram_access_req_r.read_not_write, 
-                                  write_enable = !sram_access_req_r.read_not_write, 
+                mem_access_req = {read_enable  = sram_access_req_r.read_not_write,
+                                  write_enable = !sram_access_req_r.read_not_write,
                                   address = bundle(sram_access_req_r.address[30;0],2b0),
                                   byte_enable=sram_access_req_r.byte_enable[4;0],
                                   write_data=sram_access_req_r.write_data[32;0]
@@ -429,7 +429,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         if (sram_access_resp.ack || sram_access_ack) {
             sram_access_resp.ack <= sram_access_ack;
         }
-        
+
         if (riscv_clock_phase==rcp_ifetch_in_progress) {
             ifetch_reg <= mem_read_data;
         }
@@ -526,7 +526,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                                pipeline_trap_request  => pipeline_trap_request,
                                                riscv_config           <= riscv_config
         );
-        
+
         riscv_i32_pipeline_control_flow cf( pipeline_state <= pipeline_state,
                                             ifetch_req  <= ifetch_req,
                                             pipeline_response <= pipeline_response,
@@ -542,7 +542,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                             trace            => trace_pipe,
                                             riscv_config <= riscv_config
         );
-        
+
         riscv_i32c_pipeline pipeline(clk              <- riscv_clk,
                                      reset_n          <= proc_reset_n,
                                      pipeline_control <= pipeline_control,
@@ -553,15 +553,15 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                      riscv_config     <= riscv_config_pipe,
                                      csr_read_data    <= csr_data.read_data );
 
-        riscv_csrs_minimal csrs( clk <- riscv_clk,
-                                 reset_n <= reset_n,
-                                 riscv_clk_enable <= 1,
-                                 irqs <= irqs,
-                                 csr_access     <= csr_access,
-                                 csr_data       => csr_data,
-                                 csr_controls   <= csr_controls,
-                                 csrs => csrs);
-        
+        riscv_csrs csrs( clk <- riscv_clk,
+                         reset_n <= reset_n,
+                         riscv_clk_enable <= 1,
+                         irqs <= irqs,
+                         csr_access     <= csr_access,
+                         csr_data       => csr_data,
+                         csr_controls   <= csr_controls,
+                         csrs => csrs);
+
         trace = trace_pipe;
         trace.instr_valid    = trace_pipe.instr_valid    && riscv_clk_enable;
         trace.rfw_data_valid = trace_pipe.rfw_data_valid && riscv_clk_enable;

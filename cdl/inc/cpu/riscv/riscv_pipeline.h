@@ -29,7 +29,7 @@ include "cpu/riscv/riscv_internal_types.h"
 extern module riscv_i32_pipeline_control( clock clk,
                                           input bit reset_n,
                                           input bit riscv_clk_enable,
-                                          input t_riscv_csrs_minimal         csrs,
+                                          input t_riscv_csrs                 csrs,
                                           output t_riscv_pipeline_state      pipeline_state,
                                           input t_riscv_pipeline_response    pipeline_response,
                                           input t_riscv_pipeline_fetch_data  pipeline_fetch_data,

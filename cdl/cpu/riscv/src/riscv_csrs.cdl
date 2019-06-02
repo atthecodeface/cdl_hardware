@@ -59,14 +59,14 @@ typedef struct {
 } t_mode_combs;
 
 /*a Module */
-module riscv_csrs_minimal( clock clk                                   "Free-running clock",
-                           input bit reset_n                           "Active low reset",
-                           input bit riscv_clk_enable                  "RISC-V clock enable",
-                           input t_riscv_irqs          irqs            "Interrupts in to the CPU",
-                           input t_riscv_csr_access    csr_access      "RISC-V CSR access, combinatorially decoded",
-                           output t_riscv_csr_data     csr_data        "CSR respone (including read data), from the current @a csr_access",
-                           input t_riscv_csr_controls  csr_controls    "Control signals to update the CSRs",
-                           output t_riscv_csrs_minimal csrs            "CSR values"
+module riscv_csrs( clock clk                                   "Free-running clock",
+                   input bit reset_n                           "Active low reset",
+                   input bit riscv_clk_enable                  "RISC-V clock enable",
+                   input t_riscv_irqs          irqs            "Interrupts in to the CPU",
+                   input t_riscv_csr_access    csr_access      "RISC-V CSR access, combinatorially decoded",
+                   output t_riscv_csr_data     csr_data        "CSR respone (including read data), from the current @a csr_access",
+                   input t_riscv_csr_controls  csr_controls    "Control signals to update the CSRs",
+                   output t_riscv_csrs         csrs            "CSR values"
     )
 """
 This module implements a minimal set of RISC-V CSRs, as per v2.1 (May
@@ -168,7 +168,7 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
     default reset active_low reset_n;
     gated_clock clock clk active_high riscv_clk_enable riscv_clk;
     default clock riscv_clk;
-    clocked t_riscv_csrs_minimal csrs={*=0};
+    clocked t_riscv_csrs csrs={*=0};
     comb t_csr_combs  csr_combs;
     comb t_csr_write  csr_write;
     comb t_mode_combs ret_combs  "Breakout for xRET";
