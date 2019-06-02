@@ -175,9 +175,67 @@ extern module riscv_i32_trace_decompression( input bit[64] compressed_nybbles "N
     timing comb output decompressed_trace, nybbles_consumed;
 }
 
-/*m riscv_csrs  */
+/*a CSR modules */
+/*m riscv_csrs_machine_only  */
 extern
-module riscv_csrs( clock clk                                   "RISC-V clock",
+module riscv_csrs_machine_only( clock clk                                   "RISC-V clock",
+                   input bit reset_n                           "Active low reset",
+                   input bit riscv_clk_enable,
+                   input t_riscv_irqs       irqs               "Interrupts in to the CPU",
+                   input t_riscv_csr_access csr_access         "RISC-V CSR access, combinatorially decoded",
+                   output t_riscv_csr_data csr_data            "CSR response (including take interrupt and read data), from the current @a csr_access",
+                   input t_riscv_csr_controls csr_controls     "Control signals to update the CSRs",
+                   output t_riscv_csrs        csrs            "CSR values"
+    )
+{
+    timing to   rising clock clk riscv_clk_enable;
+    timing to   rising clock clk csr_access, csr_controls, irqs;
+    timing from rising clock clk csr_data, csrs;
+    timing comb input csr_access;
+    timing comb output csr_data;
+}
+
+/*m riscv_csrs_machine_debug  */
+extern
+module riscv_csrs_machine_debug( clock clk                                   "RISC-V clock",
+                   input bit reset_n                           "Active low reset",
+                   input bit riscv_clk_enable,
+                   input t_riscv_irqs       irqs               "Interrupts in to the CPU",
+                   input t_riscv_csr_access csr_access         "RISC-V CSR access, combinatorially decoded",
+                   output t_riscv_csr_data csr_data            "CSR response (including take interrupt and read data), from the current @a csr_access",
+                   input t_riscv_csr_controls csr_controls     "Control signals to update the CSRs",
+                   output t_riscv_csrs        csrs            "CSR values"
+    )
+{
+    timing to   rising clock clk riscv_clk_enable;
+    timing to   rising clock clk csr_access, csr_controls, irqs;
+    timing from rising clock clk csr_data, csrs;
+    timing comb input csr_access;
+    timing comb output csr_data;
+}
+
+/*m riscv_csrs_machine_debug_user  */
+extern
+module riscv_csrs_machine_debug_user( clock clk                                   "RISC-V clock",
+                   input bit reset_n                           "Active low reset",
+                   input bit riscv_clk_enable,
+                   input t_riscv_irqs       irqs               "Interrupts in to the CPU",
+                   input t_riscv_csr_access csr_access         "RISC-V CSR access, combinatorially decoded",
+                   output t_riscv_csr_data csr_data            "CSR response (including take interrupt and read data), from the current @a csr_access",
+                   input t_riscv_csr_controls csr_controls     "Control signals to update the CSRs",
+                   output t_riscv_csrs        csrs            "CSR values"
+    )
+{
+    timing to   rising clock clk riscv_clk_enable;
+    timing to   rising clock clk csr_access, csr_controls, irqs;
+    timing from rising clock clk csr_data, csrs;
+    timing comb input csr_access;
+    timing comb output csr_data;
+}
+
+/*m riscv_csrs_machine_debug_user_irq  */
+extern
+module riscv_csrs_machine_debug_user_irq( clock clk                                   "RISC-V clock",
                    input bit reset_n                           "Active low reset",
                    input bit riscv_clk_enable,
                    input t_riscv_irqs       irqs               "Interrupts in to the CPU",

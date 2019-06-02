@@ -553,14 +553,14 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                                      riscv_config     <= riscv_config_pipe,
                                      csr_read_data    <= csr_data.read_data );
 
-        riscv_csrs csrs( clk <- riscv_clk,
-                         reset_n <= reset_n,
-                         riscv_clk_enable <= 1,
-                         irqs <= irqs,
-                         csr_access     <= csr_access,
-                         csr_data       => csr_data,
-                         csr_controls   <= csr_controls,
-                         csrs => csrs);
+        riscv_csrs_machine_debug csrs( clk <- riscv_clk,
+                                      reset_n <= reset_n,
+                                      riscv_clk_enable <= 1,
+                                      irqs <= irqs,
+                                      csr_access     <= csr_access,
+                                      csr_data       => csr_data,
+                                      csr_controls   <= csr_controls,
+                                      csrs => csrs);
 
         trace = trace_pipe;
         trace.instr_valid    = trace_pipe.instr_valid    && riscv_clk_enable;

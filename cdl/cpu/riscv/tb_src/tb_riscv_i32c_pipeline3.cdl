@@ -267,14 +267,14 @@ access cycle.
     /*b CSRs
      */
     csr_instance: {
-        riscv_csrs csrs( clk <- clk,
-                         reset_n <= reset_n,
-                         riscv_clk_enable <= riscv_clk_enable,
-                         irqs <= irqs,
-                         csr_access     <= csr_access,
-                         csr_data       => csr_data,
-                         csr_controls   <= csr_controls,
-                         csrs => csrs
+        riscv_csrs_machine_only csrs( clk <- clk,
+                                      reset_n <= reset_n,
+                                      riscv_clk_enable <= riscv_clk_enable,
+                                      irqs <= irqs,
+                                      csr_access     <= csr_access,
+                                      csr_data       => csr_data,
+                                      csr_controls   <= csr_controls,
+                                      csrs => csrs
             );
     }
 
