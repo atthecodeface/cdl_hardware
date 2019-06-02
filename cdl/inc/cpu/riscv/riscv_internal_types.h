@@ -56,7 +56,7 @@ typedef enum[5] {
     riscv_opc_op_imm32 =  6, // rv64i (addiw, slliw, srliw, sraiw)
     riscv_opc_store    =  8, // rv32i (sb, sh, sw); rv64i (sd)
     riscv_opc_store_fp =  9, // rv32f (fsw)
-    riscv_opc_custom_1 = 10, 
+    riscv_opc_custom_1 = 10,
     riscv_opc_amo      = 11, // rv32a (lr.w, sc.w, amoswap.w, amoadd.w, amoxor.w, amoand.w, amoor.w, amomin.w, amomax.w, amomaxu.w) (+rv64a)
     riscv_opc_op       = 12, // rv32i (add, sub, sll, slt, sltu, xor, srl, sra, or, and); rv32m (mul, mulh, mulhsu, mulhu, div, divu, rem, remu)
     riscv_opc_lui      = 13, // rv32i
@@ -216,11 +216,11 @@ typedef enum[4] {
     riscv_subop_illegal = 0xf, // for many of the ops...
 
     riscv_subop_beq=0, // same as rvi_branch_f3
-    riscv_subop_bne=1, 
-    riscv_subop_blt=2, 
-    riscv_subop_bge=3, 
-    riscv_subop_bltu=4, 
-    riscv_subop_bgeu=5, 
+    riscv_subop_bne=1,
+    riscv_subop_blt=2,
+    riscv_subop_bge=3,
+    riscv_subop_bltu=4,
+    riscv_subop_bgeu=5,
 
     riscv_subop_add    = 0, // same as riscv_op_f3, with bit[3] as the 'extra' ops
     riscv_subop_sub    = 0+8,
@@ -470,7 +470,7 @@ typedef enum[12] {
 /*t t_riscv_csr_dcsr
  *
  * From Debug spec v?
- * 
+ *
  */
 typedef struct {
     bit[4] xdebug_ver "4 for conformant debug support, 0 otherwise";
@@ -490,7 +490,7 @@ typedef struct {
 /*t t_riscv_csr_mstatus
  *
  * From Priv spec v1.10
- * 
+ *
  */
 typedef struct {
     bit sd;
@@ -515,7 +515,7 @@ typedef struct {
 /*t t_riscv_csr_mip
  *
  * From Priv spec v1.10
- * 
+ *
  */
 typedef struct {
     bit meip "Machine-external interrupt pending, mirroring the input pin";
@@ -534,7 +534,7 @@ typedef struct {
 /*t t_riscv_csr_mie
  *
  * From Priv spec v1.10
- * 
+ *
  */
 typedef struct {
     bit meip "Enable for machine-external interrupt pending";
@@ -548,9 +548,16 @@ typedef struct {
     bit usip "Enable for user software interrupt pending";
 } t_riscv_csr_mie;
 
+/*t t_riscv_csr_tvec
+ */
+typedef struct {
+    bit[30] base;
+    bit     vectored;
+} t_riscv_csr_tvec;
+
 /*t t_riscv_csrs_minimal
  *
- * Minimal set of RISC-V CSRs
+ * Minimal set of RISC-V CSRs - actually not minimal... but some are hardwired 0 if minimal
  *
  * mstatus    - see above
  * medeleg    - sync exceptions delegation - must be 0 if machine mode only
@@ -563,16 +570,12 @@ typedef struct {
  * mepc
  * mtval
  * mip        - interrupt pending          - meip, mtip, msip as a minimum
- * 
+ *
  * dcsr       - see above
  * dpc        - address of ebreak, or of instruction to be executed after (single step or halt)
  * dscratch
  *
  */
-typedef struct {
-    bit[30] base;
-    bit     vectored;
-} t_riscv_csr_mtvec;
 typedef struct {
     bit[64] cycles    "Number of cycles since reset";
     bit[64] instret   "Number of instructions retired";
@@ -582,10 +585,20 @@ typedef struct {
     bit[32] mepc      "PC at last exception";
     bit[32] mcause    "Cause of last exception";
     bit[32] mtval     "Value associated with last exception";
-    t_riscv_csr_mtvec mtvec     "Trap vector, can be hardwired or writable";
+    t_riscv_csr_tvec    mtvec     "Trap vector, can be hardwired or writable";
     t_riscv_csr_mstatus mstatus     "";
     t_riscv_csr_mip     mip         "";
     t_riscv_csr_mie     mie         "";
+
+    // for N (User mode IRQs)
+    bit[32] uscratch  "Scratch register for exception routines";
+    bit[32] uepc      "PC at last exception";
+    bit[32] ucause    "Cause of last exception";
+    bit[32] utval     "Value associated with last exception";
+    t_riscv_csr_tvec   utvec     "Trap vector, can be hardwired or writable";
+    //  ustatus is a User-mode view on mstatus bits
+    //  uip     is a User-mode view on mstatus bits
+    //  uie     is a User-mode view on mstatus bits
 
     t_riscv_csr_dcsr    dcsr        "Debug control/status, if debug enabled (otherwise 0)";
     bit[32] depc;

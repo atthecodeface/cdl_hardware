@@ -35,6 +35,21 @@ typedef struct {
     bit[32] data       "Write data, dependent on current CSR data potentially";
 } t_csr_write;
 
+/*t t_csr_combs */
+typedef struct {
+    bit[32] ustatus;
+    bit[32] utvec;
+    bit[32] uip;
+    bit[32] uie;
+
+    bit[32] mstatus;
+    bit[32] mtvec;
+    bit[32] mip;
+    bit[32] mie;
+
+    bit[32] dcsr;
+} t_csr_combs;
+
 /*t t_mode_combs */
 typedef struct {
     bit d;
@@ -147,24 +162,20 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
 """
 {
 
-    /*b State
+    /*b State and combs
      */
     default clock clk;
     default reset active_low reset_n;
     gated_clock clock clk active_high riscv_clk_enable riscv_clk;
     default clock riscv_clk;
     clocked t_riscv_csrs_minimal csrs={*=0};
+    comb t_csr_combs  csr_combs;
     comb t_csr_write  csr_write;
     comb t_mode_combs ret_combs  "Breakout for xRET";
     comb t_mode_combs trap_combs "Breakout for valid trap to mode";
 
     /*b CSR read/write
      */
-    comb bit[32] mstatus;
-    comb bit[32] mtvec;
-    comb bit[32] mip;
-    comb bit[32] mie;
-    comb bit[32] dcsr;
     csr_read_write """
     CSR_ADDR_MSTATUS
     CSR_ADDR_MISA
@@ -179,7 +190,7 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         /*b Decode read data and 'illegal_access' for the CSR access */
         csr_data = {*=0};
         csr_data.illegal_access = 1;
-        mstatus = bundle(csrs.mstatus.sd,
+        csr_combs.mstatus = bundle(csrs.mstatus.sd,
                          8b0,
                          csrs.mstatus.tsr,
                          csrs.mstatus.tw,
@@ -201,7 +212,7 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
                          csrs.mstatus.sie,
                          csrs.mstatus.uie
             );
-        mie = bundle(20b0,
+        csr_combs.mie = bundle(20b0,
                      csrs.mie.meip,
                      1b0,
                      csrs.mie.seip,
@@ -214,7 +225,7 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
                      1b0,
                      csrs.mie.ssip,
                      csrs.mie.usip );
-        mip = bundle(20b0,
+        csr_combs.mip = bundle(20b0,
                      csrs.mip.meip,
                      1b0,
                      csrs.mip.seip,
@@ -227,7 +238,27 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
                      1b0,
                      csrs.mip.ssip,
                      csrs.mip.usip );
-        dcsr = bundle(csrs.dcsr.xdebug_ver,
+        csr_combs.mtvec = bundle(csrs.mtvec.base, 1b0, csrs.mtvec.vectored);
+
+        csr_combs.ustatus = bundle(27b0,
+                                   csrs.mstatus.upie,
+                                   3b0,
+                                   csrs.mstatus.uie );
+        csr_combs.uie = bundle(23b0,
+                                   csrs.mie.ueip,
+                                   3b0,
+                                   csrs.mie.utip,
+                                   3b0,
+                                   csrs.mie.usip );
+        csr_combs.uip = bundle(23b0,
+                                   csrs.mip.ueip,
+                                   3b0,
+                                   csrs.mip.utip,
+                                   3b0,
+                                   csrs.mip.usip );
+        csr_combs.utvec = bundle(csrs.utvec.base, 1b0, csrs.utvec.vectored);
+
+        csr_combs.dcsr = bundle(csrs.dcsr.xdebug_ver,
                       12b0,
                       csrs.dcsr.ebreakm,
                       1b0,
@@ -243,7 +274,6 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
                       csrs.dcsr.step,
                       csrs.dcsr.prv );
 
-        mtvec = bundle(csrs.mtvec.base, 1b0, csrs.mtvec.vectored);
         part_switch (csr_access.address) { // 12 bits: top 2 bits indicate read/write (2b00/01/10) or read-only (2b11); next 2 are lowest privilege level
         case CSR_ADDR_CYCLE     : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.cycles[32;0]; }
         case CSR_ADDR_CYCLEH    : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.cycles[32;32]; }
@@ -251,6 +281,15 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         case CSR_ADDR_INSTRETH  : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.instret[32;32]; }
         case CSR_ADDR_TIME      : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.time[32;0]; }
         case CSR_ADDR_TIMEH     : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.time[32;32]; }
+
+        case CSR_ADDR_USTATUS   : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csr_combs.ustatus; }
+        case CSR_ADDR_UIE       : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csr_combs.uie; }
+        case CSR_ADDR_UTVEC     : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csr_combs.utvec; } // can be hardwired to any value, or read/write; tests require read-write
+        case CSR_ADDR_USCRATCH  : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csrs.uscratch; }
+        case CSR_ADDR_UEPC      : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csrs.uepc; }
+        case CSR_ADDR_UCAUSE    : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csrs.ucause; }
+        case CSR_ADDR_UTVAL     : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csrs.utval; }
+        case CSR_ADDR_UIP       : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csr_combs.uip; }
 
         case CSR_ADDR_MCYCLE    : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;0]; }
         case CSR_ADDR_MCYCLEH   : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;32]; }
@@ -261,21 +300,21 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         case CSR_ADDR_MHARTID   : { csr_data.illegal_access=0; csr_data.read_data = mhartid; }
         case CSR_ADDR_MISA      : { csr_data.illegal_access=0; csr_data.read_data = misa; }
         case CSR_ADDR_MVENDORID : { csr_data.illegal_access=0; csr_data.read_data = mvendorid; }
-        case CSR_ADDR_MSTATUS   : { csr_data.illegal_access=0; csr_data.read_data = mstatus; }
 
+        case CSR_ADDR_MSTATUS   : { csr_data.illegal_access=0; csr_data.read_data = csr_combs.mstatus; }
+        case CSR_ADDR_MIE       : { csr_data.illegal_access=0; csr_data.read_data = csr_combs.mie; }
+        case CSR_ADDR_MTVEC     : { csr_data.illegal_access=0; csr_data.read_data = csr_combs.mtvec; } // can be hardwired to any value, or read/write; tests require read-write
         case CSR_ADDR_MSCRATCH  : { csr_data.illegal_access=0; csr_data.read_data = csrs.mscratch; }
         case CSR_ADDR_MEPC      : { csr_data.illegal_access=0; csr_data.read_data = csrs.mepc; }
         case CSR_ADDR_MCAUSE    : { csr_data.illegal_access=0; csr_data.read_data = csrs.mcause; }
         case CSR_ADDR_MTVAL     : { csr_data.illegal_access=0; csr_data.read_data = csrs.mtval; }
-        case CSR_ADDR_MTVEC     : { csr_data.illegal_access=0; csr_data.read_data = mtvec; } // can be hardwired to any value, or read/write; tests require read-write
+        case CSR_ADDR_MIP       : { csr_data.illegal_access=0; csr_data.read_data = csr_combs.mip; }
             // basic RISC-V tests require the following to not be illegal to write to
         case CSR_ADDR_MEDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
         case CSR_ADDR_MIDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
-        case CSR_ADDR_MIE       : { csr_data.illegal_access=0; csr_data.read_data = mie; }
-        case CSR_ADDR_MIP       : { csr_data.illegal_access=0; csr_data.read_data = mip; }
 
         case CSR_ADDR_DEPC      : { csr_data.illegal_access=rv_cfg_debug_force_disable; csr_data.read_data = csrs.depc; }
-        case CSR_ADDR_DCSR      : { csr_data.illegal_access=rv_cfg_debug_force_disable; csr_data.read_data = dcsr; }
+        case CSR_ADDR_DCSR      : { csr_data.illegal_access=rv_cfg_debug_force_disable; csr_data.read_data = csr_combs.dcsr; }
         }
 
         /*b Decode CSR writes */
@@ -354,7 +393,30 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
             csrs.mie.msip <= csr_write.data[3];
         }
 
-        /*b Handle MSTATUS */
+        /*b Handle MSTATUS.upie/uie/upp */
+        if (trap_combs.u) {
+            // No UPP as user mode can only trap user mode: csrs.mstatus.upp  <= 0;
+            csrs.mstatus.upie <= csrs.mstatus.uie;
+            csrs.mstatus.uie  <= 0;
+        } else {
+            if (ret_combs.u) {
+                // No UPP as user mode can only trap user mode: csrs.mstatus.upp  <= 0;
+                csrs.mstatus.upie <= 1;
+                csrs.mstatus.uie  <= csrs.mstatus.upie;
+            }
+            if (csr_write.enable && (csr_access.address==CSR_ADDR_MSTATUS)) {
+                // No UPP as user mode can only trap user mode: csrs.mstatus.upp <= csr_write.data[2;11];
+                csrs.mstatus.upie <= csr_write.data[4];
+                csrs.mstatus.uie  <= csr_write.data[0];
+            }
+            if (csr_write.enable && (csr_access.address==CSR_ADDR_USTATUS)) {
+                // No UPP as user mode can only trap user mode: csrs.mstatus.upp <= csr_write.data[2;11];
+                csrs.mstatus.upie <= csr_write.data[4];
+                csrs.mstatus.uie  <= csr_write.data[0];
+            }
+        }
+
+        /*b Handle MSTATUS.mpie/mie/mpp */
         if (trap_combs.m) {
             csrs.mstatus.mpp  <= 2b11; //rv_mode_machine; // Since this is all that is supported; actually 'current mode'
             csrs.mstatus.mpie <= csrs.mstatus.mie;
@@ -372,6 +434,14 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
             }
         }
 
+        /*b Handle UEPC state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_UEPC)) {
+            csrs.uepc <= csr_write.data;
+        }
+        if (trap_combs.u) {
+            csrs.uepc <= csr_controls.trap.pc;
+        }
+
         /*b Handle MEPC state */
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MEPC)) {
             csrs.mepc <= csr_write.data;
@@ -380,15 +450,55 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
             csrs.mepc <= csr_controls.trap.pc;
         }
 
+        /*b Handle DEPC state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_DEPC)) {
+            csrs.depc <= csr_write.data;
+        }
+        if (trap_combs.d) {
+            csrs.depc <= csr_controls.trap.pc;
+        }
+
+        /*b Handle UTVEC state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_UTVEC)) {
+            csrs.utvec.base     <= csr_write.data[30;2];
+            csrs.utvec.vectored <= csr_write.data[0];
+        }
+
         /*b Handle MTVEC state */
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MTVEC)) {
             csrs.mtvec.base     <= csr_write.data[30;2];
             csrs.mtvec.vectored <= csr_write.data[0];
         }
 
+        /*b Handle UTVAL state */
+        if (trap_combs.u) {
+            csrs.utval <= csr_controls.trap.value;
+        }
+
         /*b Handle MTVAL state */
         if (trap_combs.m) {
             csrs.mtval <= csr_controls.trap.value;
+        }
+
+        /*b Handle UCAUSE state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_UCAUSE)) {
+            csrs.mcause <= csr_write.data;
+        }
+        if (trap_combs.u) {
+            full_switch (csr_controls.trap.cause) {
+            case riscv_trap_cause_instruction_misaligned: { csrs.ucause <= bundle(24b0, riscv_mcause_instruction_misaligned); }
+            case riscv_trap_cause_instruction_fault:      { csrs.ucause <= bundle(24b0, riscv_mcause_instruction_fault); }
+            case riscv_trap_cause_illegal_instruction:    { csrs.ucause <= bundle(24b0, riscv_mcause_illegal_instruction); }
+            case riscv_trap_cause_breakpoint:             { csrs.ucause <= bundle(24b0, riscv_mcause_breakpoint); }
+            case riscv_trap_cause_load_misaligned:        { csrs.ucause <= bundle(24b0, riscv_mcause_load_misaligned); }
+            case riscv_trap_cause_load_fault:             { csrs.ucause <= bundle(24b0, riscv_mcause_load_fault); }
+            case riscv_trap_cause_store_misaligned:       { csrs.ucause <= bundle(24b0, riscv_mcause_store_misaligned); }
+            case riscv_trap_cause_store_fault:            { csrs.ucause <= bundle(24b0, riscv_mcause_store_fault); }
+            case riscv_trap_cause_uecall:                 { csrs.ucause <= bundle(24b0, riscv_mcause_uecall); }
+            case riscv_trap_cause_secall:                 { csrs.ucause <= bundle(24b0, riscv_mcause_secall); }
+            case riscv_trap_cause_mecall:                 { csrs.ucause <= bundle(24b0, riscv_mcause_mecall); }
+            default:                                      { csrs.ucause <= bundle(1b1, 23b0, 4b0, csr_controls.trap.cause[4;0]); } // interrupts
+            }
         }
 
         /*b Handle MCAUSE state */
@@ -412,6 +522,11 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
             }
         }
 
+        /*b Handle USCRATCH state */
+        if (csr_write.enable && (csr_access.address==CSR_ADDR_USCRATCH)) {
+            csrs.uscratch <= csr_write.data;
+        }
+
         /*b Handle MSCRATCH state */
         if (csr_write.enable && (csr_access.address==CSR_ADDR_MSCRATCH)) {
             csrs.mscratch <= csr_write.data;
@@ -423,14 +538,6 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         }
         if (csr_write.enable && (csr_access.address==CSR_ADDR_DSCRATCH1)) {
             csrs.dscratch1 <= csr_write.data;
-        }
-
-        /*b Handle DEPC state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_DEPC)) {
-            csrs.depc <= csr_write.data;
-        }
-        if (trap_combs.d) {
-            csrs.depc <= csr_controls.trap.pc;
         }
 
         /*b Handle DCSR state */
@@ -459,40 +566,73 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
             csrs.dcsr <= {*=0};
         }
 
-        /*b Tie-offs for machine mode only */
-        //csrs.mtvec.base[;]  <= 0;
-        //csrs.mtvec.vectored <= 0;
-        csrs.mstatus.mpp    <= 2b11; // only machine mode supported
-        csrs.mstatus.sd     <= 0;
-        csrs.mstatus.tsr     <= 0;
-        csrs.mstatus.tw     <= 0;
-        csrs.mstatus.tvm     <= 0;
-        csrs.mstatus.mxr     <= 0;
-        csrs.mstatus.sum     <= 0;
-        csrs.mstatus.mprv     <= 0;
-        csrs.mstatus.xs     <= 0;
-        csrs.mstatus.fs     <= 0;
-        csrs.mstatus.spp     <= 0;
-        csrs.mstatus.spie     <= 0;
-        csrs.mstatus.upie     <= 0;
-        csrs.mstatus.sie     <= 0;
-        csrs.mstatus.uie     <= 0;
+        /*b Kill registers if user mode not enabled (i.e. machine mode only) */
+        if (!rv_cfg_user_mode_enable) {
+            csrs.mstatus.mpp    <= 2b11; // only machine mode supported
+            csrs.mstatus.sd     <= 0;
+            csrs.mstatus.tsr    <= 0;
+            csrs.mstatus.tw     <= 0;
+            csrs.mstatus.tvm    <= 0;
+            csrs.mstatus.mxr    <= 0;
+            csrs.mstatus.sum    <= 0;
+            csrs.mstatus.mprv   <= 0;
+            csrs.mstatus.xs     <= 0;
+            csrs.mstatus.fs     <= 0;
+            csrs.mstatus.spp    <= 0;
+            csrs.mstatus.spie   <= 0;
+            csrs.mstatus.sie    <= 0;
+            csrs.mstatus.upie   <= 0;
+            csrs.mstatus.uie    <= 0;
 
-        csrs.mip.seip     <= 0; // supervisor external interrupt pending from input pin
-        csrs.mip.seip_sw  <= 0; // supervisor external interrupt pending from machine mode write
-        csrs.mip.ueip     <= 0; // user external interrupt pending from input pin
-        csrs.mip.ueip_sw  <= 0; // user external interrupt pending from machine mode write
-        csrs.mip.stip     <= 0; // supervisor timer interrupt pending from machine mode write
-        csrs.mip.utip     <= 0; // user timer interrupt pending from machine/supervisor mode write
-        csrs.mip.ssip     <= 0; // supervisor software interrupt pending from machine/supervisor mode write
-        csrs.mip.usip     <= 0; // user software interrupt pending from machine/supervisor mode write
+            csrs.mip.seip     <= 0; // supervisor external interrupt pending from input pin
+            csrs.mip.seip_sw  <= 0; // supervisor external interrupt pending from machine mode write
+            csrs.mip.stip     <= 0; // supervisor timer interrupt pending from machine mode write
+            csrs.mip.ssip     <= 0; // supervisor software interrupt pending from machine/supervisor mode write
 
-        csrs.mie.seip     <= 0;
-        csrs.mie.ueip     <= 0;
-        csrs.mie.stip     <= 0;
-        csrs.mie.utip     <= 0;
-        csrs.mie.ssip     <= 0;
-        csrs.mie.usip     <= 0;
+            csrs.mie.seip     <= 0;
+            csrs.mie.stip     <= 0;
+            csrs.mie.ssip     <= 0;
+
+            csrs.mip.ueip     <= 0; // user external interrupt pending from input pin
+            csrs.mip.ueip_sw  <= 0; // user external interrupt pending from machine mode write
+            csrs.mip.utip     <= 0; // user timer interrupt pending from machine/supervisor mode write
+            csrs.mip.usip     <= 0; // user software interrupt pending from machine/supervisor mode write
+
+            csrs.mie.ueip     <= 0;
+            csrs.mie.utip     <= 0;
+            csrs.mie.usip     <= 0;
+
+            csrs.uscratch <= 0;
+            csrs.uepc     <= 0;
+            csrs.ucause   <= 0;
+            csrs.utval    <= 0;
+            csrs.utvec    <= {*=0};
+        }
+
+        /*b Kill registers if user irq mode not enabled */
+        if (!rv_cfg_user_irq_mode_enable) {
+            csrs.uscratch <= 0;
+            csrs.uepc     <= 0;
+            csrs.ucause   <= 0;
+            csrs.utval    <= 0;
+            csrs.utvec    <= {*=0};
+        }
+
+        /*b Kill registers if supervisor mode not enabled */
+        if (!rv_cfg_supervisor_mode_enable) {
+            csrs.mstatus.spp    <= 0;
+            csrs.mstatus.spie   <= 0;
+            csrs.mstatus.sie    <= 0;
+
+            csrs.mip.seip     <= 0; // supervisor external interrupt pending from input pin
+            csrs.mip.seip_sw  <= 0; // supervisor external interrupt pending from machine mode write
+            csrs.mip.stip     <= 0; // supervisor timer interrupt pending from machine mode write
+            csrs.mip.ssip     <= 0; // supervisor software interrupt pending from machine/supervisor mode write
+
+            csrs.mie.seip     <= 0;
+            csrs.mie.stip     <= 0;
+            csrs.mie.ssip     <= 0;
+        }
 
         /*b All done */
     }
