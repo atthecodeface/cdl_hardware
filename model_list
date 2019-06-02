@@ -1,16 +1,16 @@
 #a Copyright
-#  
+#
 #  This file 'model_list' copyright Gavin J Stark 2016, 2017
-#  
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 # 1. Redistributions of source code must retain the above copyright notice, this
 #    list of conditions and the following disclaimer.
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 #    this list of conditions and the following disclaimer in the documentation
 #    and/or other materials provided with the distribution.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 # ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 # WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -76,12 +76,12 @@ cdl cdl/cpu/riscv/src    riscv_i32_muldiv            inc:cdl/inc
 cdl cdl/cpu/riscv/tb_src tb_riscv_i32_muldiv         inc:cdl/inc
 
 # The decoders are separate for i32 and i32c
-# but the e32 and e32c varaints use the same source cdoe and just force enable e32 mode
+# but the e32 and e32c varaints use the same source code and just force enable e32 mode
 cdl cdl/cpu/riscv/src    riscv_i32_decode     inc:cdl/inc dc:rv_cfg_i32_bitmap_enhanced_shift_enable=1
 cdl cdl/cpu/riscv/src    riscv_i32c_decode    inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_e32_decode     inc:cdl/inc inc:cdl/cpu/riscv/src dc:rv_cfg_e32_force_enable=1 rmn:riscv_i32_decode=riscv_e32_decode
 cdl cdl/cpu/riscv/src    riscv_e32c_decode    inc:cdl/inc inc:cdl/cpu/riscv/src dc:rv_cfg_e32_force_enable=1 rmn:riscv_i32c_decode=riscv_e32c_decode
-cdl cdl/cpu/riscv/src    riscv_i32_debug_decode     inc:cdl/inc 
+cdl cdl/cpu/riscv/src    riscv_i32_debug_decode     inc:cdl/inc
 
 # These modules are suitable for i/e32[c][m]
 cdl cdl/cpu/riscv/src    riscv_i32_trace_compression inc:cdl/inc
@@ -91,8 +91,7 @@ cdl cdl/cpu/riscv/src    riscv_i32_trace             inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_alu               inc:cdl/inc dc:rv_cfg_i32_bitmap_enhanced_shift_enable=1
 cdl cdl/cpu/riscv/src    riscv_i32_dmem_request      inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_dmem_read_data    inc:cdl/inc
-# CSRs minimal does support minimal CSRs for just machine mode, but might be reduced in size with some constant definition
-cdl cdl/cpu/riscv/src    riscv_csrs_minimal   inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_csrs_minimal          inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control  inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control_fetch_req  inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_pipeline_control_fetch_data  inc:cdl/inc

@@ -418,12 +418,12 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
 
         /*b Handle MSTATUS.mpie/mie/mpp */
         if (trap_combs.m) {
-            csrs.mstatus.mpp  <= 2b11; //rv_mode_machine; // Since this is all that is supported; actually 'current mode'
+            csrs.mstatus.mpp  <= csr_controls.exec_mode[2;0];
             csrs.mstatus.mpie <= csrs.mstatus.mie;
             csrs.mstatus.mie  <= 0;
         } else {
             if (ret_combs.m) { // note, should enter mode 'csrs.mstatus.mpp'
-                csrs.mstatus.mpp  <= 2b11; //rv_mode_machine;
+                csrs.mstatus.mpp  <= 0; // if machine mode only is supported, we pick that up later
                 csrs.mstatus.mpie <= 1;
                 csrs.mstatus.mie  <= csrs.mstatus.mpie;
             }
@@ -633,6 +633,37 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
             csrs.mie.stip     <= 0;
             csrs.mie.ssip     <= 0;
         }
+
+        /*b Future - handle mtvec bounding
+
+        The mtvec register must always be implemented, but can contain
+        a hardwired read-only value. If mtvec is writable, the set of
+        values the register may hold can vary by implementation. The
+        value in the BASE field must always be aligned on a 4-byte
+        boundary, and the MODE setting may impose additional alignment
+        constraints on the value in the BASE field.
+
+        The encoding of the MODE field is shown in Table 3.5
+        (0->direct, 1->vectored, else reserved). When MODE=Direct, all
+        traps into machine mode cause the pc to be set to the address
+        in the BASE field. When MODE=Vectored, all synchronous
+        exceptions into machine mode cause the pc to be set to the
+        address in the BASE field, whereas interrupts cause the pc to
+        be set to the address in the BASE field plus four times the
+        interrupt cause number. For example, a machine-mode timer
+        interrupt (see Table 3.6) causes the pc to be set to
+        BASE+0x1c.
+
+        Allowing coarser alignments in Vectored mode enables vectoring
+        to be implemented without a hardware adder circuit.
+
+        mtvec could be hardwired to a value - all exceptions go to
+        that address (if bit 0 clear) or vectored off that address.
+
+        Presumably utvec is similar, but should be more flexibly set
+        since user mode code can occur in fewer places than machine mode.
+
+        */
 
         /*b All done */
     }
