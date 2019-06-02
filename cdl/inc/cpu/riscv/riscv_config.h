@@ -13,3 +13,4 @@ constant integer rv_cfg_memory_abort_disable=0;
 constant integer rv_cfg_memory_late_abort_enable=0;
 constant integer rv_cfg_coproc_force_disable=0;
 constant integer rv_cfg_debug_force_disable=0;
+constant integer rv_cfg_user_mode_enable=0;

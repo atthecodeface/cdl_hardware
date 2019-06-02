@@ -242,24 +242,27 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
                       csrs.dcsr.nmip,
                       csrs.dcsr.step,
                       csrs.dcsr.prv );
-                     
+
         mtvec = bundle(csrs.mtvec.base, 1b0, csrs.mtvec.vectored);
         part_switch (csr_access.address) { // 12 bits: top 2 bits indicate read/write (2b00/01/10) or read-only (2b11); next 2 are lowest privilege level
-        case CSR_ADDR_CYCLE     : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;0]; }
-        case CSR_ADDR_CYCLEH    : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;32]; }
+        case CSR_ADDR_CYCLE     : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.cycles[32;0]; }
+        case CSR_ADDR_CYCLEH    : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.cycles[32;32]; }
+        case CSR_ADDR_INSTRET   : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.instret[32;0]; }
+        case CSR_ADDR_INSTRETH  : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.instret[32;32]; }
+        case CSR_ADDR_TIME      : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.time[32;0]; }
+        case CSR_ADDR_TIMEH     : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.time[32;32]; }
+
         case CSR_ADDR_MCYCLE    : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;0]; }
         case CSR_ADDR_MCYCLEH   : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;32]; }
-        case CSR_ADDR_INSTRET   : { csr_data.illegal_access=0; csr_data.read_data = csrs.instret[32;0]; }
-        case CSR_ADDR_INSTRETH  : { csr_data.illegal_access=0; csr_data.read_data = csrs.instret[32;32]; }
         case CSR_ADDR_MINSTRET  : { csr_data.illegal_access=0; csr_data.read_data = csrs.instret[32;0]; }
         case CSR_ADDR_MINSTRETH : { csr_data.illegal_access=0; csr_data.read_data = csrs.instret[32;32]; }
-        case CSR_ADDR_TIME      : { csr_data.illegal_access=0; csr_data.read_data = csrs.time[32;0]; }
-        case CSR_ADDR_TIMEH     : { csr_data.illegal_access=0; csr_data.read_data = csrs.time[32;32]; }
+
         case CSR_ADDR_MIMPID    : { csr_data.illegal_access=0; csr_data.read_data = mimpid; }
         case CSR_ADDR_MHARTID   : { csr_data.illegal_access=0; csr_data.read_data = mhartid; }
         case CSR_ADDR_MISA      : { csr_data.illegal_access=0; csr_data.read_data = misa; }
         case CSR_ADDR_MVENDORID : { csr_data.illegal_access=0; csr_data.read_data = mvendorid; }
         case CSR_ADDR_MSTATUS   : { csr_data.illegal_access=0; csr_data.read_data = mstatus; }
+
         case CSR_ADDR_MSCRATCH  : { csr_data.illegal_access=0; csr_data.read_data = csrs.mscratch; }
         case CSR_ADDR_MEPC      : { csr_data.illegal_access=0; csr_data.read_data = csrs.mepc; }
         case CSR_ADDR_MCAUSE    : { csr_data.illegal_access=0; csr_data.read_data = csrs.mcause; }
@@ -270,21 +273,21 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         case CSR_ADDR_MIDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
         case CSR_ADDR_MIE       : { csr_data.illegal_access=0; csr_data.read_data = mie; }
         case CSR_ADDR_MIP       : { csr_data.illegal_access=0; csr_data.read_data = mip; }
-        case CSR_ADDR_DEPC      : { csr_data.illegal_access=0; csr_data.read_data = csrs.depc; }
-        case CSR_ADDR_DCSR      : { csr_data.illegal_access=0; csr_data.read_data = dcsr; }
+
+        case CSR_ADDR_DEPC      : { csr_data.illegal_access=rv_cfg_debug_force_disable; csr_data.read_data = csrs.depc; }
+        case CSR_ADDR_DCSR      : { csr_data.illegal_access=rv_cfg_debug_force_disable; csr_data.read_data = dcsr; }
         }
 
         /*b Decode CSR writes */
         csr_write.enable = 0;
         csr_write.data = csr_access.write_data;
-        if (!csr_access.access_cancelled) {
-            part_switch (csr_access.access) {
-                case riscv_csr_access_write: { csr_write.enable=1; }
-                case riscv_csr_access_rw:    { csr_write.enable=1; }
-                case riscv_csr_access_rs:    { csr_write.enable=1; csr_write.data |= csr_data.read_data; }
-                case riscv_csr_access_rc:    { csr_write.enable=1; csr_write.data  = csr_data.read_data &~ csr_access.write_data; }
-            }
+        part_switch (csr_access.access) {
+            case riscv_csr_access_write: { csr_write.enable=1; }
+            case riscv_csr_access_rw:    { csr_write.enable=1; }
+            case riscv_csr_access_rs:    { csr_write.enable=1; csr_write.data |= csr_data.read_data; }
+            case riscv_csr_access_rc:    { csr_write.enable=1; csr_write.data  = csr_data.read_data &~ csr_access.write_data; }
         }
+        if (csr_access.access_cancelled) { csr_write.enable=0; }
 
         /*b All done */
     }
@@ -311,13 +314,13 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
             }
         }
     }
-    
+
     /*b CSR state update */
     csr_state_update """
     """: {
         /*b Mirror time */
         csrs.time <= irqs.time;
-            
+
         /*b Handle CSR cycle state */
         csrs.cycles[32;0] <= csrs.cycles[32;0] + 1;
         if (csrs.cycles[32;0]==-1) {csrs.cycles[32;32] <= csrs.cycles[32;32]+1;}
