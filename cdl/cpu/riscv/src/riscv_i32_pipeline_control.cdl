@@ -93,7 +93,7 @@ typedef struct {
     bit mst_valid;
 } t_debug_combs;
 
-/*t t_debug_state
+/*t t_debug_drive
  *
  * State of debugger target driving
  *
@@ -167,12 +167,15 @@ typedef struct {
     t_ifetch_fsm state;
     t_riscv_mode    mode;
     bit[32]      pc    "PC to start fetching from";
+    bit instruction_debug_valid  "Copy in riscv_clk domain so it may be used by ifetch";
+    bit waiting_for_read_write   "Copy in riscv_clk domain so it may be used by ifetch";
     bit halt_req;
 } t_ifetch_state;
 
 /*a Module
  */
 module riscv_i32_pipeline_control( clock clk,
+                                   clock riscv_clk "Clk gated by riscv_clk_enable - provide for single clock gate outside the module",
                                    input bit reset_n,
                                    input bit                           riscv_clk_enable   "Clock enable for the RISC-V core",
                                    input t_riscv_csrs                  csrs,
@@ -208,7 +211,6 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
     clocked t_debug_state debug_state = {*=0, control={attention=1, halted=1, resumed=0, fsm_state=debug_fsm_halted}}
         "debug_state must be on the constantly running clock, as the debug interface is shared between cores";
 
-    gated_clock clock clk active_high riscv_clk_enable riscv_clk;
     default clock riscv_clk;
     comb    t_ifetch_combs         ifetch_combs;
     clocked t_ifetch_state         ifetch_state = {*=0, mode=rv_mode_machine, pc=INITIAL_PC, state=ifetch_fsm_halted}
@@ -385,6 +387,12 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
            ifetch_combs.interrupt_req    = csrs.mstatus.mie; // and only if not in debug
            ifetch_combs.interrupt_number = 11;
         }
+        if (debug_state.control.instruction_debug_valid || ifetch_state.instruction_debug_valid) {
+            ifetch_state.instruction_debug_valid <= debug_state.control.instruction_debug_valid;
+        }
+        if (debug_state.control.waiting_for_read_write || ifetch_state.waiting_for_read_write) {
+            ifetch_state.waiting_for_read_write <= debug_state.control.waiting_for_read_write;
+        }
 
         ifetch_combs.fetch_action   = rv_pc_fetch_action_idle;
         ifetch_state.halt_req <= 0;
@@ -392,8 +400,8 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         case ifetch_fsm_halted: {
             if (debug_state.control.fsm_state == debug_fsm_resuming){
                 ifetch_state.state <= ifetch_fsm_restarting;
-                ifetch_state.pc   <= csrs.depc;
-                ifetch_state.mode <= rv_mode_machine;
+                ifetch_state.pc    <= csrs.depc;
+                ifetch_state.mode  <= rv_mode_machine;
             }
             if (debug_state.control.fsm_state == debug_fsm_start_progbuf) {
                 ifetch_state.state <= ifetch_fsm_restarting;
@@ -405,7 +413,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                 ifetch_state.pc   <= INITIAL_PC;
                 ifetch_state.mode <= rv_mode_machine;
             }
-            if (debug_state.control.waiting_for_read_write) {
+            if (ifetch_state.waiting_for_read_write) {
                 ifetch_combs.fetch_action   = rv_pc_fetch_action_none;
             }
         }
@@ -439,9 +447,10 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
             }
             if (pipeline_control.trap.valid) { // vector interrupts if required, late decision
                 if (pipeline_control.trap.ret) { // late decision
-                    ifetch_state.pc <= csrs.mepc;
+                    ifetch_state.pc    <= csrs.mepc;
                     ifetch_state.state <= ifetch_fsm_restarting;
-                    ifetch_state.mode <= rv_mode_machine;
+                    ifetch_state.mode  <= rv_mode_machine;
+                    if (csrs.mstatus.mpp==0) { ifetch_state.mode  <= rv_mode_user; }
                 } else {
                     if (pipeline_state.interrupt_to_mode == rv_mode_debug) {
                         ifetch_state.halt_req <= 0;
@@ -477,7 +486,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         pipeline_state.interrupt_to_mode = ifetch_state.halt_req ? rv_mode_debug : ifetch_state.mode;
         pipeline_state.instruction_data  = debug_state.control.data0;
         pipeline_state.instruction_debug = {
-            valid    = debug_state.control.instruction_debug_valid,
+            valid    = ifetch_state.instruction_debug_valid, // only changes when riscv_clk rises
             debug_op = debug_state.control.instruction_debug_op,
             data     = debug_state.control.arg
         };

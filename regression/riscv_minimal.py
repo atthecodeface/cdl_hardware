@@ -811,6 +811,7 @@ riscv_jtag_regression_tests = {#"jtag_simple":("",10*1000,["jtag"],{}),
                                }
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[],{}),
                                "traps":("traps.dump",10*1000,[],{}),
+                               "traps_user":("traps_user.dump",10*1000,[],{}),
                                "timer_irqs":("timer_irqs.dump",42*1000,["rv_timer"],{}),
                                #"data_access":("data_access.dump",10*1000,["apb_timer"],{}),
                                "data":("data.dump",10*1000,[],{}),

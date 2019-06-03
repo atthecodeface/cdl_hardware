@@ -60,6 +60,7 @@ typedef struct {
 
 /*a Module */
 module riscv_csrs( clock clk                                   "Free-running clock",
+                   clock riscv_clk                             "Clk gated by riscv_clk_enable - provide for single clock gate outside the module",
                    input bit reset_n                           "Active low reset",
                    input bit riscv_clk_enable                  "RISC-V clock enable",
                    input t_riscv_irqs          irqs            "Interrupts in to the CPU",
@@ -166,13 +167,19 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
      */
     default clock clk;
     default reset active_low reset_n;
-    gated_clock clock clk active_high riscv_clk_enable riscv_clk;
+    clocked bit keep_clk = 0 "State bit to ensure that 'clk' is kept - can be used be other versions for state updates etc";
     default clock riscv_clk;
     clocked t_riscv_csrs csrs={*=0};
     comb t_csr_combs  csr_combs;
     comb t_csr_write  csr_write;
     comb t_mode_combs ret_combs  "Breakout for xRET";
     comb t_mode_combs trap_combs "Breakout for valid trap to mode";
+
+    /*b Clock 'clk' state
+     */
+    clk_state :{
+        keep_clk <= 0;
+    }
 
     /*b CSR read/write
      */

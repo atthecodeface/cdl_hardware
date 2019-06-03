@@ -78,7 +78,7 @@ This module manages trap detection, and setting up of the trap values required.
             memory_trap = memory_trap;
         }
     }
-    
+
     /*b Determine if interrupt should be taken (unless memory aborted) (and which PC to use) */
     detect_interrupt : {
         interrupt_trap = {*=0};
@@ -100,15 +100,15 @@ This module manages trap detection, and setting up of the trap values required.
         if (pipeline_response.exec.valid && pipeline_response.exec.interrupt_block) {
             interrupt_trap.valid_from_int = 0;
         }
-        
+
     }
 
     /*b Determine if exec stage should abort */
     exec_stage_abort_detection : {
         exec_trap = {*=0};
-        exec_trap.to_mode  = pipeline_state.interrupt_to_mode;
+        exec_trap.to_mode  = rv_mode_machine;
         exec_trap.pc       = pipeline_response.exec.pc;
-        
+
         part_switch (pipeline_response.exec.idecode.op) {
         case riscv_op_system:   {
             /* if user mode supported
@@ -126,23 +126,23 @@ This module manages trap detection, and setting up of the trap values required.
             // Following is an illegal instruction if in user mode or supervisor mode
             if (pipeline_response.exec.idecode.subop==riscv_subop_mret) {
                 exec_trap.valid_from_exec = 1;
-                exec_trap.ret            = 1;
-                exec_trap.cause          = riscv_trap_cause_ret_mret;
+                exec_trap.ret             = 1;
+                exec_trap.cause           = riscv_trap_cause_ret_mret;
             }
             if (pipeline_response.exec.idecode.subop==riscv_subop_ecall) {
                 exec_trap.valid_from_exec = 1;
-                exec_trap.cause          = riscv_trap_cause_mecall; // call from relevant mode (same inst in all modes)
+                exec_trap.cause           = riscv_trap_cause_mecall; // call from relevant mode (same inst in all modes)
             }
             // possible ebreak_to_dbg should only be set in machine mode
             if (pipeline_response.exec.idecode.subop==riscv_subop_ebreak) {
                 exec_trap.valid_from_exec = 1;
-                exec_trap.ebreak_to_dbg = pipeline_state.ebreak_to_dbg;
-                exec_trap.cause         = riscv_trap_cause_breakpoint;
-                exec_trap.value         = pipeline_response.exec.pc; 
+                exec_trap.ebreak_to_dbg   = pipeline_state.ebreak_to_dbg;
+                exec_trap.cause           = riscv_trap_cause_breakpoint;
+                exec_trap.value           = pipeline_response.exec.pc;
             }
         }
         }
-        
+
         if (pipeline_response.exec.valid && pipeline_response.exec.idecode.illegal) {
             exec_trap.valid_from_exec = 1;
             exec_trap.ret = 0;

@@ -244,6 +244,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
      */
     reve_r_pipeline: {
         riscv_i32_pipeline_control pc(clk <- clk,
+                                      riscv_clk <- riscv_clk,
                                       reset_n          <= reset_n,
                                       riscv_clk_enable <= riscv_clk_enable,
                                       csrs <= csrs,
@@ -307,6 +308,7 @@ module tb_riscv_i32mc_pipeline3( clock jtag_tck,
      */
     csr_instance: {
         riscv_csrs_machine_debug_user csrs( clk <- clk,
+                                      riscv_clk <- riscv_clk,
                                                 reset_n <= reset_n,
                                                 riscv_clk_enable <= riscv_clk_enable,
                                                 irqs <= irqs,

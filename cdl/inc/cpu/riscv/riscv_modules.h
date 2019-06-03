@@ -179,6 +179,7 @@ extern module riscv_i32_trace_decompression( input bit[64] compressed_nybbles "N
 /*m riscv_csrs_machine_only  */
 extern
 module riscv_csrs_machine_only( clock clk                                   "RISC-V clock",
+                   clock riscv_clk                             "Clk gated by riscv_clk_enable - provide for single clock gate outside the module",
                    input bit reset_n                           "Active low reset",
                    input bit riscv_clk_enable,
                    input t_riscv_irqs       irqs               "Interrupts in to the CPU",
@@ -189,8 +190,8 @@ module riscv_csrs_machine_only( clock clk                                   "RIS
     )
 {
     timing to   rising clock clk riscv_clk_enable;
-    timing to   rising clock clk csr_access, csr_controls, irqs;
-    timing from rising clock clk csr_data, csrs;
+    timing to   rising clock riscv_clk csr_access, csr_controls, irqs;
+    timing from rising clock riscv_clk csr_data, csrs;
     timing comb input csr_access;
     timing comb output csr_data;
 }
@@ -198,6 +199,7 @@ module riscv_csrs_machine_only( clock clk                                   "RIS
 /*m riscv_csrs_machine_debug  */
 extern
 module riscv_csrs_machine_debug( clock clk                                   "RISC-V clock",
+                   clock riscv_clk                             "Clk gated by riscv_clk_enable - provide for single clock gate outside the module",
                    input bit reset_n                           "Active low reset",
                    input bit riscv_clk_enable,
                    input t_riscv_irqs       irqs               "Interrupts in to the CPU",
@@ -208,8 +210,8 @@ module riscv_csrs_machine_debug( clock clk                                   "RI
     )
 {
     timing to   rising clock clk riscv_clk_enable;
-    timing to   rising clock clk csr_access, csr_controls, irqs;
-    timing from rising clock clk csr_data, csrs;
+    timing to   rising clock riscv_clk csr_access, csr_controls, irqs;
+    timing from rising clock riscv_clk csr_data, csrs;
     timing comb input csr_access;
     timing comb output csr_data;
 }
@@ -217,6 +219,7 @@ module riscv_csrs_machine_debug( clock clk                                   "RI
 /*m riscv_csrs_machine_debug_user  */
 extern
 module riscv_csrs_machine_debug_user( clock clk                                   "RISC-V clock",
+                   clock riscv_clk                             "Clk gated by riscv_clk_enable - provide for single clock gate outside the module",
                    input bit reset_n                           "Active low reset",
                    input bit riscv_clk_enable,
                    input t_riscv_irqs       irqs               "Interrupts in to the CPU",
@@ -227,8 +230,8 @@ module riscv_csrs_machine_debug_user( clock clk                                 
     )
 {
     timing to   rising clock clk riscv_clk_enable;
-    timing to   rising clock clk csr_access, csr_controls, irqs;
-    timing from rising clock clk csr_data, csrs;
+    timing to   rising clock riscv_clk csr_access, csr_controls, irqs;
+    timing from rising clock riscv_clk csr_data, csrs;
     timing comb input csr_access;
     timing comb output csr_data;
 }
@@ -236,6 +239,7 @@ module riscv_csrs_machine_debug_user( clock clk                                 
 /*m riscv_csrs_machine_debug_user_irq  */
 extern
 module riscv_csrs_machine_debug_user_irq( clock clk                                   "RISC-V clock",
+                   clock riscv_clk                             "Clk gated by riscv_clk_enable - provide for single clock gate outside the module",
                    input bit reset_n                           "Active low reset",
                    input bit riscv_clk_enable,
                    input t_riscv_irqs       irqs               "Interrupts in to the CPU",
@@ -246,8 +250,8 @@ module riscv_csrs_machine_debug_user_irq( clock clk                             
     )
 {
     timing to   rising clock clk riscv_clk_enable;
-    timing to   rising clock clk csr_access, csr_controls, irqs;
-    timing from rising clock clk csr_data, csrs;
+    timing to   rising clock riscv_clk csr_access, csr_controls, irqs;
+    timing from rising clock riscv_clk csr_data, csrs;
     timing comb input csr_access;
     timing comb output csr_data;
 }

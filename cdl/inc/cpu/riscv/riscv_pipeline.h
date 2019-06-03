@@ -27,6 +27,7 @@ include "cpu/riscv/riscv_internal_types.h"
 /*m riscv_i32_pipeline_control
  */
 extern module riscv_i32_pipeline_control( clock clk,
+                                          clock riscv_clk                             "Clk gated by riscv_clk_enable - provide for single clock gate outside the module",
                                           input bit reset_n,
                                           input bit riscv_clk_enable,
                                           input t_riscv_csrs                 csrs,
@@ -43,10 +44,11 @@ extern module riscv_i32_pipeline_control( clock clk,
 )
 {
     timing to   rising clock clk riscv_clk_enable;
-    timing to   rising clock clk csrs, pipeline_response, pipeline_fetch_data;
+    timing to   rising clock riscv_clk csrs, pipeline_response, pipeline_fetch_data;
+    timing to   rising clock riscv_clk riscv_config, trace;
     timing to   rising clock clk riscv_config, trace;
     timing to   rising clock clk debug_mst;
-    timing from rising clock clk pipeline_state;
+    timing from rising clock riscv_clk pipeline_state;
     timing from rising clock clk debug_tgt;
     timing comb input riscv_config, csrs;
     timing comb output pipeline_state, debug_tgt;

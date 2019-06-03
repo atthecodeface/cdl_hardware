@@ -124,6 +124,7 @@ module tb_riscv_jtag_debug( clock jtag_tck,
                             debug_tgt <= debug_tgt
             );
         riscv_i32_pipeline_control pc0(clk <- apb_clock,
+                                      riscv_clk <- apb_clock,
                                                  reset_n <= reset_n,
                                        riscv_clk_enable <= 1,
                                                  csrs <= csrs,
@@ -136,6 +137,7 @@ module tb_riscv_jtag_debug( clock jtag_tck,
                                                  debug_tgt       => debug_tgt0,
                                                  rv_select <= 0 );
         riscv_i32_pipeline_control pc1(clk <- apb_clock,
+                                      riscv_clk <- apb_clock,
                                                  reset_n <= reset_n,
                                        riscv_clk_enable <= 1,
                                                  csrs                <= csrs,
