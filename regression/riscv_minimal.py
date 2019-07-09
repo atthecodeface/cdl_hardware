@@ -70,9 +70,23 @@ class c_riscv_minimal_test_base(simple_tb.base_th):
             self.test_image.load_mif(f, self.base_address, address_mask=0x7fffffff)
             f.close()
             return self.mif_filename
-        f = open(self.dump_filename)
-        self.test_image.load(f, self.base_address, address_mask=0x7fffffff)
-        f.close()
+        elf = None
+        if self.dump_filename[-5:]=='.dump':
+            try:
+                elf = open(self.dump_filename[:-5])
+                pass
+            except:
+                pass
+            pass
+        if elf:
+            print "Using ELF file instead of %s"%(self.dump_filename)
+            self.test_image.load_elf(elf, self.base_address, address_mask=0x7fffffff)
+            pass
+        else:
+            f = open(self.dump_filename)
+            self.test_image.load(f, self.base_address, address_mask=0x7fffffff)
+            f.close()
+            pass
         self.mif = tempfile.NamedTemporaryFile(mode='w')
         self.test_image.write_mif(self.mif)
         self.mif.flush()
@@ -811,8 +825,9 @@ riscv_jtag_regression_tests = {#"jtag_simple":("",10*1000,["jtag"],{}),
                                }
 riscv_atcf_regression_tests = {"logic":("logic.dump",50*1000,[],{}),
                                "traps":("traps.dump",10*1000,[],{}),
-                               "traps_user":("traps_user.dump",10*1000,[],{}),
-                               "timer_irqs":("timer_irqs.dump",42*1000,["rv_timer"],{}),
+                            #   "user_mode":("user_mode.dump",10*1000,[],{}),
+                            #   "traps_user":("traps_user.dump",10*1000,[],{}),
+                               "timer_irqs":("timer_irqs.dump",50*1000,["rv_timer"],{}),
                                #"data_access":("data_access.dump",10*1000,["apb_timer"],{}),
                                "data":("data.dump",10*1000,[],{}),
                                "bit_manipulation_shift_rotate_reg":("bit_manipulation_shift_rotate_reg.dump",40*1000,[],{}),
@@ -875,6 +890,8 @@ riscv_regression_tests = {"or":("rv32ui-p-or.dump",3*1000,[],{}),
          "mulh":("rv32um-p-mulh.dump",3*3000,["muldiv"],{}),
          "mulhu":("rv32um-p-mulhu.dump",3*3000,["muldiv"],{}),
          "mulhsu":("rv32um-p-mulhsu.dump",3*3000,["muldiv"],{}),
+
+         "ma_fetch":("rv32mi-p-ma_fetch.dump",10*1000,[],{}),
            }
 for (test_dir,tests) in [(riscv_zephyr_dir,riscv_atcf_zephyr),
                          (riscv_regression_dir,riscv_regression_tests),

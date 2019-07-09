@@ -31,8 +31,9 @@ constant integer mhartid = 0;
 /*a Types */
 /*t t_csr_write */
 typedef struct {
-    bit     enable     "Asserted if a CSR write is in progress";
-    bit[32] data       "Write data, dependent on current CSR data potentially";
+    bit     enable      "Asserted if a CSR write is in progress";
+    bit[32] data_mask   "Bits to keep";
+    bit[32] data_set    "Bits to set";
 } t_csr_write;
 
 /*t t_csr_combs */
@@ -181,22 +182,10 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         keep_clk <= 0;
     }
 
-    /*b CSR read/write
+    /*b CSR comb bundling
      */
-    csr_read_write """
-    CSR_ADDR_MSTATUS
-    CSR_ADDR_MISA
-    CSR_ADDR_MVENDORID
-    CSR_ADDR_MARCHID
-    CSR_ADDR_MIMPID
-    CSR_ADDR_MHARTID
-
-    User mode interrupts requires uscratch, uepc, ucause, utval, uip; ustatus, uie, utvec
+    csr_bundling """
     """: {
-
-        /*b Decode read data and 'illegal_access' for the CSR access */
-        csr_data = {*=0};
-        csr_data.illegal_access = 1;
         csr_combs.mstatus = bundle(csrs.mstatus.sd,
                          8b0,
                          csrs.mstatus.tsr,
@@ -280,58 +269,68 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
                       csrs.dcsr.nmip,
                       csrs.dcsr.step,
                       csrs.dcsr.prv );
+    }
 
-        part_switch (csr_access.address) { // 12 bits: top 2 bits indicate read/write (2b00/01/10) or read-only (2b11); next 2 are lowest privilege level
-        case CSR_ADDR_CYCLE     : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.cycles[32;0]; }
-        case CSR_ADDR_CYCLEH    : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.cycles[32;32]; }
-        case CSR_ADDR_INSTRET   : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.instret[32;0]; }
-        case CSR_ADDR_INSTRETH  : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.instret[32;32]; }
-        case CSR_ADDR_TIME      : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.time[32;0]; }
-        case CSR_ADDR_TIMEH     : { csr_data.illegal_access=!rv_cfg_user_mode_enable; csr_data.read_data = csrs.time[32;32]; }
+    /*b CSR read data handling
+     */
+    csr_read_data """
+    """: {
+        /*b Decode read data */
+        csr_data = {*=0};
+        part_switch (csr_access.select) {
+        case riscv_csr_select_time_l    : { csr_data.read_data = csrs.time[32; 0];    }
+        case riscv_csr_select_time_h    : { csr_data.read_data = csrs.time[32;32];    }
+        case riscv_csr_select_cycle_l   : { csr_data.read_data = csrs.cycles[32; 0];  }
+        case riscv_csr_select_cycle_h   : { csr_data.read_data = csrs.cycles[32;32];  }
+        case riscv_csr_select_instret_l : { csr_data.read_data = csrs.instret[32; 0]; }
+        case riscv_csr_select_instret_h : { csr_data.read_data = csrs.instret[32;32]; }
 
-        case CSR_ADDR_USTATUS   : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csr_combs.ustatus; }
-        case CSR_ADDR_UIE       : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csr_combs.uie; }
-        case CSR_ADDR_UTVEC     : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csr_combs.utvec; } // can be hardwired to any value, or read/write; tests require read-write
-        case CSR_ADDR_USCRATCH  : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csrs.uscratch; }
-        case CSR_ADDR_UEPC      : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csrs.uepc; }
-        case CSR_ADDR_UCAUSE    : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csrs.ucause; }
-        case CSR_ADDR_UTVAL     : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csrs.utval; }
-        case CSR_ADDR_UIP       : { csr_data.illegal_access=!rv_cfg_user_irq_mode_enable; csr_data.read_data = csr_combs.uip; }
+        case riscv_csr_machine_impid    : { csr_data.read_data = mimpid;      }
+        case riscv_csr_machine_hartid   : { csr_data.read_data = mhartid; }
+        case riscv_csr_machine_isa      : { csr_data.read_data = misa; }
+        case riscv_csr_machine_vendorid : { csr_data.read_data = mvendorid; }
 
-        case CSR_ADDR_MCYCLE    : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;0]; }
-        case CSR_ADDR_MCYCLEH   : { csr_data.illegal_access=0; csr_data.read_data = csrs.cycles[32;32]; }
-        case CSR_ADDR_MINSTRET  : { csr_data.illegal_access=0; csr_data.read_data = csrs.instret[32;0]; }
-        case CSR_ADDR_MINSTRETH : { csr_data.illegal_access=0; csr_data.read_data = csrs.instret[32;32]; }
+        case riscv_csr_user_status     : { csr_data.read_data = csr_combs.ustatus; }
+        case riscv_csr_user_scratch    : { csr_data.read_data = csrs.uscratch; }
+        case riscv_csr_user_ie         : { csr_data.read_data = csr_combs.uie; }
+        case riscv_csr_user_ip         : { csr_data.read_data = csr_combs.uip; }
+        case riscv_csr_user_tvec       : { csr_data.read_data = csr_combs.utvec; }
+        case riscv_csr_user_tval       : { csr_data.read_data = csrs.utval; }
+        case riscv_csr_user_epc        : { csr_data.read_data = csrs.uepc; }
+        case riscv_csr_user_cause      : { csr_data.read_data = csrs.ucause; }
 
-        case CSR_ADDR_MIMPID    : { csr_data.illegal_access=0; csr_data.read_data = mimpid; }
-        case CSR_ADDR_MHARTID   : { csr_data.illegal_access=0; csr_data.read_data = mhartid; }
-        case CSR_ADDR_MISA      : { csr_data.illegal_access=0; csr_data.read_data = misa; }
-        case CSR_ADDR_MVENDORID : { csr_data.illegal_access=0; csr_data.read_data = mvendorid; }
+        case riscv_csr_machine_status  : { csr_data.read_data = csr_combs.mstatus; }
+        case riscv_csr_machine_scratch : { csr_data.read_data = csrs.mscratch; }
+        case riscv_csr_machine_ie      : { csr_data.read_data = csr_combs.mie; }
+        case riscv_csr_machine_ip      : { csr_data.read_data = csr_combs.mip; }
+        case riscv_csr_machine_tvec    : { csr_data.read_data = csr_combs.mtvec; }
+        case riscv_csr_machine_tval    : { csr_data.read_data = csrs.mtval; }
+        case riscv_csr_machine_epc     : { csr_data.read_data = csrs.mepc; }
+        case riscv_csr_machine_cause   : { csr_data.read_data = csrs.mcause; }
 
-        case CSR_ADDR_MSTATUS   : { csr_data.illegal_access=0; csr_data.read_data = csr_combs.mstatus; }
-        case CSR_ADDR_MIE       : { csr_data.illegal_access=0; csr_data.read_data = csr_combs.mie; }
-        case CSR_ADDR_MTVEC     : { csr_data.illegal_access=0; csr_data.read_data = csr_combs.mtvec; } // can be hardwired to any value, or read/write; tests require read-write
-        case CSR_ADDR_MSCRATCH  : { csr_data.illegal_access=0; csr_data.read_data = csrs.mscratch; }
-        case CSR_ADDR_MEPC      : { csr_data.illegal_access=0; csr_data.read_data = csrs.mepc; }
-        case CSR_ADDR_MCAUSE    : { csr_data.illegal_access=0; csr_data.read_data = csrs.mcause; }
-        case CSR_ADDR_MTVAL     : { csr_data.illegal_access=0; csr_data.read_data = csrs.mtval; }
-        case CSR_ADDR_MIP       : { csr_data.illegal_access=0; csr_data.read_data = csr_combs.mip; }
-            // basic RISC-V tests require the following to not be illegal to write to
-        case CSR_ADDR_MEDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
-        case CSR_ADDR_MIDELEG   : { csr_data.illegal_access=0; csr_data.read_data = 0; } // must be 0 as only machine mode is supported
+        case riscv_csr_machine_edeleg  : { csr_data.read_data = 0; }
+        case riscv_csr_machine_ideleg  : { csr_data.read_data = 0; }
 
-        case CSR_ADDR_DEPC      : { csr_data.illegal_access=rv_cfg_debug_force_disable; csr_data.read_data = csrs.depc; }
-        case CSR_ADDR_DCSR      : { csr_data.illegal_access=rv_cfg_debug_force_disable; csr_data.read_data = csr_combs.dcsr; }
+        case riscv_csr_debug_pc        : { csr_data.read_data = csrs.depc; }
+        case riscv_csr_debug_csr       : { csr_data.read_data = csr_combs.dcsr; }
+        case riscv_csr_debug_scratch0  : { csr_data.read_data = csrs.dscratch0; }
+        case riscv_csr_debug_scratch1  : { csr_data.read_data = csrs.dscratch1; }
         }
+    }
 
+    /*b CSR write controls
+     */
+    csr_write_controls """
+    """: {
         /*b Decode CSR writes */
         csr_write.enable = 0;
-        csr_write.data = csr_access.write_data;
+        csr_write.data_mask  = 0;
+        csr_write.data_set   = csr_access.write_data;
         part_switch (csr_access.access) {
             case riscv_csr_access_write: { csr_write.enable=1; }
             case riscv_csr_access_rw:    { csr_write.enable=1; }
-            case riscv_csr_access_rs:    { csr_write.enable=1; csr_write.data |= csr_data.read_data; }
-            case riscv_csr_access_rc:    { csr_write.enable=1; csr_write.data  = csr_data.read_data &~ csr_access.write_data; }
+            case riscv_csr_access_rs:    { csr_write.enable=1; csr_write.data_mask = -1; }
+            case riscv_csr_access_rc:    { csr_write.enable=1; csr_write.data_set = 0; csr_write.data_mask = ~csr_access.write_data; }
         }
         if (csr_access.access_cancelled) { csr_write.enable=0; }
 
@@ -343,7 +342,9 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         trap_combs = {*=0};
         ret_combs = {*=0};
         if (csr_controls.trap.valid) {
-            if (csr_controls.trap.ret) {
+            if (csr_controls.trap.ebreak_to_dbg) {
+                trap_combs.d = 1;
+            } elsif (csr_controls.trap.ret) {
                 full_switch (csr_controls.trap.cause) {
                 case riscv_trap_cause_ret_dret: { ret_combs.d = 1; }
                 case riscv_trap_cause_ret_mret: { ret_combs.m = 1; }
@@ -371,11 +372,11 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         csrs.cycles[32;0] <= csrs.cycles[32;0] + 1;
         if (csrs.cycles[32;0]==-1) {csrs.cycles[32;32] <= csrs.cycles[32;32]+1;}
 
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_MCYCLE)) {
-            csrs.cycles[32;0]    <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_select_cycle_l)) {
+            csrs.cycles[32; 0]    <= (csrs.cycles[32; 0] & csr_write.data_mask) | csr_write.data_set;
         }
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_MCYCLEH)) {
-            csrs.cycles[32;32]    <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_select_cycle_h)) {
+            csrs.cycles[32;32]   <= (csrs.cycles[32;32] & csr_write.data_mask) | csr_write.data_set;
         }
 
         /*b Handle instruction retire counter state */
@@ -383,21 +384,21 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
             csrs.instret[32;0] <= csrs.instret[32;0] + 1;
             if (csrs.instret[32;0]==-1) {csrs.instret[32;32] <= csrs.instret[32;32]+1;}
         }
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_MINSTRET)) {
-            csrs.instret[32;0] <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_select_instret_l)) {
+            csrs.instret[32; 0]    <= (csrs.instret[32; 0] & csr_write.data_mask) | csr_write.data_set;
         }
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_MINSTRETH)) {
-            csrs.instret[32;32] <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_select_instret_h)) {
+            csrs.instret[32;32]   <= (csrs.instret[32;32] & csr_write.data_mask) | csr_write.data_set;
         }
 
         /*b Handle interrupt pending/enable state */
         csrs.mip.meip <= irqs.meip;
         csrs.mip.mtip <= irqs.mtip;
         csrs.mip.msip <= irqs.msip;
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_MIE)) {
-            csrs.mie.meip <= csr_write.data[11];
-            csrs.mie.mtip <= csr_write.data[7];
-            csrs.mie.msip <= csr_write.data[3];
+        if (csr_write.enable && (csr_access.select==riscv_csr_machine_ie)) {
+            csrs.mie.meip <= (csrs.mie.meip & csr_write.data_mask[11]) | csr_write.data_set[11];
+            csrs.mie.mtip <= (csrs.mie.meip & csr_write.data_mask[ 7]) | csr_write.data_set[ 7];
+            csrs.mie.msip <= (csrs.mie.meip & csr_write.data_mask[ 3]) | csr_write.data_set[ 3];
         }
 
         /*b Handle MSTATUS.upie/uie/upp */
@@ -411,15 +412,15 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
                 csrs.mstatus.upie <= 1;
                 csrs.mstatus.uie  <= csrs.mstatus.upie;
             }
-            if (csr_write.enable && (csr_access.address==CSR_ADDR_MSTATUS)) {
+            if (csr_write.enable && (csr_access.select==riscv_csr_machine_status)) {
                 // No UPP as user mode can only trap user mode: csrs.mstatus.upp <= csr_write.data[2;11];
-                csrs.mstatus.upie <= csr_write.data[4];
-                csrs.mstatus.uie  <= csr_write.data[0];
+                csrs.mstatus.upie <= (csrs.mstatus.upie & csr_write.data_mask[4]) | csr_write.data_set[4];
+                csrs.mstatus.uie  <= (csrs.mstatus.uie  & csr_write.data_mask[0]) | csr_write.data_set[0];
             }
-            if (csr_write.enable && (csr_access.address==CSR_ADDR_USTATUS)) {
+            if (csr_write.enable && (csr_access.select==riscv_csr_user_status)) {
                 // No UPP as user mode can only trap user mode: csrs.mstatus.upp <= csr_write.data[2;11];
-                csrs.mstatus.upie <= csr_write.data[4];
-                csrs.mstatus.uie  <= csr_write.data[0];
+                csrs.mstatus.upie <= (csrs.mstatus.upie & csr_write.data_mask[4]) | csr_write.data_set[4];
+                csrs.mstatus.uie  <= (csrs.mstatus.uie  & csr_write.data_mask[0]) | csr_write.data_set[0];
             }
         }
 
@@ -434,62 +435,68 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
                 csrs.mstatus.mpie <= 1;
                 csrs.mstatus.mie  <= csrs.mstatus.mpie;
             }
-            if (csr_write.enable && (csr_access.address==CSR_ADDR_MSTATUS)) {
-                csrs.mstatus.mpp  <= csr_write.data[2;11];
-                csrs.mstatus.mpie <= csr_write.data[7];
-                csrs.mstatus.mie  <= csr_write.data[3];
+            if (csr_write.enable && (csr_access.select==riscv_csr_machine_status)) {
+                csrs.mstatus.mpp  <= (csrs.mstatus.mpp  & csr_write.data_mask[2;11]) | csr_write.data_set[2;11];
+                csrs.mstatus.mpie <= (csrs.mstatus.mpie & csr_write.data_mask[7])    | csr_write.data_set[7];
+                csrs.mstatus.mie  <= (csrs.mstatus.mie  & csr_write.data_mask[3])    | csr_write.data_set[3];
             }
         }
 
         /*b Handle UEPC state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_UEPC)) {
-            csrs.uepc <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_user_epc)) {
+            csrs.uepc   <= (csrs.uepc & csr_write.data_mask) | csr_write.data_set;
         }
         if (trap_combs.u) {
             csrs.uepc <= csr_controls.trap.pc;
         }
 
         /*b Handle MEPC state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_MEPC)) {
-            csrs.mepc <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_machine_epc)) {
+            csrs.mepc   <= (csrs.mepc & csr_write.data_mask) | csr_write.data_set;
         }
         if (trap_combs.m) {
             csrs.mepc <= csr_controls.trap.pc;
         }
 
         /*b Handle DEPC state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_DEPC)) {
-            csrs.depc <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_debug_pc)) {
+            csrs.depc   <= (csrs.depc & csr_write.data_mask) | csr_write.data_set;
         }
         if (trap_combs.d) {
             csrs.depc <= csr_controls.trap.pc;
         }
 
         /*b Handle UTVEC state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_UTVEC)) {
-            csrs.utvec.base     <= csr_write.data[30;2];
-            csrs.utvec.vectored <= csr_write.data[0];
+        if (csr_write.enable && (csr_access.select==riscv_csr_user_tvec)) {
+            csrs.utvec.base      <= (csrs.utvec.base     & csr_write.data_mask[30;2])    | csr_write.data_set[30;2];
+            csrs.utvec.vectored  <= (csrs.utvec.vectored & csr_write.data_mask[   0])    | csr_write.data_set[   0];
         }
 
         /*b Handle MTVEC state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_MTVEC)) {
-            csrs.mtvec.base     <= csr_write.data[30;2];
-            csrs.mtvec.vectored <= csr_write.data[0];
+        if (csr_write.enable && (csr_access.select==riscv_csr_machine_tvec)) {
+            csrs.mtvec.base      <= (csrs.mtvec.base     & csr_write.data_mask[30;2])    | csr_write.data_set[30;2];
+            csrs.mtvec.vectored  <= (csrs.mtvec.vectored & csr_write.data_mask[   0])    | csr_write.data_set[   0];
         }
 
         /*b Handle UTVAL state */
+        if (csr_write.enable && (csr_access.select==riscv_csr_user_tval)) {
+            csrs.utval  <= (csrs.utval & csr_write.data_mask)    | csr_write.data_set;
+        }
         if (trap_combs.u) {
             csrs.utval <= csr_controls.trap.value;
         }
 
         /*b Handle MTVAL state */
+        if (csr_write.enable && (csr_access.select==riscv_csr_machine_tval)) {
+            csrs.mtval  <= (csrs.mtval & csr_write.data_mask)    | csr_write.data_set;
+        }
         if (trap_combs.m) {
             csrs.mtval <= csr_controls.trap.value;
         }
 
         /*b Handle UCAUSE state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_UCAUSE)) {
-            csrs.mcause <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_user_cause)) {
+            csrs.ucause  <= (csrs.ucause & csr_write.data_mask)    | csr_write.data_set;
         }
         if (trap_combs.u) {
             full_switch (csr_controls.trap.cause) {
@@ -509,8 +516,8 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         }
 
         /*b Handle MCAUSE state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_MCAUSE)) {
-            csrs.mcause <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_machine_cause)) {
+            csrs.mcause  <= (csrs.mcause & csr_write.data_mask)    | csr_write.data_set;
         }
         if (trap_combs.m) {
             full_switch (csr_controls.trap.cause) {
@@ -530,37 +537,37 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         }
 
         /*b Handle USCRATCH state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_USCRATCH)) {
-            csrs.uscratch <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_user_scratch)) {
+            csrs.uscratch  <= (csrs.uscratch & csr_write.data_mask)    | csr_write.data_set;
         }
 
         /*b Handle MSCRATCH state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_MSCRATCH)) {
-            csrs.mscratch <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_machine_scratch)) {
+            csrs.mscratch  <= (csrs.mscratch & csr_write.data_mask)    | csr_write.data_set;
         }
 
         /*b Handle DSCRATCH state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_DSCRATCH0)) {
-            csrs.dscratch0 <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_debug_scratch0)) {
+            csrs.dscratch0  <= (csrs.dscratch0 & csr_write.data_mask)    | csr_write.data_set;
         }
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_DSCRATCH1)) {
-            csrs.dscratch1 <= csr_write.data;
+        if (csr_write.enable && (csr_access.select==riscv_csr_debug_scratch1)) {
+            csrs.dscratch1  <= (csrs.dscratch1 & csr_write.data_mask)    | csr_write.data_set;
         }
 
         /*b Handle DCSR state */
-        if (csr_write.enable && (csr_access.address==CSR_ADDR_DCSR)) {
-            csrs.dcsr.ebreakm   <= csr_write.data[15];
-            csrs.dcsr.ebreaks   <= csr_write.data[13];
-            csrs.dcsr.ebreaku   <= csr_write.data[12];
-            csrs.dcsr.stepie    <= csr_write.data[11];
-            csrs.dcsr.stopcount <= csr_write.data[10];
-            csrs.dcsr.stoptime  <= csr_write.data[9];
-            csrs.dcsr.mprven    <= csr_write.data[4];
-            csrs.dcsr.step      <= csr_write.data[2];
-            csrs.dcsr.prv       <= csr_write.data[2;0];
+        if (csr_write.enable && (csr_access.select==riscv_csr_debug_csr)) {
+            csrs.dcsr.ebreakm   <= (csrs.dcsr.ebreakm   & csr_write.data_mask[15] ) | csr_write.data_set[15];
+            csrs.dcsr.ebreaks   <= (csrs.dcsr.ebreaks   & csr_write.data_mask[13] ) | csr_write.data_set[13];
+            csrs.dcsr.ebreaku   <= (csrs.dcsr.ebreaku   & csr_write.data_mask[12] ) | csr_write.data_set[12];
+            csrs.dcsr.stepie    <= (csrs.dcsr.stepie    & csr_write.data_mask[11] ) | csr_write.data_set[11];
+            csrs.dcsr.stopcount <= (csrs.dcsr.stopcount & csr_write.data_mask[10] ) | csr_write.data_set[10];
+            csrs.dcsr.stoptime  <= (csrs.dcsr.stoptime  & csr_write.data_mask[9]  ) | csr_write.data_set[9];
+            csrs.dcsr.mprven    <= (csrs.dcsr.mprven    & csr_write.data_mask[4]  ) | csr_write.data_set[4];
+            csrs.dcsr.step      <= (csrs.dcsr.step      & csr_write.data_mask[2]  ) | csr_write.data_set[2];
+            csrs.dcsr.prv       <= (csrs.dcsr.prv       & csr_write.data_mask[2;0]) | csr_write.data_set[2;0];
         }
         if (trap_combs.d) {
-            csrs.dcsr.cause <= 0;
+            csrs.dcsr.cause <= (csr_controls.trap.ebreak_to_dbg)?1:0; // 4=single step, 2=debugger halt
             csrs.dcsr.prv   <= csr_controls.exec_mode[2;0];
         }
         csrs.dcsr.xdebug_ver <= 4;
@@ -573,7 +580,7 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
             csrs.dcsr <= {*=0};
         }
 
-        /*b Kill registers if user mode not enabled (i.e. machine mode only) */
+        /*b Kill registers (many) if machine mode only (i.e. user mode not enabled) */
         if (!rv_cfg_user_mode_enable) {
             csrs.mstatus.mpp    <= 2b11; // only machine mode supported
             csrs.mstatus.sd     <= 0;
@@ -616,7 +623,7 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
             csrs.utvec    <= {*=0};
         }
 
-        /*b Kill registers if user irq mode not enabled */
+        /*b Kill registers (uscratch, uepc, ucause, utval, utvec) if user irq mode not enabled */
         if (!rv_cfg_user_irq_mode_enable) {
             csrs.uscratch <= 0;
             csrs.uepc     <= 0;

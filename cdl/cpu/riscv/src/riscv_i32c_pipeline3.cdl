@@ -218,9 +218,8 @@ An example implementation of could be
 
     clocked t_riscv_word[32] registers={*=-1} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
 
-    net     t_riscv_i32_decode     idecode_i32;
-    net     t_riscv_i32_decode     idecode_i32c;
-    net     t_riscv_i32_decode     idecode_debug;
+    net     t_riscv_i32_decode     idecode_i32  "Decode of instruction including debug";
+    net     t_riscv_i32_decode     idecode_i32c "Decode of including using RV32C";
     net     t_riscv_i32_alu_result alu_result;
 
     comb t_dec_combs dec_combs;
@@ -269,19 +268,14 @@ An example implementation of could be
                                        idecode      => idecode_i32c,
                                        riscv_config      <= riscv_config );
 
-        riscv_i32_debug_decode decode_i32_debug( instruction   <= dec_state.instruction,
-                                                 idecode       => idecode_debug,
-                                                 riscv_config  <= riscv_config );
-
         /*b Select decode */
         dec_combs.idecode = idecode_i32;
         if ((!rv_cfg_i32c_force_disable) && riscv_config.i32c) {
-            if (dec_state.instruction.data[2;0]!=2b11) {
-                dec_combs.idecode = idecode_i32c;
+            if (rv_cfg_debug_force_disable || !riscv_config.debug_enable || !dec_state.instruction.debug.valid) {
+                if (dec_state.instruction.data[2;0]!=2b11) {
+                    dec_combs.idecode = idecode_i32c;
+                }
             }
-        }
-        if (!rv_cfg_debug_force_disable && riscv_config.debug_enable && dec_state.instruction.debug.valid) {
-            dec_combs.idecode = idecode_debug;
         }
 
         /*b Register read */

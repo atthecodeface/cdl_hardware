@@ -326,56 +326,6 @@ typedef enum[4] {
 } t_riscv_trap_cause;
 
 /*a CSR types */
-/*t t_riscv_csr_access_type
- */
-typedef enum[3] {
-    riscv_csr_access_none = 0,
-    riscv_csr_access_write = 1,
-    riscv_csr_access_read  = 2,
-    riscv_csr_access_rw    = 3,
-    riscv_csr_access_rs    = 6,
-    riscv_csr_access_rc   =  7,
-} t_riscv_csr_access_type;
-
-/*t t_riscv_csr_access
- */
-typedef struct {
-    bit                     access_cancelled;
-    t_riscv_csr_access_type access;
-    bit[12]                 address;
-    t_riscv_word            write_data     "Write data for the CSR access, later in the cycle than @csr_access possibly";
-} t_riscv_csr_access;
-
-/*t t_riscv_csr_data
- */
-typedef struct {
-    t_riscv_word    read_data;
-    bit             take_interrupt;
-    t_riscv_mode    interrupt_mode  "Mode to enter if take_interrupt is asserted";
-    bit[4]          interrupt_cause "From table 3.6 in RV priv space 1.10";
-    bit             illegal_access;
-} t_riscv_csr_data;
-
-/*t t_riscv_i32_trap */
-typedef struct {
-    bit valid;
-    t_riscv_mode to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
-    t_riscv_trap_cause cause;
-    bit[32] pc;
-    bit[32] value;
-    bit ret;
-    bit ebreak_to_dbg "Asserted if the trap is a breakpoint and pipeline_control.ebreak_to_dbg was set";
-} t_riscv_i32_trap;
-
-/*t t_riscv_csr_controls
- */
-typedef struct {
-    t_riscv_mode exec_mode "Mode of instruction in the execution stage";
-    bit retire;
-    bit[64] timer_value;
-    t_riscv_i32_trap trap;
-} t_riscv_csr_controls;
-
 /*t t_riscv_csr_addr
  *
  * RISC-V CSR addresses; the top bit indicates readable, next
@@ -466,6 +416,111 @@ typedef enum[12] {
     CSR_ADDR_DSCRATCH0  = 12h7B2,
     CSR_ADDR_DSCRATCH1  = 12h7B3
 } t_riscv_csr_addr;
+
+/*t t_riscv_csr_select
+ *
+ * RISC-V CSR addresses; the top bit indicates readable, next
+ * writable; next two are the minimum privilege level to access
+ * (00=user, 11=machine)
+ *
+ * From RISCV privileged spec v1.1
+ */
+typedef enum[12] {
+    riscv_csr_select_time_l   = 12h010,
+    riscv_csr_select_time_h   = 12h011,
+    riscv_csr_select_cycle_l  = 12h012,
+    riscv_csr_select_cycle_h  = 12h013,
+    riscv_csr_select_instret_l= 12h014,
+    riscv_csr_select_instret_h= 12h015,
+
+    riscv_csr_machine_impid   = 12h020,
+    riscv_csr_machine_hartid  = 12h021,
+    riscv_csr_machine_isa     = 12h022,
+    riscv_csr_machine_vendorid= 12h023,
+
+    riscv_csr_user_status     = 12h040,
+    riscv_csr_user_scratch    = 12h041,
+    riscv_csr_user_ie         = 12h042,
+    riscv_csr_user_ip         = 12h043,
+    riscv_csr_user_tvec       = 12h044,
+    riscv_csr_user_tval       = 12h045,
+    riscv_csr_user_epc        = 12h046,
+    riscv_csr_user_cause      = 12h047,
+
+    riscv_csr_machine_status  = 12h080,
+    riscv_csr_machine_scratch = 12h081,
+    riscv_csr_machine_ie      = 12h082,
+    riscv_csr_machine_ip      = 12h083,
+    riscv_csr_machine_tvec    = 12h084,
+    riscv_csr_machine_tval    = 12h085,
+    riscv_csr_machine_epc     = 12h086,
+    riscv_csr_machine_cause   = 12h087,
+
+    riscv_csr_machine_edeleg  = 12h100,
+    riscv_csr_machine_ideleg  = 12h101,
+
+    riscv_csr_debug_pc        = 12h800,
+    riscv_csr_debug_csr       = 12h801,
+    riscv_csr_debug_scratch0  = 12h802,
+    riscv_csr_debug_scratch1  = 12h803
+} t_riscv_csr_select;
+
+/*t t_riscv_csr_access_type
+ */
+typedef enum[3] {
+    riscv_csr_access_none = 0,
+    riscv_csr_access_write = 1,
+    riscv_csr_access_read  = 2,
+    riscv_csr_access_rw    = 3,
+    riscv_csr_access_rs    = 6,
+    riscv_csr_access_rc   =  7,
+} t_riscv_csr_access_type;
+
+/*t t_riscv_csr_access
+ */
+typedef struct {
+    t_riscv_mode            mode "Used for decode and to determine legality";
+    bit                     access_cancelled;
+    t_riscv_csr_access_type access;
+    bit[12]                 address "For internal use before select generation";
+    t_riscv_csr_select      select;
+    t_riscv_word            write_data     "Write data for the CSR access, later in the cycle than @csr_access possibly";
+} t_riscv_csr_access;
+
+/*t t_riscv_csr_data
+ */
+typedef struct {
+    t_riscv_word    read_data;
+    bit             take_interrupt;
+    t_riscv_mode    interrupt_mode  "Mode to enter if take_interrupt is asserted";
+    bit[4]          interrupt_cause "From table 3.6 in RV priv space 1.10";
+} t_riscv_csr_data;
+
+/*t t_riscv_i32_trap */
+typedef struct {
+    bit valid;
+    t_riscv_mode to_mode "If interrupt then this is the mode that whose pp/pie/epc should be set from current mode's";
+    t_riscv_trap_cause cause;
+    bit[32] pc;
+    bit[32] value;
+    bit ret;
+    bit ebreak_to_dbg "Asserted if the trap is a breakpoint and pipeline_control.ebreak_to_dbg was set";
+} t_riscv_i32_trap;
+
+/*t t_riscv_csr_controls
+ */
+typedef struct {
+    t_riscv_mode exec_mode "Mode of instruction in the execution stage";
+    bit retire;
+    bit[64] timer_value;
+    t_riscv_i32_trap trap;
+} t_riscv_csr_controls;
+
+/*t t_riscv_csr_decode */
+typedef struct {
+    bit illegal_access;
+    t_riscv_csr_select csr_select;
+} t_riscv_csr_decode;
 
 /*t t_riscv_csr_dcsr
  *
@@ -625,6 +680,7 @@ typedef struct {
 /*t t_riscv_i32_inst
  */
 typedef struct {
+    t_riscv_mode mode;
     bit[32]      data;
     t_riscv_i32_inst_debug debug;
 } t_riscv_i32_inst;
@@ -656,9 +712,7 @@ typedef struct {
     t_riscv_subop  subop               "Subclass of the operation class";
     t_riscv_shift_op shift_op          "Only valid for shift operations (i.e. ignored if op is not alu and subop is not a shift)";
     bit[7]         funct7              "Options for subop only to be used by custom instructions (so it can be optimized out)";
-    t_riscv_mode  minimum_mode         "Minimum mode that is required for the instruction";
     bit           illegal              "asserted if an illegal opcode";
-    bit           illegal_pc           "asserted if the PC was not legal (e.g. not word aligned if C mode not supported";
     bit           is_compressed        "asserted if from an i32-c decode, clear otherwise (effects link register)";
     t_riscv_i32_decode_ext ext         "extended decode, not used by the main pipeline";
 } t_riscv_i32_decode;

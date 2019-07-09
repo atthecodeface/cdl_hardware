@@ -59,6 +59,7 @@
 
 /*a Includes
  */
+include "cpu/riscv/riscv_config.h"
 include "cpu/riscv/riscv_pipeline_types.h"
 include "cpu/riscv/riscv_internal_types.h"
 
@@ -124,10 +125,15 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_state       
         case riscv_op_branch:   { ifetch_combs.predict_branch = pipeline_response.decode.idecode.immediate[31]; }
         case riscv_op_jal:      { ifetch_combs.predict_branch = 1; }
         }
-
+        if (rv_cfg_i32c_force_disable /*|| !riscv_config.i32c */) {
+            if (pipeline_response.decode.branch_target[1]) {
+                ifetch_combs.predict_branch = 0;
+            }
+        }
         if (!i32_enable_branch_prediction || !pipeline_response.decode.enable_branch_prediction) {
             ifetch_combs.predict_branch = 0;
         }
+
         ifetch_combs.fetch_next_pc      = ifetch_combs.pc_plus_inst;
         ifetch_combs.fetch_sequential   = 1;
         ifetch_combs.pc_if_mispredicted = pipeline_response.decode.branch_target;
@@ -140,7 +146,7 @@ module riscv_i32_pipeline_control_fetch_req( input t_riscv_pipeline_state       
         /*b Determine ifetch_req and pipeline_fetch_req */
         ifetch_req                 = {*=0};
         pipeline_fetch_req         = {*=0};
-        
+
         pipeline_fetch_req.predicted_branch   = ifetch_combs.predict_branch;
         pipeline_fetch_req.pc_if_mispredicted = ifetch_combs.pc_if_mispredicted;
         ifetch_req.flush_pipeline = 1;

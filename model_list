@@ -92,6 +92,7 @@ cdl cdl/cpu/riscv/src    riscv_i32_alu               inc:cdl/inc dc:rv_cfg_i32_b
 cdl cdl/cpu/riscv/src    riscv_i32_dmem_request      inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_dmem_read_data    inc:cdl/inc
 
+cdl cdl/cpu/riscv/src    riscv_csrs_decode inc:cdl/cpu/riscv/src inc:cdl/inc rmn:riscv_csrs_decode=riscv_csrs_decode  dc:rv_cfg_debug_force_disable=1 dc:rv_cfg_supervisor_mode_enable=0 dc:rv_cfg_user_mode_enable=0 dc:rv_cfg_user_irq_mode_enable=0 rmn:riscv_csrs=riscv_csrs_machine_only
 cdl cdl/cpu/riscv/src    riscv_csrs_machine_only            inc:cdl/cpu/riscv/src inc:cdl/inc rmn:riscv_csrs=riscv_csrs_machine_only            dc:rv_cfg_debug_force_disable=1 dc:rv_cfg_supervisor_mode_enable=0 dc:rv_cfg_user_mode_enable=0 dc:rv_cfg_user_irq_mode_enable=0 rmn:riscv_csrs=riscv_csrs_machine_only
 cdl cdl/cpu/riscv/src    riscv_csrs_machine_debug           inc:cdl/cpu/riscv/src inc:cdl/inc rmn:riscv_csrs=riscv_csrs_machine_debug           dc:rv_cfg_debug_force_disable=0 dc:rv_cfg_supervisor_mode_enable=0 dc:rv_cfg_user_mode_enable=0 dc:rv_cfg_user_irq_mode_enable=0 rmn:riscv_csrs=riscv_csrs_machine_only
 cdl cdl/cpu/riscv/src    riscv_csrs_machine_debug_user      inc:cdl/cpu/riscv/src inc:cdl/inc rmn:riscv_csrs=riscv_csrs_machine_debug_user      dc:rv_cfg_debug_force_disable=0 dc:rv_cfg_supervisor_mode_enable=0 dc:rv_cfg_user_mode_enable=1 dc:rv_cfg_user_irq_mode_enable=0 rmn:riscv_csrs=riscv_csrs_machine_only

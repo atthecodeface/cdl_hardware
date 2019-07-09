@@ -104,6 +104,7 @@ This module manages trap detection, and setting up of the trap values required.
     }
 
     /*b Determine if exec stage should abort */
+    comb bit control_flow_branch_taken;
     exec_stage_abort_detection : {
         exec_trap = {*=0};
         exec_trap.to_mode  = rv_mode_machine;
@@ -143,21 +144,32 @@ This module manages trap detection, and setting up of the trap values required.
         }
         }
 
-        if (pipeline_response.exec.valid && pipeline_response.exec.idecode.illegal) {
-            exec_trap.valid_from_exec = 1;
-            exec_trap.ret = 0;
-            exec_trap.ebreak_to_dbg = 0;
-            exec_trap.cause = riscv_trap_cause_illegal_instruction;
-            exec_trap.value = pipeline_response.exec.instruction.data; // optional in spec 2.2 - should be a configuration option
-            exec_trap.flushes_exec   = 1;
+        // This logic is also in the pipeline control flow which is bad
+        control_flow_branch_taken = 0;
+        part_switch (pipeline_response.exec.idecode.op) {
+        case riscv_op_branch:   { control_flow_branch_taken = pipeline_response.exec.branch_condition_met; }
+        case riscv_op_jal:      { control_flow_branch_taken=1; }
+        case riscv_op_jalr:     { control_flow_branch_taken=1; }
         }
-        if (pipeline_response.exec.valid && pipeline_response.exec.idecode.illegal_pc) {
-            exec_trap.valid_from_exec = 1;
-            exec_trap.ret = 0;
-            exec_trap.ebreak_to_dbg = 0;
-            exec_trap.cause = riscv_trap_cause_instruction_misaligned;
-            exec_trap.flushes_exec   = 1;
-            // control_flow_combs.trap.value = pipeline_response.exec.instruction.data; // probably should not do this
+
+        if (pipeline_response.exec.valid) {
+            if (pipeline_response.exec.idecode.illegal) {
+                exec_trap.valid_from_exec = 1;
+                exec_trap.ret = 0;
+                exec_trap.ebreak_to_dbg = 0;
+                exec_trap.cause = riscv_trap_cause_illegal_instruction;
+                exec_trap.value = pipeline_response.exec.instruction.data; // optional in spec 2.2 - should be a configuration option
+                exec_trap.flushes_exec   = 1;
+            }
+            if (((rv_cfg_i32c_force_disable || !riscv_config.i32c) && control_flow_branch_taken && pipeline_response.exec.pc_if_mispredicted[1]) // unaligned jalr target for non RV32C
+                ) {
+                exec_trap.valid_from_exec = 1;
+                exec_trap.ret = 0;
+                exec_trap.ebreak_to_dbg = 0;
+                exec_trap.cause = riscv_trap_cause_instruction_misaligned;
+                exec_trap.flushes_exec   = 1;
+                // control_flow_combs.trap.value = pipeline_response.exec.instruction.data; // probably should not do this
+            }
         }
         if (!pipeline_response.exec.valid) {
             exec_trap.valid_from_exec = 0;

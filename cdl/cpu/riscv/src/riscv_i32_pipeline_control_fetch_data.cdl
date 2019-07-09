@@ -90,7 +90,7 @@ module riscv_i32_pipeline_control_fetch_data( input t_riscv_pipeline_state      
         pipeline_fetch_data.valid = ifetch_resp.valid && (ifetch_req.req_type != rv_fetch_none);
         pipeline_fetch_data.pc    = ifetch_req.address;
         pipeline_fetch_data.mode  = ifetch_req.mode;
-        pipeline_fetch_data.instruction  = {data=ifetch_resp.data, debug={*=0}};
+        pipeline_fetch_data.instruction  = {data=ifetch_resp.data, mode=ifetch_req.mode, debug={*=0}};
         if (pipeline_fetch_req.debug_fetch) {
             if (ifetch_req.address[8;0]==0) {
                 pipeline_fetch_data.valid = 1;

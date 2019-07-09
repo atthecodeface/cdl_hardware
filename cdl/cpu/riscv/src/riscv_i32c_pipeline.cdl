@@ -61,13 +61,8 @@
  */
 include "cpu/riscv/riscv_internal_types.h"
 include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_config.h"
 include "cpu/riscv/riscv_submodules.h"
-
-/*a Constants
- */
-constant integer i32c_force_disable=0;
-constant integer coproc_force_disable=0;
-constant integer debug_force_disable=0;
 
 /*a Types
  */
@@ -138,9 +133,8 @@ stage the multiply cannot support fused operations
 
     clocked t_riscv_word[32] registers={*=0} "Register 0 is tied to 0 - so it is written on every cycle to zero...";
 
-    net     t_riscv_i32_decode     decexecrfw_idecode_i32;
-    net     t_riscv_i32_decode     decexecrfw_idecode_i32c;
-    net     t_riscv_i32_decode     decexecrfw_idecode_debug;
+    net     t_riscv_i32_decode     decexecrfw_idecode_i32  "Decode of instruction including debug";
+    net     t_riscv_i32_decode     decexecrfw_idecode_i32c "Decode of including using RV32C";
     clocked t_decexecrfw_state     decexecrfw_state={*=0};
     comb    t_decexecrfw_combs     decexecrfw_combs;
     net     t_riscv_i32_dmem_request decexecrfw_dmem_request "Data memory request data";
@@ -171,14 +165,14 @@ stage the multiply cannot support fused operations
             decexecrfw_state.mode <= pipeline_fetch_data.mode;
             decexecrfw_state.pc <= pipeline_fetch_data.pc;
             decexecrfw_state.instruction <= pipeline_fetch_data.instruction;
-            if (debug_force_disable || !riscv_config.debug_enable) {
+            if (rv_cfg_debug_force_disable || !riscv_config.debug_enable) {
                 decexecrfw_state.instruction.debug <= {*=0};
             }
             decexecrfw_state.valid <= 1;
         }
 
         /*b Decode instruction */
-        riscv_i32_decode decode_i32( instruction <= decexecrfw_state.instruction,
+        riscv_i32_decode decode_i32( instruction  <= decexecrfw_state.instruction,
                                      idecode      => decexecrfw_idecode_i32,
                                      riscv_config <= riscv_config );
 
@@ -186,24 +180,19 @@ stage the multiply cannot support fused operations
                                        idecode      => decexecrfw_idecode_i32c,
                                        riscv_config <= riscv_config );
 
-        riscv_i32_debug_decode decode_i32_debug( instruction  <= decexecrfw_state.instruction,
-                                                 idecode      => decexecrfw_idecode_debug,
-                                                 riscv_config <= riscv_config );
-
         /*b Select decode (from either i32 or i32c or possible debug) */
         decexecrfw_combs.idecode = decexecrfw_idecode_i32;
-        if ((!i32c_force_disable) && riscv_config.i32c) {
-            if (decexecrfw_state.instruction.data[2;0]!=2b11) {
-                decexecrfw_combs.idecode = decexecrfw_idecode_i32c;
+        if ((!rv_cfg_i32c_force_disable) && riscv_config.i32c) {
+            if (rv_cfg_debug_force_disable || !riscv_config.debug_enable || !decexecrfw_state.instruction.debug.valid) {
+                if (decexecrfw_state.instruction.data[2;0]!=2b11) {
+                    decexecrfw_combs.idecode = decexecrfw_idecode_i32c;
+                }
             }
-        }
-        if (!debug_force_disable && riscv_config.debug_enable && decexecrfw_state.instruction.debug.valid) {
-            decexecrfw_combs.idecode = decexecrfw_idecode_debug;
         }
 
         /*b Determine whether to commit to execute */
         decexecrfw_combs.exec_committed = decexecrfw_state.valid;
-        if (decexecrfw_combs.idecode.illegal || decexecrfw_combs.idecode.illegal_pc) {
+        if (decexecrfw_combs.idecode.illegal) {
             decexecrfw_combs.exec_committed = 0;
         }
 
@@ -217,7 +206,7 @@ stage the multiply cannot support fused operations
                            rs1 <= decexecrfw_combs.rs1,
                            rs2 <= decexecrfw_combs.rs2,
                            alu_result => decexecrfw_alu_result );
-    
+
         /*b Memory access handling - post ALU - must be valid before middle of cycle */
         decexecrfw_combs.dmem_exec = { valid          = decexecrfw_state.valid,
                                        idecode        = decexecrfw_combs.idecode,
@@ -261,7 +250,7 @@ stage the multiply cannot support fused operations
         pipeline_response.mem.pc     = decexecrfw_state.pc;
         pipeline_response.mem.addr   = decexecrfw_dmem_request.access.address;
         pipeline_response.mem.access_in_progress  = decexecrfw_state.valid && decexecrfw_dmem_request.access.valid;
-        
+
         /*b Pipeline response from rfw */
 
         pipeline_response.rfw = rfw_state;
@@ -277,7 +266,7 @@ stage the multiply cannot support fused operations
         /*b Register write - post memory read
          */
         decexecrfw_combs.rfw_write_data = decexecrfw_alu_result.result | coproc_response.result;
-        if (coproc_force_disable || riscv_config.coproc_disable) {
+        if (rv_cfg_coproc_force_disable || riscv_config.coproc_disable) {
             decexecrfw_combs.rfw_write_data = decexecrfw_alu_result.result;
         }
         if (decexecrfw_dmem_request.reading) {
@@ -291,7 +280,7 @@ stage the multiply cannot support fused operations
         }
         registers[0] <= 0; // register 0 is always zero...
 
-        rfw_state.valid      <= decexecrfw_combs.exec_committed && !pipeline_control.flush.exec; 
+        rfw_state.valid      <= decexecrfw_combs.exec_committed && !pipeline_control.flush.exec;
         rfw_state.rd_written <= decexecrfw_combs.exec_committed && decexecrfw_combs.idecode.rd_written;
         rfw_state.rd         <= decexecrfw_combs.idecode.rd;
         rfw_state.data       <= decexecrfw_combs.rfw_write_data;

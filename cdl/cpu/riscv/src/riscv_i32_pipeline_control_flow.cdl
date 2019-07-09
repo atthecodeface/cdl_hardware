@@ -121,6 +121,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
     }
 
     control_flow_code : {
+        // This logic is also in the trap interposer which is bad
         control_flow_combs.branch_taken = 0;
         control_flow_combs.jalr = 0;
         pipeline_control.exec.pc_if_mispredicted = pipeline_response.exec.pc_if_mispredicted;
@@ -135,10 +136,10 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
         if (!pipeline_response.exec.valid || pipeline_control.exec.blocked) {
             control_flow_combs.branch_taken = 0;
         }
-        
+
         pipeline_control.exec.mispredicted_branch = pipeline_control.exec.completing && (control_flow_combs.branch_taken != pipeline_response.exec.predicted_branch);
     }
-    
+
     code : {
         dmem_access_req = pipeline_response.exec.dmem_access_req;
         if (!pipeline_control.exec.completing_cycle) { dmem_access_req.valid = 0; }
@@ -150,15 +151,15 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
 
         pipeline_control.trap.valid          = ( pipeline_trap_request.valid_from_int ||
                                                  pipeline_trap_request.valid_from_mem ||
-                                                 pipeline_trap_request.valid_from_exec );
-                                                 
+                                                 (pipeline_trap_request.valid_from_exec && !pipeline_control.exec.blocked));
+
         pipeline_control.trap.to_mode        = pipeline_trap_request.to_mode;
         pipeline_control.trap.cause          = pipeline_trap_request.cause;
         pipeline_control.trap.pc             = pipeline_trap_request.pc;
         pipeline_control.trap.value          = pipeline_trap_request.value;
         pipeline_control.trap.ret            = pipeline_trap_request.ret;
         pipeline_control.trap.ebreak_to_dbg  = pipeline_trap_request.ebreak_to_dbg;
-        
+
         pipeline_control.flush.decode   = ifetch_req.flush_pipeline;
         pipeline_control.flush.fetch    = 0;
         pipeline_control.flush.exec     = pipeline_control.trap.valid && pipeline_trap_request.flushes_exec;
@@ -183,6 +184,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
     csr_controls : {
         /*b CSR controls - post trap detection */
         csr_controls = {*=0};
+        csr_controls.exec_mode    = pipeline_state.mode;
         csr_controls.retire       = pipeline_response.exec.valid && !pipeline_control.exec.blocked && !pipeline_control.flush.exec;
         csr_controls.trap         = pipeline_control.trap;
     }

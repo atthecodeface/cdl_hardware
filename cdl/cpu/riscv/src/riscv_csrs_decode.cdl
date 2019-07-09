@@ -1,0 +1,117 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   riscv_csrs_minimal.cdl
+ * @brief  Control/status registers for a minimal RISC-V implementation
+ *
+ * This file contains a module that implements the in-CPU CSRs
+ * required by a RISC-V implementation.
+ */
+
+/*a Includes */
+include "cpu/riscv/riscv_pipeline_types.h"
+include "cpu/riscv/riscv_internal_types.h"
+include "cpu/riscv/riscv_config.h"
+
+/*a Module */
+module riscv_csrs_decode( input t_riscv_csr_access    csr_access    "RISC-V CSR access, combinatorially decoded",
+                          output t_riscv_csr_decode   csr_decode    "CSR response (including read data), from the current @a csr_access"
+    )
+"""
+This module performs combinatorial decode of CSR accesses.
+
+"""
+{
+
+    /*b CSR
+     */
+    csr_read_write """
+    CSR_ADDR_MSTATUS
+    CSR_ADDR_MISA
+    CSR_ADDR_MVENDORID
+    CSR_ADDR_MARCHID
+    CSR_ADDR_MIMPID
+    CSR_ADDR_MHARTID
+
+    User mode interrupts requires uscratch, uepc, ucause, utval, uip; ustatus, uie, utvec
+    """: {
+
+        /*b Decode read data and 'illegal_access' for the CSR access */
+        csr_decode = {*=0};
+        csr_decode.illegal_access = 1;
+        part_switch (csr_access.address) { // 12 bits: top 2 bits indicate read/write (2b00/01/10) or read-only (2b11); next 2 are lowest privilege level
+        case CSR_ADDR_CYCLE     : { csr_decode.illegal_access=!rv_cfg_user_mode_enable; csr_decode.csr_select = riscv_csr_select_cycle_l; }
+        case CSR_ADDR_CYCLEH    : { csr_decode.illegal_access=!rv_cfg_user_mode_enable; csr_decode.csr_select = riscv_csr_select_cycle_h; }
+        case CSR_ADDR_INSTRET   : { csr_decode.illegal_access=!rv_cfg_user_mode_enable; csr_decode.csr_select = riscv_csr_select_instret_l; }
+        case CSR_ADDR_INSTRETH  : { csr_decode.illegal_access=!rv_cfg_user_mode_enable; csr_decode.csr_select = riscv_csr_select_instret_h; }
+        case CSR_ADDR_TIME      : { csr_decode.illegal_access=!rv_cfg_user_mode_enable; csr_decode.csr_select = riscv_csr_select_time_l; }
+        case CSR_ADDR_TIMEH     : { csr_decode.illegal_access=!rv_cfg_user_mode_enable; csr_decode.csr_select = riscv_csr_select_time_h; }
+
+        case CSR_ADDR_USTATUS   : { csr_decode.illegal_access=!rv_cfg_user_irq_mode_enable; csr_decode.csr_select = riscv_csr_user_status; }
+        case CSR_ADDR_UIE       : { csr_decode.illegal_access=!rv_cfg_user_irq_mode_enable; csr_decode.csr_select = riscv_csr_user_ie; }
+        case CSR_ADDR_UTVEC     : { csr_decode.illegal_access=!rv_cfg_user_irq_mode_enable; csr_decode.csr_select = riscv_csr_user_tvec; }
+        case CSR_ADDR_USCRATCH  : { csr_decode.illegal_access=!rv_cfg_user_irq_mode_enable; csr_decode.csr_select = riscv_csr_user_scratch; }
+        case CSR_ADDR_UEPC      : { csr_decode.illegal_access=!rv_cfg_user_irq_mode_enable; csr_decode.csr_select = riscv_csr_user_epc; }
+        case CSR_ADDR_UCAUSE    : { csr_decode.illegal_access=!rv_cfg_user_irq_mode_enable; csr_decode.csr_select = riscv_csr_user_cause; }
+        case CSR_ADDR_UTVAL     : { csr_decode.illegal_access=!rv_cfg_user_irq_mode_enable; csr_decode.csr_select = riscv_csr_user_tval; }
+        case CSR_ADDR_UIP       : { csr_decode.illegal_access=!rv_cfg_user_irq_mode_enable; csr_decode.csr_select = riscv_csr_user_ip; }
+
+        case CSR_ADDR_MCYCLE    : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_select_cycle_l; }
+        case CSR_ADDR_MCYCLEH   : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_select_cycle_h; }
+        case CSR_ADDR_MINSTRET  : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_select_instret_l; }
+        case CSR_ADDR_MINSTRETH : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_select_instret_h; }
+
+        case CSR_ADDR_MIMPID    : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_impid; }
+        case CSR_ADDR_MHARTID   : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_hartid; }
+        case CSR_ADDR_MISA      : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_isa; }
+        case CSR_ADDR_MVENDORID : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_vendorid; }
+
+        case CSR_ADDR_MSTATUS   : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_status; }
+        case CSR_ADDR_MIE       : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_ie; }
+        case CSR_ADDR_MTVEC     : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_tvec; }
+        case CSR_ADDR_MSCRATCH  : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_scratch; }
+        case CSR_ADDR_MEPC      : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_epc; }
+        case CSR_ADDR_MCAUSE    : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_cause; }
+        case CSR_ADDR_MTVAL     : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_tval; }
+        case CSR_ADDR_MIP       : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_ip; }
+
+        case CSR_ADDR_MEDELEG   : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_edeleg; }
+        case CSR_ADDR_MIDELEG   : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_ideleg; }
+
+        case CSR_ADDR_DEPC      : { csr_decode.illegal_access=rv_cfg_debug_force_disable; csr_decode.csr_select = riscv_csr_debug_pc; }
+        case CSR_ADDR_DCSR      : { csr_decode.illegal_access=rv_cfg_debug_force_disable; csr_decode.csr_select = riscv_csr_debug_csr; }
+        case CSR_ADDR_DSCRATCH0 : { csr_decode.illegal_access=rv_cfg_debug_force_disable; csr_decode.csr_select = riscv_csr_debug_scratch0; }
+        case CSR_ADDR_DSCRATCH1 : { csr_decode.illegal_access=rv_cfg_debug_force_disable; csr_decode.csr_select = riscv_csr_debug_scratch1; }
+        }
+
+        /*b Basic permission check */
+        if (rv_cfg_user_mode_enable && (csr_access.mode==rv_mode_user)) {
+            if (csr_access.address[2;8]!=0) {
+                csr_decode.illegal_access=1;
+            }
+        }
+        part_switch (csr_access.access) {
+        case riscv_csr_access_none:  { csr_decode.illegal_access = 0; }
+        case riscv_csr_access_write: { if (csr_access.address[2;10]==2b11) {csr_decode.illegal_access=1;} }
+        case riscv_csr_access_rw:    { if (csr_access.address[2;10]==2b11) {csr_decode.illegal_access=1;} }
+        case riscv_csr_access_rs:    { if (csr_access.address[2;10]==2b11) {csr_decode.illegal_access=1;} }
+        case riscv_csr_access_rc:    { if (csr_access.address[2;10]==2b11) {csr_decode.illegal_access=1;} }
+        }
+
+        /*b All done */
+    }
+
+    /*b All done */
+}
+
+

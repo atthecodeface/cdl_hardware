@@ -2,6 +2,7 @@
 #a Imports
 import re
 import sys, inspect
+import elftools.elf.elffile
 
 #a Classes
 #c c_dump
@@ -63,10 +64,49 @@ class c_dump(object):
                 pass
             pass
         pass
+    #f load_elf
+    def load_elf(self, f, base_address=0, address_mask=0xffffffff):
+        self.reset()
+        elf = elftools.elf.elffile.ELFFile(f)
+        for i in elf.iter_sections():
+            #print i.name, i.header
+            if i.header.sh_type=='SHT_SYMTAB':   self.load_elf_symtab_section(i, base_address, address_mask)
+            if i.header.sh_type=='SHT_PROGBITS': self.load_elf_data_section(i, base_address, address_mask)
+        pass
+    #f load_elf_symtab_section
+    def load_elf_symtab_section(self, section, base_address=0, address_mask=0xffffffff):
+        for s in section.iter_symbols():
+            self.add_label(s.name, s.entry.st_value)
+            pass
+        pass
+    #f load_elf_data_section
+    def load_elf_data_section(self, section, base_address=0, address_mask=0xffffffff):
+        address = section.header.sh_addr
+        size = section.data_size
+        data = section.data()
+        print "Load section %s of %d bytes to %08x"%(section.name,size,address)
+        n = 0
+        for d in data:
+            self.add_data_byte(ord(d),address+n,base_address,address_mask)
+            n += 1
+            pass
+        pass
     #f add_label
     def add_label(self,label,address,base_address=0, address_mask=0xffffffff):
         address = (address-base_address) & address_mask
         self.labels[label] = address
+        pass
+    #f add_data_byte
+    def add_data_byte(self,data,address,base_address=0, address_mask=0xffffffff):
+        address = (address-base_address) & address_mask
+        offset = address&3
+        address = address/4
+        data = data << (8*offset)
+        if address in self.data:
+            mask = (0xff << (8*offset)) ^ 0xffffffff
+            data = data | (self.data[address] & mask)
+            pass
+        self.data[address] = data
         pass
     #f add_data
     def add_data(self,data,address,base_address=0, address_mask=0xffffffff):

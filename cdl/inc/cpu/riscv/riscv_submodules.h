@@ -68,17 +68,6 @@ module riscv_e32c_decode( input t_riscv_i32_inst    instruction,
     timing comb output idecode;
 }
 
-/*m riscv_i32_debug_decode  */
-extern
-module riscv_i32_debug_decode( input t_riscv_i32_inst instruction,
-                               output t_riscv_i32_decode idecode,
-                               input  t_riscv_config          riscv_config
-)
-{
-    timing comb input instruction, riscv_config;
-    timing comb output idecode;
-}
-
 /*m riscv_i32_alu  */
 extern
 module riscv_i32_alu( input t_riscv_i32_decode      idecode,
@@ -123,3 +112,12 @@ extern module riscv_i32_muldiv( clock clk,
     timing to   rising clock clk coproc_controls, riscv_config;
     timing from rising clock clk coproc_response;
 }
+/*m riscv_csrs_decode  */
+extern
+module riscv_csrs_decode( input t_riscv_csr_access csr_access,
+                          output t_riscv_csr_decode csr_decode )
+{
+    timing comb input csr_access;
+    timing comb output csr_decode;
+}
+

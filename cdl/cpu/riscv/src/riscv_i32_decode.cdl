@@ -24,10 +24,12 @@
 include "cpu/riscv/riscv_internal_types.h"
 include "cpu/riscv/riscv.h"
 include "cpu/riscv/riscv_config.h"
+include "cpu/riscv/riscv_submodules.h"
 
 /*a Types
  */
 typedef struct {
+    bit            use_debug    "Asserted if decode of instruction should be be 'debug' not regular";
     bit[2]         must_be_ones "Bits that must be one for a valid RISCV I32 base instruction";
     bit            is_imm_op "Asserted if the instruction is an immediate operation";
     bit[5]         opc     "Opcode field from 32-bit instruction";
@@ -78,6 +80,10 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
 
     /*b Signals - just the combs */
     comb t_combs combs      "Combinatorials used in the module, not exported as the decode";
+    comb t_riscv_i32_decode idecode_inst;
+    comb t_riscv_i32_decode idecode_debug;
+    comb t_riscv_csr_access csr_access "CSR access before select decode";
+    net t_riscv_csr_decode  csr_decode "CSR decode (select and illegal_access) IF it were a system instruction";
 
     /*b Basic instruction breakout
      */
@@ -97,13 +103,18 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
     Spec 2.2 fig 2.3 shows opcode (must_be_ones and opc); rd, rs1, rs2; funct3 and funct7.
     The other fields in fig 2.3 relate to the immediate value (see immediate_decode)
     """: {
+        combs.use_debug = instruction.debug.valid;
+        if (rv_cfg_debug_force_disable || !riscv_config.debug_enable) {
+            combs.use_debug = 0;
+        }
+
         /*b  Break out the instruction word */
         combs.must_be_ones  = instruction.data[ 2;riscv_i32_ones]; // 2;0
         combs.opc           = instruction.data[ 5;riscv_i32_opc ]; // 5;2 - major opcode, table 19.1
-        idecode.rd          = instruction.data[ 5;riscv_i32_rd  ]; // 5;7
+        idecode_inst.rd          = instruction.data[ 5;riscv_i32_rd  ]; // 5;7
         combs.funct3        = instruction.data[ 3;riscv_i32_f3  ]; // 3;12
-        idecode.rs1         = instruction.data[ 5;riscv_i32_rs1 ]; // 5;15
-        idecode.rs2         = instruction.data[ 5;riscv_i32_rs2 ]; // 5;20
+        idecode_inst.rs1         = instruction.data[ 5;riscv_i32_rs1 ]; // 5;15
+        idecode_inst.rs2         = instruction.data[ 5;riscv_i32_rs2 ]; // 5;20
         combs.funct7        = instruction.data[ 7;riscv_i32_f7  ]; //  7;25
     }
 
@@ -134,36 +145,70 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
 
         /*b Defaults for the decode */
         combs.imm_signed = combs.funct7[6] ? -1:0;
-        idecode.immediate_valid=0;
-        idecode.immediate_shift = idecode.rs2;
-        idecode.immediate       = bundle(combs.imm_signed[20;0], combs.funct7, idecode.rs2);
+        idecode_inst.immediate_valid=0;
+        idecode_inst.immediate_shift = idecode_inst.rs2;
+        idecode_inst.immediate       = bundle(combs.imm_signed[20;0], combs.funct7, idecode_inst.rs2);
 
         /*b Decode immediate and whether it is used based on instruction class */
         part_switch(combs.opc) {
         case riscv_opc_op_imm, riscv_opc_load, riscv_opc_jalr: { // i format = uses funct7, rs2
-            idecode.immediate_valid=1;
+            idecode_inst.immediate_valid=1;
         }
         case riscv_opc_store: { // s format - uses funct7, rd (5)
-            idecode.immediate_valid=1;
-            idecode.immediate = bundle(combs.imm_signed[20;0], combs.funct7, idecode.rd);
+            idecode_inst.immediate_valid=1;
+            idecode_inst.immediate = bundle(combs.imm_signed[20;0], combs.funct7, idecode_inst.rd);
         }
         case riscv_opc_branch: { // sb format - uses funct7[6], rd[0], funct7[6;0], rd[4;1], 1b0
-            idecode.immediate_valid=1;
-            idecode.immediate = bundle(combs.imm_signed[19;0], combs.funct7[6], idecode.rd[0], combs.funct7[6;0], idecode.rd[4;1], 1b0);
+            idecode_inst.immediate_valid=1;
+            idecode_inst.immediate = bundle(combs.imm_signed[19;0], combs.funct7[6], idecode_inst.rd[0], combs.funct7[6;0], idecode_inst.rd[4;1], 1b0);
         }
         case riscv_opc_jal: { // uj format - uses funct7[6], rs1 (5), funct3 (3), rs2[0], funct7[6;0], rs2[4;1], 1b0
-            idecode.immediate_valid=1;
-            idecode.immediate = bundle(combs.imm_signed[11;0], combs.funct7[6], idecode.rs1, combs.funct3, idecode.rs2[0], combs.funct7[6;0], idecode.rs2[4;1], 1b0);
+            idecode_inst.immediate_valid=1;
+            idecode_inst.immediate = bundle(combs.imm_signed[11;0], combs.funct7[6], idecode_inst.rs1, combs.funct3, idecode_inst.rs2[0], combs.funct7[6;0], idecode_inst.rs2[4;1], 1b0);
         }
         case riscv_opc_lui, riscv_opc_auipc: { // u format - uses funct7, rs2, rs1, funct3, 12b0
-            idecode.immediate_valid=1;
-            idecode.immediate = bundle(combs.funct7, idecode.rs2, idecode.rs1, combs.funct3, 12b0);
+            idecode_inst.immediate_valid=1;
+            idecode_inst.immediate = bundle(combs.funct7, idecode_inst.rs2, idecode_inst.rs1, combs.funct3, 12b0);
         }
         case riscv_opc_system: {
-            idecode.immediate_valid = instruction.data[14]; // for csr write immediates only, data written is rs1
-            idecode.immediate       = bundle(27b0, idecode.rs1);
+            idecode_inst.immediate_valid = instruction.data[14]; // for csr write immediates only, data written is rs1
+            idecode_inst.immediate       = bundle(27b0, idecode_inst.rs1);
         }
         }
+    }
+
+    /*b CSR access decode - debug or not regular */
+    csr_access_decode: {
+        csr_access = {*=0};
+        csr_access.address = instruction.data[12;20];
+        csr_access.mode    = instruction.mode;
+        csr_access.access  = riscv_csr_access_none;
+        part_switch (combs.funct3[2;0]) {
+        case riscv_f3_csrrw:      {
+            csr_access.access = riscv_csr_access_rw;
+            if (idecode_inst.rd==0) { csr_access.access = riscv_csr_access_write; } // True for CSRRW and CSRRWI
+        }
+        case riscv_f3_csrrs:      {
+            csr_access.access = riscv_csr_access_rs;
+            if (!combs.rs1_nonzero) { csr_access.access = riscv_csr_access_read; } // True for CSRRS and CSRRSI
+        }
+        case riscv_f3_csrrc:      {
+            csr_access.access = riscv_csr_access_rc;
+            if (!combs.rs1_nonzero) { csr_access.access = riscv_csr_access_read; } // True for CSRRC and CSRRCI
+        }
+        }
+        if (combs.use_debug) {
+            csr_access.mode    = rv_mode_debug;
+            csr_access.address = instruction.debug.data[12;0];
+            if (!instruction.debug.data[12]) { // CSRs have bit 12 clear
+                csr_access.access  = riscv_csr_access_read;
+                if (instruction.debug.debug_op==rv_inst_debug_op_write_reg) {
+                    csr_access.access  = riscv_csr_access_write;
+                }
+            }
+        }
+        riscv_csrs_decode csrs_decode_i32( csr_access <= csr_access,
+                                           csr_decode => csr_decode );
     }
 
     /*b Basic instruction decode
@@ -172,256 +217,297 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
     Decode the instruction
     """: {
         /*b  Defaults */
-        idecode.ext = {*=0};
-        idecode.illegal_pc = 0;
-        idecode.is_compressed = 0;
-        idecode.rs1_valid = 0;
-        idecode.rs2_valid = 0;
-        idecode.rd_written = 0;
-        idecode.minimum_mode = rv_mode_user;
+        idecode_inst.ext = {*=0};
+        idecode_inst.is_compressed = 0;
+        idecode_inst.rs1_valid = 0;
+        idecode_inst.rs2_valid = 0;
+        idecode_inst.rd_written = 0;
+        idecode_inst.csr_access = csr_access;
+        idecode_inst.csr_access.access = riscv_csr_access_none;
+        idecode_inst.csr_access.select = csr_decode.csr_select;
 
         /*b Decode 'opc' */
         combs.is_imm_op = (combs.opc==riscv_opc_op_imm);
-        idecode.op = riscv_op_illegal;
-        idecode.illegal = 1;
-        idecode.subop = riscv_subop_valid; // so only opc has to be set to 'valid'
-        idecode.funct7 = combs.funct7;
-        idecode.csr_access = {*=0};
-        idecode.csr_access.address = instruction.data[12;20];
-        idecode.csr_access.access  = riscv_csr_access_none;
-        combs.rs1_nonzero = (idecode.rs1 != 0);
+        idecode_inst.op = riscv_op_illegal;
+        idecode_inst.illegal = 1;
+        idecode_inst.subop = riscv_subop_valid; // so only opc has to be set to 'valid'
+        idecode_inst.funct7 = combs.funct7;
+        combs.rs1_nonzero = (idecode_inst.rs1 != 0);
 
         //riscv_shift_op_count               = 4b1010,
-        idecode.shift_op = riscv_shift_op_left_logical_zeros;
+        idecode_inst.shift_op = riscv_shift_op_left_logical_zeros;
         full_switch (combs.funct7[2;5]) {
-        case 2b00: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_logical_zeros; }
-        case 2b01: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_arithmetic;    }
-        case 2b10: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_rotate        : riscv_shift_op_right_rotate;        }
-        case 2b11: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_ones  : riscv_shift_op_right_logical_ones;  }
+        case 2b00: { idecode_inst.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_logical_zeros; }
+        case 2b01: { idecode_inst.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_arithmetic;    }
+        case 2b10: { idecode_inst.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_rotate        : riscv_shift_op_right_rotate;        }
+        case 2b11: { idecode_inst.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_ones  : riscv_shift_op_right_logical_ones;  }
         }
         if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
             part_switch (combs.funct7[4;3]) { // 4b0000, 4b0100 standard; 4b0001 muldiv
-            case 4b0000: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_logical_zeros;  }
-            case 4b0100: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_arithmetic;  }
-            case 4b1000: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_ones  : riscv_shift_op_right_logical_ones;  }
-            case 4b1001: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_rotate        : riscv_shift_op_right_rotate;  }
-            case 4b1010: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_reverse            : riscv_shift_op_count;  }
-            case 4b1100: { idecode.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_byte_insert        : riscv_shift_op_byte_insert;  }
+            case 4b0000: { idecode_inst.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_logical_zeros;  }
+            case 4b0100: { idecode_inst.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_zeros : riscv_shift_op_right_arithmetic;  }
+            case 4b1000: { idecode_inst.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_logical_ones  : riscv_shift_op_right_logical_ones;  }
+            case 4b1001: { idecode_inst.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_left_rotate        : riscv_shift_op_right_rotate;  }
+            case 4b1010: { idecode_inst.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_reverse            : riscv_shift_op_count;  }
+            case 4b1100: { idecode_inst.shift_op = (combs.funct3==riscv_f3_sll) ? riscv_shift_op_byte_insert        : riscv_shift_op_byte_insert;  }
             }
         }
 
         part_switch (combs.opc) {
         case riscv_opc_lui:    { // load upper immediate, uses u format
             // Spec 2.2 section 2.4
-            idecode.op = riscv_op_lui;
-            idecode.rd_written = 1;
-            idecode.illegal = 0;
+            idecode_inst.op = riscv_op_lui;
+            idecode_inst.rd_written = 1;
+            idecode_inst.illegal = 0;
         }
         case riscv_opc_auipc:  { // add upper immediate pc, uses u format
             // Spec 2.2 section 2.4
-            idecode.op = riscv_op_auipc;
-            idecode.rd_written = 1;
-            idecode.illegal = 0;
+            idecode_inst.op = riscv_op_auipc;
+            idecode_inst.rd_written = 1;
+            idecode_inst.illegal = 0;
         }
         case riscv_opc_jal:    { // jump-and-link, uses uj format
             // Spec 2.2 section 2.5
             // Note that JAL is potentially an unconditional decode-time branch
-            idecode.op = riscv_op_jal;
-            idecode.rd_written = 1; // Note rd==0 (J rather than JAL) clears this later
-            idecode.illegal = 0;
+            idecode_inst.op = riscv_op_jal;
+            idecode_inst.rd_written = 1; // Note rd==0 (J rather than JAL) clears this later
+            idecode_inst.illegal = 0;
         }
         case riscv_opc_jalr:   { // jump-and-link register, uses i format
             // Spec 2.2 section 2.5
             // Note that JALR is an ALU-time branch
-            idecode.op = riscv_op_jalr;
-            idecode.rs1_valid = 1;
-            idecode.rd_written = 1; // Note rd==0 (J rather than JAL) clears this later
-            idecode.illegal = 0;
+            idecode_inst.op = riscv_op_jalr;
+            idecode_inst.rs1_valid = 1;
+            idecode_inst.rd_written = 1; // Note rd==0 (J rather than JAL) clears this later
+            idecode_inst.illegal = 0;
         }
         case riscv_opc_load:   { // load rd from rs1+offset, uses i format
             // Spec 2.2 section 2.6
-            idecode.op = riscv_op_mem;
-            idecode.subop = bundle(1b0, combs.funct3);
-            idecode.rs1_valid = 1;
-            idecode.rd_written = 1;
-            idecode.illegal = 0;
+            idecode_inst.op = riscv_op_mem;
+            idecode_inst.subop = bundle(1b0, combs.funct3);
+            idecode_inst.rs1_valid = 1;
+            idecode_inst.rd_written = 1;
+            idecode_inst.illegal = 0;
         }
         case riscv_opc_store:  { // store rs2 at rs1+offset, uses s format
             // Spec 2.2 section 2.6
-            idecode.op = riscv_op_mem;
-            idecode.subop = bundle(1b1, combs.funct3);
-            idecode.rs1_valid = 1;
-            idecode.rs2_valid = 1;
-            idecode.illegal = 0;
+            idecode_inst.op = riscv_op_mem;
+            idecode_inst.subop = bundle(1b1, combs.funct3);
+            idecode_inst.rs1_valid = 1;
+            idecode_inst.rs2_valid = 1;
+            idecode_inst.illegal = 0;
         }
         case riscv_opc_branch: { // branch if rs1 <=> rs2 to pc+imm, uses sb format, conditional branch to +-4kB
             // Spec 2.2 section 2.5
             // Note that Bxx is an ALU-time branch
-            idecode.op = riscv_op_branch;
-            idecode.rs1_valid = 1;
-            idecode.rs2_valid = 1;
-            idecode.subop = riscv_subop_illegal;
-            idecode.illegal = 0;
+            idecode_inst.op = riscv_op_branch;
+            idecode_inst.rs1_valid = 1;
+            idecode_inst.rs2_valid = 1;
+            idecode_inst.subop = riscv_subop_illegal;
+            idecode_inst.illegal = 0;
             part_switch (combs.funct3) {
-            case riscv_f3_beq:  { idecode.subop = riscv_subop_beq;  }
-            case riscv_f3_bne:  { idecode.subop = riscv_subop_bne;  }
-            case riscv_f3_blt:  { idecode.subop = riscv_subop_blt;  }
-            case riscv_f3_bltu: { idecode.subop = riscv_subop_bltu; }
-            case riscv_f3_bge:  { idecode.subop = riscv_subop_bge;  }
-            case riscv_f3_bgeu: { idecode.subop = riscv_subop_bgeu; }
+            case riscv_f3_beq:  { idecode_inst.subop = riscv_subop_beq;  }
+            case riscv_f3_bne:  { idecode_inst.subop = riscv_subop_bne;  }
+            case riscv_f3_blt:  { idecode_inst.subop = riscv_subop_blt;  }
+            case riscv_f3_bltu: { idecode_inst.subop = riscv_subop_bltu; }
+            case riscv_f3_bge:  { idecode_inst.subop = riscv_subop_bge;  }
+            case riscv_f3_bgeu: { idecode_inst.subop = riscv_subop_bgeu; }
             }
         }
         case riscv_opc_op, riscv_opc_op_imm: { // rd = rs1 op rs2/imm, uses r or i format
             // Spec 2.2 section 2.4
-            idecode.op = riscv_op_alu;
-            idecode.rs1_valid = 1;
-            idecode.rs2_valid = !combs.is_imm_op;
-            idecode.rd_written = 1;
+            idecode_inst.op = riscv_op_alu;
+            idecode_inst.rs1_valid = 1;
+            idecode_inst.rs2_valid = !combs.is_imm_op;
+            idecode_inst.rd_written = 1;
             if ((combs.funct7==1) && (!combs.is_imm_op)){
                 if ((rv_cfg_i32m_force_disable==0) && riscv_config.i32m) {
-                    idecode.illegal = 0;
-                    idecode.op = riscv_op_muldiv;
+                    idecode_inst.illegal = 0;
+                    idecode_inst.op = riscv_op_muldiv;
                     full_switch (combs.funct3) {
-                    case riscv_f3_mul:    { idecode.subop = riscv_subop_mull; }
-                    case riscv_f3_mulh:   { idecode.subop = riscv_subop_mulhss; }
-                    case riscv_f3_mulhsu: { idecode.subop = riscv_subop_mulhsu; }
-                    case riscv_f3_mulhu:  { idecode.subop = riscv_subop_mulhu; }
-                    case riscv_f3_div:    { idecode.subop = riscv_subop_divs; }
-                    case riscv_f3_divu:   { idecode.subop = riscv_subop_divu; }
-                    case riscv_f3_rem:    { idecode.subop = riscv_subop_rems; }
-                    case riscv_f3_remu:   { idecode.subop = riscv_subop_remu; }
+                    case riscv_f3_mul:    { idecode_inst.subop = riscv_subop_mull; }
+                    case riscv_f3_mulh:   { idecode_inst.subop = riscv_subop_mulhss; }
+                    case riscv_f3_mulhsu: { idecode_inst.subop = riscv_subop_mulhsu; }
+                    case riscv_f3_mulhu:  { idecode_inst.subop = riscv_subop_mulhu; }
+                    case riscv_f3_div:    { idecode_inst.subop = riscv_subop_divs; }
+                    case riscv_f3_divu:   { idecode_inst.subop = riscv_subop_divu; }
+                    case riscv_f3_rem:    { idecode_inst.subop = riscv_subop_rems; }
+                    case riscv_f3_remu:   { idecode_inst.subop = riscv_subop_remu; }
                     }
                 }
             } else {
-                idecode.illegal = (!combs.is_imm_op) && (combs.funct7!=0) && (combs.funct7!=0x20);
+                idecode_inst.illegal = (!combs.is_imm_op) && (combs.funct7!=0) && (combs.funct7!=0x20);
                 full_switch (combs.funct3) {
-                case riscv_f3_addsub: { idecode.subop = (!combs.is_imm_op && combs.funct7[5]) ? riscv_subop_sub : riscv_subop_add; }
-                case riscv_f3_slt:    { idecode.subop = riscv_subop_slt; }
-                case riscv_f3_sltu:   { idecode.subop = riscv_subop_sltu; }
-                case riscv_f3_xor :   { idecode.subop = riscv_subop_xor; }
-                case riscv_f3_or:     { idecode.subop = riscv_subop_or; }
-                case riscv_f3_and:    { idecode.subop = riscv_subop_and; }
+                case riscv_f3_addsub: { idecode_inst.subop = (!combs.is_imm_op && combs.funct7[5]) ? riscv_subop_sub : riscv_subop_add; }
+                case riscv_f3_slt:    { idecode_inst.subop = riscv_subop_slt; }
+                case riscv_f3_sltu:   { idecode_inst.subop = riscv_subop_sltu; }
+                case riscv_f3_xor :   { idecode_inst.subop = riscv_subop_xor; }
+                case riscv_f3_or:     { idecode_inst.subop = riscv_subop_or; }
+                case riscv_f3_and:    { idecode_inst.subop = riscv_subop_and; }
                 case riscv_f3_sll:    {
-                    idecode.illegal = (combs.funct7!=0);
-                    idecode.subop   = riscv_subop_sll;
+                    idecode_inst.illegal = (combs.funct7!=0);
+                    idecode_inst.subop   = riscv_subop_sll;
                     if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
-                        if (combs.funct7[6]) { idecode.illegal = 0; } // bit manip extension legalizes all f7[6] set
+                        if (combs.funct7[6]) { idecode_inst.illegal = 0; } // bit manip extension legalizes all f7[6] set
                     }
                 }
                 case riscv_f3_srlsra: {
-                    idecode.illegal = ((combs.funct7!=0) &&(combs.funct7!=7b0100000));
-                    idecode.subop   =  riscv_subop_srla; // SRAI has funct7[5] set, else SRLI
+                    idecode_inst.illegal = ((combs.funct7!=0) &&(combs.funct7!=7b0100000));
+                    idecode_inst.subop   =  riscv_subop_srla; // SRAI has funct7[5] set, else SRLI
                     if (rv_cfg_i32_bitmap_enhanced_shift_enable) {
-                        if (combs.funct7[6]) { idecode.illegal = 0; } // bit manip extension legalizes all f7[6] set
+                        if (combs.funct7[6]) { idecode_inst.illegal = 0; } // bit manip extension legalizes all f7[6] set
                     }
                 }
                 default:          {
-                    idecode.illegal = 1;
+                    idecode_inst.illegal = 1;
                 }
                 }
             }
         }
         case riscv_opc_misc_mem: { // uses i format
             // Spec 2.2 section 2.7
-            idecode.illegal = 0;
-            idecode.op = riscv_op_misc_mem;
-            idecode.subop = combs.funct3[0] ? riscv_subop_fence_i : riscv_subop_fence;
+            idecode_inst.illegal = 0;
+            idecode_inst.op = riscv_op_misc_mem;
+            idecode_inst.subop = combs.funct3[0] ? riscv_subop_fence_i : riscv_subop_fence;
         }
         case riscv_opc_system: { // system access, or csr rw/rs/rc - uses i format
             // Spec 2.2 section 2.8
-            idecode.op = riscv_op_system;
-            idecode.rs1_valid = 1;
-            idecode.rd_written = 1;
-            idecode.illegal = 0;
+            idecode_inst.op = riscv_op_system;
+            idecode_inst.rs1_valid = 1;
+            idecode_inst.rd_written = 1;
+            idecode_inst.csr_access.access = csr_access.access;
+            idecode_inst.illegal           = csr_decode.illegal_access; // valid based on access which is okay for non-CSR instructions
             full_switch (combs.funct3[2;0]) {
-            case riscv_f3_csrrw:      {
-                idecode.op    = riscv_op_csr;
-                idecode.subop = riscv_subop_csrrw;
-                idecode.csr_access.access = riscv_csr_access_rw;
-                if (idecode.rd==0) { idecode.csr_access.access = riscv_csr_access_write; } // True for CSRRW and CSRRWI
-            }
-            case riscv_f3_csrrs:      {
-                idecode.op    = riscv_op_csr;
-                idecode.subop = riscv_subop_csrrs;
-                idecode.csr_access.access = riscv_csr_access_rs;
-                if (!combs.rs1_nonzero) { idecode.csr_access.access = riscv_csr_access_read; } // True for CSRRS and CSRRSI
-            }
-            case riscv_f3_csrrc:      {
-                idecode.op    = riscv_op_csr;
-                idecode.subop = riscv_subop_csrrc;
-                idecode.csr_access.access = riscv_csr_access_rc;
-                if (!combs.rs1_nonzero) { idecode.csr_access.access = riscv_csr_access_read; } // True for CSRRC and CSRRCI
-            }
+            case riscv_f3_csrrw: { idecode_inst.op = riscv_op_csr; idecode_inst.subop = riscv_subop_csrrw; }
+            case riscv_f3_csrrs: { idecode_inst.op = riscv_op_csr; idecode_inst.subop = riscv_subop_csrrs; }
+            case riscv_f3_csrrc: { idecode_inst.op = riscv_op_csr; idecode_inst.subop = riscv_subop_csrrc; }
             case riscv_f3_privileged: {
-                idecode.op = riscv_op_system;
+                idecode_inst.op = riscv_op_system;
                 full_switch (instruction.data[12;20]) {
-                case riscv_f12_ecall:  { idecode.subop = riscv_subop_ecall;  }
-                case riscv_f12_ebreak: { idecode.subop = riscv_subop_ebreak; }
-                case riscv_f12_mret:   { idecode.subop = riscv_subop_mret;
-                        idecode.minimum_mode = rv_mode_machine; }
-                case riscv_f12_mwfi:   { idecode.subop = riscv_subop_mwfi;
-                        idecode.minimum_mode = rv_mode_machine; }
-                default:               { idecode.illegal = 1; }
+                case riscv_f12_ecall:  { idecode_inst.subop = riscv_subop_ecall;  }
+                case riscv_f12_ebreak: { idecode_inst.subop = riscv_subop_ebreak; }
+                case riscv_f12_mret:   {
+                    idecode_inst.subop = riscv_subop_mret;
+                    idecode_inst.illegal = (instruction.mode < rv_mode_machine);
+                }
+                case riscv_f12_mwfi:   {
+                    idecode_inst.subop = riscv_subop_mwfi;
+                    idecode_inst.illegal = (instruction.mode < rv_mode_machine);
+                }
+                default:  { idecode_inst.illegal = 1; }
                 }
             }
             }
         }
         case riscv_opc_custom_0: {
             if (rv_cfg_i32_custom0_enable==1) {
-                idecode.illegal = 0;
-                idecode.op = riscv_op_custom_0;
-                idecode.subop = bundle(1b0,combs.funct3);
+                idecode_inst.illegal = 0;
+                idecode_inst.op = riscv_op_custom_0;
+                idecode_inst.subop = bundle(1b0,combs.funct3);
             }
         }
         case riscv_opc_custom_1: {
             if (rv_cfg_i32_custom1_enable==1) {
-                idecode.illegal = 0;
-                idecode.op = riscv_op_custom_1;
-                idecode.subop = bundle(1b0,combs.funct3);
+                idecode_inst.illegal = 0;
+                idecode_inst.op = riscv_op_custom_1;
+                idecode_inst.subop = bundle(1b0,combs.funct3);
             }
         }
         case riscv_opc_custom_2: {
             if (rv_cfg_i32_custom0_enable==1) {
-                idecode.illegal = 0;
-                idecode.op = riscv_op_custom_2;
-                idecode.subop = bundle(1b0,combs.funct3);
+                idecode_inst.illegal = 0;
+                idecode_inst.op = riscv_op_custom_2;
+                idecode_inst.subop = bundle(1b0,combs.funct3);
             }
         }
         case riscv_opc_custom_3: {
             if (rv_cfg_i32_custom0_enable==1) {
-                idecode.illegal = 0;
-                idecode.op = riscv_op_custom_3;
-                idecode.subop = bundle(1b0,combs.funct3);
+                idecode_inst.illegal = 0;
+                idecode_inst.op = riscv_op_custom_3;
+                idecode_inst.subop = bundle(1b0,combs.funct3);
             }
         }
         }
 
         if (combs.must_be_ones != -1) { // rv32i 32-bit encodings only
-            idecode.illegal = 1;
+            idecode_inst.illegal = 1;
         }
-        if (idecode.rs1 == 0) {
-            idecode.rs1_valid = 0;
+        if (idecode_inst.rs1 == 0) {
+            idecode_inst.rs1_valid = 0;
         }
-        if (idecode.rs2 == 0) {
-            idecode.rs2_valid = 0;
+        if (idecode_inst.rs2 == 0) {
+            idecode_inst.rs2_valid = 0;
         }
-        if (idecode.rd == 0) {
-            idecode.rd_written = 0;
+        if (idecode_inst.rd == 0) {
+            idecode_inst.rd_written = 0;
         }
 
         if (riscv_config.e32 || rv_cfg_e32_force_enable) {
-            if (idecode.rs1_valid && idecode.rs1[4]) {
-                idecode.illegal = 1;
+            if (idecode_inst.rs1_valid && idecode_inst.rs1[4]) {
+                idecode_inst.illegal = 1;
             }
-            if (idecode.rs2_valid && idecode.rs2[4]) {
-                idecode.illegal = 1;
+            if (idecode_inst.rs2_valid && idecode_inst.rs2[4]) {
+                idecode_inst.illegal = 1;
             }
-            if (idecode.rd_written && idecode.rd[4]) {
-                idecode.illegal = 1;
+            if (idecode_inst.rd_written && idecode_inst.rd[4]) {
+                idecode_inst.illegal = 1;
             }
         }
     }
 
+    /*b Debug instruction decode */
+    debug_decode : {
+        idecode_debug = {*=0};
+        idecode_debug.immediate = instruction.data;
+        idecode_debug.rs1       = instruction.debug.data[5;0];
+        idecode_debug.rs1_valid = 1;
+        idecode_debug.rs2       = 0;
+        idecode_debug.rs2_valid = 0;
+        idecode_debug.rd        = instruction.debug.data[5;0];
+        idecode_debug.rd_written = 0;
+        idecode_debug.immediate_valid = 1;
+        idecode_debug.op    = riscv_op_alu;
+        idecode_debug.subop = riscv_subop_or; // alu_result = rs1 | rs2_or_imm
+        idecode_debug.csr_access.access  = riscv_csr_access_none;
+        idecode_debug.csr_access.address = instruction.debug.data[12;0];
+        if (instruction.debug.data[12]) { // GPR access
+            full_switch (instruction.debug.debug_op) {
+            case rv_inst_debug_op_read_reg: {
+                idecode_debug.rs1_valid       = 0;
+                idecode_debug.immediate_valid = 0;
+            }
+            case rv_inst_debug_op_write_reg: { // rd <= 0 | imm
+                idecode_debug.rs1             = 0;
+                idecode_debug.rs1_valid       = 0;
+                idecode_debug.immediate_valid = 1;
+                idecode_debug.rd_written      = 1;
+            }
+            }
+        } else { // CSR access
+            idecode_debug.op    = riscv_op_csr;
+            idecode_debug.subop = riscv_subop_or; // csr read
+            full_switch (instruction.debug.debug_op) {
+            case rv_inst_debug_op_read_reg: {
+                idecode_debug.csr_access.access = riscv_csr_access_read;
+                idecode_debug.rs1_valid       = 0;
+                idecode_debug.immediate_valid = 0;
+            }
+            case rv_inst_debug_op_write_reg: { // csr write
+                idecode_debug.csr_access.access = riscv_csr_access_write;
+                idecode_debug.rs1_valid       = 0;
+                idecode_debug.immediate_valid = 1;
+            }
+            }
+        }
+    }
+
+    /*b Select output from debug or regular */
+    select_output : {
+        idecode = idecode_inst;
+        if (combs.use_debug) {
+            idecode = idecode_debug;
+        }
+    }
 
     /*b All done */
 }
