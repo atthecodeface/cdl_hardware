@@ -294,17 +294,21 @@ An example implementation of could be
         dec_combs.rs1_from_mem = 0;
         dec_combs.rs2_from_alu = 0;
         dec_combs.rs2_from_mem = 0;
-        if ((mem_state.rd == dec_combs.idecode.rs1) && mem_state.rd_written) {
-            dec_combs.rs1_from_mem = 1;
+        if (dec_combs.idecode.rs1_valid) {
+            if ((mem_state.rd == dec_combs.idecode.rs1) && mem_state.rd_written) {
+                dec_combs.rs1_from_mem = 1;
+            }
+            if ((alu_state.idecode.rd == dec_combs.idecode.rs1) && alu_state.idecode.rd_written) {
+                dec_combs.rs1_from_alu = 1;
+            }
         }
-        if ((alu_state.idecode.rd == dec_combs.idecode.rs1) && alu_state.idecode.rd_written) {
-            dec_combs.rs1_from_alu = 1;
-        }
-        if ((mem_state.rd == dec_combs.idecode.rs2) && mem_state.rd_written) {
-            dec_combs.rs2_from_mem = 1;
-        }
-        if ((alu_state.idecode.rd == dec_combs.idecode.rs2) && alu_state.idecode.rd_written) {
-            dec_combs.rs2_from_alu = 1;
+        if (dec_combs.idecode.rs2_valid) {
+            if ((mem_state.rd == dec_combs.idecode.rs2) && mem_state.rd_written) {
+                dec_combs.rs2_from_mem = 1;
+            }
+            if ((alu_state.idecode.rd == dec_combs.idecode.rs2) && alu_state.idecode.rd_written) {
+                dec_combs.rs2_from_alu = 1;
+            }
         }
         assert(!mem_state.rd_written || mem_state.valid,          "Mem state rd_written must only be asserted if valid is too");
         assert(!alu_state.idecode.rd_written || alu_state.valid,  "ALU state rd_written must only be asserted if valid is too");
