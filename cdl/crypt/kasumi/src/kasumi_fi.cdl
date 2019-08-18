@@ -1,0 +1,86 @@
+/** Copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   kasumi_fi.cdl
+ * @brief  FI function for Kasumi
+ *
+ */
+/*a Includes */
+include "crypt/kasumi_submodules.h"
+
+/*a Types */
+typedef struct {
+    bit[9] right_1;
+    bit[7] left_1;
+
+    bit[16] data_1;
+
+    bit[9] right_2;
+    bit[7] left_2;
+    
+    bit[16] data_out;
+} t_fi_combs;
+    
+/*a Module
+ */
+/*m kasumi_fi */
+module kasumi_fi( input bit[16]  data_in,
+                  input bit[16]  key_in,
+                  output bit[16] data_out
+    )
+"""
+The steps are: (leftN = top N bits, rightN = bottom N bits)
+
+right' = sbox9(data_in[left9])  ^ (2b0,data_in[right7])
+left'  = sbox7(data_in[right7]) ^ right'[right7]
+data' = (left' || right') ^ key_in
+
+right'' = sbox9(data'[right9])  ^ (2b0,data'[left7])
+left''  = sbox7(data'[left7]) ^ right''[right7]
+data_out = left'' || right''
+
+From wikipedia
+"""
+{
+    /*b Combiatorial - just the function */
+    comb t_fi_combs fi_combs;
+    net bit[7] sbox7_data_in "Sbox 7 of data_in[7;0]";
+    net bit[9] sbox9_data_in "Sbox 9 of data_in[9;7]";
+    net bit[7] sbox7_data_1  "Sbox 7 of intermediate data";
+    net bit[9] sbox9_data_1  "Sbox 7 of intermediate data";
+
+    feistel_fi:  {
+
+        kasumi_sbox7 sbox_one_7( sbox_in <= data_in[7;0], sbox_out => sbox7_data_in ); // sbox7(r0)
+        kasumi_sbox9 sbox_one_9( sbox_in <= data_in[9;7], sbox_out => sbox9_data_in ); // sbox9(l0)
+
+        fi_combs.right_1 = sbox9_data_in ^ bundle(2b0, data_in[7;0]);
+        fi_combs.left_1  = sbox7_data_in ^ fi_combs.right_1[7;0] ;
+        
+        fi_combs.data_1 = bundle(fi_combs.left_1, fi_combs.right_1) ^ key_in; // x2 == l2 || r2
+
+        kasumi_sbox7 sbox_two_7( sbox_in <= fi_combs.data_1[7;9], sbox_out => sbox7_data_1 ); // sbox7(l2)
+        kasumi_sbox9 sbox_two_9( sbox_in <= fi_combs.data_1[9;0], sbox_out => sbox9_data_1 ); // sbox9(r2)
+
+        fi_combs.right_2 = sbox9_data_1 ^ bundle(2b0, fi_combs.data_1[7;9]); // r3
+        fi_combs.left_2  = sbox7_data_1 ^ fi_combs.right_2[7;0] ; // l3
+        
+        fi_combs.data_out = bundle(fi_combs.left_2, fi_combs.right_2);
+
+        data_out = fi_combs.data_out;
+
+    }
+
+    /*b All done */
+}

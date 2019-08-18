@@ -1,0 +1,121 @@
+/** Copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   kasumi_sbox7.cdl
+ * @brief  SBOX-7 for Kasumi
+ *
+ */
+/*a Includes */
+//include "types/jtag.h"
+
+/*a Types */
+/*t t_data_8_7
+ *
+ * Eight lots of 7 bits of output
+ *
+ */
+typedef bit[56] t_data_8_7;
+
+/*a Module
+ */
+/*m kasumi_sbox7 */
+module kasumi_sbox7( input bit[7] sbox_in,
+                     output bit[7] sbox_out
+    )
+"""
+Simple SBOX implementation
+
+Logic from '35202-f00.doc'
+
+sbox_data = [
+  [   54, 50, 62, 56, 22, 34, 94, 96, ],
+  [   38,  6, 63, 93,  2, 18,123, 33, ],
+  [   55,113, 39,114, 21, 67, 65, 12, ],
+  [   47, 73, 46, 27, 25,111,124, 81, ],
+  [   53,  9,121, 79, 52, 60, 58, 48, ],
+  [   101,127, 40,120,104, 70, 71, 43, ],
+  [   20,122, 72, 61, 23,109, 13,100, ],
+  [   77,  1, 16,  7, 82, 10,105, 98, ],
+  [  117,116, 76, 11, 89,106,  0,125, ],
+  [  118, 99, 86, 69, 30, 57,126, 87, ],
+  [  112, 51, 17,  5, 95, 14, 90, 84, ],
+  [   91,  8, 35,103, 32, 97, 28, 66, ],
+  [  102, 31, 26, 45, 75,  4, 85, 92, ],
+  [   37, 74, 80, 49, 68, 29,115, 44, ],
+  [   64,107,108, 24,110, 83, 36, 78, ],
+  [   42, 19, 15, 41, 88,119, 59,  3 ],
+]
+
+i=0
+for sd in sbox_data:
+  r = 0
+  sd.reverse()
+  for d in sd:
+    r = (r<<7) | d
+    pass
+  print "        sbox_data[%2d] = 56h%014x;"%(i,r)
+  i += 1
+
+y0 =x1x3 ^ x4 ^ x0x1x4 ^ x5 ^ x2x5 ^ x3x4x5 ^ x6 ^ x0x6 ^ x1x6 ^ x3x6 ^ x2x4x6 ^ x1x5x6 ^ x4x5x6
+y1 =x0x1 ^ x0x4 ^ x2x4 ^ x5 ^ x1x2x5 ^ x0x3x5 ^ x6 ^ x0x2x6 ^ x3x6 ^ x4x5x6 ^ 1
+y2 =x0 ^ x0x3 ^ x2x3 ^ x1x2x4 ^ x0x3x4 ^ x1x5 ^ x0x2x5 ^ x0x6 ^ x0x1x6 ^ x2x6 ^ x4x6 ^ 1
+y3 =x1 ^ x0x1x2 ^ x1x4 ^ x3x4 ^ x0x5 ^ x0x1x5 ^ x2x3x5 ^ x1x4x5 ^ x2x6 ^ x1x3x6
+y4 =x0x2 ^ x3 ^ x1x3 ^ x1x4 ^ x0x1x4 ^ x2x3x4 ^ x0x5 ^ x1x3x5 ^ x0x4x5 ^ x1x6 ^ x3x6 ^ x0x3x6 ^ x5x6 ^ 1
+y5 =x2 ^ x0x2 ^ x0x3 ^ x1x2x3 ^ x0x2x4 ^ x0x5 ^ x2x5 ^ x4x5 ^ x1x6 ^ x1x2x6 ^ x0x3x6 ^ x3x4x6 ^ x2x5x6 ^ 1
+y6 =x1x2 ^ x0x1x3 ^ x0x4 ^ x1x5 ^ x3x5 ^ x6 ^ x0x1x6 ^ x2x3x6 ^ x1x4x6 ^ x0x5x6
+
+"""
+{
+    /*b Combiatorial - the SBOX data */
+    comb t_data_8_7[16] sbox_data;
+    comb bit[7]         sbox_element;
+
+    /*b SBOX logic */
+    sbox """
+    Select correct element of sbox_data, and then the bits inside that
+    """: {
+        /*b Sbox contents */
+        sbox_data[ 0] = 56hc17911670f9936;
+        sbox_data[ 1] = 56h43ec902bafc326;
+        sbox_data[ 2] = 56h1906195e49f8b7;
+        sbox_data[ 3] = 56ha3f379936ba4af;
+        sbox_data[ 4] = 56h60e9e349fe44b5;
+        sbox_data[ 5] = 56h571e368f0a3fe5;
+        sbox_data[ 6] = 56hc8376977b23d14;
+        sbox_data[ 7] = 56hc5a45520e400cd;
+        sbox_data[ 8] = 56hfa035591733a75;
+        sbox_data[ 9] = 56haff9c9e8b5b1f6;
+        sbox_data[10] = 56ha96875f0a459f0;
+        sbox_data[11] = 56h84730a0ce8c45b;
+        sbox_data[12] = 56hb95424b5a68fe6;
+        sbox_data[13] = 56h59ccec46342525;
+        sbox_data[14] = 56h9c929ee31b35c0;
+        sbox_data[15] = 56h06efbd8523c9aa;
+
+        /*b Select sbox element based on sbox_in[4;3], and shift based on [3;0] */
+        full_switch (sbox_in[3;0]) {
+        case 0:  { sbox_element = sbox_data[sbox_in[4;3]][7; 0]; }
+        case 1:  { sbox_element = sbox_data[sbox_in[4;3]][7; 7]; }
+        case 2:  { sbox_element = sbox_data[sbox_in[4;3]][7;14]; }
+        case 3:  { sbox_element = sbox_data[sbox_in[4;3]][7;21]; }
+        case 4:  { sbox_element = sbox_data[sbox_in[4;3]][7;28]; }
+        case 5:  { sbox_element = sbox_data[sbox_in[4;3]][7;35]; }
+        case 6:  { sbox_element = sbox_data[sbox_in[4;3]][7;42]; }
+        default: { sbox_element = sbox_data[sbox_in[4;3]][7;49]; }
+        }
+        sbox_out     = sbox_element[7;0];
+    }
+
+    /*b All done */
+}

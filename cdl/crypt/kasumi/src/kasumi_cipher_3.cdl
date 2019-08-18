@@ -1,0 +1,476 @@
+/** Copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   kasumi_sbox7.cdl
+ * @brief  SBOX-7 for Kasumi
+ *
+ */
+/*a Includes */
+include "crypt/kasumi_types.h"
+include "crypt/kasumi_submodules.h"
+
+/*a Types */
+/*t t_left_right_32
+ */
+typedef struct {
+    bit[32] left;
+    bit[32] right;
+} t_left_right_32;
+
+/*t t_fo_out
+ */
+typedef struct {
+    bit data_valid;
+    bit[32] data_out;
+} t_fo_out;
+
+/*t t_fo_in
+ */
+typedef struct {
+    bit start;
+    bit[32] data_in;
+} t_fo_in;
+
+/*t t_round_key
+ */
+typedef struct {
+    bit[16] kl1;
+    bit[16] kl2;
+    bit[16] ko1;
+    bit[16] ko2;
+    bit[16] ko3;
+    bit[16] ki1;
+    bit[16] ki2;
+    bit[16] ki3;
+} t_round_key;
+
+/*t t_fl
+ */
+typedef struct {
+    bit[16] in_right;
+    bit[16] in_left;
+    bit[16] left_and_key;
+    bit[16] left_and_key_rol;
+    bit[16] out_right;
+    bit[16] right_or_key;
+    bit[16] right_or_key_rol;
+    bit[16] out_left;
+    bit[32] data_out;
+} t_fl;
+
+/*t t_fsm_state
+ *
+ * 
+ *
+ */
+typedef fsm {
+    fsm_state_idle;
+    fsm_state_start_of_round;
+    fsm_state_waiting_for_subround;
+    fsm_state_waiting_for_data_out;
+} t_fsm_state;
+
+/*t t_ctl_event control event enumeration */
+typedef enum [3] {
+    ctl_none,
+    ctl_take_input,
+    ctl_start_round,
+    ctl_next_round,
+    ctl_idle,
+    ctl_complete
+} t_ctl_event;
+
+/*t t_fo_action_ enumeration */
+typedef enum [2] {
+    fo_idle,
+    fo_start_odd,
+    fo_start_even
+} t_fo_action;
+
+/*t t_crypt_state
+ *
+ * 
+ *
+ */
+typedef struct {
+    t_fsm_state fsm_state;
+    t_left_right_32 data;
+    bit[64] k0;
+    bit[64] k1;
+    bit[64] k0_p;
+    bit[64] k1_p;
+    bit[3]      round;
+    t_kasumi_output kasumi_output;
+} t_crypt_state;
+
+/*t t_crypt_combs
+ *
+ * 
+ *
+ */
+typedef struct {
+    t_fo_action fo_action;
+    t_ctl_event ctl_event;
+    bit         will_be_idle;
+    bit         is_idle;
+    bit         is_last_round;
+    bit         result_is_valid "Asserted in last subround of last round, or if data is pending";
+    t_fl        fl_state;
+    t_fo_in     fo;
+    t_round_key round_key;
+    t_fl        fl_fo;
+    t_left_right_32 result_data;
+} t_crypt_combs;
+
+/*a Module
+ */
+/*m kasumi_cipher_3 */
+module kasumi_cipher_3(  clock clk,
+                         input bit reset_n,
+                         input t_kasumi_input    kasumi_input,
+                         output bit              kasumi_input_ack,
+                         output t_kasumi_output  kasumi_output,
+                         input bit               kasumi_output_ack
+    )
+"""
+This module takes 24 cycles to do a 64-bit crypt operation.
+
+The process is to perform 8 rounds of 3 subrounds
+
+The data and round key are held in state.
+
+The module has 256 bits of key state, 64 bits of data-in-progress, and
+64 bits of data out, plus minor other state bits.
+In addition the FO module has 32 bits of data state.
+
+The data is split combinatorially into left and right, and fed in
+through fl_state (in odd rounds) or directly (even rounds) to fo.  fo
+itself takes three subrounds, using its data in when start is
+asserted, and on the third subround the data_out is valid. The key
+must be constant for all three rounds.
+
+The output from fo is fed through fl_fo (for even rounds) or used
+directly (in odd rounds). This generates new state, or data out.
+
+The control events are:
+
+event ctl_take_input     {
+   crypt_state.fsm_state <= fsm_state_start_of_round;
+   crypt_state.data      <= kasumi_input.data;
+   crypt_state.k0        <= kasumi_input.k0;
+   crypt_state.k1        <= kasumi_input.k1;
+   crypt_state.round     <= 0;
+ }
+event ctl_start_round     {
+   crypt_state.fsm_state <= fsm_state_waiting_for_subround;
+}
+event ctl_next_round     {
+   crypt_state.fsm_state <= fsm_state_start_of_round;
+   crypt_state.data      <= crypt_combs.result_data;
+   crypt_state.k0        <= bundle(crypt_state.k0[56;0], crypt_state.k1[8;56]);
+   crypt_state.k1        <= bundle(crypt_state.k1[56;0], crypt_state.k0[8;56]);
+   crypt_state.round     <= crypt_state.round+1;
+ }
+event ctl_idle           { crypt_state.fsm_state <= fsm_state_idle; }
+event ctl_complete(pend) { crypt_state.fsm_state <= pend ? fsm_state_waiting_for_data_out : fsm_state_idle; }
+
+The FO actions are:
+event fo_base {
+        crypt_combs.fo.start   = 0;
+        crypt_combs.fo.data_in = crypt_combs.fl_state.data_out;
+}
+event fo_idle : fo_base;
+event fo_start {
+        crypt_combs.fo.start   = 1;
+}
+event fo_start_odd : fo_start {
+        crypt_combs.fo.data_in = crypt_state.data.left; // for even rounds        
+}
+event fo_start_even : fo_start {
+        crypt_combs.fo.data_in = crypt_combs.fl_state.data_out; // for even rounds        
+}
+
+
+crypt_combs.ctl_event = None;
+crypt_combs.fo_action = fo_idle;
+is_last_round     = (crypt_state.round==7);
+
+is_idle           = 0;
+is_last_subround  = 0;
+is_pending        = 0;
+switch (crypt_state.fsm_state) {
+case fsm_state_idle: {
+    crypt_combs.is_idle = 1;
+}
+case fsm_state_start_of_round: {
+    crypt_combs.ctl_event = ctl_start_round;
+    crypt_combs.fo_action = round[0] ? (fo_start_odd : fo_start_even);
+}
+case fsm_state_waiting_for_subround: {
+    if (fo_out.data_valid) {
+        crypt_combs.ctl_event = ctl_next_round;
+        if (is_last_round) {
+            crypt_combs.ctl_event = ctl_complete(crypt_state.kasumi_output.valid);
+            is_last_subround  = 1;
+        }
+    }
+}
+case fsm_state_waiting_for_data_out: {
+    is_pending        = 1;
+    if (!crypt_state.kasumi_output.valid) {
+        crypt_combs.ctl_event = ctl_idle;
+    }
+}
+}
+
+
+will_be_idle  = (is_idle || ((is_last_subround || is_pending) && !crypt_state.kasumi_output.valid));
+
+kasumi_input_ack = will_be_idle;
+if (kasumi_input_ack && kasumi_input.valid) {
+    crypt_combs.ctl_event = ctl_take_input;
+}
+invoke(crypt_combs.ctl_event);
+invoke(crypt_combs.fo_action);
+
+
+"""
+{
+    /*b Default clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b State and combinatorials */
+    clocked t_crypt_state crypt_state = {*=0};
+    comb    t_crypt_combs crypt_combs;
+    comb bit[16][8] k;
+    comb bit[16][8] k_p;
+    net t_fo_out fo_out;
+
+    /*b State machine decode */
+    state_machine """
+    State machine decode
+    """: {
+        crypt_combs.is_last_round     = (crypt_state.round==7);
+
+        crypt_combs.ctl_event = ctl_none;
+        crypt_combs.fo_action = fo_idle;
+        
+        crypt_combs.is_idle           = 0;
+        crypt_combs.result_is_valid   = 0;
+        full_switch (crypt_state.fsm_state) {
+        case fsm_state_idle: {
+            crypt_combs.is_idle = 1;
+        }
+        case fsm_state_start_of_round: {
+            crypt_combs.ctl_event = ctl_start_round;
+            crypt_combs.fo_action = crypt_state.round[0] ? fo_start_odd : fo_start_even;
+        }
+        case fsm_state_waiting_for_subround: {
+            if (fo_out.data_valid) {
+                crypt_combs.ctl_event = ctl_next_round;
+                if (crypt_combs.is_last_round) {
+                    crypt_combs.ctl_event = ctl_complete;
+                    crypt_combs.result_is_valid   = 1;
+                }
+            }
+        }
+        case fsm_state_waiting_for_data_out: {
+            crypt_combs.result_is_valid   = 1;
+            if (!crypt_state.kasumi_output.valid) {
+                crypt_combs.ctl_event = ctl_idle;
+            }
+        }
+        }
+
+        crypt_combs.will_be_idle = crypt_combs.is_idle;
+        if (!crypt_state.kasumi_output.valid) {
+            if (crypt_combs.result_is_valid) {
+                crypt_combs.will_be_idle = 1;
+            }
+        }
+
+        kasumi_input_ack = crypt_combs.will_be_idle;
+        if (kasumi_input_ack && kasumi_input.valid) {
+            crypt_combs.ctl_event = ctl_take_input;
+        }
+    }
+
+    /*b Control events and FO actions*/
+    control_events """
+    Control events 
+    """: {
+        /*b Control events */
+        full_switch (crypt_combs.ctl_event) {
+        case ctl_none: {
+            crypt_state.fsm_state   <= crypt_state.fsm_state;
+        }
+        case ctl_take_input: {
+            crypt_state.fsm_state   <= fsm_state_start_of_round;
+            crypt_state.data.left   <= kasumi_input.data[32;32];
+            crypt_state.data.right  <= kasumi_input.data[32; 0];
+            crypt_state.k0          <= kasumi_input.k0;
+            crypt_state.k1          <= kasumi_input.k1;
+            crypt_state.k0_p        <= kasumi_input.k0 ^ 64h0123456789abcdef;
+            crypt_state.k1_p        <= kasumi_input.k1 ^ 64hfedcba9876543210;
+            crypt_state.round       <= 0;
+        }
+        case ctl_start_round: {
+            crypt_state.fsm_state <= fsm_state_waiting_for_subround;
+        }
+        case ctl_next_round: {
+            crypt_state.fsm_state <= fsm_state_start_of_round;
+            crypt_state.data      <= crypt_combs.result_data;
+            crypt_state.k0        <= bundle(crypt_state.k0[48;0], crypt_state.k1[16;48]);
+            crypt_state.k1        <= bundle(crypt_state.k1[48;0], crypt_state.k0[16;48]);
+            crypt_state.k0_p      <= bundle(crypt_state.k0_p[48;0], crypt_state.k1_p[16;48]);
+            crypt_state.k1_p      <= bundle(crypt_state.k1_p[48;0], crypt_state.k0_p[16;48]);
+            crypt_state.round     <= crypt_state.round+1;
+        }
+        case ctl_idle: {
+            crypt_state.fsm_state <= fsm_state_idle;
+        }
+        case ctl_complete: {
+            crypt_state.data      <= crypt_combs.result_data;
+            crypt_state.fsm_state <= fsm_state_idle;
+            if (crypt_state.kasumi_output.valid) {
+                crypt_state.fsm_state <= fsm_state_waiting_for_data_out;
+            }
+        }
+        }
+
+        /*b FO actions */
+        crypt_combs.fo.start   = 0;
+        crypt_combs.fo.data_in = crypt_combs.fl_state.data_out;
+        full_switch (crypt_combs.fo_action) {
+        case fo_idle: {
+            crypt_combs.fo.start   = 0;
+        }
+        case fo_start_odd: {
+            crypt_combs.fo.start   = 1;
+            crypt_combs.fo.data_in = crypt_state.data.left;
+        }
+        case fo_start_even: {
+            crypt_combs.fo.start   = 1;
+            crypt_combs.fo.data_in = crypt_combs.fl_state.data_out;
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b Unpick data and key state */
+    unpick_data_and_key """
+    Unpack the data state and get round key
+    """: {
+        k[0] = crypt_state.k0[16;48];
+        k[1] = crypt_state.k0[16;32];
+        k[2] = crypt_state.k0[16;16];
+        k[3] = crypt_state.k0[16; 0];
+        k[4] = crypt_state.k1[16;48];
+        k[5] = crypt_state.k1[16;32];
+        k[6] = crypt_state.k1[16;16];
+        k[7] = crypt_state.k1[16; 0];
+
+        k_p[0] = crypt_state.k0_p[16;48];
+        k_p[1] = crypt_state.k0_p[16;32];
+        k_p[2] = crypt_state.k0_p[16;16];
+        k_p[3] = crypt_state.k0_p[16; 0];
+        k_p[4] = crypt_state.k1_p[16;48];
+        k_p[5] = crypt_state.k1_p[16;32];
+        k_p[6] = crypt_state.k1_p[16;16];
+        k_p[7] = crypt_state.k1_p[16; 0];
+
+        crypt_combs.round_key.kl1 = (k[0]<< 1) | (k[0]>>15);
+        crypt_combs.round_key.ko1 = (k[1]<< 5) | (k[1]>>11);
+        crypt_combs.round_key.ko2 = (k[5]<< 8) | (k[5]>> 8);
+        crypt_combs.round_key.ko3 = (k[6]<<13) | (k[6]>> 3);
+
+        crypt_combs.round_key.kl2 = k_p[2];
+        crypt_combs.round_key.ki1 = k_p[4];
+        crypt_combs.round_key.ki2 = k_p[3];
+        crypt_combs.round_key.ki3 = k_p[7];
+    }
+
+    /*b FL function of state left */
+    fl_function_state : {
+        crypt_combs.fl_state.in_right  = crypt_state.data.left[16; 0]; // 16
+        crypt_combs.fl_state.in_left   = crypt_state.data.left[16;16]; // 16
+
+        crypt_combs.fl_state.left_and_key     = crypt_combs.fl_state.in_left & crypt_combs.round_key.kl1;
+        crypt_combs.fl_state.left_and_key_rol = bundle(crypt_combs.fl_state.left_and_key[15;0], crypt_combs.fl_state.left_and_key[15]);
+        crypt_combs.fl_state.out_right        = crypt_combs.fl_state.left_and_key_rol ^ crypt_combs.fl_state.in_right;
+        crypt_combs.fl_state.right_or_key     = crypt_combs.fl_state.out_right | crypt_combs.round_key.kl2;
+        crypt_combs.fl_state.right_or_key_rol = bundle(crypt_combs.fl_state.right_or_key[15;0], crypt_combs.fl_state.right_or_key[15]);
+        crypt_combs.fl_state.out_left         = crypt_combs.fl_state.right_or_key_rol ^ crypt_combs.fl_state.in_left;
+
+        crypt_combs.fl_state.data_out = bundle( crypt_combs.fl_state.out_left, crypt_combs.fl_state.out_right );
+        
+    }
+
+    /*b FO function */
+    fo_function : {
+        kasumi_fo_cycles_3 fo( clk <- clk,
+                               reset_n <= reset_n,
+                               start <= crypt_combs.fo.start,
+                               data_in <= crypt_combs.fo.data_in, // fl(l) for odd, l for even
+                               keys_ki_ko_1 <= bundle( crypt_combs.round_key.ki1,  crypt_combs.round_key.ko1 ),
+                               keys_ki_ko_2 <= bundle( crypt_combs.round_key.ki2,  crypt_combs.round_key.ko2 ),
+                               keys_ki_ko_3 <= bundle( crypt_combs.round_key.ki3,  crypt_combs.round_key.ko3 ),
+                               data_valid => fo_out.data_valid,
+                               data_out   => fo_out.data_out );
+    }
+
+    /*b FL function of FO output */
+    fl_function_fo : {
+        crypt_combs.fl_fo.in_right  = fo_out.data_out[16; 0]; // 16
+        crypt_combs.fl_fo.in_left   = fo_out.data_out[16;16]; // 16
+
+        crypt_combs.fl_fo.left_and_key     = crypt_combs.fl_fo.in_left & crypt_combs.round_key.kl1;
+        crypt_combs.fl_fo.left_and_key_rol = bundle(crypt_combs.fl_fo.left_and_key[15;0], crypt_combs.fl_fo.left_and_key[15]);
+        crypt_combs.fl_fo.out_right        = crypt_combs.fl_fo.left_and_key_rol ^ crypt_combs.fl_fo.in_right;
+        crypt_combs.fl_fo.right_or_key     = crypt_combs.fl_fo.out_right | crypt_combs.round_key.kl2;
+        crypt_combs.fl_fo.right_or_key_rol = bundle(crypt_combs.fl_fo.right_or_key[15;0], crypt_combs.fl_fo.right_or_key[15]);
+        crypt_combs.fl_fo.out_left         = crypt_combs.fl_fo.right_or_key_rol ^ crypt_combs.fl_fo.in_left;
+
+        crypt_combs.fl_fo.data_out = bundle( crypt_combs.fl_fo.out_left, crypt_combs.fl_fo.out_right );
+        
+    }
+
+    /*b Result of a round */
+    result_of_round : {
+        crypt_combs.result_data.right = crypt_state.data.left;
+        crypt_combs.result_data.left  = crypt_state.data.right ^ crypt_combs.fl_fo.data_out;
+        if (!crypt_state.round[0]) { // odd round
+            crypt_combs.result_data.right = crypt_state.data.left;
+            crypt_combs.result_data.left  = crypt_state.data.right ^ fo_out.data_out;
+        }
+    }
+
+    /*b Output register handling */
+    output_register : {
+        if (kasumi_output_ack && crypt_state.kasumi_output.valid) {
+            crypt_state.kasumi_output.valid <= 0;
+        }
+        if (crypt_combs.result_is_valid) {
+            crypt_state.kasumi_output.valid <= 1;
+            crypt_state.kasumi_output.data  <= bundle(crypt_combs.result_data.left, crypt_combs.result_data.right);
+            if (crypt_state.fsm_state == fsm_state_waiting_for_data_out) {
+                crypt_state.kasumi_output.data  <= bundle(crypt_state.data.left, crypt_state.data.right);
+            }
+        }
+        kasumi_output = crypt_state.kasumi_output;
+    }
+    /*b All done */
+}

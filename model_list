@@ -170,6 +170,13 @@ cdl cdl/apb/src  apb_processor  inc:cdl/inc
 cdl cdl/apb/tb_src  tb_apb_processor  inc:cdl/inc
 cdl cdl/apb/tb_src  tb_apb_target_rv_timer  inc:cdl/inc
 
+cdl cdl/crypt/kasumi/src  kasumi_sbox7        inc:cdl/inc
+cdl cdl/crypt/kasumi/src  kasumi_sbox9        inc:cdl/inc
+cdl cdl/crypt/kasumi/src  kasumi_fi           inc:cdl/inc
+cdl cdl/crypt/kasumi/src  kasumi_fo_cycles_3  inc:cdl/inc
+cdl cdl/crypt/kasumi/src  kasumi_cipher_3     inc:cdl/inc
+cdl cdl/crypt/kasumi/tb_src tb_kasumi_cipher  inc:cdl/inc rit:tb_kasumi_cipher.kasumi_cipher=kasumi_cipher_3
+
 cdl cdl/csrs/src csr_master_apb      inc:cdl/inc
 cdl cdl/csrs/src csr_target_csr      inc:cdl/inc
 cdl cdl/csrs/src csr_target_apb      inc:cdl/inc

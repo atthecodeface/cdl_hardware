@@ -1,0 +1,89 @@
+/** Copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   kasumi_sbox9.cdl
+ * @brief  SBOX-9 for Kasumi
+ *
+ */
+/*a Includes */
+//include "types/jtag.h"
+
+/*a Module
+ */
+/*m kasumi_sbox9 */
+module kasumi_sbox9( input bit[9] sbox_in,
+                     output bit[9] sbox_out
+    )
+"""
+Simple SBOX implementation
+
+y0 = x0x2 ^ x3 ^ x2x5 ^ x5x6 ^ x0x7 ^ x1x7 ^ x2x7 ^ x4x8 ^ x5x8 ^ x7x8 ^ 1
+y1 = x1 ^ x0x1 ^ x2x3 ^ x0x4 ^ x1x4 ^ x0x5 ^ x3x5 ^ x6 ^ x1x7 ^ x2x7 ^ x5x8 ^ 1
+y2 = x1 ^ x0x3 ^ x3x4 ^ x0x5 ^ x2x6 ^ x3x6 ^ x5x6 ^ x4x7 ^ x5x7 ^ x6x7 ^ x8 ^ x0x8 ^ 1
+y3 = x0 ^ x1x2 ^ x0x3 ^ x2x4 ^ x5 ^ x0x6 ^ x1x6 ^ x4x7 ^ x0x8 ^ x1x8 ^ x7x8
+y4 = x0x1 ^ x1x3 ^ x4 ^ x0x5 ^ x3x6 ^ x0x7 ^ x6x7 ^ x1x8 ^ x2x8 ^ x3x8
+y5 = x2 ^ x1x4 ^ x4x5 ^ x0x6 ^ x1x6 ^ x3x7 ^ x4x7 ^ x6x7 ^ x5x8 ^ x6x8 ^ x7x8 ^ 1
+y6 = x0 ^ x2x3 ^ x1x5 ^ x2x5 ^ x4x5 ^ x3x6 ^ x4x6 ^ x5x6 ^ x7 ^ x1x8 ^ x3x8 ^ x5x8 ^ x7x8
+y7 = x0x1 ^ x0x2 ^ x1x2 ^ x3 ^ x0x3 ^ x2x3 ^ x4x5 ^ x2x6 ^ x3x6 ^ x2x7 ^ x5x7 ^ x8 ^ 1
+y8 = x0x1 ^ x2 ^ x1x2 ^ x3x4 ^ x1x5 ^ x2x5 ^ x1x6 ^ x4x6 ^ x7 ^ x2x8 ^ x3x8
+
+"""
+{
+
+    /*b Logic from "35202-f00.doc" */
+    comb bit x0;
+    comb bit x1;
+    comb bit x2;
+    comb bit x3;
+    comb bit x4;
+    comb bit x5;
+    comb bit x6;
+    comb bit x7;
+    comb bit x8;
+
+    comb bit y0;
+    comb bit y1;
+    comb bit y2;
+    comb bit y3;
+    comb bit y4;
+    comb bit y5;
+    comb bit y6;
+    comb bit y7;
+    comb bit y8;
+    logic : {
+        x0 = sbox_in[0];
+        x1 = sbox_in[1];
+        x2 = sbox_in[2];
+        x3 = sbox_in[3];
+        x4 = sbox_in[4];
+        x5 = sbox_in[5];
+        x6 = sbox_in[6];
+        x7 = sbox_in[7];
+        x8 = sbox_in[8];
+
+        y0 = x0&x2 ^ x3    ^ x2&x5 ^ x5&x6 ^ x0&x7 ^ x1&x7 ^ x2&x7 ^ x4&x8 ^ x5&x8 ^ x7&x8 ^ 1;
+        y1 = x1    ^ x0&x1 ^ x2&x3 ^ x0&x4 ^ x1&x4 ^ x0&x5 ^ x3&x5 ^ x6    ^ x1&x7 ^ x2&x7 ^ x5&x8 ^ 1;
+        y2 = x1    ^ x0&x3 ^ x3&x4 ^ x0&x5 ^ x2&x6 ^ x3&x6 ^ x5&x6 ^ x4&x7 ^ x5&x7 ^ x6&x7 ^ x8    ^ x0&x8 ^ 1;
+        y3 = x0    ^ x1&x2 ^ x0&x3 ^ x2&x4 ^ x5    ^ x0&x6 ^ x1&x6 ^ x4&x7 ^ x0&x8 ^ x1&x8 ^ x7&x8;
+        y4 = x0&x1 ^ x1&x3 ^ x4    ^ x0&x5 ^ x3&x6 ^ x0&x7 ^ x6&x7 ^ x1&x8 ^ x2&x8 ^ x3&x8;
+        y5 = x2    ^ x1&x4 ^ x4&x5 ^ x0&x6 ^ x1&x6 ^ x3&x7 ^ x4&x7 ^ x6&x7 ^ x5&x8 ^ x6&x8 ^ x7&x8 ^ 1;
+        y6 = x0    ^ x2&x3 ^ x1&x5 ^ x2&x5 ^ x4&x5 ^ x3&x6 ^ x4&x6 ^ x5&x6 ^ x7    ^ x1&x8 ^ x3&x8 ^ x5&x8 ^ x7&x8;
+        y7 = x0&x1 ^ x0&x2 ^ x1&x2 ^ x3    ^ x0&x3 ^ x2&x3 ^ x4&x5 ^ x2&x6 ^ x3&x6 ^ x2&x7 ^ x5&x7 ^ x8 ^ 1;
+        y8 = x0&x1 ^ x2    ^ x1&x2 ^ x3&x4 ^ x1&x5 ^ x2&x5 ^ x1&x6 ^ x4&x6 ^ x7    ^ x2&x8 ^ x3&x8;
+
+        sbox_out = bundle( y8, y7,y6, y5, y4, y3, y2, y1, y0 );
+    }
+    
+    /*b All done */
+}

@@ -1,0 +1,131 @@
+/** Copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   kasumi_sbox7.cdl
+ * @brief  SBOX-7 for Kasumi
+ *
+ */
+/*a Includes */
+include "crypt/kasumi_submodules.h"
+
+/*a Types */
+/*t t_fsm_state */
+typedef fsm {
+    fsm_state_idle;
+    fsm_state_word_1;
+    fsm_state_word_2;
+    fsm_state_word_3;
+} t_fsm_state;
+
+/*t t_fi_combs
+ *
+ * Combinatorials
+ *
+ */
+typedef struct {
+    t_fsm_state next_fsm_state;
+    bit[16] ki;
+    bit[16] ko;
+    bit[32] data_out;
+} t_fi_combs;
+
+/*t t_fi_state
+ *
+ * Combinatorials
+ *
+ */
+typedef struct {
+    t_fsm_state fsm_state;
+    bit[16] left;
+    bit[16] right;
+} t_fi_state;
+
+/*a Module
+ */
+/*m kasumi_fo_cycles_3 */
+module kasumi_fo_cycles_3( clock clk,
+                           input bit reset_n,
+                           input bit start,
+                           input bit[32] data_in,
+                           input bit[32] keys_ki_ko_1,
+                           input bit[32] keys_ki_ko_2,
+                           input bit[32] keys_ki_ko_3,
+                           output bit data_valid,
+                           output bit[32] data_out
+    )
+"""
+This module takes 3 cycles to perform an fo calculation
+
+When start is asserted data_in is used.
+This is the first subround.
+The next cycle is subround 2.
+The next cycle is subround 3.
+If start is not asserted, then the next state is idle
+
+In idle, the current state is output; hence the data out is stable
+once data_valid is asserted until start is driven
+
+"""
+{
+    /*b Combiatorial - the SBOX data */
+    default clock clk;
+    default reset active_low reset_n;
+    comb    t_fi_combs fi_combs;
+    clocked t_fi_state fi_state = {*=0};
+    net bit[16] fi_data_out;
+
+    /*b Logc */
+    logic : {
+        fi_combs.ko = keys_ki_ko_1[16; 0];
+        fi_combs.ki = keys_ki_ko_1[16;16];
+        fi_combs.next_fsm_state = fsm_state_idle;
+        part_switch (fi_state.fsm_state) {
+        case fsm_state_word_1: {
+            fi_combs.ko = keys_ki_ko_1[16; 0];
+            fi_combs.ki = keys_ki_ko_1[16;16];
+            fi_combs.next_fsm_state = fsm_state_word_2;
+        }
+        case fsm_state_word_2: {
+            fi_combs.ko = keys_ki_ko_2[16; 0];
+            fi_combs.ki = keys_ki_ko_2[16;16];
+            fi_combs.next_fsm_state = fsm_state_word_3;
+        }
+        case fsm_state_word_3: {
+            fi_combs.ko = keys_ki_ko_3[16; 0];
+            fi_combs.ki = keys_ki_ko_3[16;16];
+            fi_combs.next_fsm_state = fsm_state_idle;
+        }
+        }
+        kasumi_fi fi( data_in <= fi_combs.ko ^ ((fi_state.fsm_state == fsm_state_idle)? data_in[16;16] : fi_state.left),
+                      key_in  <= fi_combs.ki,
+                      data_out => fi_data_out );
+        fi_combs.data_out = bundle(fi_state.left, fi_state.right);
+        if (fi_state.fsm_state != fsm_state_idle) {
+            fi_combs.data_out = bundle(fi_state.right, fi_data_out ^ fi_state.right);
+            fi_state.fsm_state  <= fi_combs.next_fsm_state;
+            fi_state.left  <= fi_combs.data_out[16;16];
+            fi_state.right <= fi_combs.data_out[16; 0];
+        }
+        if (start) {
+            fi_state.left  <= data_in[16; 0];
+            fi_state.right <= data_in[16; 0] ^ fi_data_out;
+            fi_state.fsm_state <= fsm_state_word_2;
+        }
+        data_valid = (fi_state.fsm_state == fsm_state_word_3);
+        data_out = fi_combs.data_out;
+        
+    }
+
+    /*b All done */
+}
