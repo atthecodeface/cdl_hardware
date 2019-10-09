@@ -201,6 +201,8 @@ cdl cdl/boards/de1_hps/src         de1_hps_debug     inc:cdl/inc
 
 cdl cdl/boards/de2/src/            picorisc_de2 inc:cdl/inc
 
+cdl cdl/boards/vcu108/src        vcu108_debug     inc:cdl/inc
+
 #a Editor preferences and notes
 # Local Variables: ***
 # mode: shell ***

@@ -73,3 +73,14 @@ typedef struct {
     bit[10] blue  "Blue data, latched on rising clock";
 } t_adv7123;
 
+
+
+/*t t_adv7511 */
+typedef struct {
+    bit    vsync          "Asserted for one whole line at start of back porch of frame, simultaneous with hsync";
+    bit    hsync          "Asserted for one cycle at start of back porch";
+    bit    de             "Asserted after end of back porch for display pixels/lines";
+    bit[16] data;
+    bit     spdif;
+} t_adv7511;
+

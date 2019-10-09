@@ -1,0 +1,383 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   vcu108_debug.cdl
+ * @brief  Debug design for the VCU108 board
+ *
+
+ */
+
+/*a Includes
+ */
+include "types/video.h"
+include "types/apb.h"
+include "types/csr.h"
+include "types/dprintf.h"
+include "types/sram.h"
+include "srams.h"
+include "apb/apb_targets.h"
+include "apb/apb_masters.h"
+include "csr/csr_targets.h"
+include "csr/csr_masters.h"
+include "utils/dprintf_modules.h"
+include "led/led_modules.h"
+include "video/framebuffer_modules.h"
+include "boards/vcu108.h"
+
+/*a Constants */
+constant integer num_dprintf_requesters=16;
+
+/*a Module
+ */
+/*m vcu108_debug
+ *
+ * Debug module for testing out HPS in the Cyclone-V FPGA
+ *
+ */
+module vcu108_debug( clock clk,
+                     input bit reset_n,
+
+                     input t_vcu108_inputs vcu108_inputs,
+                     output t_vcu108_leds  vcu108_leds,
+
+                     clock video_clk,
+                     input bit video_reset_n,
+                     output t_adv7511 vcu108_video,
+
+                     input bit uart_rxd,
+                     output bit uart_txd
+    )
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Nets */
+    net  t_apb_request apb_request;
+
+    comb bit[4]        apb_request_sel;
+    comb t_apb_request gpio_apb_request;
+    comb t_apb_request dprintf_apb_request;
+    comb t_apb_request csr_apb_request;
+    comb t_apb_request fb_sram_apb_request;
+
+    net t_apb_response  gpio_apb_response;
+    net t_apb_response  dprintf_apb_response;
+    net t_apb_response  csr_apb_response;
+    net t_apb_response  fb_sram_apb_response;
+    comb t_apb_response apb_response;
+
+    net bit[16] gpio_output;
+    net bit[16] gpio_output_enable;
+    clocked bit[16]  gpio_input=0;
+    net bit     gpio_input_event;
+    net bit[32] fb_sram_ctrl;
+
+    net  t_dprintf_req_4 apb_dprintf_req "Dprintf request from APB target";
+    comb bit             apb_dprintf_ack "Ack for dprintf request from APB target";
+
+    net bit[num_dprintf_requesters]                 dprintf_ack;
+    clocked t_dprintf_req_4[num_dprintf_requesters] dprintf_req={*=0};
+    net bit[num_dprintf_requesters-1]               mux_dprintf_ack "Ack for dprintf request after multiplexing";
+    net t_dprintf_req_4[num_dprintf_requesters-1]   mux_dprintf_req "Dprintf request after multiplexing";
+    net t_dprintf_byte dprintf_byte;
+
+    net t_csr_request   csr_request;
+    comb t_csr_response csr_response;
+    clocked t_csr_response csr_response_r = {*=0};
+    net t_csr_response tt_debug_framebuffer_csr_response;
+    net t_csr_response tt_vga_framebuffer_csr_response;
+    net t_csr_response timeout_csr_response;
+    comb t_sram_access_req tt_display_sram_access_req;
+    net t_video_bus vga_video_bus;
+    net t_video_bus debug_video_bus;
+    comb t_video_bus selected_video_bus;
+
+    clocked t_apb_processor_request  apb_processor_request={*=0};
+    clocked bit apb_processor_completed = 0;
+    net t_apb_processor_response  apb_processor_response;
+    net t_apb_rom_request         apb_rom_request;
+    net bit[40]                   apb_rom_data;
+
+    net t_sram_access_req  fb_sram_access_req;
+    comb t_sram_access_resp fb_sram_access_resp;
+
+    clocked bit[32] divider=0;
+    clocked bit divider_reset=0;
+    clocked bit[8]  seconds=0;
+    clocked bit[16] counter=0;
+
+    default clock video_clk;
+    default reset active_low video_reset_n;
+    clocked t_adv7511 vcu108_video={*=0};
+    clocked bit[4] vga_seconds_sr = 0;
+    clocked bit[32][4] vga_counters={*=0};
+
+    /*b AXI to APB master, APB processor */
+    apb_master_instances: {
+        apb_processor_request.address <= 0;
+        apb_processor_request.valid   <= !apb_processor_completed;
+        if (apb_processor_response.acknowledge) {
+            apb_processor_request.valid   <= 0;
+            apb_processor_completed <= 1;
+        }
+
+        apb_processor apbp( clk <- clk,
+                            reset_n <= reset_n,
+
+                            apb_processor_request <= apb_processor_request,
+                            apb_processor_response => apb_processor_response,
+                            apb_request   => apb_request,
+                            apb_response  <= apb_response,
+                            rom_request   => apb_rom_request,
+                            rom_data      <= apb_rom_data );
+
+        se_sram_srw_256x40 apb_rom(sram_clock <- clk,
+                                   select <= apb_rom_request.enable,
+                                   address <= apb_rom_request.address[8;0],
+                                   read_not_write <= 1,
+                                   write_data <= 0,
+                                   data_out => apb_rom_data );
+
+    }
+
+    /*b APB master multiplexing and decode */
+    apb_multiplexing_decode: {
+        apb_request_sel = apb_request.paddr[4;16]; // 1MB of address space, top 4 bits as select
+        gpio_apb_request       = apb_request;
+        dprintf_apb_request    = apb_request;
+        csr_apb_request        = apb_request;
+        fb_sram_apb_request    = apb_request;
+
+        gpio_apb_request.paddr       = apb_request.paddr >> 2;
+        dprintf_apb_request.paddr    = apb_request.paddr >> 2;
+        fb_sram_apb_request.paddr    = apb_request.paddr >> 2;
+
+        gpio_apb_request.psel        = apb_request.psel && (apb_request_sel==1);
+        dprintf_apb_request.psel     = apb_request.psel && (apb_request_sel==2);
+        csr_apb_request.psel         = apb_request.psel && (apb_request_sel==3);
+        fb_sram_apb_request.psel     = apb_request.psel && (apb_request_sel==7);
+        csr_apb_request.paddr[16;16] = bundle(12b0,apb_request.paddr[4;12]);
+        csr_apb_request.paddr[16;0]  = bundle( 6b0,apb_request.paddr[10;2]);
+
+        apb_response = gpio_apb_response; // defaulting to gpio is good - it is always ready even if not selected...
+        if (apb_request_sel==1) { apb_response = gpio_apb_response; }
+        if (apb_request_sel==2) { apb_response = dprintf_apb_response; }
+        if (apb_request_sel==3) { apb_response = csr_apb_response; }
+        if (apb_request_sel==7) { apb_response = fb_sram_apb_response; }
+    }
+
+    /*b Dprintf requesting */
+    dprintf_requesting : {
+        for (i; num_dprintf_requesters) {
+            if (dprintf_ack[i]) {
+                dprintf_req[i].valid <= 0;
+            }
+        }
+        dprintf_req[0] <= apb_dprintf_req;
+        apb_dprintf_ack = dprintf_ack[0];
+
+        if (apb_request.psel) {
+            dprintf_req[6] <= {valid=1, address=240,
+                    data_0=bundle(40h41_50_42_3a_80, 7b0,apb_request.pwrite, 16h_20_87), // APB:%x %08x %08x (pwrite paddr pwdata)
+                    data_1=bundle(apb_request.paddr, 32h20000087),
+                    data_2=bundle(apb_request.pwdata, 8hff, 24h0) };
+        }
+        if (csr_request.valid) {
+            dprintf_req[7] <= {valid=1, address=280,
+                    data_0=bundle(40h43_53_52_3a_80, 7b0,csr_request.read_not_write, 16h_20_83), // CSR:%x %04x %04x %08x (read_not_write select address data)
+                    data_1=bundle(csr_request.select,  48h200000000083),
+                    data_2=bundle(csr_request.address, 48h200000000087),
+                    data_3=bundle(csr_request.data,    8hff, 24h0) };
+        }
+        if (divider_reset) {
+            dprintf_req[11] <= {valid=1, address=440,
+                    data_0=bundle(32h56_47_41_3a, 32h_00_00_00_87), // VGA:%08x %08x %08x (cnts0/1/2)
+                    data_1=bundle(vga_counters[0], 32h20000087),
+                    data_2=bundle(vga_counters[1], 32h20000087),
+                    data_3=bundle(vga_counters[2], 8hff, 24h0) };
+        }
+    }
+
+    /*b Dprintf multiplexing */
+    dprintf_multiplexing """
+    mux[n-2] = req[n-2] * req[n-1]
+    mux[n-3] = req[n-2] * mux[n-2]
+    mux[2]   = req[2] * mux[3]
+    mux[1]   = req[1] * mux[2]
+    mux[0]   = req[0] * mux[1]
+    """: {
+        dprintf_4_mux tdm_n( clk <- clk,
+                             reset_n <= reset_n,
+                             req_a <= dprintf_req[num_dprintf_requesters-2],
+                             ack_a => dprintf_ack[num_dprintf_requesters-2],
+                             req_b <= dprintf_req[num_dprintf_requesters-1],
+                             ack_b => dprintf_ack[num_dprintf_requesters-1],
+                             req => mux_dprintf_req[num_dprintf_requesters-2],
+                             ack <= mux_dprintf_ack[num_dprintf_requesters-2] );
+
+        for (i; num_dprintf_requesters-2) {
+            dprintf_4_mux tdm[i]( clk <- clk, reset_n <= reset_n,
+                                  req_a <= dprintf_req[i],
+                                  ack_a => dprintf_ack[i],
+                                  req_b <= mux_dprintf_req[i+1],
+                                  ack_b => mux_dprintf_ack[i+1],
+                                  req => mux_dprintf_req[i],
+                                  ack <= mux_dprintf_ack[i] );
+        }
+
+    }
+
+    /*b APB targets */
+    apb_target_instances: {
+        apb_target_sram_interface fb_sram_if( clk <- clk,
+                                           reset_n <= reset_n,
+                                           apb_request  <= fb_sram_apb_request,
+                                           apb_response => fb_sram_apb_response,
+                                           sram_ctrl    => fb_sram_ctrl,
+                                           sram_access_req => fb_sram_access_req,
+                                           sram_access_resp <= fb_sram_access_resp );
+
+        apb_target_dprintf apb_dprintf( clk <- clk,
+                                    reset_n <= reset_n,
+                                    apb_request  <= dprintf_apb_request,
+                                    apb_response => dprintf_apb_response,
+                                    dprintf_req => apb_dprintf_req,
+                                    dprintf_ack <= apb_dprintf_ack );
+
+        apb_target_gpio gpio( clk <- clk,
+                              reset_n <= reset_n,
+                              apb_request  <= gpio_apb_request,
+                              apb_response => gpio_apb_response,
+                              gpio_input <= gpio_input,
+                              gpio_output => gpio_output,
+                              gpio_output_enable => gpio_output_enable,
+                              gpio_input_event => gpio_input_event
+            );
+
+        csr_master_apb master( clk <- clk,
+                               reset_n <= reset_n,
+                               apb_request <= csr_apb_request,
+                               apb_response => csr_apb_response,
+                               csr_request => csr_request,
+                               csr_response <= csr_response_r );
+
+    }
+
+    /*b Dprintf/framebuffer */
+    dprintf_framebuffer_instances: {
+        dprintf dprintf( clk <- clk,
+                         reset_n <= reset_n,
+                         dprintf_req <= mux_dprintf_req[0],
+                         dprintf_ack => mux_dprintf_ack[0],
+                         dprintf_byte => dprintf_byte
+            );
+
+        tt_display_sram_access_req = {*=0,
+                                      valid = dprintf_byte.valid,
+                                      address = bundle(16b0, dprintf_byte.address),
+                                      write_data = bundle(56b0, dprintf_byte.data) };
+
+        fb_sram_access_resp = {*=0};
+        fb_sram_access_resp.ack   = fb_sram_access_req.valid;
+        fb_sram_access_resp.valid = fb_sram_access_req.valid;
+        fb_sram_access_resp.id    = fb_sram_access_req.id;
+
+        framebuffer_teletext ftb_debug( csr_clk <- clk,
+                                        sram_clk <- clk,
+                                        video_clk <- video_clk,
+                                        reset_n <= reset_n,
+                                        video_bus => debug_video_bus,
+                                        display_sram_write <= tt_display_sram_access_req,
+                                        csr_select_in <= 16h2, // uses 2 selects
+                                        csr_request <= csr_request,
+                                        csr_response => tt_debug_framebuffer_csr_response
+            );
+
+        framebuffer_teletext ftb_vga( csr_clk <- clk,
+                                      sram_clk <- clk,
+                                      video_clk <- video_clk,
+                                      reset_n <= reset_n,
+                                      video_bus => vga_video_bus,
+                                      display_sram_write <= fb_sram_access_req,
+                                      csr_select_in <= 16h4, // uses 2 selects
+                                      csr_request <= csr_request,
+                                      csr_response => tt_vga_framebuffer_csr_response
+            );
+
+        csr_target_timeout csr_timeout(clk <- clk,
+                                       reset_n <= reset_n,
+                                       csr_request <= csr_request,
+                                       csr_response => timeout_csr_response,
+                                       csr_timeout <= 16h100 );
+
+        csr_response  = tt_vga_framebuffer_csr_response;
+        csr_response |= tt_debug_framebuffer_csr_response;
+        csr_response |= timeout_csr_response;
+        csr_response_r <= csr_response;
+
+        selected_video_bus = vga_video_bus;
+        if (vcu108_inputs.switches[3]) {
+            selected_video_bus = debug_video_bus;
+        }
+        vcu108_video.hsync    <= selected_video_bus.hs;
+        vcu108_video.vsync    <= selected_video_bus.vs;
+        vcu108_video.de       <= selected_video_bus.display_enable;
+        vcu108_video.data[8;0]   <= selected_video_bus.red  [8;0];
+        vcu108_video.data[8;8]   <= selected_video_bus.green[8;0];
+        vcu108_video.spdif <= 0;
+        //  hdmi.blue    <= bundle(selected_video_bus.blue [8;0],2b0);
+
+        if (selected_video_bus.vsync) {
+            vga_counters[0] <= vga_counters[0]+1;
+        }
+        if (selected_video_bus.hsync) {
+            vga_counters[1] <= vga_counters[1]+1;
+        }
+        if (selected_video_bus.display_enable) {
+            vga_counters[2] <= vga_counters[2]+1;
+        }
+        vga_seconds_sr <= bundle(seconds[0], vga_seconds_sr[3;1]);
+        if (vga_seconds_sr[0]!=vga_seconds_sr[1]) {
+            vga_counters[0] <= 0;
+            vga_counters[1] <= 0;
+            vga_counters[2] <= 0;
+            vga_counters[3] <= 0;
+        }
+
+    }
+
+    /*b Stub out unused outputs and all done */
+    stubs : {
+        divider <= divider+1;
+        divider_reset <= 0;
+        if (divider==50*1000*1000) {
+            divider <= 0;
+            divider_reset <= 1;
+            seconds <= seconds + 1;
+        }
+        full_switch (vcu108_inputs.switches[2;1]) {
+        case 0: { if (mux_dprintf_req[0].valid)         { counter <= counter + 1; } }
+        case 1: { if (apb_request.psel)                 { counter <= counter + 1; } }
+        case 2: { if (apb_processor_request.valid)      { counter <= counter + 1; } }
+        case 3: { if (tt_display_sram_access_req.valid) { counter <= counter + 1; } }
+        }
+
+        gpio_input <= {*=0};
+        gpio_input[4;0] <= vcu108_inputs.switches;
+        gpio_input[5;4] <= vcu108_inputs.buttons;
+
+        vcu108_leds.leds = counter[8;0];
+        uart_txd = 0;
+    }
+}
