@@ -22,6 +22,7 @@
 /*a Includes */
 include "types/apb.h"
 include "types/timer.h"
+include "types/uart.h"
 include "types/axi.h"
 include "types/dprintf.h"
 include "types/sram.h"
