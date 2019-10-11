@@ -400,5 +400,6 @@ module vcu108_debug( clock clk,
         gpio_input[5;4] <= vcu108_inputs.buttons;
 
         vcu108_leds.leds = counter[8;0];
+        vcu108_leds.leds[7] = uart_tx.txd;
     }
 }
