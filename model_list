@@ -46,6 +46,7 @@ cdl cdl/axi/tb_src tb_axi inc:cdl/inc
 c_model cmodel/src   chk_riscv_ifetch  inc:cmodel/inc
 c_model cmodel/src   chk_riscv_trace  inc:cmodel/inc
 
+cdl cdl/utils/src    clock_divider    inc:cdl/inc
 cdl cdl/utils/src    hysteresis_switch    inc:cdl/inc
 cdl cdl/utils/src    dprintf              inc:cdl/inc
 cdl cdl/utils/tb_src tb_hysteresis_switch inc:cdl/inc
@@ -158,6 +159,7 @@ cdl cdl/input_devices/tb_src     tb_input_devices  inc:cdl/inc
 cdl cdl/apb/src  apb_master_mux   inc:cdl/inc
 cdl cdl/apb/src  apb_master_axi   inc:cdl/inc
 cdl cdl/apb/src  apb_target_gpio   inc:cdl/inc
+cdl cdl/apb/src  apb_target_uart_minimal   inc:cdl/inc
 cdl cdl/apb/src  apb_target_jtag   inc:cdl/inc
 cdl cdl/apb/src  apb_target_timer  inc:cdl/inc
 cdl cdl/apb/src  apb_target_rv_timer  inc:cdl/inc

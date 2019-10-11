@@ -1,0 +1,243 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_target_uart_minimal.cdl
+ * @brief  A minimal UART with single tx/rx holding bytes
+ *
+ * CDL implementation of a very simple APB UART
+ */
+/*a Includes */
+include "types/apb.h"
+include "types/uart.h"
+include "types/clock_divider.h"
+include "utils/clock_divider_modules.h"
+
+/*a Constants
+*/
+
+/*a Types
+*/
+/*t t_data_byte */
+typedef struct {
+    bit    valid;
+    bit[8] data;
+} t_data_byte;
+
+/*t t_transmit_combs - combinatorial decode of transmit state */
+typedef struct {
+    bit consume_holding_register;
+    bit brg_enable;
+    bit finish_byte;
+} t_transmit_combs;
+
+/*t t_transmit_state - clocked state belonging to transmitter */
+typedef struct {
+    bit[4]    divider         "Divider for one-every-16";
+    bit[10]   shift_register  "Transmit data shift register, bottom bit is output on txd";
+    bit[4]    bits_remaining  "Number of bits remaining to be shifted out";
+    bit       active;
+} t_transmit_state;
+
+/*t t_apb_access - Read or write action due to APB request */
+typedef enum[3] {
+    apb_access_none,
+    apb_access_write_brg,
+    apb_access_read_brg,
+    apb_access_write_holding,
+    apb_access_read_holding,
+    apb_access_read_status
+} t_apb_access;
+
+/*t t_apb_state - clocked state for APB side */
+typedef struct {
+    t_apb_access access;
+    t_data_byte  holding_register;
+} t_apb_state;
+
+/*t t_apb_address */
+typedef enum[3] {
+    apb_address_status  = 0,
+    apb_address_brg     = 1,
+    apb_address_holding = 2
+} t_apb_address;
+
+/*a Module
+*/
+/*m apb_target_uart_minimal */
+module apb_target_uart_minimal( clock clk,
+                                input bit reset_n,
+
+                                input  t_apb_request  apb_request  "APB request",
+                                output t_apb_response apb_response "APB response",
+
+                                input    t_uart_rx_data uart_rx,
+                                output   t_uart_tx_data uart_tx,
+                                output   t_uart_status  status
+    )
+"""
+This is a bare-minimum UART for one start bit, 8 data bits, one stop bit.
+
+It has a single byte of holding register in each direction.
+
+Currently it just does tx
+"""
+{
+    /*b Default clock/reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b APB interface state  */
+    clocked t_apb_state    apb_state   = {*=0}  "Decode of APB";
+
+    /*b Signals for baud rate generator */
+    comb t_clock_divider_control brg_control;
+    net  t_clock_divider_output  brg_output;
+
+    /*b Signals for transmit */
+    comb    t_transmit_combs transmit_combs         "Combinatorial decode of transmit state";
+    clocked t_transmit_state transmit_state = {*=0} "Transmit state";
+
+    /*b Outputs */
+    drive_outputs : {
+        status = {*=0};
+        status.tx_empty = !apb_state.holding_register.valid;
+        uart_tx = {*=0};
+        uart_tx.txd = 1;
+        if (transmit_state.active) {
+            uart_tx.txd = transmit_state.shift_register[0];
+        }
+    }
+
+    /*b APB interface */
+    apb_interface : {
+
+        /*b APB interface decode */
+        part_switch (apb_request.paddr[3;2]) {
+        case apb_address_status: {
+            apb_state.access  <= apb_request.pwrite ? apb_access_none : apb_access_read_status;
+        }
+        case apb_address_brg: {
+            apb_state.access  <= apb_request.pwrite ? apb_access_write_brg : apb_access_read_brg;
+        }
+        case apb_address_holding: {
+            apb_state.access  <= apb_request.pwrite ? apb_access_write_holding : apb_access_none;
+        }
+        }
+        if (!apb_request.psel || apb_request.penable) {
+            apb_state.access <= apb_access_none;
+        }
+
+        /*b APB interface response - use apb_state.access */
+        apb_response = {*=0, pready=1};
+        part_switch (apb_state.access) {
+        case apb_access_read_status: {
+            apb_response.prdata[8] = apb_state.holding_register.valid;
+        }
+        case apb_access_read_brg: {
+            apb_response.prdata = brg_output.config_data;
+        }
+        }
+        
+        /*b Writing - use apb_state.access */
+        if (transmit_combs.consume_holding_register) {
+            apb_state.holding_register.valid <= 0;
+        }
+        part_switch (apb_state.access) {
+        // case apb_access_write_brg handled in BRG
+        case apb_access_write_holding: {
+            apb_state.holding_register.valid <= 1;
+            apb_state.holding_register.data <= apb_request.pwdata[8;0];
+        }
+        }
+
+        /*b All done */
+    }
+        
+    /*b Baud rate generator */
+    baud_rate """
+    Use a standard clock divider for the baud rate generator
+    This can be fractional or integer
+    For 115200 baud the clock enable should be every 542.5ns (1.8432MHz)
+    For a 50MHz base clock this is divide by 27.13
+    For a 300MHz base clock this is divide by 162.75
+    These can be achieved to 1% accuracy with an integer divide, but fractional
+    should be supported for higher accuracy (or lower clock speed)
+    """ : {
+        brg_control.disable_fractional = 0;
+        brg_control.start = 0;
+        brg_control.stop = 0;
+        if (transmit_combs.brg_enable) {
+            brg_control.start = !brg_output.running;
+        } else {
+            if (brg_output.running) {
+                brg_control.stop = 1;
+            }
+        }
+        brg_control.write_config = (apb_state.access==apb_access_write_brg);
+        brg_control.write_data   = apb_request.pwdata;
+
+        clock_divider brg(clk <- clk,
+                           reset_n <= reset_n,
+                           divider_control <= brg_control,
+                           divider_output  => brg_output );
+
+        /*b All done */
+    }
+        
+    /*b Transmitter */
+    transmitter """
+    The transmitter has a 10-bit shift register initialized with
+    STOP, DATA[8;0], START
+    i.e. 1b1, data[8;0], 1b0
+    and this is shifted out at the BRG clock enable rate divided by 16
+
+    The transmitter is activated on a BRG tick when the holding register is valid;
+    this pops the holding register.
+    """ : {
+        /*b Shift register out */
+        transmit_combs.finish_byte = 0;
+        if (transmit_state.active && brg_output.clock_enable) {
+            if (transmit_state.divider==0) {
+                transmit_state.divider          <= -1;
+                transmit_state.shift_register   <= bundle(1b1, transmit_state.shift_register[9;1]);
+                transmit_state.bits_remaining   <= transmit_state.bits_remaining - 1;
+                transmit_combs.finish_byte  = (transmit_state.bits_remaining==0);
+            } else {
+                transmit_state.divider <= transmit_state.divider - 1;
+            }
+        }
+
+        /*b Deactivate framing, and reactivate with new data if starting afresh */
+        transmit_combs.consume_holding_register = 0;
+        if (brg_output.clock_enable) {
+            if (transmit_combs.finish_byte) { // requires BRG clock enable and active
+                transmit_state.active <= 0;
+            }
+            if (apb_state.holding_register.valid &&
+                (transmit_combs.finish_byte || !transmit_state.active) ) {
+                transmit_state.shift_register <= bundle(1b1, apb_state.holding_register.data, 1b0);
+                transmit_state.bits_remaining <= 9;
+                transmit_state.active         <= 1;
+                transmit_state.divider        <= -1;
+                transmit_combs.consume_holding_register = 1;
+            }
+        }
+
+        /*b Enable BRG if data is ready to go - nothing gets clocked here unless the BRG is going */
+        transmit_combs.brg_enable = transmit_state.active || apb_state.holding_register.valid;
+            
+        /*b All done */
+    }
+
+    /*b All done */
+}

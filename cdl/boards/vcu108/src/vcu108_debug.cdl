@@ -24,6 +24,7 @@ include "types/apb.h"
 include "types/csr.h"
 include "types/dprintf.h"
 include "types/sram.h"
+include "types/uart.h"
 include "srams.h"
 include "apb/apb_targets.h"
 include "apb/apb_masters.h"
@@ -67,11 +68,13 @@ module vcu108_debug( clock clk,
 
     comb bit[4]        apb_request_sel;
     comb t_apb_request gpio_apb_request;
+    comb t_apb_request uart_apb_request;
     comb t_apb_request dprintf_apb_request;
     comb t_apb_request csr_apb_request;
     comb t_apb_request fb_sram_apb_request;
 
     net t_apb_response  gpio_apb_response;
+    net t_apb_response  uart_apb_response;
     net t_apb_response  dprintf_apb_response;
     net t_apb_response  csr_apb_response;
     net t_apb_response  fb_sram_apb_response;
@@ -111,6 +114,10 @@ module vcu108_debug( clock clk,
 
     net t_sram_access_req  fb_sram_access_req;
     comb t_sram_access_resp fb_sram_access_resp;
+
+    comb t_uart_rx_data  uart_rx;
+    net   t_uart_tx_data uart_tx;
+    net   t_uart_status  uart_status;
 
     clocked bit[32] divider=0;
     clocked bit divider_reset=0;
@@ -157,15 +164,18 @@ module vcu108_debug( clock clk,
         gpio_apb_request       = apb_request;
         dprintf_apb_request    = apb_request;
         csr_apb_request        = apb_request;
+        uart_apb_request       = apb_request;
         fb_sram_apb_request    = apb_request;
 
         gpio_apb_request.paddr       = apb_request.paddr >> 2;
         dprintf_apb_request.paddr    = apb_request.paddr >> 2;
+        uart_apb_request.paddr       = apb_request.paddr >> 2;
         fb_sram_apb_request.paddr    = apb_request.paddr >> 2;
 
         gpio_apb_request.psel        = apb_request.psel && (apb_request_sel==1);
         dprintf_apb_request.psel     = apb_request.psel && (apb_request_sel==2);
         csr_apb_request.psel         = apb_request.psel && (apb_request_sel==3);
+        uart_apb_request.psel        = apb_request.psel && (apb_request_sel==4);
         fb_sram_apb_request.psel     = apb_request.psel && (apb_request_sel==7);
         csr_apb_request.paddr[16;16] = bundle(12b0,apb_request.paddr[4;12]);
         csr_apb_request.paddr[16;0]  = bundle( 6b0,apb_request.paddr[10;2]);
@@ -174,6 +184,7 @@ module vcu108_debug( clock clk,
         if (apb_request_sel==1) { apb_response = gpio_apb_response; }
         if (apb_request_sel==2) { apb_response = dprintf_apb_response; }
         if (apb_request_sel==3) { apb_response = csr_apb_response; }
+        if (apb_request_sel==4) { apb_response = uart_apb_response; }
         if (apb_request_sel==7) { apb_response = fb_sram_apb_response; }
     }
 
@@ -263,6 +274,17 @@ module vcu108_debug( clock clk,
                               gpio_output => gpio_output,
                               gpio_output_enable => gpio_output_enable,
                               gpio_input_event => gpio_input_event
+            );
+        uart_rx = {*=0};
+        uart_rx.rxd = uart_rxd;
+        uart_txd = uart_tx.txd;
+        apb_target_uart_minimal uart( clk <- clk,
+                                      reset_n <= reset_n,
+                                      apb_request  <= uart_apb_request,
+                                      apb_response => uart_apb_response,
+                                      uart_rx <= uart_rx,
+                                      uart_tx => uart_tx,
+                                      status => uart_status
             );
 
         csr_master_apb master( clk <- clk,
@@ -378,6 +400,5 @@ module vcu108_debug( clock clk,
         gpio_input[5;4] <= vcu108_inputs.buttons;
 
         vcu108_leds.leds = counter[8;0];
-        uart_txd = 0;
     }
 }

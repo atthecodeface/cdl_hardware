@@ -1,0 +1,121 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   clock_divider.cdl
+ * @brief  A fractional or integer clock divider
+ *
+ * CDL implementation of a module that generates a clock enable signal
+ * that is configured by divider registers
+ */
+/*a Includes */
+include "types/clock_divider.h"
+
+/*a Constants */
+
+/*a Types */
+/*t t_divider_state
+ *
+ * State of the divider
+ */
+typedef struct {
+    bit[16] adder       "Configured amount to add to accumulator if it is negative (and clock_enable will be asserted)";
+    bit[15] subtractor  "Configured amount to subtract from accumulator if it is positive (and clock_enable will be deasserted)";
+    bit[31] accumulator "Accumulated error for digital differential generation, or just a down-counter if not in accumulate mode";
+    bit fractional_mode "Asserted if in fractional mode";
+    bit running         "Asserted if the divider is running";
+    bit clock_enable    "Output of the fractional divider";
+} t_divider_state;
+
+/*a Module
+ */
+module clock_divider( clock clk                    "Clock for the module",
+                      input bit reset_n            "Active low reset",
+                      input t_clock_divider_control divider_control "Controls for any clock divider",
+                      output t_clock_divider_output divider_output  "Clock divider output state, all clocked"
+    )
+"""
+ * CDL implementation of a module that generates a fractional clock divider
+ * 
+ * It uses a simple accumulator with add/subtract values, or just a down counter if not in fractional mode
+"""
+{
+    /*b Default clock/reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Signals for divider state */
+    clocked t_divider_state  divider_state = {*=0};
+
+    /*b Outputs */
+    drive_outputs """ 
+    """ : {
+        divider_output.config_data = 0;
+        divider_output.config_data[16; 0] = divider_state.adder;
+        divider_output.config_data[15;16] = divider_state.subtractor;
+        divider_output.config_data[31]    = divider_state.fractional_mode;
+        divider_output.running      = divider_state.running;
+        divider_output.clock_enable = divider_state.clock_enable;
+    }
+    
+    /*b Configure */
+    configure """ 
+    """ : {
+        if (divider_control.write_config) {
+            divider_state.adder           <= divider_control.write_data[16; 0];
+            divider_state.subtractor      <= divider_control.write_data[15;16];
+            divider_state.fractional_mode <= divider_control.write_data[31];
+        }
+        if (divider_control.disable_fractional) {
+            divider_state.fractional_mode <= 0;
+        }
+    }
+    
+    /*b Fractional divider */
+    fractional_divider """
+    """ : {
+        if (divider_state.running) {
+            divider_state.clock_enable <= 0;
+            if (divider_control.stop) {
+                divider_state.running <= 0;
+            } else {
+                if (divider_state.fractional_mode) {
+                    if (divider_state.accumulator[15]) {
+                        divider_state.accumulator[16;0] <= divider_state.accumulator[16;0] + divider_state.adder;
+                        divider_state.clock_enable <= 1;
+                    } else {
+                        divider_state.accumulator[16;0] <= divider_state.accumulator[16;0] - bundle(1b0,divider_state.subtractor);
+                    }
+                } else {
+                    if (divider_state.accumulator==0) {
+                        divider_state.accumulator <= bundle(divider_state.subtractor, divider_state.adder);
+                        divider_state.clock_enable <= 1;
+                    } else {
+                        divider_state.accumulator <= divider_state.accumulator - 1;
+                    }
+                }
+            }
+        }
+        if (divider_control.start) {
+            divider_state.running <= 1;
+            if (divider_state.fractional_mode) {
+                divider_state.accumulator[16;0] <= divider_state.adder >> 1;
+            } else {
+                divider_state.accumulator <= bundle(divider_state.subtractor, divider_state.adder);
+            }
+        }
+
+        /*b All done */
+    }
+        
+    /*b All done */
+}

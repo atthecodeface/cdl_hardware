@@ -179,6 +179,24 @@ extern module apb_target_jtag( clock clk         "System clock",
     timing to   rising clock clk jtag_tdo;
 }
 
+/*m apb_target_jtag */
+extern module apb_target_uart_minimal( clock clk,
+                                input bit reset_n,
+
+                                input  t_apb_request  apb_request  "APB request",
+                                output t_apb_response apb_response "APB response",
+
+                                input    t_uart_rx_data uart_rx,
+                                output   t_uart_tx_data uart_tx,
+                                output   t_uart_status  status
+    )
+{
+    timing to   rising clock clk apb_request;
+    timing from rising clock clk apb_response;
+    timing from rising clock clk uart_tx, status;
+    timing to   rising clock clk uart_rx;
+}
+
 /*a Editor preferences and notes
 mode: c ***
 c-basic-offset: 4 ***
