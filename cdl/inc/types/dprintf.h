@@ -49,6 +49,7 @@ typedef struct {
  */
 typedef struct {
     bit valid;
+    bit last;
     bit[8]  data;
     bit[16] address;
 } t_dprintf_byte;

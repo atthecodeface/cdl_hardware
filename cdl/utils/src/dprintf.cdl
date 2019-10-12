@@ -88,7 +88,8 @@ typedef enum[4] {
 /*t t_write_buffer_op */
 typedef enum[2] {
     op_idle,
-    op_write_next_data,
+    op_write_next_data,  // Write next data byte of a string
+    op_last_data,        // Last byte of a string has gone (already)
 } t_write_buffer_op;
 
 /*t t_format_combs */
@@ -127,6 +128,7 @@ module dprintf( clock clk "Clock for data in and display SRAM write out",
                 input bit reset_n,
                 input t_dprintf_req_4   dprintf_req  "Debug printf request",
                 output bit            dprintf_ack  "Debug printf acknowledge",
+                input  bit            byte_blocked "If asserted, do not drive any output",
                 output t_dprintf_byte dprintf_byte "Byte to output"
     )
 """
@@ -323,6 +325,9 @@ A code of 255 terminates the string.
             }
         }
         }
+        if (byte_blocked) {
+            format_combs.action = action_none;
+        }
         
         /*b Handle the determined action */
         format_combs.write_buffer_op = op_idle;
@@ -437,6 +442,7 @@ A code of 255 terminates the string.
         }
             /*b action_complete_string */
         case action_complete_string: {
+            format_combs.write_buffer_op = op_last_data;
             format_combs.completed_string = 1;
             format_state.fsm_state <= state_idle;
         }
@@ -456,11 +462,18 @@ A code of 255 terminates the string.
         case op_write_next_data: {
             dprintf_byte <= {address=data_buffer_state.address,
                     valid=1,
-                    data=format_combs.write_data};
+                    data=format_combs.write_data,
+                    last=0};
+        }
+        case op_last_data: {
+            dprintf_byte.last <= 1;
         }
         default: {
             dprintf_byte <= dprintf_byte;
-            dprintf_byte.valid <= 0;
+            if (!byte_blocked) {
+                dprintf_byte.last  <= 0;
+                dprintf_byte.valid <= 0;
+            }
         }
         }
 

@@ -27,6 +27,7 @@ include "types/teletext.h"
 include "types/dprintf.h"
 include "types/apb.h"
 include "utils/dprintf_modules.h"
+include "input/ps2_modules.h"
 include "boards/de1.h"
 include "boards/de1_cl/de1_cl_types.h"
 include "apb/apb_targets.h"
@@ -351,6 +352,7 @@ module bbc_micro_de1_cl_io( clock clk          "50MHz clock from DE1 clock gener
                          reset_n <= reset_n,
                          dprintf_req <= dprintf_mux_req[num_dprintf_requesters-2],
                          dprintf_ack => dprintf_mux_ack[num_dprintf_requesters-2],
+                         byte_blocked <= 0,
                          dprintf_byte => dprintf_byte
             );
 

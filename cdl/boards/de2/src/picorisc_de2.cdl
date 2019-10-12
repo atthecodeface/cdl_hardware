@@ -411,6 +411,7 @@ module picorisc_de2( clock clk,
                          reset_n <= reset_n,
                          dprintf_req <= mux_dprintf_req[0],
                          dprintf_ack => mux_dprintf_ack[0],
+                         byte_blocked <= 0,
                          dprintf_byte => dprintf_byte
             );
 

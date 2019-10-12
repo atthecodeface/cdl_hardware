@@ -29,6 +29,7 @@ module dprintf( clock clk "Clock for data in and display SRAM write out",
                 input bit reset_n,
                 input t_dprintf_req_4   dprintf_req  "Debug printf request",
                 output bit              dprintf_ack  "Debug printf acknowledge",
+                input bit               byte_blocked "If asserted, byte to output will not change",
                 output t_dprintf_byte   dprintf_byte "Byte to output"
     )
 {
