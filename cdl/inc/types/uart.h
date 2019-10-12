@@ -42,3 +42,23 @@ typedef struct {
     bit rx_overflow;
 } t_uart_status;
 
+/*t t_uart_control */
+typedef struct {
+    bit clear_errors "Asserted if overflow, framing error, parity error, etc are to be cleared";
+    bit rx_ack       "Asserted if any valid rx data is being taken";
+    bit tx_valid     "Asserted if the tx data is valid";
+    bit[8] tx_data   "Data to transmit if tx_valid is asserted";
+    bit write_config "Assert to write configuration of UART (framing etc)";
+    bit write_brg    "Assert to write configuration of UART brg";
+    bit[32] write_data "Data to use if write_config or write_brg is asserted";
+} t_uart_control;
+
+/*t t_uart_output */
+typedef struct {
+    bit[32] config_data     "Current configuration, as last written (defaults to 0)";
+    bit[32] brg_config_data "Current configuration of brg, as last written (defaults to 0)";
+    t_uart_status status "Status for, e.g. interrupts";
+    bit tx_ack       "If asserted, a tx_valid byte will be taken";
+    bit rx_valid     "Asserted if rx_data is valid";
+    bit[8] rx_data   "Data received if rx_valid is asserted";
+} t_uart_output;

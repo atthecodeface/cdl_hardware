@@ -152,6 +152,7 @@ cdl cdl/led/src        led_seven_segment   inc:cdl/inc
 cdl cdl/led/src        led_ws2812_chain    inc:cdl/inc
 cdl cdl/led/tb_src     tb_led_ws2812_chain inc:cdl/inc
 
+cdl cdl/input_devices/src        uart_minimal      inc:cdl/inc
 cdl cdl/input_devices/src        ps2_host          inc:cdl/inc
 cdl cdl/input_devices/src        ps2_host_keyboard inc:cdl/inc
 cdl cdl/input_devices/tb_src     tb_input_devices  inc:cdl/inc

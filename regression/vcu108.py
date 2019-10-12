@@ -79,7 +79,7 @@ class c_test_one(axi.c_axi_test_base):
     def run(self):
         self.bfm_wait(1)
         self.uart_rxd.drive(1)
-        self.bfm_wait(100)
+        self.bfm_wait(10)
         for i in range(10000):
             self.bfm_wait(1)
             self.uart_rxd.drive(self.uart_txd.value())

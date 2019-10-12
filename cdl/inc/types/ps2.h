@@ -156,29 +156,3 @@ typedef struct {
     bit[8] key_number;
 } t_ps2_key_state;
 
-/*a Modules */
-/*m ps2_host */
-extern module ps2_host( clock        clk     "Clock",
-                        input bit    reset_n,
-                        input t_ps2_pins ps2_in   "Pin values from the outside",
-                        output t_ps2_pins ps2_out "Pin values to drive - 1 means float high, 0 means pull low",
-
-                        output t_ps2_rx_data ps2_rx_data,
-                        input bit[16] divider
-    )
-{
-    timing to    rising clock clk ps2_in, divider;
-    timing from  rising clock clk ps2_out, ps2_rx_data;
-}
-
-/*m ps2_host_keyboard */
-extern module ps2_host_keyboard( clock                   clk     "Clock",
-                          input bit               reset_n,
-                          input t_ps2_rx_data     ps2_rx_data,
-                          output t_ps2_key_state  ps2_key
-    )
-{
-    timing to    rising clock clk ps2_rx_data;
-    timing from  rising clock clk ps2_key;
-}
-

@@ -2,8 +2,9 @@
 import apb_rom
 
 apb_uart = 0x00040000
-apb_uart_brg = apb_uart | 4
-apb_uart_hr  = apb_uart | 8
+apb_uart_config = apb_uart | 4
+apb_uart_brg    = apb_uart | 8
+apb_uart_hr     = apb_uart | 12
 
 brg_config = 162
 delay      = 1<<24

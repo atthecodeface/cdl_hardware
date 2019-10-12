@@ -20,6 +20,7 @@
 include "types/apb.h"
 include "types/uart.h"
 include "types/clock_divider.h"
+include "input/uart_modules.h"
 include "utils/clock_divider_modules.h"
 
 /*a Constants
@@ -27,69 +28,11 @@ include "utils/clock_divider_modules.h"
 
 /*a Types
 */
-/*t t_data_byte */
-typedef struct {
-    bit    valid;
-    bit[8] data;
-} t_data_byte;
-
-/*t t_receive_action  - receive actions */
-typedef enum[3] {
-    rx_action_none,
-    rx_action_start,
-    rx_action_capture_bit,
-    rx_action_framing_error,
-    rx_action_stop_bit,
-    rx_action_complete,
-    rx_action_restart
-} t_receive_action;
-
-/*t t_receive_fsm_state  - receive state machine */
-typedef fsm {
-    rx_fsm_idle;
-    rx_fsm_start_begin;
-    rx_fsm_capture_bit;
-    rx_fsm_stop_bit;
-    rx_fsm_error;
-} t_receive_fsm_state;
-
-/*t t_receive_combs - combinatorial decode of receive state */
-typedef struct {
-    bit brg_enable;
-    bit sync_rxd;
-    t_receive_action action;
-    bit produce_holding_register; // can overflow or parity error
-    bit framing_error;
-} t_receive_combs;
-
-/*t t_receive_state - clocked state belonging to receiver */
-typedef struct {
-    t_receive_fsm_state fsm_state;
-    bit[4]    sub_bit         "Divider for one-every-16";
-    bit[8]   shift_register  "Transmit data shift register, bottom bit is output on txd";
-    bit[4]    bit_number      "Number of bits valid in shift register";
-    bit[3]    rxd_sync_reg;
-    bit       active;
-} t_receive_state;
-
-/*t t_transmit_combs - combinatorial decode of transmit state */
-typedef struct {
-    bit consume_holding_register;
-    bit brg_enable;
-    bit finish_byte;
-} t_transmit_combs;
-
-/*t t_transmit_state - clocked state belonging to transmitter */
-typedef struct {
-    bit[4]    divider         "Divider for one-every-16";
-    bit[10]   shift_register  "Transmit data shift register, bottom bit is output on txd";
-    bit[4]    bits_remaining  "Number of bits remaining to be shifted out";
-    bit       active;
-} t_transmit_state;
-
 /*t t_apb_access - Read or write action due to APB request */
-typedef enum[3] {
+typedef enum[4] {
     apb_access_none,
+    apb_access_write_config,
+    apb_access_read_config,
     apb_access_write_brg,
     apb_access_read_brg,
     apb_access_write_holding,
@@ -100,17 +43,14 @@ typedef enum[3] {
 /*t t_apb_state - clocked state for APB side */
 typedef struct {
     t_apb_access access;
-    t_data_byte  tx_holding_register;
-    t_data_byte  rx_holding_register;
-    bit rx_overflow;
-    bit rx_framing_error;
 } t_apb_state;
 
 /*t t_apb_address */
 typedef enum[3] {
     apb_address_status  = 0,
     apb_address_brg     = 1,
-    apb_address_holding = 2
+    apb_address_config  = 2,
+    apb_address_holding = 3
 } t_apb_address;
 
 /*a Module
@@ -127,11 +67,7 @@ module apb_target_uart_minimal( clock clk,
                                 output   t_uart_status  status
     )
 """
-This is a bare-minimum UART for one start bit, 8 data bits, one stop bit.
-
-It has a single byte of holding register in each direction.
-
-Currently it just does tx
+This is an APB target that uses a minimal UART
 """
 {
     /*b Default clock/reset */
@@ -141,30 +77,14 @@ Currently it just does tx
     /*b APB interface state  */
     clocked t_apb_state    apb_state   = {*=0}  "Decode of APB";
 
-    /*b Signals for baud rate generator */
-    comb t_clock_divider_control brg_control;
-    net  t_clock_divider_output  brg_output;
-
-    /*b Signals for transmit */
-    comb    t_transmit_combs transmit_combs         "Combinatorial decode of transmit state";
-    clocked t_transmit_state transmit_state = {*=0} "Transmit state";
-
-    /*b Signals for receive */
-    comb    t_receive_combs receive_combs         "Combinatorial decode of receive state";
-    clocked t_receive_state receive_state = {*=0, rxd_sync_reg=-1} "Receive state";
-
+    /*b UART signals */
+    comb t_uart_control uart_control;
+    net t_uart_output   uart_output;
+    net t_uart_tx_data  uart_tx;
+    
     /*b Outputs */
     drive_outputs : {
-        status = {*=0};
-        status.tx_empty         = !apb_state.tx_holding_register.valid;
-        status.rx_not_empty     = apb_state.rx_holding_register.valid;
-        status.rx_framing_error = apb_state.rx_framing_error;
-        status.rx_overflow      = apb_state.rx_overflow;
-        uart_tx = {*=0};
-        uart_tx.txd = 1;
-        if (transmit_state.active) {
-            uart_tx.txd = transmit_state.shift_register[0];
-        }
+        status = uart_output.status;
     }
 
     /*b APB interface */
@@ -174,6 +94,9 @@ Currently it just does tx
         part_switch (apb_request.paddr[3;0]) {
         case apb_address_status: {
             apb_state.access  <= apb_request.pwrite ? apb_access_none : apb_access_read_status;
+        }
+        case apb_address_config: {
+            apb_state.access  <= apb_request.pwrite ? apb_access_write_config : apb_access_read_config;
         }
         case apb_address_brg: {
             apb_state.access  <= apb_request.pwrite ? apb_access_write_brg : apb_access_read_brg;
@@ -190,230 +113,49 @@ Currently it just does tx
         apb_response = {*=0, pready=1};
         part_switch (apb_state.access) {
         case apb_access_read_status: {
-            apb_response.prdata[8]  = apb_state.tx_holding_register.valid;
-            apb_response.prdata[16] = apb_state.rx_holding_register.valid;
-            apb_response.prdata[17] = apb_state.rx_overflow;
-            apb_response.prdata[18] = apb_state.rx_framing_error;
-            apb_state.rx_overflow <= 0;
-            apb_state.rx_framing_error <= 0;
+            apb_response.prdata[8]  = !uart_output.tx_ack;
+            apb_response.prdata[16] = uart_output.rx_valid;
+            apb_response.prdata[17] = uart_output.status.rx_half_full;
+            apb_response.prdata[18] = uart_output.status.rx_overflow;
+            apb_response.prdata[19] = uart_output.status.rx_framing_error;
+            apb_response.prdata[20] = uart_output.status.rx_parity_error;
+        }
+        case apb_access_read_config: {
+            apb_response.prdata = uart_output.config_data;
         }
         case apb_access_read_brg: {
-            apb_response.prdata = brg_output.config_data;
+            apb_response.prdata = uart_output.brg_config_data;
         }
         case apb_access_read_holding: {
-            apb_response.prdata[8;0] = apb_state.rx_holding_register.data;
-            apb_response.prdata[29]  = apb_state.rx_overflow;
-            apb_response.prdata[30]  = apb_state.rx_framing_error;
-            apb_response.prdata[31]  = !apb_state.rx_holding_register.valid;
+            apb_response.prdata[8;0] = uart_output.rx_data;
+            apb_response.prdata[28]  = uart_output.status.rx_overflow;
+            apb_response.prdata[29]  = uart_output.status.rx_framing_error;
+            apb_response.prdata[30]  = uart_output.status.rx_parity_error;
+            apb_response.prdata[31]  = !uart_output.rx_valid;
         }
-        }
-        
-        /*b Writing - use apb_state.access */
-        if (transmit_combs.consume_holding_register) {
-            apb_state.tx_holding_register.valid <= 0;
-        }
-        part_switch (apb_state.access) {
-        // case apb_access_write_brg handled in BRG
-        case apb_access_write_holding: {
-            apb_state.tx_holding_register.valid <= 1;
-            apb_state.tx_holding_register.data <= apb_request.pwdata[8;0];
-        }
-        case apb_access_read_holding: {
-            apb_state.rx_holding_register.valid <= 0;
-        }
-        }
-
-        /*b Update from receiver */
-        if (receive_combs.produce_holding_register) {
-            if (apb_state.rx_holding_register.valid) {
-                apb_state.rx_overflow <= 1;
-            }
-            apb_state.rx_holding_register.data <= receive_state.shift_register;
-            apb_state.rx_holding_register.valid <= 1;
-        }
-        if (receive_combs.framing_error) {
-            apb_state.rx_framing_error <= 1;
         }
 
         /*b All done */
     }
         
-    /*b Baud rate generator */
-    baud_rate """
-    Use a standard clock divider for the baud rate generator
-    This can be fractional or integer
-    For 115200 baud the clock enable should be every 542.5ns (1.8432MHz)
-    For a 50MHz base clock this is divide by 27.13
-    For a 300MHz base clock this is divide by 162.75
-    These can be achieved to 1% accuracy with an integer divide, but fractional
-    should be supported for higher accuracy (or lower clock speed)
+    /*b UART instance */
+    uart_instance """
     """ : {
-        brg_control.disable_fractional = 0;
-        brg_control.start = 0;
-        brg_control.stop = 0;
-        if (transmit_combs.brg_enable || receive_combs.brg_enable) {
-            brg_control.start = !brg_output.running;
-        } else {
-            if (brg_output.running) {
-                brg_control.stop = 1;
-            }
-        }
-        brg_control.write_config = (apb_state.access==apb_access_write_brg);
-        brg_control.write_data   = apb_request.pwdata;
+        uart_control.clear_errors = (apb_state.access==apb_access_read_status);
+        uart_control.rx_ack       = (apb_state.access==apb_access_read_holding);
+        uart_control.tx_valid     = (apb_state.access==apb_access_write_holding);
+        uart_control.tx_data      = apb_request.pwdata[8;0];
+        uart_control.write_config = (apb_state.access==apb_access_write_config);
+        uart_control.write_brg    = (apb_state.access==apb_access_write_brg);
+        uart_control.write_data   = apb_request.pwdata;
 
-        clock_divider brg(clk <- clk,
-                           reset_n <= reset_n,
-                           divider_control <= brg_control,
-                           divider_output  => brg_output );
+        uart_minimal uart(clk <- clk,
+                          reset_n <= reset_n,
+                          uart_control <= uart_control,
+                          uart_output  => uart_output,
+                          uart_rx <= uart_rx,
+                          uart_tx => uart_tx );
 
-        /*b All done */
-    }
-        
-    /*b Transmitter */
-    transmitter """
-    The transmitter has a 10-bit shift register initialized with
-    STOP, DATA[8;0], START
-    i.e. 1b1, data[8;0], 1b0
-    and this is shifted out at the BRG clock enable rate divided by 16
-
-    The transmitter is activated on a BRG tick when the holding register is valid;
-    this pops the holding register.
-    """ : {
-        /*b Shift register out */
-        transmit_combs.finish_byte = 0;
-        if (transmit_state.active && brg_output.clock_enable) {
-            if (transmit_state.divider==0) {
-                transmit_state.divider          <= -1;
-                transmit_state.shift_register   <= bundle(1b1, transmit_state.shift_register[9;1]);
-                transmit_state.bits_remaining   <= transmit_state.bits_remaining - 1;
-                transmit_combs.finish_byte  = (transmit_state.bits_remaining==0);
-            } else {
-                transmit_state.divider <= transmit_state.divider - 1;
-            }
-        }
-
-        /*b Deactivate framing, and reactivate with new data if starting afresh */
-        transmit_combs.consume_holding_register = 0;
-        if (brg_output.clock_enable) {
-            if (transmit_combs.finish_byte) { // requires BRG clock enable and active
-                transmit_state.active <= 0;
-            }
-            if (apb_state.tx_holding_register.valid &&
-                (transmit_combs.finish_byte || !transmit_state.active) ) {
-                transmit_state.shift_register <= bundle(1b1, apb_state.tx_holding_register.data, 1b0);
-                transmit_state.bits_remaining <= 9;
-                transmit_state.active         <= 1;
-                transmit_state.divider        <= -1;
-                transmit_combs.consume_holding_register = 1;
-            }
-        }
-
-        /*b Enable BRG if data is ready to go - nothing gets clocked here unless the BRG is going */
-        transmit_combs.brg_enable = transmit_state.active || apb_state.tx_holding_register.valid;
-            
-        /*b All done */
-    }
-
-    /*b Receiver */
-    receiver """
-    The receiver has a simple state machine:
-    Idle: waiting for start bit (low on rxd)
-    StartBegin : beginning of start bit
-    CaptureBit(n) : ideally the middle of the bit
-    StopBit : ideally the middle of the stop bit
-    Complete : Done
-    Error : 
-
-    Bits are shifted in to a shift register from the top
-
-    A framing
-    """ : {
-        receive_state.rxd_sync_reg    <= receive_state.rxd_sync_reg>>1;
-        receive_state.rxd_sync_reg[2] <= uart_rx.rxd;
-        receive_combs.sync_rxd = receive_state.rxd_sync_reg[0];
-        receive_combs.action = rx_action_none;
-        full_switch (receive_state.fsm_state) {
-        case rx_fsm_idle: {
-            if (!receive_combs.sync_rxd) {
-                receive_combs.action = rx_action_start;
-            }
-        }
-        case rx_fsm_start_begin: {
-            if (receive_state.sub_bit==0) {
-                receive_combs.action = rx_action_capture_bit;
-            }
-            if (receive_combs.sync_rxd) {
-                receive_combs.action = rx_action_framing_error;
-            }
-        }
-        case rx_fsm_capture_bit: { // capture bit - sub_bit is 0 at the capture point
-            if (receive_state.sub_bit==0) {
-                receive_combs.action = rx_action_capture_bit;
-                if (receive_state.bit_number==8) {
-                    receive_combs.action = rx_action_stop_bit;
-                }
-            }
-        }
-        case rx_fsm_stop_bit: { // capture bit - sub_bit is 0 at the capture point
-            if (receive_state.sub_bit==0) {
-                receive_combs.action = rx_action_complete;
-                if (!receive_combs.sync_rxd) {
-                    receive_combs.action = rx_action_framing_error;
-                }
-            }
-        }
-        case rx_fsm_error: {
-            if (receive_combs.sync_rxd) {
-                receive_combs.action = rx_action_restart;
-            }
-        }
-        }
-        if (!brg_output.clock_enable && receive_combs.sync_rxd) {
-            receive_combs.action = rx_action_none;
-        }
-        
-        /*b Rx actions */
-        receive_combs.produce_holding_register = 0;
-        receive_combs.framing_error = 0;
-        if (brg_output.clock_enable && receive_state.active) {
-            receive_state.sub_bit     <= receive_state.sub_bit-1;
-        }
-        part_switch (receive_combs.action) {
-        case rx_action_start: {
-            receive_state.active      <= 1;
-            receive_state.fsm_state   <= rx_fsm_start_begin;
-            receive_state.sub_bit     <= 7;
-            receive_state.bit_number  <= 0;
-        }
-        case rx_action_capture_bit: {
-            receive_state.fsm_state   <= rx_fsm_capture_bit;
-            receive_state.sub_bit     <= -1;
-            receive_state.bit_number  <= receive_state.bit_number+1;
-            receive_state.shift_register <= bundle(receive_combs.sync_rxd, receive_state.shift_register[7;1]);
-        }
-        case rx_action_stop_bit: {
-            receive_state.shift_register <= bundle(receive_combs.sync_rxd, receive_state.shift_register[7;1]);
-            receive_state.fsm_state <= rx_fsm_stop_bit;
-            receive_state.sub_bit   <= -1;
-        }
-        case rx_action_complete: {
-            receive_state.fsm_state <= rx_fsm_idle;
-            receive_combs.produce_holding_register = 1;
-            receive_state.active    <= 0;
-        }
-        case rx_action_framing_error: {
-            receive_combs.framing_error = 1;
-            receive_state.fsm_state <= rx_fsm_error;
-        }
-        case rx_action_restart: {
-            receive_state.fsm_state <= rx_fsm_idle;
-            receive_state.active    <= 0;
-        }
-        }
-
-        /*b Enable BRG if data is ready or receiving - nothing gets clocked here unless the BRG is going */
-        receive_combs.brg_enable = receive_state.active || (!receive_combs.sync_rxd);
-            
         /*b All done */
     }
 
