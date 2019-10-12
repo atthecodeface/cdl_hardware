@@ -34,10 +34,12 @@
 import sys, os, unittest, traceback
 
 #a Find the tests
+print 
 sys.path = [ os.path.abspath("build/osx"),
              os.path.abspath("build/linux"),
              os.path.abspath("python"),
              os.path.abspath(os.getcwd()),
+             os.path.abspath(os.environ['CYCLICITY']),
              os.path.abspath(os.getcwd()+"/../cdl"),
              ] + sys.path[1:]
 

@@ -33,6 +33,7 @@
 # Note: make Q= EXTRA_CXXFLAGS='-I ~/Git/brew/include' EXTRA_LIBS='-L ~/Git/brew/lib'
 # Note: make RISCV_ATCF_REGRESSION_DIR=../atthecodeface_riscv_tests SUITE=riscv_minimal.riscv_i32mc_pipeline3.test_c_arith test_regress
 # Note: PYTHONPATH=/Users/gstark/Git/riscv_investigation/cdl:$PYTHOHPATH make CYCLICITY=../riscv_investigation/cdl LOCAL_DIR=/Users/gstark/Git/brew SUITE=riscv_minimal.riscv_i32c_pipeline3.test_c_arith test_regress
+# Note: make EXTRA_CXXFLAGS='-I ~/Git/brew/include' EXTRA_LIBS='-L ~/Git/brew/lib' CYCLICITY=../../cdl WAVES=1 SUITE=vcu108 test_regress
 CYCLICITY := ../cdl/
 CYCLICITY_ROOT := ${CYCLICITY}
 MODEL_LIST  := $(CURDIR)/model_list

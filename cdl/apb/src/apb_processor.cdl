@@ -77,7 +77,7 @@ typedef enum[4] {
     processor_action_alu                   "Perform an ALU operation on the accumulator - type depends on @a opcode subclass",
     processor_action_branch                "Perform a branch operation, and possibly decrement @a repeat_count - type depends on @a opcode subclass",
     processor_action_wait_start            "Start a wait delay period",
-    processor_action_decrement_accumulator "Decrement accumulator, for during a wait period",
+    processor_action_decrement_increment   "Decrement increment, for during a wait period",
     processor_action_pending_request       "Wait for an APB request to be completed",
     processor_action_complete_wait         "Complete execution of wait delay period",
     processor_action_finish                "Finish execution of a ROM program",
@@ -172,6 +172,7 @@ typedef struct {
     t_processor_action action        "Action that the processor should take";
     bit[32] arg_data                 "Copy of the ROM argument data - kind of unnecessary, but allows future changes";
     bit acc_is_zero                  "Asserted if the processor state accumulator is zero";
+    bit inc_is_zero                  "Asserted if the processor state incrementer is zero";
     bit rpt_is_zero                  "Asserted if the processor state repeat count is zero";
     bit take_branch                  "Asserted if a branch is being taken - requires a branch action, and the branch condition to be met; causes the ROM to load the arg_data as the ROM address";
     bit completes_op                 "Asserted if the processor is completing execution of the opcode - hence the ROM should fetch another opcode";
@@ -388,6 +389,7 @@ accepts an APB response back, including @a pready.
         processor_combs.opcode_class    = rom_state.opcode[3;5];
         processor_combs.opcode_subclass = rom_state.opcode[3;0];
         processor_combs.acc_is_zero = (processor_state.accumulator==0);
+        processor_combs.inc_is_zero = (processor_state.increment==0);
         processor_combs.rpt_is_zero = (processor_state.repeat_count==0);
 
         /*b Determine processor action */
@@ -407,7 +409,7 @@ accepts an APB response back, including @a pready.
             case opcode_class_branch: { // branch always, eq, ne, loop count dec
                 processor_combs.action = processor_action_branch;
             }
-            case opcode_class_wait: { // load accumulator, decrement until 0, waiting
+            case opcode_class_wait: { // load increment, decrement until 0, waiting
                 processor_combs.action = processor_action_wait_start;
             }
             case opcode_class_finish: {
@@ -422,8 +424,8 @@ accepts an APB response back, including @a pready.
             processor_combs.action = processor_action_pending_request;
         }
         case processor_fsm_wait: {
-            processor_combs.action = processor_action_decrement_accumulator;
-            if (processor_combs.acc_is_zero) {
+            processor_combs.action = processor_action_decrement_increment;
+            if (processor_combs.inc_is_zero) {
                 processor_combs.action = processor_action_complete_wait;
             }
         }
@@ -502,15 +504,15 @@ accepts an APB response back, including @a pready.
             processor_state.fsm_state <= processor_fsm_idle;
         }
         case processor_action_wait_start: {
-            processor_state.accumulator <= processor_combs.arg_data;
+            processor_state.increment <= processor_combs.arg_data;
             processor_state.fsm_state <= processor_fsm_wait;
         }
         case processor_action_complete_wait: {
             processor_combs.completes_op = 1;
             processor_state.fsm_state <= processor_fsm_idle;
         }
-        case processor_action_decrement_accumulator: {
-            processor_state.accumulator <= processor_state.accumulator - 1;
+        case processor_action_decrement_increment: {
+            processor_state.increment <= processor_state.increment - 1;
             processor_state.fsm_state <= processor_state.fsm_state;
         }
         case processor_action_none: {
