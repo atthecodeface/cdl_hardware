@@ -72,12 +72,14 @@ module vcu108_debug( clock clk,
     comb t_apb_request dprintf_apb_request;
     comb t_apb_request csr_apb_request;
     comb t_apb_request fb_sram_apb_request;
+    comb t_apb_request dprintf_uart_apb_request;
 
     net t_apb_response  gpio_apb_response;
     net t_apb_response  uart_apb_response;
     net t_apb_response  dprintf_apb_response;
     net t_apb_response  csr_apb_response;
     net t_apb_response  fb_sram_apb_response;
+    net t_apb_response  dprintf_uart_apb_response;
     comb t_apb_response apb_response;
 
     net bit[16] gpio_output;
@@ -161,30 +163,34 @@ module vcu108_debug( clock clk,
     /*b APB master multiplexing and decode */
     apb_multiplexing_decode: {
         apb_request_sel = apb_request.paddr[4;16]; // 1MB of address space, top 4 bits as select
-        gpio_apb_request       = apb_request;
-        dprintf_apb_request    = apb_request;
-        csr_apb_request        = apb_request;
-        uart_apb_request       = apb_request;
-        fb_sram_apb_request    = apb_request;
+        gpio_apb_request         = apb_request;
+        dprintf_apb_request      = apb_request;
+        csr_apb_request          = apb_request;
+        uart_apb_request         = apb_request;
+        dprintf_uart_apb_request = apb_request;
+        fb_sram_apb_request      = apb_request;
 
-        gpio_apb_request.paddr       = apb_request.paddr >> 2;
-        dprintf_apb_request.paddr    = apb_request.paddr >> 2;
-        uart_apb_request.paddr       = apb_request.paddr >> 2;
-        fb_sram_apb_request.paddr    = apb_request.paddr >> 2;
+        gpio_apb_request.paddr         = apb_request.paddr >> 2;
+        dprintf_apb_request.paddr      = apb_request.paddr >> 2;
+        uart_apb_request.paddr         = apb_request.paddr >> 2;
+        dprintf_uart_apb_request.paddr = apb_request.paddr >> 2;
+        fb_sram_apb_request.paddr      = apb_request.paddr >> 2;
 
-        gpio_apb_request.psel        = apb_request.psel && (apb_request_sel==1);
-        dprintf_apb_request.psel     = apb_request.psel && (apb_request_sel==2);
-        csr_apb_request.psel         = apb_request.psel && (apb_request_sel==3);
-        uart_apb_request.psel        = apb_request.psel && (apb_request_sel==4);
-        fb_sram_apb_request.psel     = apb_request.psel && (apb_request_sel==7);
-        csr_apb_request.paddr[16;16] = bundle(12b0,apb_request.paddr[4;12]);
-        csr_apb_request.paddr[16;0]  = bundle( 6b0,apb_request.paddr[10;2]);
+        gpio_apb_request.psel         = apb_request.psel && (apb_request_sel==1);
+        dprintf_apb_request.psel      = apb_request.psel && (apb_request_sel==2);
+        csr_apb_request.psel          = apb_request.psel && (apb_request_sel==3);
+        uart_apb_request.psel         = apb_request.psel && (apb_request_sel==4);
+        dprintf_uart_apb_request.psel = apb_request.psel && (apb_request_sel==5);
+        fb_sram_apb_request.psel      = apb_request.psel && (apb_request_sel==7);
+        csr_apb_request.paddr[16;16]  = bundle(12b0,apb_request.paddr[4;12]);
+        csr_apb_request.paddr[16;0]   = bundle( 6b0,apb_request.paddr[10;2]);
 
         apb_response = gpio_apb_response; // defaulting to gpio is good - it is always ready even if not selected...
         if (apb_request_sel==1) { apb_response = gpio_apb_response; }
         if (apb_request_sel==2) { apb_response = dprintf_apb_response; }
         if (apb_request_sel==3) { apb_response = csr_apb_response; }
         if (apb_request_sel==4) { apb_response = uart_apb_response; }
+        if (apb_request_sel==5) { apb_response = dprintf_uart_apb_response; }
         if (apb_request_sel==7) { apb_response = fb_sram_apb_response; }
     }
 
@@ -275,9 +281,6 @@ module vcu108_debug( clock clk,
                               gpio_output_enable => gpio_output_enable,
                               gpio_input_event => gpio_input_event
             );
-        uart_rx = {*=0};
-        uart_rx.rxd = uart_rxd;
-        uart_txd = uart_tx.txd;
         apb_target_uart_minimal uart( clk <- clk,
                                       reset_n <= reset_n,
                                       apb_request  <= uart_apb_request,
@@ -297,11 +300,20 @@ module vcu108_debug( clock clk,
     }
 
     /*b Dprintf/framebuffer */
+    net bit dprintf_uart_txd;
     dprintf_framebuffer_instances: {
+    apb_target_dprintf_uart apb_dprintf_uart( clk <- clk,
+                                              reset_n <= reset_n,
+                                              apb_request  <= dprintf_uart_apb_request,
+                                              apb_response => dprintf_uart_apb_response,
+                                              dprintf_req <= mux_dprintf_req[0],
+                                              dprintf_ack => mux_dprintf_ack[0],
+                                              uart_txd => dprintf_uart_txd );
+
         dprintf dprintf( clk <- clk,
                          reset_n <= reset_n,
                          dprintf_req <= mux_dprintf_req[0],
-                         dprintf_ack => mux_dprintf_ack[0],
+                         // dprintf_ack => mux_dprintf_ack[0],
                          byte_blocked <= 0,
                          dprintf_byte => dprintf_byte
             );
@@ -402,5 +414,12 @@ module vcu108_debug( clock clk,
 
         vcu108_leds.leds = counter[8;0];
         vcu108_leds.leds[7] = uart_tx.txd;
+
+        uart_rx = {*=0};
+        uart_rx.rxd = uart_rxd;
+        uart_txd = dprintf_uart_txd;
+        if (vcu108_inputs.switches[1]) {
+            uart_txd = uart_tx.txd;
+        }
     }
 }
