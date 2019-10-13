@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 import apb_rom
 
-apb_uart = 0x00040000
+apb_uart = 0x00090000
 apb_uart_brg    = apb_uart | 4
 apb_uart_config = apb_uart | 8
 apb_uart_hr     = apb_uart | 12
-apb_dprintf_uart = 0x00050000
+apb_dprintf_uart = 0x000a0000
 apb_dprintf_uart_brg    = apb_dprintf_uart | 4
 apb_dprintf_uart_config = apb_dprintf_uart | 8
 
