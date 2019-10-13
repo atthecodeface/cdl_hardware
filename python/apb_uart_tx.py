@@ -15,9 +15,9 @@ delay      = 1<<24
 # brg_config = 0x80010010
 # 3 adds of 16 and 16 subs of 3 gets back again
 # so cycle of 19 and 3 so 3 out of 19
-brg_config = 0x80030010
-#brg_config = 16
-#delay      = (brg_config+2)*16*10
+#brg_config = 0x80030010
+brg_config = 1
+delay      = (brg_config+2)*6*10
 program = {}
 program["code"] = []
 program["code"] += [ (apb_rom.rom.op_set("increment",4),),

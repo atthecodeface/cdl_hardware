@@ -1,0 +1,181 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   generic_valid_ack_mux.cdl
+ * @brief  A generic valid/ack multiplexer to combine buses with valid/ack protocol
+ *
+ * CDL implementation of a module that takes a pair of input request
+ * types, each of which has an individual @ack response signal, and it
+ * combines them with a round-robin arbiter to a single request out.
+ */
+/*a Includes */
+include "types/dprintf.h"
+
+/*a Constants */
+constant integer fifo_depth=16;
+constant integer fifo_ptr_size=sizeof(fifo_depth-1);
+
+/*a Types */
+/*t t_fifo_state
+ *
+ * State held by the FIFO
+ */
+typedef struct {
+    bit buffer_is_not_empty    "Asserted if buffer is not empty - zero on reset";
+    bit buffer_is_full         "Asserted if buffer is full - zero on reset";
+    bit[fifo_ptr_size] write_ptr              "Index to next location in fifo_data to write to";
+    bit[fifo_ptr_size] read_ptr               "Index to next location in fifo_data to read from";
+} t_fifo_state;
+
+/*t t_fifo_combs
+ *
+ * Combinatorial decode for FIFO update
+ *
+ */
+typedef struct {
+    bit can_take_request       "Asserted if a request can be taken - high unless FIFO and buffer out are full";
+    bit req_out_will_be_empty  "Asserted if request out is empty of ack_out is high";
+    bit req_in_to_req_out      "If high (depends on ack_out) then req_in is written to req_out directly";
+    bit push_req_in            "If high (depends on ack_out and req_in.valid) then req_in is pushed to FIFO";
+    bit pop_to_req_out         "If high (depends on ack_out) then pop from FIFO to req_out";
+
+    bit[fifo_ptr_size] write_ptr_plus_1  "Write pointer post-increment mod FIFO size";
+    bit[fifo_ptr_size] read_ptr_plus_1   "Read pointer post-increment mod FIFO size";
+    bit                pop_empties       "Asserted if a POP empties the FIFO (if a push does not happen)";
+    bit                push_fills        "Asserted if a PUSH fills the FIFO (if a pop does not happen)";
+    gt_generic_valid_req fifo_data_out   "Data out of the FIFO";
+} t_fifo_combs;
+
+/*a Module
+ */
+module generic_valid_ack_fifo( clock clk                            "Clock for logic",
+                               input bit reset_n                    "Active low reset",
+                               input gt_generic_valid_req req_in    "Request from upstream port, which must have a @p valid bit",
+                               output bit ack_in                    "Acknowledge to upstream port",
+                               output gt_generic_valid_req req_out   "Request out downstream, which must have a @p valid bit",
+                               input bit ack_out                     "Acknowledge from downstream"
+    )
+"""
+Very simple generic register FIFO for a valid/ack system
+
+If the output will be empty then the input data is stored in the output register
+If not empty then the input data is stored in register[write_ptr];
+
+If not empty and output register will be empty move register[read_ptr] to output register
+"""
+{
+    /*b State etc  */
+    default reset active_low reset_n;
+    default clock clk;
+
+    clocked gt_generic_valid_req req_out={*=0}   "Request out downstream";
+    clocked t_fifo_state fifo_state={*=0}        "Arbiter state - which port was last consumed";
+    comb t_fifo_combs fifo_combs                 "Combinatorial decode of acks and requests";
+    clocked gt_generic_valid_req[fifo_depth] fifo_data={{*=0,valid=1}}   "Fifo data";
+
+    /*b Control logic */
+    control_logic """
+    Determine whether and where input data will go to
+
+    Manage the output register.
+    """: {
+        /*b Determine if a request can be consumed */
+        fifo_combs.can_take_request = 1;
+        if (req_out.valid && fifo_state.buffer_is_full) {
+            fifo_combs.can_take_request = 0;
+        }
+
+        fifo_combs.req_out_will_be_empty = 1;
+        if (req_out.valid && !ack_out) {
+            fifo_combs.req_out_will_be_empty = 0;
+        }
+        
+        /*b Determine where a request would be consumed to */
+        fifo_combs.req_in_to_req_out = 1;
+        if (!fifo_combs.req_out_will_be_empty) {
+            fifo_combs.req_in_to_req_out = 0;
+        }
+        fifo_combs.push_req_in    = fifo_combs.can_take_request      && !fifo_combs.req_in_to_req_out  && req_in.valid;
+        fifo_combs.pop_to_req_out = fifo_combs.req_out_will_be_empty && fifo_state.buffer_is_not_empty;
+        
+        /*b Handle req out */
+        if (fifo_combs.req_out_will_be_empty) {
+            req_out.valid <= 0;
+            if (fifo_combs.pop_to_req_out) {
+                req_out <= fifo_combs.fifo_data_out;
+            }
+            if (fifo_combs.req_in_to_req_out) {
+                req_out <= req_in;
+            }
+        }
+        /*b Handle ack in */
+        ack_in = fifo_combs.can_take_request;
+        
+        /*b All done */
+    }
+    
+    /*b Fifo logic */
+    fifo_logic """
+    """: {
+        /*b Get +1 for FIFO pointers */
+        fifo_combs.write_ptr_plus_1 = fifo_state.write_ptr+1;
+        if (fifo_state.write_ptr == fifo_depth-1) {
+            fifo_combs.write_ptr_plus_1 = 0;
+        }
+        fifo_combs.read_ptr_plus_1 = fifo_state.read_ptr+1;
+        if (fifo_state.read_ptr == fifo_depth-1) {
+            fifo_combs.read_ptr_plus_1 = 0;
+        }
+
+        /*b Get 'would be full' indicators */
+        fifo_combs.pop_empties = 0;
+        if (fifo_combs.read_ptr_plus_1 == fifo_state.write_ptr) {
+            fifo_combs.pop_empties = 1;
+        }
+        fifo_combs.push_fills = 0;
+        if (fifo_combs.write_ptr_plus_1 == fifo_state.read_ptr) {
+            fifo_combs.push_fills = 1;
+        }
+        
+        /*b Handle push of FIFO */
+        if (fifo_combs.pop_to_req_out) {
+            fifo_state.read_ptr            <= fifo_combs.read_ptr_plus_1;
+            fifo_state.buffer_is_not_empty <= !fifo_combs.pop_empties;
+            fifo_state.buffer_is_full      <= 0;
+        }
+        if (fifo_combs.push_req_in) { // Cannot happen if buffer is full
+            fifo_data[fifo_state.write_ptr] <= req_in;
+            fifo_state.write_ptr            <= fifo_combs.write_ptr_plus_1;
+            fifo_state.buffer_is_full       <= fifo_combs.push_fills;
+            fifo_state.buffer_is_not_empty  <= 1;
+            if (fifo_combs.pop_to_req_out) {
+                fifo_state.buffer_is_full <= 0;
+            }
+        }
+        fifo_combs.fifo_data_out = fifo_data[fifo_state.read_ptr];
+
+        /*b Assertions */
+        assert {
+            if (fifo_state.write_ptr==fifo_state.read_ptr) {
+                assert( (fifo_state.buffer_is_full || (!fifo_state.buffer_is_not_empty)), "FIFO must be full or empty if pointers are equal");
+            } else {
+                assert( ((!fifo_state.buffer_is_full) && fifo_state.buffer_is_not_empty), "FIFO must be neither full nor empty if pointers are different");
+            }
+            assert( ((!fifo_state.buffer_is_full) || fifo_state.buffer_is_not_empty), "FIFO cannot be both be full and empty");
+        }
+        
+        /*b All done */
+    }
+
+    /*b All done */
+}

@@ -95,6 +95,8 @@ module vcu108_debug( clock clk,
     clocked t_dprintf_req_4[num_dprintf_requesters] dprintf_req={*=0};
     net bit[num_dprintf_requesters-1]               mux_dprintf_ack "Ack for dprintf request after multiplexing";
     net t_dprintf_req_4[num_dprintf_requesters-1]   mux_dprintf_req "Dprintf request after multiplexing";
+    net bit                                         fifo_dprintf_ack "Ack for dprintf request after multiplexing";
+    net t_dprintf_req_4                             fifo_dprintf_req "Dprintf request after multiplexing";
     net t_dprintf_byte dprintf_byte;
 
     net t_csr_request   csr_request;
@@ -252,6 +254,11 @@ module vcu108_debug( clock clk,
                                   req => mux_dprintf_req[i],
                                   ack <= mux_dprintf_ack[i] );
         }
+        dprintf_4_fifo_4 dpf( clk <- clk, reset_n <= reset_n,
+                            req_in <= mux_dprintf_req[0],
+                            ack_in => mux_dprintf_ack[0],
+                            req_out => fifo_dprintf_req,
+                            ack_out <= fifo_dprintf_ack );
 
     }
 
@@ -306,13 +313,13 @@ module vcu108_debug( clock clk,
                                               reset_n <= reset_n,
                                               apb_request  <= dprintf_uart_apb_request,
                                               apb_response => dprintf_uart_apb_response,
-                                              dprintf_req <= mux_dprintf_req[0],
-                                              dprintf_ack => mux_dprintf_ack[0],
+                                              dprintf_req <= fifo_dprintf_req,
+                                              dprintf_ack => fifo_dprintf_ack,
                                               uart_txd => dprintf_uart_txd );
 
         dprintf dprintf( clk <- clk,
                          reset_n <= reset_n,
-                         dprintf_req <= mux_dprintf_req[0],
+                         dprintf_req <= fifo_dprintf_req,
                          // dprintf_ack => mux_dprintf_ack[0],
                          byte_blocked <= 0,
                          dprintf_byte => dprintf_byte
