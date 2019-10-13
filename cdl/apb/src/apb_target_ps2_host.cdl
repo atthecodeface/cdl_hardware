@@ -22,6 +22,7 @@
  */
 include "types/apb.h"
 include "types/ps2.h"
+include "input/ps2_modules.h"
 
 constant integer fifo_size=8;
 constant integer lg_fifo_size=sizeof(fifo_size);
