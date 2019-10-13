@@ -1,0 +1,184 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_target_dprintf_uart.cdl
+ * @brief  A minimal UART transmitter for dprintf strings
+ *
+ * CDL implementation of a dprintf string to UART TXD
+ */
+/*a Includes */
+include "types/apb.h"
+include "types/uart.h"
+include "types/dprintf.h"
+include "types/clock_divider.h"
+include "input/uart_modules.h"
+include "utils/dprintf_modules.h"
+include "utils/clock_divider_modules.h"
+
+/*a Constants
+*/
+
+/*a Types
+*/
+/*t t_apb_access - Read or write action due to APB request */
+typedef enum[4] {
+    apb_access_none,
+    apb_access_write_config,
+    apb_access_read_config,
+    apb_access_write_brg,
+    apb_access_read_brg,
+} t_apb_access;
+
+/*t t_apb_state - clocked state for APB side */
+typedef struct {
+    t_apb_access access;
+} t_apb_state;
+
+/*t t_apb_address */
+typedef enum[3] {
+    apb_address_brg     = 1,
+    apb_address_config  = 2,
+} t_apb_address;
+
+/*t t_tx_combs */
+typedef struct {
+    bit blocked;
+} t_tx_combs;
+
+/*t t_tx_state */
+typedef struct {
+    bit    valid;
+    bit[8] data;
+} t_tx_state;
+
+/*a Module
+*/
+/*m apb_target_dprintf_uart */
+module apb_target_dprintf_uart( clock clk,
+                                input bit reset_n,
+
+                                input  t_apb_request  apb_request  "APB request",
+                                output t_apb_response apb_response "APB response",
+
+                                input t_dprintf_req_4   dprintf_req  "Debug printf request",
+                                output bit              dprintf_ack  "Debug printf acknowledge",
+                                
+                                output bit              uart_txd
+    )
+"""
+This is an APB target that provides dprintf output to a uart configured by the APB
+"""
+{
+    /*b Default clock/reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b APB interface state  */
+    clocked t_apb_state    apb_state   = {*=0}  "Decode of APB";
+
+    /*b Transmit state  */
+    clocked t_tx_state tx_state = {*=0};
+    comb    t_tx_combs tx_combs;
+
+    /*b Dprintf signals */
+    net t_dprintf_byte dprintf_byte;
+    net bit            dprintf_ack;
+    
+    /*b UART signals */
+    comb t_uart_control  uart_control;
+    net t_uart_output    uart_output;
+    comb t_uart_rx_data  uart_rx;
+    net t_uart_tx_data   uart_tx;
+    
+    /*b APB interface */
+    apb_interface : {
+
+        /*b APB interface decode */
+        part_switch (apb_request.paddr[3;0]) {
+        case apb_address_config: {
+            apb_state.access  <= apb_request.pwrite ? apb_access_write_config : apb_access_read_config;
+        }
+        case apb_address_brg: {
+            apb_state.access  <= apb_request.pwrite ? apb_access_write_brg : apb_access_read_brg;
+        }
+        }
+        if (!apb_request.psel || apb_request.penable) {
+            apb_state.access <= apb_access_none;
+        }
+
+        /*b APB interface response - use apb_state.access */
+        apb_response = {*=0, pready=1};
+        part_switch (apb_state.access) {
+        case apb_access_read_config: {
+            apb_response.prdata = uart_output.config_data;
+        }
+        case apb_access_read_brg: {
+            apb_response.prdata = uart_output.brg_config_data;
+        }
+        }
+
+        /*b All done */
+    }
+        
+    /*b Dprintf instance and byte for uart tx */
+    dprintf_instance """
+    """ : {
+        tx_combs.blocked = (!uart_output.tx_ack) && tx_state.valid;
+        dprintf dprintf( clk <- clk,
+                         reset_n <= reset_n,
+                         dprintf_req <= dprintf_req,
+                         dprintf_ack => dprintf_ack,
+                         byte_blocked <= tx_combs.blocked,
+                         dprintf_byte => dprintf_byte
+            );
+        tx_state.valid <=0;
+        if (dprintf_byte.valid) {
+            tx_state.valid <= 1;
+            tx_state.data  <= dprintf_byte.data;
+        }
+        if (dprintf_byte.last) {
+            tx_state.valid <= 1;
+            tx_state.data  <= 10; // Newline
+        }
+        if (tx_combs.blocked) {
+            tx_state <= tx_state;
+        }
+    }
+
+    /*b UART instance */
+    uart_instance """
+    """ : {
+        uart_control.clear_errors = 0;
+        uart_control.rx_ack       = 0;
+        uart_control.tx_valid     = tx_state.valid;
+        uart_control.tx_data      = tx_state.data;
+        uart_control.write_config = (apb_state.access==apb_access_write_config);
+        uart_control.write_brg    = (apb_state.access==apb_access_write_brg);
+        uart_control.write_data   = apb_request.pwdata;
+        uart_rx = {*=0};
+
+        uart_minimal uart(clk <- clk,
+                          reset_n <= reset_n,
+                          uart_control <= uart_control,
+                          uart_output  => uart_output,
+                          uart_rx <= uart_rx,
+                          uart_tx => uart_tx );
+
+        /*b Drive UART output */
+        uart_txd = uart_tx.txd;
+        
+        /*b All done */
+    }
+
+    /*b All done */
+}

@@ -11,6 +11,11 @@ apb_dprintf_uart_config = apb_dprintf_uart | 8
 
 brg_config = 162
 delay      = 1<<24
+# 1 out of 17
+# brg_config = 0x80010010
+# 3 adds of 16 and 16 subs of 3 gets back again
+# so cycle of 19 and 3 so 3 out of 19
+brg_config = 0x80030010
 #brg_config = 16
 #delay      = (brg_config+2)*16*10
 program = {}
