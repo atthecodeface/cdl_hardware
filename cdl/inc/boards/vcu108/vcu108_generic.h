@@ -2,6 +2,7 @@ include "types/video.h"
 include "boards/vcu108.h"
 extern
 module vcu108_generic( clock clk,
+                       clock clk_50,
                         input bit reset_n,
 
 
@@ -18,6 +19,8 @@ module vcu108_generic( clock clk,
 {
     timing to   rising clock clk vcu108_inputs;
     timing from rising clock clk vcu108_leds;
+
+    timing to   rising clock clk_50 vcu108_inputs; // keep clk_50!
 
     timing from rising clock video_clk vcu108_video;
 

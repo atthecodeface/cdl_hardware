@@ -38,6 +38,7 @@ module se_test_harness(clock clk,
 
 /*m tb_vcu108_generic */
 module tb_vcu108_generic( clock clk,
+                          clock clk_50,
                           clock video_clk,
                           input bit reset_n
 )
@@ -67,6 +68,7 @@ module tb_vcu108_generic( clock clk,
             );
         
         vcu108_generic dut(  clk <- clk,
+                             clk_50 <- clk_50,
                              reset_n <= reset_n,
 
                              vcu108_inputs <= vcu108_inputs,

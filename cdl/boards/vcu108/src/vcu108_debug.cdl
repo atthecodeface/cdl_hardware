@@ -46,6 +46,7 @@ constant integer num_dprintf_requesters=16;
  *
  */
 module vcu108_debug( clock clk,
+                     clock clk_50,
                      input bit reset_n,
 
                      input t_vcu108_inputs vcu108_inputs,
@@ -123,10 +124,15 @@ module vcu108_debug( clock clk,
     net   t_uart_tx_data uart_tx;
     net   t_uart_status  uart_status;
 
-    clocked bit[32] divider=0;
-    clocked bit divider_reset=0;
-    clocked bit[8]  seconds=0;
+    clocked t_vcu108_inputs vcu108_inputs_r = {*=0};
     clocked bit[16] counter=0;
+    clocked bit last_second_toggle=0;
+    clocked bit divider_reset=0;
+
+    default clock clk_50;
+    clocked bit[32] divider=0;
+    clocked bit     second_toggle=0;
+    clocked bit[8]  seconds=0;
 
     default clock video_clk;
     default reset active_low video_reset_n;
@@ -400,14 +406,27 @@ module vcu108_debug( clock clk,
     }
 
     /*b Stub out unused outputs and all done */
-    stubs : {
+    second_divider : {
+        /*b 50MHz stuff */
         divider <= divider+1;
         divider_reset <= 0;
         if (divider==50*1000*1000) {
             divider <= 0;
-            divider_reset <= 1;
+            second_toggle <= !second_toggle;
             seconds <= seconds + 1;
         }
+
+        /*b Clock stuff */
+        last_second_toggle <= second_toggle;
+        divider_reset <= 0;
+        if (last_second_toggle!=second_toggle) {
+            divider_reset <= 1;
+        }
+    }
+
+    /*b Stub out unused outputs and all done */
+    stubs : {
+        vcu108_inputs_r <= vcu108_inputs;        
         full_switch (vcu108_inputs.switches[2;1]) {
         case 0: { if (mux_dprintf_req[0].valid)         { counter <= counter + 1; } }
         case 1: { if (apb_request.psel)                 { counter <= counter + 1; } }
@@ -425,7 +444,7 @@ module vcu108_debug( clock clk,
         uart_rx = {*=0};
         uart_rx.rxd = uart_rxd;
         uart_txd = dprintf_uart_txd;
-        if (vcu108_inputs.switches[1]) {
+        if (vcu108_inputs_r.switches[1]) {
             uart_txd = uart_tx.txd;
         }
     }

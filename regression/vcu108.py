@@ -54,6 +54,7 @@ class vcu108_generic_hw(simple_tb.cdl_test_hw):
     loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.dut.trace "),},
                }
     clocks = { "clk":(0,None,None),
+               "clk_50":(0,10,10),
                "video_clk":(0,None,None),
                }
     
@@ -78,7 +79,7 @@ class vcu108_debug_hw(vcu108_generic_hw):
 #c vcu108_riscv_hw
 class vcu108_riscv_hw(vcu108_generic_hw):
     module_name = "tb_vcu108_riscv"
-    apb_rom_mif  = "roms/apb_uart_tx_rom.mif"
+    apb_rom_mif  = "roms/apb_riscv_start_rom.mif"
 
 #c c_test_one
 import axi
@@ -99,9 +100,17 @@ class c_test_one(axi.c_axi_test_base):
 
 #c vcu108_debug_regression
 class vcu108_debug_regression(simple_tb.base_test):
-    def test_(self):
+    def xtest_uart_loopback(self):
         test = c_test_one()
         hw = vcu108_debug_hw(test)
+        self.do_test_run(hw, 200*1000)
+    pass
+
+#c vcu108_riscv_regression
+class vcu108_riscv_regression(simple_tb.base_test):
+    def test_uart_loopback(self):
+        test = c_test_one()
+        hw = vcu108_riscv_hw(test)
         self.do_test_run(hw, 200*1000)
     pass
 
