@@ -201,7 +201,7 @@ cdl cdl/boards/de1_cl/tb_src       tb_de1_cl_controls    inc:cdl/inc
 
 cdl cdl/boards/de1_cl_hps/src        de1_cl_hps_debug     inc:cdl/inc
 cdl cdl/boards/de1_cl_hps/tb_src  tb_de1_cl_hps_debug  inc:cdl/boards/de1_cl_hps/tb_src inc:cdl/inc rit:tb_de1_cl_hps_generic.de1_cl_hps_generic=de1_cl_hps_debug rmn:tb_de1_cl_hps_generic=tb_de1_cl_hps_debug
-cdl cdl/boards/de1_hps/tb_src     tb_de1_hps_generic     inc:cdl/boards/de1_hps/tb_src inc:cdl/inc rit:tb_de1_hps_generic.de1_hps_generic=de1_hps_debug rmn:tb_de1_hps_generic=tb_de1_hps_debug
+cdl cdl/boards/de1_hps/tb_src     tb_de1_hps_generic   inc:cdl/boards/de1_hps/tb_src inc:cdl/inc rit:tb_de1_hps_generic.de1_hps_generic=de1_hps_debug rmn:tb_de1_hps_generic=tb_de1_hps_debug
 
 cdl cdl/boards/de1_hps/src         de1_hps_debug     inc:cdl/inc
 
@@ -209,7 +209,8 @@ cdl cdl/boards/de2/src/            picorisc_de2 inc:cdl/inc
 
 cdl cdl/boards/vcu108/src        vcu108_debug     inc:cdl/inc
 cdl cdl/boards/vcu108/src        vcu108_riscv     inc:cdl/inc
-cdl cdl/boards/vcu108/tb_src  tb_vcu108_generic  inc:cdl/boards/vcu108/tb_src inc:cdl/inc rit:tb_vcu108_generic.vcu108_generic=vcu108_debug rmn:tb_vcu108_generic=tb_vcu108_debug
+cdl cdl/boards/vcu108/tb_src  tb_vcu108_debug  inc:cdl/boards/vcu108/tb_src inc:cdl/inc rit:tb_vcu108_generic.vcu108_generic=vcu108_debug rmn:tb_vcu108_generic=tb_vcu108_debug
+cdl cdl/boards/vcu108/tb_src  tb_vcu108_riscv  inc:cdl/boards/vcu108/tb_src inc:cdl/inc rit:tb_vcu108_generic.vcu108_generic=vcu108_riscv rmn:tb_vcu108_generic=tb_vcu108_riscv
 
 #a Editor preferences and notes
 # Local Variables: ***

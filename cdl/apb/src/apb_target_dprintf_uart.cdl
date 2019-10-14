@@ -55,10 +55,17 @@ typedef struct {
     bit blocked;
 } t_tx_combs;
 
+/*t t_tx_fsm */
+typedef fsm {
+    tx_fsm_data     "Waiting for valid data";
+    tx_fsm_newline  "";
+} t_tx_fsm;
+
 /*t t_tx_state */
 typedef struct {
     bit    valid;
     bit[8] data;
+    t_tx_fsm fsm_state;
 } t_tx_state;
 
 /*a Module
@@ -133,7 +140,34 @@ This is an APB target that provides dprintf output to a uart configured by the A
     /*b Dprintf instance and byte for uart tx */
     dprintf_instance """
     """ : {
-        tx_combs.blocked = (!uart_output.tx_ack) && tx_state.valid;
+        tx_combs.blocked = 0;
+        full_switch (tx_state.fsm_state) {
+        case tx_fsm_data: {
+            tx_state.valid <=0;
+            if (dprintf_byte.valid) {
+                tx_state.valid <= 1;
+                tx_state.data  <= dprintf_byte.data;
+            }
+            if (dprintf_byte.last) {
+                tx_state.fsm_state <= tx_fsm_newline;
+                tx_state.valid <= 1;
+                tx_state.data  <= 13;
+            }
+            if (tx_state.valid && !uart_output.tx_ack) {
+                tx_combs.blocked = 1;
+                tx_state <= tx_state;
+            }
+        }
+        case tx_fsm_newline: {
+            tx_combs.blocked = 1;
+            if (uart_output.tx_ack) {
+                tx_state.fsm_state <= tx_fsm_data;
+                tx_state.valid <= 1;
+                tx_state.data  <= 10;
+            }
+        }
+        }
+
         dprintf dprintf( clk <- clk,
                          reset_n <= reset_n,
                          dprintf_req <= dprintf_req,
@@ -141,18 +175,6 @@ This is an APB target that provides dprintf output to a uart configured by the A
                          byte_blocked <= tx_combs.blocked,
                          dprintf_byte => dprintf_byte
             );
-        tx_state.valid <=0;
-        if (dprintf_byte.valid) {
-            tx_state.valid <= 1;
-            tx_state.data  <= dprintf_byte.data;
-        }
-        if (dprintf_byte.last) {
-            tx_state.valid <= 1;
-            tx_state.data  <= 10; // Newline
-        }
-        if (tx_combs.blocked) {
-            tx_state <= tx_state;
-        }
     }
 
     /*b UART instance */

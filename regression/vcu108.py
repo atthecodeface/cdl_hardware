@@ -46,8 +46,8 @@ class cdl_test_th(pycdl.th):
             pass
         pass
 
-#c vcu108_debug_hw
-class vcu108_debug_hw(simple_tb.cdl_test_hw):
+#c vcu108_generic_hw
+class vcu108_generic_hw(simple_tb.cdl_test_hw):
     module_name = "tb_vcu108_debug"
     teletext_rom_mif = "roms/teletext.mif"
     apb_rom_mif  = "roms/apb_uart_tx_rom.mif"
@@ -70,6 +70,16 @@ class vcu108_debug_hw(simple_tb.cdl_test_hw):
         simple_tb.cdl_test_hw.__init__(self, test)
         pass
 
+#c vcu108_debug_hw
+class vcu108_debug_hw(vcu108_generic_hw):
+    module_name = "tb_vcu108_debug"
+    apb_rom_mif  = "roms/apb_uart_tx_rom.mif"
+
+#c vcu108_riscv_hw
+class vcu108_riscv_hw(vcu108_generic_hw):
+    module_name = "tb_vcu108_riscv"
+    apb_rom_mif  = "roms/apb_uart_tx_rom.mif"
+
 #c c_test_one
 import axi
 import dump
@@ -87,8 +97,8 @@ class c_test_one(axi.c_axi_test_base):
         self.finishtest(0,"")
         pass
 
-#c vcu108_debug_blah
-class vcu108_debug_blah(simple_tb.base_test):
+#c vcu108_debug_regression
+class vcu108_debug_regression(simple_tb.base_test):
     def test_(self):
         test = c_test_one()
         hw = vcu108_debug_hw(test)
