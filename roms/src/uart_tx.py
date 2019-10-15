@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-import apb_rom
-
 apb_uart = 0x00090000
 apb_uart_brg    = apb_uart | 4
 apb_uart_config = apb_uart | 8
