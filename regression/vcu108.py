@@ -15,6 +15,34 @@
 #a Imports
 import pycdl
 import simple_tb
+import dump
+import tempfile
+
+#a Useful functions
+#f get_mif_of_file
+def get_mif_of_file(memory, filename, base_address=0):
+    elf = None
+    if filename[-5:]=='.dump':
+        try:
+            elf = open(filename[:-5])
+            pass
+        except:
+            pass
+        pass
+    print "Elf!", elf
+    if elf:
+        print "Using ELF file instead of %s"%(filename)
+        memory.load_elf(elf, base_address, address_mask=0x7fffffff)
+        pass
+    else:
+        f = open(filename)
+        memory.load(f, base_address, address_mask=0x7fffffff)
+        f.close()
+        pass
+    mif = tempfile.NamedTemporaryFile(mode='w')
+    memory.write_mif(mif)
+    mif.flush()
+    return mif
 
 #c cdl_test_th
 class cdl_test_th(pycdl.th):
@@ -57,17 +85,19 @@ class vcu108_generic_hw(simple_tb.cdl_test_hw):
                "clk_50":(0,10,10),
                "video_clk":(0,None,None),
                }
-    
+    th_forces = {}
     #f __init__
     def __init__(self, test ):
-        self.th_forces = { "dut.ftb.character_rom.filename":self.teletext_rom_mif,
+        self.th_forces = self.th_forces.copy()
+        self.th_forces.update( { "dut.ftb.character_rom.filename":self.teletext_rom_mif,
                            "dut.ftb.character_rom.verbose":0,
                            "dut.apb_rom.filename":self.apb_rom_mif,
                            "dut.apb_rom.verbose":-1,
                            "th.clock":"clk",
                            "th.inputs":"reset_n uart_txd vcu108_leds__leds[8] vcu108_video__spdif vcu108_video__hsync vcu108_video__vsync vcu108_video__de vcu108_video__data[16]",
                            "th.outputs":"uart_rxd vcu108_inputs__switches[4] vcu108_inputs__buttons[5]",
-                           }
+                           } )
+        print self.th_forces
         simple_tb.cdl_test_hw.__init__(self, test)
         pass
 
@@ -80,12 +110,18 @@ class vcu108_debug_hw(vcu108_generic_hw):
 class vcu108_riscv_hw(vcu108_generic_hw):
     module_name = "tb_vcu108_riscv"
     apb_rom_mif  = "roms/apb_riscv_start_rom.mif"
+    #f __init__
+    def __init__(self, test):
+        self.memory = dump.c_dump()
+        self.mif = get_mif_of_file(self.memory, test.mif_filename )
+        self.th_forces = self.th_forces.copy()
+        self.th_forces["dut.riscv.mem.filename"] = self.mif.name
+        vcu108_generic_hw.__init__(self,test)
+        pass
 
 #c c_test_one
-import axi
-import dump
-class c_test_one(axi.c_axi_test_base):
-    dump_filename = "../riscv-atcf-tests/build/dump/hps_ps2_term2.dump"
+class c_test_one(simple_tb.base_th):
+    mif_filename = "/Users/gstark/Git/atcf_riscv_rust/target/riscv32imc-unknown-none-elf/release/microos.dump"
     #f run
     def run(self):
         self.bfm_wait(1)
@@ -111,6 +147,6 @@ class vcu108_riscv_regression(simple_tb.base_test):
     def test_uart_loopback(self):
         test = c_test_one()
         hw = vcu108_riscv_hw(test)
-        self.do_test_run(hw, 200*1000)
+        self.do_test_run(hw, 20*1000)
     pass
 

@@ -81,6 +81,10 @@ class c_dump(object):
         pass
     #f load_elf_data_section
     def load_elf_data_section(self, section, base_address=0, address_mask=0xffffffff):
+        flags = section.header.sh_flags
+        if (flags & elftools.elf.constants.SH_FLAGS.SHF_ALLOC)==0:
+            print "Not loading section %s as it has not got ALLOC set in flags"%(section.name)
+            return
         address = section.header.sh_addr
         size = section.data_size
         data = section.data()
