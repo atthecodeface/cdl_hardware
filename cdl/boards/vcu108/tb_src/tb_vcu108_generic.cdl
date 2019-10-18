@@ -26,62 +26,61 @@ extern
 module se_test_harness(clock clk,
                        input bit reset_n,
                        output t_vcu108_inputs vcu108_inputs,
-                       input t_vcu108_leds  vcu108_leds,
-                       input t_adv7511 vcu108_video,
-                       output bit uart_rxd,
-                       input bit uart_txd
+                       input t_vcu108_outputs vcu108_outputs,
+                       input t_adv7511 vcu108_video
     )
 {
-    timing from rising clock clk vcu108_inputs, uart_rxd;
-    timing to   rising clock clk vcu108_leds, vcu108_video, uart_txd;
+    timing from rising clock clk vcu108_inputs;
+    timing to   rising clock clk vcu108_outputs, vcu108_video;
 }
 
 /*m tb_vcu108_generic */
 module tb_vcu108_generic( clock clk,
                           clock clk_50,
                           clock video_clk,
+                          clock flash_clk,
                           input bit reset_n
 )
 {
 
     /*b Nets */
-    net t_vcu108_inputs vcu108_inputs;
-    net t_vcu108_leds  vcu108_leds;
+    net t_vcu108_inputs  vcu108_inputs;
+    net t_vcu108_outputs vcu108_outputs;
 
     net t_adv7511 vcu108_video;
-
-    net bit uart_rxd;
-    net bit uart_txd;
+    default clock flash_clk;
+    default reset active_low reset_n;
+    clocked t_mem_flash_in flash_in={*=0};
 
     /*b Instantiations */
     instantiations: {
         se_test_harness th(  clk <- clk,
                              reset_n <= reset_n,
 
-                             vcu108_inputs => vcu108_inputs,
-                             vcu108_leds   <= vcu108_leds,
+                             vcu108_inputs   => vcu108_inputs,
+                             vcu108_outputs  <= vcu108_outputs,
 
-                             vcu108_video <= vcu108_video,
+                             vcu108_video <= vcu108_video
 
-                             uart_rxd => uart_rxd,
-                             uart_txd <= uart_txd
             );
         
         vcu108_generic dut(  clk <- clk,
                              clk_50 <- clk_50,
                              reset_n <= reset_n,
 
-                             vcu108_inputs <= vcu108_inputs,
-                             vcu108_leds => vcu108_leds,
+                             vcu108_inputs  <= vcu108_inputs,
+                             vcu108_outputs => vcu108_outputs,
 
                              video_clk <- video_clk,
                              video_reset_n <= reset_n,
-
                              vcu108_video => vcu108_video,
 
-                             uart_rxd <= uart_rxd,
-                             uart_txd => uart_txd
+                             flash_clk <- flash_clk,
+                             flash_in <= flash_in
+
             );
+        flash_in <= {*=0};
+
     }
 
     /*b All done */

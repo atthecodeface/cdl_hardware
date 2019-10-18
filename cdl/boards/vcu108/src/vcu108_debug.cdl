@@ -24,6 +24,7 @@ include "types/apb.h"
 include "types/csr.h"
 include "types/dprintf.h"
 include "types/sram.h"
+include "types/memories.h"
 include "types/uart.h"
 include "srams.h"
 include "apb/apb_targets.h"
@@ -49,15 +50,17 @@ module vcu108_debug( clock clk,
                      clock clk_50,
                      input bit reset_n,
 
-                     input t_vcu108_inputs vcu108_inputs,
-                     output t_vcu108_leds  vcu108_leds,
+
+                     input  t_vcu108_inputs vcu108_inputs,
+                     output t_vcu108_outputs vcu108_outputs,
 
                      clock video_clk,
                      input bit video_reset_n,
                      output t_adv7511 vcu108_video,
 
-                     input bit uart_rxd,
-                     output bit uart_txd
+                     clock flash_clk,
+                     input t_mem_flash_in flash_in,
+                     output t_mem_flash_out flash_out
     )
 {
     /*b Clock and reset */
@@ -438,14 +441,27 @@ module vcu108_debug( clock clk,
         gpio_input[4;0] <= vcu108_inputs.switches;
         gpio_input[5;4] <= vcu108_inputs.buttons;
 
-        vcu108_leds.leds = counter[8;0];
-        vcu108_leds.leds[7] = uart_tx.txd;
+        flash_out = {*=0}; // wp, reset not used
+        flash_out.we_n = 1;
+        flash_out.adv_n = 1;
+        flash_out.oe_n = 1;
+        flash_out.ce_n = 1;
+        flash_out.data_enable = 0;
+        
+        vcu108_outputs.mdio = { mdc=1, mdio=1, mdio_enable=0 };
+        vcu108_outputs.i2c  = { scl=1, sda=1};
+        vcu108_outputs.i2c_reset_mux_n = 1;
+        vcu108_outputs.eth_reset_n = 1;
+        
+        vcu108_outputs.leds = counter[8;0];
+        vcu108_outputs.leds[7] = uart_tx.txd;
 
         uart_rx = {*=0};
-        uart_rx.rxd = uart_rxd;
-        uart_txd = dprintf_uart_txd;
+        uart_rx.rxd = vcu108_inputs.uart_rx.rxd;
+        vcu108_outputs.uart_tx.txd = dprintf_uart_txd;
+        vcu108_outputs.uart_tx.cts = 0;
         if (vcu108_inputs_r.switches[1]) {
-            uart_txd = uart_tx.txd;
+            vcu108_outputs.uart_tx= uart_tx;
         }
     }
 }

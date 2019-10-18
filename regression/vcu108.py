@@ -84,20 +84,45 @@ class vcu108_generic_hw(simple_tb.cdl_test_hw):
     clocks = { "clk":(0,None,None),
                "clk_50":(0,10,10),
                "video_clk":(0,None,None),
+               "flash_clk":(0,None,None),
                }
     th_forces = {}
+    th_inputs = ["vcu108_outputs__i2c_reset_mux_n",
+                 "vcu108_outputs__i2c__scl",
+                 "vcu108_outputs__i2c__sda",
+                 "vcu108_outputs__eth_reset_n",
+                 "vcu108_outputs__mdio__mdc",
+                 "vcu108_outputs__mdio__mdio",
+                 "vcu108_outputs__mdio__mdio_enable",
+                 "vcu108_outputs__uart_tx__txd",
+                 "vcu108_outputs__uart_tx__cts",
+                 "vcu108_outputs__leds[8]",
+                 "vcu108_video__spdif",
+                 "vcu108_video__hsync",
+                 "vcu108_video__vsync",
+                 "vcu108_video__de",
+                 "vcu108_video__data[16]",
+                 ]
+    th_outputs = ["vcu108_inputs__i2c__scl",
+                  "vcu108_inputs__i2c__sda",
+                  "vcu108_inputs__eth_int_n",
+                  "vcu108_inputs__mdio",
+                  "vcu108_inputs__uart_rx__rxd",
+                  "vcu108_inputs__uart_rx__rts",
+                  "vcu108_inputs__switches[4]",
+                  "vcu108_inputs__buttons[5]",
+                  ]
     #f __init__
     def __init__(self, test ):
         self.th_forces = self.th_forces.copy()
         self.th_forces.update( { "dut.ftb.character_rom.filename":self.teletext_rom_mif,
-                           "dut.ftb.character_rom.verbose":0,
-                           "dut.apb_rom.filename":self.apb_rom_mif,
-                           "dut.apb_rom.verbose":-1,
-                           "th.clock":"clk",
-                           "th.inputs":"reset_n uart_txd vcu108_leds__leds[8] vcu108_video__spdif vcu108_video__hsync vcu108_video__vsync vcu108_video__de vcu108_video__data[16]",
-                           "th.outputs":"uart_rxd vcu108_inputs__switches[4] vcu108_inputs__buttons[5]",
+                                 "dut.ftb.character_rom.verbose":0,
+                                 "dut.apb_rom.filename":self.apb_rom_mif,
+                                 "dut.apb_rom.verbose":-1,
+                                 "th.clock":"clk",
+                                 "th.inputs" :"reset_n " + " ".join(self.th_inputs),
+                                 "th.outputs":" ".join(self.th_outputs),
                            } )
-        print self.th_forces
         simple_tb.cdl_test_hw.__init__(self, test)
         pass
 
@@ -125,11 +150,11 @@ class c_test_one(simple_tb.base_th):
     #f run
     def run(self):
         self.bfm_wait(1)
-        self.uart_rxd.drive(1)
+        self.vcu108_inputs__uart_rx__rxd.drive(1)
         self.bfm_wait(10)
         for i in range(10000):
             self.bfm_wait(1)
-            self.uart_rxd.drive(self.uart_txd.value())
+            self.vcu108_inputs__uart_rx__rxd.drive(self.vcu108_outputs__uart_tx__txd.value())
             pass
         self.finishtest(0,"")
         pass
