@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #c rom
 class rom(object):
     opcodes = {
@@ -118,9 +119,88 @@ class rom(object):
     pass
     #f mif_of_compilation
     @staticmethod
-    def mif_of_compilation(compiled):
-        for (a,d) in compiled["object"]:
-            print "%02x: %010x"%(a,d)
+    def open_filename(filename):
+        import sys
+        if filename=='': return (sys.stdout, lambda x:None)
+        f = open(filename,"w")
+        if not f:
+            die
             pass
+        return (f, lambda x:f.close() )
+    @staticmethod
+    def mif_of_compilation(compiled, filename=''):
+        fmt = "%02x: %010x"
+        (f,c) = rom.open_filename(filename)
+        for (a,d) in compiled["object"]:
+            print >>f, fmt%(a,d)
+            pass
+        c(None)
+        pass
+    @staticmethod
+    def mem_of_compilation(compiled, filename=''):
+        fmt="%010x"
+        (f,c) = rom.open_filename(filename)
+        addresses = []
+        code = {}
+        for (a,d) in compiled["object"]:
+            addresses.append(a)
+            code[a] = d
+            pass
+        addresses.sort()
+        for i in range(addresses[-1]+1):
+            value = 0
+            if i in code: value = code[i]
+            print >>f, fmt%value
+            pass
+        c(None)
         pass
 
+#a Toplevel
+def get_define_int(defines, k, default):
+    if k in defines:
+        return int(defines[k],0)
+        pass
+    return default
+
+if __name__ == "__main__":
+    import argparse, sys, re
+    parser = argparse.ArgumentParser(description='Generate MIF or READMEMH files for APB processor ROM')
+    parser.add_argument('--src', type=str, default=None,
+                    help='Source for APB ROM')
+    parser.add_argument('--mif', type=str, default=None,
+                    help='Output MIF filename')
+    parser.add_argument('--mem', type=str, default=None,
+                    help='Output READMEMH filename')
+    parser.add_argument('--define', type=str, action='append', default=[],
+                    help='Defines for the ROM program')
+    args = parser.parse_args()
+    show_usage = False
+    if args.src is None:
+        show_usage = True
+        pass
+    if show_usage:
+        parser.print_help()
+        sys.exit(0)
+        pass
+    defines = {}
+    dre = re.compile(r"(.*)=(.*)")
+    for d in args.define:
+        m = dre.match(d)
+        if m is None:
+            defines[d] = True
+            pass
+        else:
+            defines[m.group(1)] = m.group(2)
+            pass
+        pass
+    import importlib
+    m = importlib.import_module(args.src)
+    program = m.program(defines)
+    compilation = rom.compile_program(program)
+    if args.mif is not None:
+        rom.mif_of_compilation(compilation, filename=args.mif)
+        pass
+    if args.mem is not None:
+        rom.mem_of_compilation(compilation, filename=args.mem)
+        pass
+    pass

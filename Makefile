@@ -40,6 +40,7 @@ MODEL_LIST  := $(CURDIR)/model_list
 MODELS_MAKE := $(CURDIR)/models.make
 SRC_ROOT    := $(CURDIR)/
 PYTHON_DIR  := ${SRC_ROOT}/python
+ROM_DIR     := ${SRC_ROOT}/roms
 PREFIX_OBJ_DIR := $(CURDIR)/build/
 DEBUG_BUILD := no
 EXTRA_CDLFLAGS := --extra_cdlflags="--v_clkgate_type='banana' --v_use_always_at_star --v_clks_must_have_enables "
@@ -112,14 +113,16 @@ bbc_data:
 	cp ${BBC_DATA_DIR}/disks/* disks
 	python python/rom_to_mif.py
 
+APB_ROM_COMPILE := PYTHONPATH=${ROM_DIR}/src:$$PYTHONPATH ${PYTHON_DIR}/apb_rom.py
 .PHONY: non_bbc_roms
 non_bbc_roms:
 	python python/teletext_font.py       > roms/teletext.mif
+	python python/ps2_bbc_kbd_map.py
 	python python/apb_speed_selection.py > roms/apb_rom.mif
 	python python/apb_vga.py             > roms/apb_vga_rom.mif
-	python python/apb_uart_tx.py         > roms/apb_uart_tx_rom.mif
-	python python/apb_riscv_start.py     > roms/apb_riscv_start_rom.mif
-	python python/ps2_bbc_kbd_map.py
+	${APB_ROM_COMPILE} --src apb_rom_uart_tx --define clk=300 --mif ${ROM_DIR}/apb_uart_tx_300_rom.mif --mem ${ROM_DIR}/apb_uart_tx_300_rom.mem
+	${APB_ROM_COMPILE} --src apb_rom_uart_tx --define clk=100 --mif ${ROM_DIR}/apb_uart_tx_100_rom.mif --mem ${ROM_DIR}/apb_uart_tx_100_rom.mem
+	${APB_ROM_COMPILE} --src apb_rom_riscv_start --define clk=100 --mif ${ROM_DIR}/apb_riscv_start_100_rom.mif --mem ${ROM_DIR}/apb_riscv_start_100_rom.mem
 
 .PHONY: roms
 roms: bbc_data

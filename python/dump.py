@@ -181,6 +181,17 @@ class c_dump(object):
             print >>f, r
             pass
         pass
+    #f write_mem
+    def write_mem(self, f):
+        fmt = "%08x"
+        addresses = self.data.keys()
+        addresses.sort()
+        for a in addresses:
+            r = "@%08x "%a
+            r += fmt % self.data[a]
+            print >>f, r
+            pass
+        pass
     #f write_c_data
     def write_c_data(self, f):
         print >>f, "static uint32_t data[] = {"
@@ -200,3 +211,71 @@ class c_dump(object):
         pass
     #f All done
     pass
+#a Useful invocation function
+def get_define_int(defines, k, default):
+    if k in defines:
+        return int(defines[k],0)
+        pass
+    return default
+
+def file_write(filename, fn):
+    if filename=='-':
+        fn(sys.stdout)
+        pass
+    else:
+        f = open(filename,"w")
+        fn(f)
+        f.close()
+        pass
+    pass
+
+def file_read(filename, args, fn):
+    must_close = False
+    f = sys.stdin
+    if filename!='-':
+        f = open(filename,"r")
+        must_close = True
+        pass
+    mem = c_dump()
+    fn(mem, f) # base_address, address_mask, sections, ...
+    if must_close:
+        f.close()
+        pass
+    return mem
+
+def dump_main(dump=None, allow_load=True, description='Generate MEM, MIF or C data of memory'):
+    import argparse, sys, re
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument('--mif', type=str, default=None,
+                    help='Output MIF filename')
+    parser.add_argument('--mem', type=str, default=None,
+                    help='Output READMEMH filename')
+    parser.add_argument('--c_data', type=str, default=None,
+                    help='Output C data filename')
+    if allow_load:
+        parser.add_argument('--load_mif', type=str, default=None,
+                            help='MIF file to load')
+        parser.add_argument('--load_elf', type=str, default=None,
+                            help='ELF file to load')
+        parser.add_argument('--load_dump', type=str, default=None,
+                            help='Dump file to load')
+    args = parser.parse_args()
+    if args.load_mif is not None:
+        dump = file_read(args.load_mif, args, c_dump.load_mif)
+        pass
+    if args.load_elf is not None:
+        dump = file_read(args.load_elf, args, c_dump.load_elf)
+        pass
+    if args.load_dump is not None:
+        dump = file_read(args.load_dump, args, c_dump.load_dump)
+        pass
+    if dump is None:
+        parse_args.print_help()
+        pass
+    if args.mif    is not None: file_write(args.mif,    dump.write_mif)
+    if args.mem    is not None: file_write(args.mem,    dump.write_mem)
+    if args.c_data is not None: file_write(args.c_data, dump.write_c_data)
+    pass
+
+if __name__ == "__main__":
+    dump_main()
