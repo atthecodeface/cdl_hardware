@@ -26,12 +26,14 @@ include "apb/apb_targets.h"
 extern module se_test_harness( clock clk,
                                input  t_i2c i2c_in,
                                output t_i2c i2c_out,
+                               output t_i2c_master_request master_request,
+                               input t_i2c_master_response master_response,
                                output t_i2c_conf i2c_conf,
                                input  bit[16] gpio_output
     )
 {
-    timing from rising clock clk i2c_out, i2c_conf;
-    timing to   rising clock clk i2c_in, gpio_output;
+    timing from rising clock clk i2c_out, i2c_conf, master_request;
+    timing to   rising clock clk i2c_in, gpio_output, master_response;
 }
 
 /*a Module */
@@ -44,6 +46,12 @@ module tb_i2c( clock clk,
     comb t_i2c i2c_in;
     net t_i2c i2c_th;
     net t_i2c i2c_slave;
+    net t_i2c i2c_master;
+
+    net t_i2c_master_request  master_request "Request from master client";
+    net t_i2c_master_response master_response "Response to master client";
+    comb t_i2c_master_conf master_conf "Configuration of timing of master";
+
     net t_i2c_action i2c_action;
     net t_i2c_slave_request slave_request;
     net t_i2c_slave_response slave_response;
@@ -60,11 +68,17 @@ module tb_i2c( clock clk,
         // i2c_in &= i2c_slave;
         i2c_in.scl = i2c_in.scl & i2c_slave.scl;
         i2c_in.sda = i2c_in.sda & i2c_slave.sda;
+        i2c_in.scl = i2c_in.scl & i2c_master.scl;
+        i2c_in.sda = i2c_in.sda & i2c_master.sda;
         slave_select = {mask=7h70, value=7h10};
+        master_conf = {minor_delay=1, major_delay=10};
+
         se_test_harness th( clk <- clk,
                             i2c_in  <= i2c_in,
                             i2c_out => i2c_th,
                             i2c_conf => i2c_conf,
+                            master_request => master_request,
+                            master_response <= master_response,
                             gpio_output <= gpio_output
             );
         
@@ -74,6 +88,13 @@ module tb_i2c( clock clk,
                            i2c_action => i2c_action,
                            i2c_conf <= i2c_conf );
         
+        i2c_master master(clk <- clk,
+                          reset_n <= reset_n,
+                          i2c_action <= i2c_action,
+                          i2c_out => i2c_master,
+                          master_request <= master_request,
+                          master_response => master_response,
+                          master_conf <= master_conf );
         i2c_slave slave(clk <- clk,
                         reset_n <= reset_n,
                         i2c_action <= i2c_action,

@@ -22,7 +22,7 @@
 /*a Types */
 /*t t_i2c_action_type - from i2c_interface
  *
- * Transactions are Start -> [Bit Start -> Bit End]* -> [Start ->[Bit Start -> Bit End]*]* -> Stop
+ * Transactions are Start -> Ready -> [Bit Start -> Bit End]* -> [Start -> Ready -> [Bit Start -> Bit End]*]* -> Stop
  */
 typedef enum [3] {
     i2c_action_none        "No event",
@@ -61,6 +61,28 @@ typedef struct {
     bit    ack   "Asserted for writes when they are taken, and for reads when data is valid";
     bit[8] data  "Result of last read - must be held steady until next request";
 } t_i2c_slave_response;
+
+/*t t_i2c_master_request */
+typedef struct {
+    // Need a way to force reset of state machine and master
+    bit valid;
+    bit cont "If asserted then do not issue a stop at the end but prepare for repeated start";
+    bit[2]  num_out;
+    bit[3]  num_in;
+    bit[32] data;
+} t_i2c_master_request;
+
+/*t t_i2c_master_response */
+typedef struct {
+    bit    ack   "Asserted for writes when they are taken, and for reads when data is valid";
+    bit[8] data  "Result of last read - must be held steady until next request";
+} t_i2c_master_response;
+
+/*t t_i2c_master_conf */
+typedef struct {
+    bit[4] minor_delay "Delay in periods for data setup before clock";
+    bit[4] major_delay "Delay in periods for other timings";
+} t_i2c_master_conf;
 
 /*t t_i2c_slave_select */
 typedef struct {

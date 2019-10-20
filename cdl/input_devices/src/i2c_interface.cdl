@@ -318,7 +318,7 @@ mode) with a 10MHz internal clock.
             if (clock_state.period_counter==1) {
                 clock_combs.period_clock_enable = 1;
                 clock_state.period_counter <= 0;
-                if (i2c_state.action.is_busy) {
+                if (i2c_state.action.is_busy || (i2c_state.busy_counter!=0)) {
                     clock_state.period_counter <= i2c_conf.period;
                 }
             } elsif (clock_state.period_counter!=0) {
@@ -561,9 +561,10 @@ mode) with a 10MHz internal clock.
             i2c_combs.restart_period_counter = 1;
         }
         case action_i2c_stopping: {
-            i2c_state.fsm_state     <= i2c_fsm_was_busy;
+            i2c_state.action.action  <=  i2c_action_stop;
+            i2c_state.fsm_state      <= i2c_fsm_was_busy;
             i2c_state.action.is_busy <= 0;
-            i2c_state.busy_counter  <= -1;
+            i2c_state.busy_counter   <= -1;
             i2c_combs.restart_period_counter = 1;
         }
         }

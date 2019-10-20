@@ -49,7 +49,23 @@ extern module i2c_slave( clock        clk          "Clock",
     timing from  rising clock clk i2c_out, slave_request;
 }
 
-/*m i2c_slave */
+/*m i2c_master */
+extern module i2c_master( clock        clk          "Clock",
+                          input bit    reset_n      "Active low reset",
+                          input t_i2c_action i2c_action "State from an i2c_interface module",
+                          output t_i2c       i2c_out "Pin values to drive - 1 means float high, 0 means pull low",
+                          input t_i2c_master_request master_request "Request from master client",
+                          output t_i2c_master_response master_response "Response to master client",
+                          input t_i2c_master_conf master_conf "Configuration of timing of master"
+    )
+{
+    timing to    rising clock clk i2c_action;
+    timing from  rising clock clk i2c_out;
+    timing to    rising clock clk master_request, master_conf;
+    timing from  rising clock clk master_response;
+}
+
+/*m i2c_slave_apb_master */
 extern module i2c_slave_apb_master( clock        clk          "Clock",
                              input bit    reset_n      "Active low reset",
                              input t_i2c_slave_request slave_request "Request to slave client",

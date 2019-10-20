@@ -159,6 +159,7 @@ cdl cdl/input_devices/src        ps2_host               inc:cdl/inc
 cdl cdl/input_devices/src        ps2_host_keyboard      inc:cdl/inc
 cdl cdl/input_devices/src        i2c_interface          inc:cdl/inc
 cdl cdl/input_devices/src        i2c_slave              inc:cdl/inc
+cdl cdl/input_devices/src        i2c_master             inc:cdl/inc
 cdl cdl/input_devices/src        i2c_slave_apb_master   inc:cdl/inc
 cdl cdl/input_devices/tb_src     tb_input_devices       inc:cdl/inc
 cdl cdl/input_devices/tb_src     tb_i2c                 inc:cdl/inc

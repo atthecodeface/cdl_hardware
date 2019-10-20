@@ -281,8 +281,8 @@ class c_ps2_test_one(simple_tb.base_th):
         pass
 
 #a I2C test classes
-#c c_i2c_test_one
-class c_i2c_test_one(simple_tb.base_th):
+#c c_i2c_test_base
+class c_i2c_test_base(simple_tb.base_th):
     #f i2c_wait
     def i2c_wait(self, n):
         self.bfm_wait(self.cfg_divider*n*5)
@@ -401,6 +401,8 @@ class c_i2c_test_one(simple_tb.base_th):
     def i2c_apb_device_read(self, address, reg):
         self.i2c_write(cont=True, data=[(address<<1) | 0, reg])
         return self.i2c_read(cont=False, data=[(address<<1) | 1], num=1)[0]
+#c c_i2c_test_one
+class c_i2c_test_one(c_i2c_test_base):
     #f run
     def run(self):
         self.cfg_divider = 3
@@ -426,6 +428,29 @@ class c_i2c_test_one(simple_tb.base_th):
         if self.ios.gpio_output.value()!=0x3:
             self.failtest(self.global_cycle(),"Expected GPIOs to be 0x3")
             pass
+        self.finishtest(0,"")
+        pass
+
+#c c_i2c_test_two
+class c_i2c_test_two(c_i2c_test_base):
+    #f run
+    def run(self):
+        self.cfg_divider = 3
+        self.cfg_period = 2
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(25)
+        self.i2c_idle()
+        self.ios.i2c_conf__divider.drive(self.cfg_divider)
+        self.ios.i2c_conf__period.drive(self.cfg_period)
+        self.bfm_wait(100)
+        self.ios.master_request__valid.drive(1)
+        self.ios.master_request__cont.drive(0)
+        self.ios.master_request__num_in.drive(0)
+        self.ios.master_request__num_out.drive(2)
+        self.ios.master_request__data.drive(0xf000 | ((0x1b<<1)|0))
+        self.bfm_wait(10)
+        self.ios.master_request__valid.drive(0)
+        self.bfm_wait(1000)
         self.finishtest(0,"")
         pass
 
@@ -465,11 +490,18 @@ class i2c_test_hw(simple_tb.cdl_test_hw):
                   "th.inputs":("i2c_in__scl "+
                                "i2c_in__sda "+
                                "gpio_output[16] "+
+                               "master_response__ack "+
+                               "master_response__data[8] "+
                                ""),
                   "th.outputs":("i2c_out__sda "+
                                 "i2c_out__scl "+
                                 "i2c_conf__divider[16] "+
                                 "i2c_conf__period[16] "+
+                                "master_request__valid "+
+                                "master_request__cont "+
+                                "master_request__data[32] "+
+                                "master_request__num_in[3] "+
+                                "master_request__num_out[2] "+
                                ""),
                   }
     module_name = "tb_i2c"
@@ -487,8 +519,13 @@ class ps2(simple_tb.base_test):
 
 #c i2c
 class i2c(simple_tb.base_test):
-    def test_one(self):
+    def xtest_one(self):
         test = c_i2c_test_one()
+        hw = i2c_test_hw(test=test)
+        self.do_test_run(hw, num_cycles=20*1000)
+        pass
+    def test_two(self):
+        test = c_i2c_test_two()
         hw = i2c_test_hw(test=test)
         self.do_test_run(hw, num_cycles=20*1000)
         pass
