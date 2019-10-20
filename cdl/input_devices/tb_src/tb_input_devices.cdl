@@ -27,7 +27,6 @@ extern module se_test_harness( clock clk,
                                input t_ps2_rx_data ps2_rx_data,
                                input t_ps2_key_state ps2_key,
                                output bit[16] divider
-
     )
 {
     timing from rising clock clk ps2_out;

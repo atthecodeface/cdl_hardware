@@ -17,6 +17,24 @@ import pycdl
 import sys, os, unittest
 import simple_tb
 
+#a Useful functions
+def int_of_bits(bits):
+    l = len(bits)
+    m = 1<<(l-1)
+    v = 0
+    for b in bits:
+        v = (v>>1) | (m*b)
+        pass
+    return v
+
+def bits_of_n(nbits, n):
+    bits = []
+    for i in range(nbits):
+        bits.append(n&1)
+        n >>= 1
+        pass
+    return bits
+
 #a PS2 data
 ps2_key_map = {
 0x111:"Alt (right)",
@@ -128,7 +146,7 @@ for c,k in ps2_key_map.iteritems():
     ps2_code_of_key[k]=c
     pass
 
-#a Test classes
+#a PS2 test classes
 #c c_ps2_test_one
 class c_ps2_test_one(simple_tb.base_th):
     keys_to_test = ( ("Q", True),
@@ -262,6 +280,155 @@ class c_ps2_test_one(simple_tb.base_th):
         self.finishtest(0,"")
         pass
 
+#a I2C test classes
+#c c_i2c_test_one
+class c_i2c_test_one(simple_tb.base_th):
+    #f i2c_wait
+    def i2c_wait(self, n):
+        self.bfm_wait(self.cfg_divider*n*5)
+    #f i2c_idle - leaves clock high
+    def i2c_idle(self):
+        self.ios.i2c_out__scl.drive(1)
+        self.ios.i2c_out__sda.drive(1)
+        self.i2c_wait(3)
+        pass
+    #f i2c_start - leaves clock low
+    def i2c_start(self):
+        self.ios.i2c_out__sda.drive(1)
+        self.ios.i2c_out__scl.drive(1)
+        self.i2c_wait(1)
+        self.ios.i2c_out__sda.drive(0)
+        self.i2c_wait(1)
+        self.ios.i2c_out__scl.drive(0)
+        self.i2c_wait(1)
+        pass
+    #f i2c_stop - leaves bus quiescent (both high)
+    def i2c_stop(self):
+        self.ios.i2c_out__sda.drive(0)
+        self.ios.i2c_out__scl.drive(1)
+        self.i2c_wait(1)
+        self.ios.i2c_out__sda.drive(1)
+        self.i2c_wait(1)
+        pass
+    #f i2c_cont - expects clock low, leaves bus quiescent
+    def i2c_cont(self):
+        self.ios.i2c_out__sda.drive(1)
+        self.ios.i2c_out__scl.drive(0)
+        self.i2c_wait(1)
+        self.ios.i2c_out__scl.drive(1)
+        self.i2c_wait(1)
+        pass
+    #f i2c_bit_start - requires clock low, leaves clock high
+    def i2c_bit_start(self, d=None):
+        if d is not None:
+            self.ios.i2c_out__sda.drive(d)
+            self.i2c_wait(1)
+            pass
+        else:
+            pass
+        self.ios.i2c_out__scl.drive(1)
+        d = self.ios.i2c_in__sda.value()
+        self.i2c_wait(1)
+        return d
+    #f i2c_bit_stop - requires clock high, leaves clock low
+    def i2c_bit_stop(self):
+        self.ios.i2c_out__scl.drive(0)
+        self.i2c_wait(1)
+        pass
+    #f i2c_ack - requires clock low, leaves clock low
+    def i2c_ack(self):
+        self.i2c_bit_start(0)
+        self.i2c_bit_stop()
+        self.ios.i2c_out__sda.drive(1)
+        self.i2c_wait(1)
+        pass
+    #f i2c_out_byte
+    def i2c_out_byte(self, data):
+        bits = bits_of_n(8, data)
+        bits.reverse()
+        for d in bits:
+            self.i2c_bit_start(d)
+            self.i2c_bit_stop()
+            pass
+        ack = self.i2c_bit_start(None)
+        self.i2c_bit_stop()
+        return ack==0
+    #f i2c_read_byte
+    def i2c_read_byte(self, do_ack=False):
+        d = []
+        for i in range(8):
+            d.append(self.i2c_bit_start())
+            self.i2c_bit_stop()
+            pass
+        d.reverse()
+        data = int_of_bits(d)
+        if do_ack:
+            self.i2c_ack()
+            pass
+        return data
+    #f i2c_write
+    def i2c_write(self, data, cont=False):
+        self.i2c_start()
+        for d in data:
+            ack = self.i2c_out_byte(d)
+            if not ack: self.failtest(self.global_cycle(),"Expected an ack")
+        if cont:
+            self.i2c_cont()
+        else:
+            self.i2c_stop()
+            pass
+        return
+    #f i2c_read
+    def i2c_read(self, data, num, cont=False):
+        self.i2c_start()
+        for d in data:
+            ack = self.i2c_out_byte(d)
+            if not ack: self.failtest(self.global_cycle(),"Expected an ack")
+        data = []
+        for i in range(num):
+            data.append(self.i2c_read_byte(do_ack=(i<num-1)))
+        if cont:
+            self.i2c_cont()
+        else:
+            self.i2c_stop()
+            pass
+        return data
+    #f i2c_apb_device_write
+    def i2c_apb_device_write(self, address, reg, data):
+        self.i2c_write(cont=False, data=[(address<<1) | 0, reg, data])
+        pass
+    #f i2c_apb_device_read
+    def i2c_apb_device_read(self, address, reg):
+        self.i2c_write(cont=True, data=[(address<<1) | 0, reg])
+        return self.i2c_read(cont=False, data=[(address<<1) | 1], num=1)[0]
+    #f run
+    def run(self):
+        self.cfg_divider = 3
+        self.cfg_period = 2
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(25)
+        self.i2c_idle()
+        self.ios.i2c_conf__divider.drive(self.cfg_divider)
+        self.ios.i2c_conf__period.drive(self.cfg_period)
+        self.bfm_wait(100)
+        self.i2c_write(cont=False, data=[(0x1<<1) | 0, 0x12, 0x34, 0x56, 0x78])
+        self.i2c_apb_device_write(0x1b, 0, 0xf0)
+        if self.i2c_apb_device_read(0x1b, 0)!=0xf0:
+            self.failtest(self.global_cycle(),"Read back of GPIO did not get 0xf0 when expected")
+            pass
+        if self.ios.gpio_output.value()!=0xc:
+            self.failtest(self.global_cycle(),"Expected GPIOs to be 0xc")
+            pass
+        self.i2c_apb_device_write(0x1b, 0, 0x0f)
+        if self.i2c_apb_device_read(0x1b, 0)!=0x0f:
+            self.failtest(self.global_cycle(),"Read back of GPIO did not get 0x0f when expected")
+            pass
+        if self.ios.gpio_output.value()!=0x3:
+            self.failtest(self.global_cycle(),"Expected GPIOs to be 0x3")
+            pass
+        self.finishtest(0,"")
+        pass
+
 #a Hardware classes
 #c ps2_test_hw
 class ps2_test_hw(simple_tb.cdl_test_hw):
@@ -289,12 +456,40 @@ class ps2_test_hw(simple_tb.cdl_test_hw):
     module_name = "tb_input_devices"
     pass
 
+#c i2c_test_hw
+class i2c_test_hw(simple_tb.cdl_test_hw):
+    """
+    Simple instantiation of LED chain
+    """
+    th_forces = { "th.clock":"clk",
+                  "th.inputs":("i2c_in__scl "+
+                               "i2c_in__sda "+
+                               "gpio_output[16] "+
+                               ""),
+                  "th.outputs":("i2c_out__sda "+
+                                "i2c_out__scl "+
+                                "i2c_conf__divider[16] "+
+                                "i2c_conf__period[16] "+
+                               ""),
+                  }
+    module_name = "tb_i2c"
+    pass
+
 #a Simulation test classes
 #c ps2
 class ps2(simple_tb.base_test):
-    def test_one(self):
+    def xtest_one(self):
         test = c_ps2_test_one()
         hw = ps2_test_hw(test=test)
         self.do_test_run(hw, num_cycles=1000*1000)
+        pass
+    pass
+
+#c i2c
+class i2c(simple_tb.base_test):
+    def test_one(self):
+        test = c_i2c_test_one()
+        hw = i2c_test_hw(test=test)
+        self.do_test_run(hw, num_cycles=20*1000)
         pass
     pass

@@ -1,0 +1,93 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   i2c_slave.cdl
+ * @brief  I2C slave interface
+ *
+ * CDL implementation of an I2C slave interface
+ *
+ */
+
+/*a Includes */
+include "types/apb.h"
+include "types/i2c.h"
+
+/*a Types */
+/*t t_slave_state
+ *
+ * State of the slave
+ */
+typedef struct {
+    t_apb_request apb_request;
+    t_i2c_slave_response slave_response;
+} t_slave_state;
+
+/*a Module
+ */
+module i2c_slave_apb_master( clock        clk          "Clock",
+                             input bit    reset_n      "Active low reset",
+                             input t_i2c_slave_request slave_request "Request to slave client",
+                             output t_i2c_slave_response slave_response "Response from slave client",
+                             output t_apb_request apb_request,
+                             input t_apb_response apb_response
+
+    )
+"""
+Simple APB master for 8-bit address and 8-bit data to show use of I2C slave
+"""
+{
+    /*b Default clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b State and signals */
+    clocked t_slave_state       slave_state={*=0}  "Slave state";
+    
+    /*b Drive outputs */
+    drive_outputs """
+    """: {
+        slave_response = slave_state.slave_response;
+        apb_request    = slave_state.apb_request;
+    }
+                    
+    /*b APB state logic */
+    apb_state_logic """
+    """: {
+        slave_state.slave_response.ack <= 0;
+        if (slave_state.apb_request.psel) {
+            if (!slave_state.apb_request.penable) {
+                slave_state.apb_request.penable <= 1;
+            } else {
+                if (apb_response.pready) {
+                    slave_state.apb_request <= {psel=0, penable=0};
+                    slave_state.slave_response.ack <= 1;
+                    slave_state.slave_response.data <= apb_response.prdata[8;0];
+                }
+            }        
+        } elsif (slave_request.valid && !slave_state.slave_response.ack) {
+            if (slave_request.first) {
+                slave_state.slave_response.ack <= 1;
+                if (!slave_request.read_not_write) { // write of a byte is the address
+                    slave_state.apb_request.paddr[8;0] <= slave_request.data;
+                }
+            } else {
+                slave_state.apb_request <= {psel=1,
+                        penable=0,
+                        pwrite=!slave_request.read_not_write,
+                        pwdata=bundle(24b0,slave_request.data)};
+            }
+        }
+    }
+
+    /*b All done */
+}

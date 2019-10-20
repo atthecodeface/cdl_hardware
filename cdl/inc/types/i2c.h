@@ -20,6 +20,60 @@
  */
 
 /*a Types */
+/*t t_i2c_action_type - from i2c_interface
+ *
+ * Transactions are Start -> [Bit Start -> Bit End]* -> [Start ->[Bit Start -> Bit End]*]* -> Stop
+ */
+typedef enum [3] {
+    i2c_action_none        "No event",
+    i2c_action_start       "Start of transaction - bit_num and is_ack are invalid",
+    i2c_action_stop        "Stop transaction",
+    i2c_action_ready       "SCL low after start ready for start bit - bit_num and is_ack are invalid",
+    i2c_action_bit_start   "Start bit - capture the bit value here - bit_num and is_ack are valid",
+    i2c_action_bit_end     "End of bit - this is the time to use the bit data - bit_num and is_ack are same as for bit_start",
+    i2c_action_timeout     "Timeout occurred",
+} t_i2c_action_type;
+
+/*t t_i2c_action - from i2c_interface
+ *
+ * I2C action
+ */
+typedef struct {
+    bit               is_busy "Asserted if the I2C interface is busy";
+    t_i2c_action_type action;
+    bit               bit_value;
+    bit[3]            bit_num;
+    bit               is_ack;
+    bit               period_enable "Use as an enable for periods for hold";
+} t_i2c_action;
+
+/*t t_i2c_slave_request */
+typedef struct {
+    bit valid;
+    bit read_not_write;
+    bit    first;
+    bit[7] device;
+    bit[8] data;
+} t_i2c_slave_request;
+
+/*t t_i2c_slave_response */
+typedef struct {
+    bit    ack   "Asserted for writes when they are taken, and for reads when data is valid";
+    bit[8] data  "Result of last read - must be held steady until next request";
+} t_i2c_slave_response;
+
+/*t t_i2c_slave_select */
+typedef struct {
+    bit[7] value;
+    bit[7] mask;
+} t_i2c_slave_select;
+
+/*t t_i2c_conf */
+typedef struct {
+    bit[16] divider "Clock divider to generate internal clock for capturing edges etc (e.g. 100ns or 10MHz)";
+    bit[16] period  "Divide value to divide internal clock to a period of (e.g.) 500ns for standard I2C";
+} t_i2c_conf;
+
 /*t t_i2c - open drain on output, so no enables */
 typedef struct {
     bit scl;

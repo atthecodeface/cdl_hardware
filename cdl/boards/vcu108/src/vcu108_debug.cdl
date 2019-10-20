@@ -235,6 +235,11 @@ module vcu108_debug( clock clk,
                     data_2=bundle(vga_counters[1], 32h20000087),
                     data_3=bundle(vga_counters[2], 8hff, 24h0) };
         }
+        for (i; num_dprintf_requesters) {
+            if (fb_sram_ctrl[i]) {
+                dprintf_req[i].valid <= 0;
+            }
+        }
     }
 
     /*b Dprintf multiplexing */

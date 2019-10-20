@@ -1,0 +1,336 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   i2c_slave.cdl
+ * @brief  I2C slave interface
+ *
+ * CDL implementation of an I2C slave interface
+ *
+ */
+
+/*a Includes */
+include "types/i2c.h"
+
+/*a Types */
+/*t t_i2c_action
+ *
+ *
+ */
+typedef enum [4] {
+    slave_action_none                 "Keep status quo",
+    slave_action_start                "Start looking for address",
+    slave_action_abort                "Return to idle, stop driving bus",
+    slave_action_store_bit            "Store bit in shift register",
+    slave_action_ack                  "Start ACK of I2C",
+    slave_action_write_get            "Get 8 bits of data for a write",
+    slave_action_write_start          "Start write transaction with 8 bits of data in shift register",
+    slave_action_write_ack            "Start ack of write transaction",
+    slave_action_read_start           "Start read transaction",
+    slave_action_read_capture         "Capture read transaction response as 8 bits of data in shift register",
+    slave_action_read_put             "Put bottom bit of data on SDA",
+    slave_action_read_ack             "Start ack of read transaction"
+} t_slave_action;
+
+/*t t_slave_fsm
+ *
+ * Slave FSM state
+ */
+typedef fsm {
+    slave_fsm_idle         "Waiting for start";
+    slave_fsm_address      "Waiting for address bits";
+    slave_fsm_ack          "Acking I2C";
+    slave_fsm_write_get    "Getting data byte in to shift register for write";
+    slave_fsm_write_transaction  "Performing write transaction";
+    slave_fsm_write_ack    "Acking I2C write";
+    slave_fsm_read_transaction  "Performing read transaction, capturing in shift register";
+    slave_fsm_read_put      "Putting data from shift register to SDA";
+    slave_fsm_read_ack     "Checking ack of I2C read";
+} t_slave_fsm;
+
+/*t t_slave_state
+ *
+ * State of the slave
+ */
+typedef struct {
+    t_slave_fsm fsm_state;
+    bit[8] data            "Data shift register";
+    t_i2c  i2c_out;
+    t_i2c_slave_request slave_request;
+    bit[2] scl_hold_low "If asserted hold SCL low until period_enable from I2c interface to release; guarantees SDA setup to SCL";
+} t_slave_state;
+
+/*t t_slave_combs
+ *
+ */
+typedef struct {
+    t_slave_action action "Action to take based on receive state machine";
+    bit address_match        "Asserted if shift register matches address (only valid at end of bit 7)";
+    bit is_read              "Asserted if transaction is a read (only valid at end of bit 7)";
+    bit transaction_complete "Asserted if the external slave transaction is complete";
+} t_slave_combs;
+
+/*a Module
+ */
+module i2c_slave( clock        clk          "Clock",
+                  input bit    reset_n      "Active low reset",
+                  input t_i2c_action i2c_action "State from an i2c_interface module",
+                  output t_i2c       i2c_out "Pin values to drive - 1 means float high, 0 means pull low",
+                  output t_i2c_slave_request slave_request "Request to slave client",
+                  input t_i2c_slave_response slave_response "Response from slave client",
+                  input t_i2c_slave_select slave_select "Slave select to select this slave on I2C"
+    )
+"""
+Idle         : Start    -> Address
+Address      : Bit(0-7) -> Store bit
+Address      : End(7) & AddressMatches -> Ack
+Ack : (drive SDA low)
+Ack : Bit -> Ack
+Ack : End -> read or write...
+
+"""
+{
+    /*b Default clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b State and signals */
+    clocked t_slave_state       slave_state={*=0, i2c_out={*=1}}  "Slave state";
+    comb t_slave_combs          slave_combs                       "Decode of stalce state and i2c_action in";
+    
+    /*b Drive outputs */
+    drive_outputs """
+    """: {
+        i2c_out = slave_state.i2c_out;
+        slave_request = slave_state.slave_request;
+    }
+                    
+    /*b I2C Slave state */
+    i2c_slave_logic """
+    """: {
+        /*b Decode state */
+        slave_combs.address_match        = 0;
+        if ((slave_state.data[7;1] & slave_select.mask) == slave_select.value) {
+            slave_combs.address_match        = 1;
+        }
+        slave_combs.is_read              = slave_state.data[0];
+        slave_combs.transaction_complete = slave_state.slave_request.valid && slave_response.ack;
+
+        /*b Determine action to perform */
+        slave_combs.action = slave_action_none;
+        full_switch (slave_state.fsm_state) {
+        case slave_fsm_idle: {
+            if (i2c_action.action==i2c_action_start) {
+                slave_combs.action = slave_action_start;
+            }
+        }
+        case slave_fsm_address: {
+            full_switch (i2c_action.action) {
+            case i2c_action_none: {
+                 slave_combs.action = slave_action_none;
+            }
+            case i2c_action_ready: {
+                 slave_combs.action = slave_action_none;
+            }
+            case i2c_action_bit_start: {
+                slave_combs.action = slave_action_store_bit;
+            }
+            case i2c_action_bit_end: {
+                slave_combs.action = slave_action_none;
+                if (i2c_action.bit_num==7) {
+                    slave_combs.action = slave_action_abort;
+                    if (slave_combs.address_match) {
+                        slave_combs.action = slave_action_ack;
+                    }
+                }
+            }
+            default: {
+                slave_combs.action = slave_action_abort;
+            }
+            }
+        }
+        case slave_fsm_ack: {
+            full_switch (i2c_action.action) {
+            case i2c_action_none, i2c_action_bit_start: {
+                 slave_combs.action = slave_action_none;
+            }
+            case i2c_action_bit_end: {
+                slave_combs.action = slave_action_write_get;
+                if (slave_combs.is_read) {
+                    slave_combs.action = slave_action_read_start;
+                }
+            }
+            default: {
+                slave_combs.action = slave_action_abort;
+            }
+            }
+        }
+        case slave_fsm_write_get: {
+            full_switch (i2c_action.action) {
+            case i2c_action_none: {
+                 slave_combs.action = slave_action_none;
+            }
+            case i2c_action_bit_start: {
+                slave_combs.action = slave_action_store_bit;
+            }
+            case i2c_action_bit_end: {
+                slave_combs.action = slave_action_none;
+                if (i2c_action.bit_num==7) {
+                    slave_combs.action = slave_action_write_start;
+                }
+            }
+            case i2c_action_start: {
+                slave_combs.action = slave_action_start;
+            }
+            default: {
+                slave_combs.action = slave_action_abort;
+            }
+            }
+        }
+        case slave_fsm_write_transaction: {
+            assert(!slave_state.i2c_out.scl, "SCL should be low while write transaction is in progress");
+            if (slave_combs.transaction_complete) {
+                slave_combs.action = slave_action_write_ack;
+            }
+        }
+        case slave_fsm_write_ack: {
+            assert(!slave_state.i2c_out.sda, "SDA should be low during slave ack");
+            full_switch (i2c_action.action) {
+            case i2c_action_none, i2c_action_bit_start: {
+                 slave_combs.action = slave_action_none;
+            }
+            case i2c_action_bit_end: {
+                slave_combs.action = slave_action_write_get;
+            }
+            default: {
+                slave_combs.action = slave_action_abort;
+            }
+            }
+        }
+        case slave_fsm_read_transaction: { // transaction is valid, waiting for transaction ack
+            assert(!slave_state.i2c_out.scl, "SCL should be low while read transaction is in progress");
+            if (slave_combs.transaction_complete) {
+                slave_combs.action = slave_action_read_capture;
+            }
+        }
+        case slave_fsm_read_put: { // putting data bits out - change data at every bit end
+            full_switch (i2c_action.action) {
+            case i2c_action_none, i2c_action_bit_start: {
+                 slave_combs.action = slave_action_none;
+            }
+            case i2c_action_bit_end: {
+                slave_combs.action = slave_action_read_put;
+                if (i2c_action.bit_num==7) {
+                    slave_combs.action = slave_action_read_ack;
+                }
+            }
+            default: {
+                slave_combs.action = slave_action_abort;
+            }
+            }
+        }
+        case slave_fsm_read_ack: { // waiting for bit end for Ack - which should be a 1 if another read is required
+            full_switch (i2c_action.action) {
+            case i2c_action_none, i2c_action_bit_start: {
+                 slave_combs.action = slave_action_none;
+            }
+            case i2c_action_bit_end: {
+                slave_combs.action = slave_action_read_start;
+                if (i2c_action.bit_value) { // ack should be low!
+                    slave_combs.action = slave_action_abort;
+                }
+            }
+            default: {
+                slave_combs.action = slave_action_abort;
+            }
+            }
+        }
+        }
+        if (!i2c_action.is_busy) { // Defensive
+            slave_combs.action = slave_action_abort;
+        }
+
+        /*b Handle action */
+        if (slave_state.scl_hold_low) {
+            slave_state.i2c_out.scl <= 0;
+            if (i2c_action.period_enable) {
+                slave_state.scl_hold_low <= 0;
+                slave_state.i2c_out.scl <= 1;
+            }
+        }
+        full_switch (slave_combs.action) {
+        case slave_action_none: {
+            slave_state.fsm_state <= slave_state.fsm_state;
+        }
+        case slave_action_start: {
+            slave_state.fsm_state <= slave_fsm_address;
+        }
+        case slave_action_abort: {
+            slave_state.fsm_state <= slave_fsm_idle;
+            slave_state.i2c_out <= {*=1};
+            slave_state.slave_request.first <= 1;
+        }
+        case slave_action_store_bit: {
+            slave_state.data    <= slave_state.data << 1;
+            slave_state.data[0] <= i2c_action.bit_value;
+        }
+        case slave_action_ack: {
+            slave_state.i2c_out.sda <= 0;
+            slave_state.fsm_state <= slave_fsm_ack;
+            slave_state.slave_request.device   <= slave_state.data[7;1];
+        }
+        case slave_action_write_get: { // start waiting for first bit of a data byte to write
+            slave_state.i2c_out <= {*=1};
+            slave_state.fsm_state <= slave_fsm_write_get;
+        }
+        case slave_action_write_start: { // start write transaction (SCL should be driven low by master)
+            slave_state.i2c_out.scl <= 0; // hold SCL low while transaction in progress
+            slave_state.fsm_state <= slave_fsm_write_transaction;
+            slave_state.slave_request.valid <= 1;
+            slave_state.slave_request.read_not_write <= 0;
+            slave_state.slave_request.data           <= slave_state.data;
+        }
+        case slave_action_write_ack: { // acknowledge write - probably should hold off releasing clock?
+            slave_state.scl_hold_low <= 1;  // release SCL (SCL is low, SDA may change)
+            slave_state.i2c_out.sda <= 0;
+            slave_state.slave_request.valid <= 0;
+            slave_state.slave_request.first <= 0;
+            slave_state.fsm_state <= slave_fsm_write_ack;
+        }
+        case slave_action_read_start: { // start read transaction (SCL should be driven low by master)
+            slave_state.i2c_out.scl <= 0; // hold SCL low while transaction in progress
+            slave_state.fsm_state   <= slave_fsm_read_transaction;
+            slave_state.slave_request.valid <= 1;
+            slave_state.slave_request.read_not_write <= 1;
+        }
+        case slave_action_read_capture: { // read transaction complete, capture data from slave
+            slave_state.slave_request.valid <= 0;
+            slave_state.slave_request.first <= 0;
+            slave_state.data        <= slave_response.data<<1;
+            slave_state.i2c_out.sda <= slave_response.data[7];
+            slave_state.scl_hold_low <= 1;  // release SCL (SCL is low, SDA may change)
+            slave_state.fsm_state <= slave_fsm_read_put;
+        }
+        case slave_action_read_put: { // put out next bit of data (on falling SCL)
+            slave_state.data        <= slave_state.data<<1;
+            slave_state.i2c_out.sda <= slave_state.data[7];
+            slave_state.fsm_state   <= slave_fsm_read_put;
+        }
+            case slave_action_read_ack: { // stop driving SDA (on falling SCL)
+            slave_state.i2c_out <= {*=1};
+            slave_state.fsm_state <= slave_fsm_read_ack;
+        }
+        }
+
+        /*b All done */
+    }
+}

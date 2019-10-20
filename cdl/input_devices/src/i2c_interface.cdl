@@ -1,0 +1,576 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   ps2_host.cdl
+ * @brief  PS2 interface for keyboard or mouse
+ *
+ * CDL implementation of a PS2 interface host driver
+ *
+ * The PS/2 interface is a bidirectional serial interface running on an
+ * open collector bus pin pair (clock and data).
+ * 
+ * A slave, such as a keyboard or mouse, owns the @clock pin, except for
+ * the one time that a host can usurp it to request transfer from host to
+ * slave. (Known as clock-inhibit)
+ * 
+ * A slave can present data to the host (this module) by:
+ * 
+ * 0. Ensure clock is high for 50us
+ * 1. Pull data low; wait 5us to 25us.
+ * 2. Pull clock low; wait 30us.
+ * 3. Let clock rise; wait 15us.
+ * 4. Pull data low or let it rise; wait 15us (data bit 0)
+ * 5. Pull clock low; wait 30us.
+ * 6. Let clock rise; wait 15us.
+ * 7... Pull data low or let it rise; wait 15us (data bit 1..7)
+ * 8... Pull clock low; wait 30us
+ * 9... Let clock rise; wait 15us - repeat from 7
+ * 10... Pull data low or let it rise; wait 15us (parity bit)
+ * 11... Pull clock low; wait 30us
+ * 12... Let clock rise; wait 15us.
+ * 13... Let data rise; wait 15us (stop bit)
+ * 14... Pull clock low; wait 30us
+ * 15... Let clock rise; wait 15us.
+ * 
+ * If the clock fails to rise on any of the pulses - because the host is
+ * driving it low (clock-inhibit) - the slave will have to retransmit the
+ * byte (and any other byte of a packet that it has already sent).
+ * 
+ * A host can present data to the slave with:
+ * 1. Pull clock low for 100us; start 15ms timeout
+ * 2. Pull data low, wait for 15us.
+ * 3. Let clock rise, wait for 15us.
+ * 4. Check the clock is high.
+ * 5. Wait for clock low
+ * 6. On clock low, wait for 10us, and set data to data bit 0
+ * 7. Wait for clock high
+ * 8. Wait for clock low
+ * 9... On clock low, wait for 10us, and set data to data bit 1..7
+ * 10... Wait for clock high
+ * 11... Wait for clock low
+ * 12. On clock low, wait for 10us, and set data to parity bit
+ * 13. Wait for clock high
+ * 14. Wait for clock low
+ * 15. On clock low, wait for 10us, let data rise (stop bit)
+ * 16. Wait for clock high
+ * 17. Wait for clock low
+ * 18. Wait for 10us, check that data is low (ack)
+ * 
+ * A strategy is to run at (for example) ~3us per 'tick', and use that to
+ * look for valid data streams on the pins.
+ * 
+ * As a host, to receive data from the slave (the first target for the design), we have to:
+ * 1. Look for clock falling
+ * 2. If data is low, then assume this is a start bit. Set timeout timer.
+ * 3. Wait for clock falling. Clock in data bit 0
+ * 4. Wait for clock falling. Clock in data bit 1
+ * 5. Wait for clock falling. Clock in data bit 2
+ * 6. Wait for clock falling. Clock in data bit 3
+ * 7. Wait for clock falling. Clock in data bit 4
+ * 8. Wait for clock falling. Clock in data bit 5
+ * 9. Wait for clock falling. Clock in data bit 6
+ * 10. Wait for clock falling. Clock in data bit 7
+ * 11. Wait for clock falling. Clock in parity bit.
+ * 12. Wait for clock falling. Clock in stop bit.
+ * 13. Wait for clock high.
+ * 14. Validate data (stop bit 1, parity correct)
+ * 
+ */
+
+/*a To do
+
+  Keep busy after STOPPING for periods?
+  Just keep period counter running after busy?
+
+ */
+/*a Includes */
+include "types/i2c.h"
+
+/*a Constants */
+constant integer timeout=1000; // 11 bits at 10kHz is 1.1ms, which is 330*3us
+
+/*a Types */
+/*t t_action_i2c
+ *
+ *
+ */
+typedef enum [4] {
+    action_i2c_none          "Keep status quo",
+    action_i2c_starting      "Start receiving data, as data is falling and clock is high",
+    action_i2c_stopping      "Stop transaction; data has gone high when clock is stable high",
+    action_i2c_idle          "I2C bus is quiescent and state machine should idle",
+    action_i2c_was_busy      "I2C bus should be quiescent but was busy - will keep driving period",
+    action_i2c_data_ready_after_start  "Clock going low ready for data after a start condition to change for a data bit",
+    action_i2c_data_ready    "Clock going low ready for data to change for a data bit",
+    action_i2c_data_capture  "Clock rising while data is showing a data bit",
+    action_i2c_ack_ready     "Clock going low ready for data to change for acknowledge bit",
+    action_i2c_ack_capture   "Clock rising while data is showing a acknowledge bit",
+    action_i2c_error         "Protocol error occured - e.g. bad transition from idle",
+    action_i2c_timeout       "Timeout occurred",
+} t_action_i2c;
+
+/*t t_i2c_fsm
+ *
+ * I2C FSM state
+ */
+typedef fsm {
+    i2c_fsm_idle                 "Waiting for SDA to fall";
+    i2c_fsm_was_busy             "Waiting for SDA to fall - but still driving period enable";
+    i2c_fsm_error                "Protocol error - wait for quiescent";
+    i2c_fsm_start                "SCL high, but SDA fell to get here - expecting SCL to fall for start of a bit (any SDA)";
+    i2c_fsm_ready_for_bit        "SDA at any level, SCL low, expecting SCL to rise";
+    i2c_fsm_holding_bit          "SDA low, SCL high, expecting SCL to fall or SDA to rise to complete transaction";
+    i2c_fsm_ready_for_ack        "SDA at any level, SCL low, expecting SCL to rise";
+    i2c_fsm_holding_ack          "SDA low, SCL high, expecting SCL to fall or SDA to rise to complete transaction";
+} t_i2c_fsm;
+
+/*t t_i2c_state
+ *
+ * I2C interace state
+ */
+typedef struct {
+    t_i2c_fsm fsm_state;
+    t_i2c_action action;
+    bit sda;
+    bit scl;
+    bit last_sda;
+    bit last_scl;
+    bit[4] busy_counter;
+} t_i2c_state;
+
+/*t t_i2c_combs
+ *
+ * Combinatorial decode of the I2C input state
+ */
+typedef struct {
+    t_action_i2c action;
+    bit busy_counter_expired;
+    bit quiescent;
+    bit sda_edge       "Asserted if an edge on SDA";
+    bit sda_rising     "Asserted if a rising edge on SDA";
+    bit sda_falling    "Asserted if a falling edge on SDA";
+    bit scl_edge       "Asserted if an edge on SCL";
+    bit scl_rising     "Asserted if a rising edge on SCL";
+    bit scl_falling    "Asserted if a falling edge on SCL";
+    bit start          "Asserted if SDA falls when SCL is high";
+    bit stop           "Asserted if SDA rises when SCL is high";
+    bit sda_to_capture "Data to capture";
+    bit restart_period_counter "Asserted by the I2C interface logic on relevant edges";
+} t_i2c_combs;
+
+/*t t_clock_state
+ *
+ * State kept in the fast clock domain - clock counter for the divider, particularly
+ */
+typedef struct {
+    bit[16] counter        "Counter used for clock divider, to generate the slow clock";
+    bit[16] period_counter "Counter used for period clock generator";
+} t_clock_state; 
+
+/*t t_clock_combs
+ *
+ * Combinatorials from the fast clock domain
+ */
+typedef struct {
+    bit clk_enable  "Asserted if the clock divider expired";
+    bit period_clock_enable "Asserted if the period clock should tick";
+} t_clock_combs;
+
+/*a Module
+ */
+module i2c_interface( clock        clk          "Clock",
+                      input bit    reset_n      "Active low reset",
+                      input t_i2c  i2c_in   "Pin values from the outside",
+                      output t_i2c_action i2c_action "Action to I2C master or slaves",
+                      input  t_i2c_conf i2c_conf     "Clock divider input to generate approx 3us from @p clk"
+    )
+"""
+This I2C interface monitors the I2C interface in and produces a stream of actions
+
+The I2C interface itself is a set of edges on either SCL or SDA. Signal A should be stable
+while an edge occurs on signal B. (Except when SCL falls at the end of a bit when SDA has a
+hold time of zero - so in essence it is worth treating an SCL falling 'simultaneous' with an
+SDA change as an SCL falling followed by an SDA edge - and delay SDA a touch internally to provide
+the hold time to enable this).
+
+We can denote the SDA and SCL signals as a pair with edge r or f and value 0 1 - with SDA first.
+
+The transitions in I2C then are:
+
+  (00) r0 - SDAchange (setup to clock rising) - leaving 10
+  (00) 0r - Bitstart(value=0) - leaving 01
+  (01) r1 - Stop  - leaving 11
+  (01) 0f - Prebit0 or Bitend(value=0) - leaving 00
+  (10) f0 - SDAchange (setup to clock rising) - leaving 00
+  (10) 1r - Bitstart(value=1) - leaving 11
+  (11) f1 - Start - leaving 01
+  (11) 1f - Bitend(value=1) - leaving 10
+
+Then the I2C spec is a transaction is:
+ 
+ Transaction: Start -> Prebit0 -> (Bitstart(value=X) -> Bitend(value=X))*
+
+The spec for transactions is then
+ (Transaction -> Bitstart(value=1))* -> Transaction -> Bitstart(value=0) -> Stop
+
+For all transactions the first byte is driven by the master with an ack by the slave
+(8 data bits from the master, 1 from the slave). The master always drives SCL low to
+generate 9 Bitstart and 9 Bitend transitions. The data is transferred MSB first. The
+LSB of the byte is a read/not_write indicator. For standard 7-bit addressing the subsequent
+bytes are driven by the master (for writes) or by the slave (for reads). For the
+extension to 10-bit addressing the two LSB bits of the first byte are the two MSB address bits,
+and the top five bits are 5b11110 - and the next byte is driven by the master to 
+present the least significant 8 address bits.
+
+For a read transaction the master must ack each data byte; the ack of a data byte
+makes another read transaction occur in the slave. Hence the last data byte in a
+read by a master is *NOT* acked.
+
+
+Hence the action sequence for a normal read/write is
+
+Start -> [Bit(0) -> End(0) -> ... -> Bit(7) -> End(7) -> Bit(ack) -> End(ack)]+
+           -> Bit(0) -> Stop
+
+The action sequence for a pair of transactions with a repeated start is:
+
+Start -> [Bit(0) -> End(0) -> ... -> Bit(7) -> End(7) -> Bit(ack) -> End(ack)]+
+           -> Bit(1) -> Start -> Bit(0) -> ...
+
+The timings required by the I2C spec are:
+
+Start -> Prebit0 : tHD;STA
+Bitstart(value=1) -> Start : tSU;STA
+SDAchange -> Bitstart() : tSU;DAT
+Bitend() -> SDAchange : min tHD;DAT, max tVD;DAT / tVD;ACK for slave data/ack
+Bitstart(value=0) -> Stop : tSU;STO
+Stop -> Start : tBUF
+Prebit0 -> Bitstart : tLOW
+Bitstart -> Bitend : tHIGH
+
+These values can be met by a master using a 'i2c period' with all
+values being 10 such periods except tSU;DAT and tHD;DAT which are 1
+period. For standard mode a period of 500ns is required; for fast mode a period of
+130ns; for fast mode plus 50ns suffices.
+
+A slave which does not touch SCL must meet tVD;DAT and tVD;ACK (which effectively
+provide tSU;DAT to the master given tLOW). These are at most 6 periods (i.e. SDA
+must be valid in 6 periods after SCL goes low).
+
+A slave which holds SCL low during a transaction must provide instead tSU;DAT, or
+one period of SDA hold before releasing SCL.
+
+The I2C interface provides a 'period' clock enable based off its clock divider.
+This signal is asserted N clock divider ticks after an event while the I2C interface
+is busy (the I2C interface stays busy for 16 periods after Stop to help masters
+ensure tBUF).
+
+The clock divider in should provide for at least a 2x period clock enable - hence
+for fastest that an I2C interface can run at as a master using 10 periods for most
+timings is clock divided by 40 (or 250kHz for a 10MHz clock). To run the I2C faster
+at lower internal clock speeds the master can use values of 1 period (tSU;DAT and tHD;DAT)
+and (e.g.) 5 periods for other timings - to provide (e.g.) a 400kHz I2C bus (fast
+mode) with a 10MHz internal clock.
+
+"""
+{
+    /*b Default clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b State and signals */
+    clocked t_clock_state     clock_state={*=0}   "Clock state - just the clock divider";
+    comb t_clock_combs        clock_combs         "Clock combinatorials - clock gate for slow logic";
+    clocked t_i2c_state       i2c_state={*=0}     "I2C state";
+    comb t_i2c_combs          i2c_combs           "Decode of I2C state";
+
+    /*b Clock divider */
+    clock_divider_logic """
+    Generate a clock enable for the rest of the I2c interface,
+    and a 'period' clock enable that operates while the interface is
+    busy
+    """: {
+        /*b Constant running divider */
+        clock_state.counter <= clock_state.counter-1;
+        if (clock_state.counter==0) {
+            clock_state.counter <= i2c_conf.divider;
+        }
+        
+        /*b Generate clock enable */
+        clock_combs.clk_enable = 0;
+        if (clock_state.counter==0) {
+            clock_combs.clk_enable = 1;
+        }
+
+        /*b 'Period' clock enable */
+        clock_combs.period_clock_enable = 0;
+        if (clock_combs.clk_enable) {
+            if (clock_state.period_counter==1) {
+                clock_combs.period_clock_enable = 1;
+                clock_state.period_counter <= 0;
+                if (i2c_state.action.is_busy) {
+                    clock_state.period_counter <= i2c_conf.period;
+                }
+            } elsif (clock_state.period_counter!=0) {
+                clock_state.period_counter <= clock_state.period_counter-1;
+            }
+        }
+        if (i2c_combs.restart_period_counter) {
+            clock_combs.period_clock_enable = 0;
+            clock_state.period_counter <= i2c_conf.period;
+        }
+        if (i2c_conf.period==0) {
+            clock_combs.period_clock_enable = clock_combs.clk_enable;
+        }
+
+        /*b All done */
+    }
+
+    /*b Drive outputs */
+    drive_outputs """
+    """: {
+        i2c_action = i2c_state.action;
+    }
+                    
+    /*b Pin input logic */
+    pin_logic """
+    Capture the pin inputs, and determine input type and mismatch on drive low of SCL or SDA
+    """: {
+        /*b Record SCL and SDA values on clock enable */
+        if (clock_combs.clk_enable) {
+            i2c_state.sda <= i2c_in.sda;
+            i2c_state.scl <= i2c_in.scl;
+
+            i2c_state.last_sda <= i2c_state.sda;
+            i2c_state.last_scl <= i2c_state.scl;
+        }
+        
+        /*b Decode SCL and SDA values - ignore if clock enable is low */
+        i2c_combs.quiescent    = i2c_state.sda && i2c_state.scl;
+        i2c_combs.sda_edge     = (i2c_state.sda != i2c_state.last_sda);
+        i2c_combs.scl_edge     = (i2c_state.scl != i2c_state.last_scl);
+        i2c_combs.sda_falling  = i2c_combs.sda_edge & !i2c_state.sda;
+        i2c_combs.sda_rising   = i2c_combs.sda_edge & i2c_state.sda;
+        i2c_combs.scl_falling  = i2c_combs.scl_edge & !i2c_state.scl;
+        i2c_combs.scl_rising   = i2c_combs.scl_edge & i2c_state.scl;
+        i2c_combs.scl_edge     = (i2c_state.scl != i2c_state.last_scl);
+
+        i2c_combs.start     = i2c_combs.sda_falling && !i2c_combs.scl_edge && i2c_state.scl;
+        i2c_combs.stop      = i2c_combs.sda_rising  && !i2c_combs.scl_edge && i2c_state.scl;
+
+        i2c_combs.sda_to_capture = i2c_state.sda; // Used on SCL rising, so if we detect that LATE we may need to use previous SDA
+    }
+
+    /*b I2C logic */
+    i2c_logic """
+    I2C pin monitoring state machine
+
+    I2C operates by transitions on SCL and SDA. Starting quiescent with SCL/SDA high.
+
+    Strt - Start condition - SCL high, SDA falling
+    Stop - Stop condition - SCL high, SDA rising
+    Capt - Capture bit - SCL rising (SDA stable)
+    CkFl - Clock fall - SCL falling (SDA may change simultaneously)
+
+    I2C has 8 bits of data plus an ack bit in each lump.
+
+    The permitted transitions are
+
+    Strt . CkFl . { Capt (n) . CkFl }{8} . Capt (ack) . CkFl . Capt (0) . ((CkFl + capture from bit 1) | (Strt + From initial CkFl)  | Stop)
+
+    Hence a state machine can be:
+
+    Idle -> Start (on Strt)
+    Start -> ReadyForBit(0) (on CkFl)
+    ReadyForBit(n) -> HoldingBit(n) (on Capt)
+    HoldingBit(n) -> ReadyForBit(n) (on CkFl with n<7)
+                  -> ReadyForAck (on CkFl with n==7)
+    ReadyForAck   -> HoldingAck (on Capt)
+    HoldingAck    -> ReadyForNextByte (on CkFl)
+    ReadyForNextByte -> HoldingNextByte (on Capt)
+    HoldingNextByte  -> ReadyForBit(1) (on CkFl)
+                     -> Start (on Strt)
+                     -> Completed (on Stop)
+
+    This can be simplified to:
+    Idle -> Start (on Strt)
+    Start -> ReadyForBit(0) (on CkFl)
+    ReadyForBit(n) -> HoldingBit(n) (on Capt)
+    HoldingBit(n) -> ReadyForBit(n) (on CkFl with n<7)
+                  -> ReadyForAck (on CkFl with n==7)
+                  -> Start (on Strt, possible error if n>=1)
+                  -> Completed (on Stop, possible error if n>=1)
+    ReadyForAck   -> HoldingAck (on Capt)
+    HoldingAck    -> ReadyForBit(0) (on CkFl)
+
+    Hence the actions in the state machine are:
+    Starting (Idle & Strt, HoldingBit & Strt) -> reset bit number, enter Start
+    DataReady (Start & CkFl, HoldingBit(0..6) & CkFl, HoldingAck & CkFl) -> enter ReadyForBit
+    DataCapture (ReadyForBit & Capt) -> enter HoldingBit, capture bit data and increment bit number
+    AckReady (HoldingBit(7) & CkFl) -> enter ReadyForAck
+    AckCapture (ReadyForAck & Capt) -> enter HoldingAck, capture ack bit value, reset bit number
+    Stopping (HoldingBit & Stop) -> Idle
+
+    A byte of data is received correctly on AckCapture if ack is captured as low.
+    """: {
+        i2c_combs.busy_counter_expired  = (i2c_state.busy_counter==0);
+        /*b Determine I2C action */
+        i2c_combs.action = action_i2c_none;
+        full_switch (i2c_state.fsm_state) {
+        case i2c_fsm_idle: {
+            if (!i2c_combs.quiescent) {
+                i2c_combs.action = action_i2c_error;
+            }
+            if (i2c_combs.start) {
+                i2c_combs.action = action_i2c_starting;
+            }
+        }
+        case i2c_fsm_was_busy: { // Was busy - go to idle when busy period expires
+            if (i2c_combs.busy_counter_expired) {
+                i2c_combs.action = action_i2c_idle;
+            }
+            if (!i2c_combs.quiescent) {
+                i2c_combs.action = action_i2c_error;
+            }
+            if (i2c_combs.start) {
+                i2c_combs.action = action_i2c_starting;
+            }
+        }
+        case i2c_fsm_error: {
+            if (i2c_combs.quiescent) {
+                i2c_combs.action = action_i2c_was_busy;
+            }
+        }
+        case i2c_fsm_start: { // SDA low, SCL high
+            if (i2c_combs.scl_falling) {
+                i2c_combs.action = action_i2c_data_ready_after_start;
+            }
+            if (i2c_state.sda) {
+                i2c_combs.action = action_i2c_stopping; // defensive
+            }
+        }
+        case i2c_fsm_ready_for_bit: { // SDA may change; waiting for SCL to rise (capture bit)
+            if (i2c_combs.scl_rising) {
+                i2c_combs.action = action_i2c_data_capture;
+            }
+        }
+        case i2c_fsm_holding_bit: { // SCL high, SDA may be anything; waiting for SCL to fall (end bit) or SDA rising/falling to complete/restart
+            if (i2c_combs.scl_falling) {
+                i2c_combs.action = action_i2c_data_ready;
+                if (i2c_state.action.bit_num==7) {
+                    i2c_combs.action = action_i2c_ack_ready;
+                }
+            }
+            if (i2c_combs.stop) {
+                i2c_combs.action = action_i2c_stopping;
+            }
+            if (i2c_combs.start) {
+                i2c_combs.action = action_i2c_starting;
+            }
+        }
+        case i2c_fsm_ready_for_ack: { // SDA may change; waiting for SCL to rise (capture bit)
+            if (i2c_combs.scl_rising) {
+                i2c_combs.action = action_i2c_ack_capture;
+            }
+        }
+        case i2c_fsm_holding_ack: { // SCL high, SDA may be anything; waiting for SCL to fall (end bit) or SDA rising/falling to complete/restart
+            if (i2c_combs.scl_falling) {
+                i2c_combs.action = action_i2c_data_ready;
+            }
+            if (i2c_combs.stop) {
+                i2c_combs.action = action_i2c_stopping;
+            }
+        }
+        }
+        if (!clock_combs.clk_enable) {
+            i2c_combs.action = action_i2c_none;
+        }
+
+        /*b Handle I2C action - update state machine, timeout, shift_register and bits_left */
+        i2c_state.action.action    <=  i2c_action_none;
+        if (i2c_state.busy_counter!=0) {
+            if (i2c_state.action.period_enable) {
+                i2c_state.busy_counter <= i2c_state.busy_counter-1;
+            }
+        }
+        i2c_combs.restart_period_counter = 0;
+        full_switch(i2c_combs.action) {
+        case action_i2c_none: { // Nothing - hold state but action out is None
+            i2c_state.action        <= i2c_state.action;
+            i2c_state.action.action <= i2c_action_none;
+        }
+        case action_i2c_error: {
+            i2c_state.fsm_state        <= i2c_fsm_error;
+        }
+        case action_i2c_idle: {
+            i2c_state.fsm_state     <= i2c_fsm_idle;
+            i2c_state.action.is_busy <= 0;
+        }
+        case action_i2c_was_busy: {
+            i2c_state.action.is_busy <= 0;
+            i2c_state.fsm_state     <= i2c_fsm_was_busy;
+            i2c_state.busy_counter  <= -1;
+            i2c_combs.restart_period_counter = 1;
+        }
+        case action_i2c_starting: { // from idle to starting transaction when SDA falls
+            i2c_state.action.is_busy   <= 1;
+            i2c_state.action.bit_num   <= 7;
+            i2c_state.action.action  <= i2c_action_start;
+            i2c_state.fsm_state        <= i2c_fsm_start;
+            i2c_combs.restart_period_counter = 1;
+        }
+        case action_i2c_data_ready_after_start: { // from start or from bit 0/1 end when SCL falls
+            i2c_state.fsm_state      <= i2c_fsm_ready_for_bit;
+            i2c_state.action.action  <= i2c_action_ready;
+            i2c_combs.restart_period_counter = 1;
+        }
+        case action_i2c_data_ready: { // from start or from bit 0/1 end when SCL falls
+            i2c_state.action.action  <= i2c_action_bit_end;
+            i2c_state.fsm_state      <= i2c_fsm_ready_for_bit;
+            i2c_combs.restart_period_counter = 1;
+        }
+        case action_i2c_data_capture: { // from data_ready on SCL rising
+            i2c_state.action.bit_num   <= i2c_state.action.bit_num+1;
+            i2c_state.action.is_ack    <= 0;
+            i2c_state.action.bit_value <= i2c_combs.sda_to_capture;
+            i2c_state.action.action    <= i2c_action_bit_start; 
+            i2c_state.fsm_state        <= i2c_fsm_holding_bit;
+            i2c_combs.restart_period_counter = 1;
+        }
+        case action_i2c_ack_ready: { // from start or from bit 0/1 end when SCL falls
+            i2c_state.action.action  <= i2c_action_bit_end;
+            i2c_state.fsm_state <= i2c_fsm_ready_for_ack;
+            i2c_combs.restart_period_counter = 1;
+        }
+        case action_i2c_ack_capture: { // from ack_ready on SCL rising
+            i2c_state.action.bit_num   <= 7;
+            i2c_state.action.is_ack    <= 1;
+            i2c_state.action.bit_value <=  i2c_combs.sda_to_capture;
+            i2c_state.action.action    <=  i2c_action_bit_start;
+            i2c_state.fsm_state <= i2c_fsm_holding_ack;
+            i2c_combs.restart_period_counter = 1;
+        }
+        case action_i2c_stopping: {
+            i2c_state.fsm_state     <= i2c_fsm_was_busy;
+            i2c_state.action.is_busy <= 0;
+            i2c_state.busy_counter  <= -1;
+            i2c_combs.restart_period_counter = 1;
+        }
+        }
+        i2c_state.action.period_enable <= clock_combs.period_clock_enable;
+
+        /*b All done */
+    }
+
+    /*b All done */
+}
