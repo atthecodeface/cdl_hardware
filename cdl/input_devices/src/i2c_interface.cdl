@@ -87,12 +87,6 @@
  * 
  */
 
-/*a To do
-
-  Keep busy after STOPPING for periods?
-  Just keep period counter running after busy?
-
- */
 /*a Includes */
 include "types/i2c.h"
 
@@ -173,8 +167,8 @@ typedef struct {
  * State kept in the fast clock domain - clock counter for the divider, particularly
  */
 typedef struct {
-    bit[16] counter        "Counter used for clock divider, to generate the slow clock";
-    bit[16] period_counter "Counter used for period clock generator";
+    bit[8] counter        "Counter used for clock divider, to generate the slow clock";
+    bit[8] period_counter "Counter used for period clock generator";
 } t_clock_state; 
 
 /*t t_clock_combs

@@ -12,53 +12,52 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * @file  tb_i2c.cdl
- * @brief Testbench for I2C interfaces and bus
+ * @file  tb_apb_target_i2c.cdl
+ * @brief Testbench for APB processor (ROM-based APB trasanctions)
  *
+ * This is a simple testbench for the ROM-based APB transaction processor
  */
 /*a Includes */
-include "types/i2c.h"
 include "types/apb.h"
+include "types/i2c.h"
 include "input/i2c_modules.h"
 include "apb/apb_targets.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk,
+                               output t_apb_request  apb_request,
+                               input t_apb_response  apb_response,
                                input  t_i2c i2c_in,
                                output t_i2c i2c_out,
-                               output t_i2c_master_request master_request,
-                               input t_i2c_master_response master_response,
                                output t_i2c_conf i2c_conf,
                                input  bit[16] gpio_output
     )
 {
-    timing from rising clock clk i2c_out, i2c_conf, master_request;
-    timing to   rising clock clk i2c_in, gpio_output, master_response;
+    timing from rising clock clk apb_request, i2c_out, i2c_conf;
+    timing to   rising clock clk apb_response, i2c_in, gpio_output;
 }
 
 /*a Module */
-module tb_i2c( clock clk,
-               input bit reset_n
+module tb_apb_target_i2c( clock clk,
+                               input bit reset_n
 )
 {
 
     /*b Nets */
+    net t_apb_request   apb_request;
+    net t_apb_response  apb_response;
+    net t_apb_request   i2c_apb_request;
+    net t_apb_response  i2c_apb_response;
     comb t_i2c i2c_in;
     net t_i2c i2c_th;
     net t_i2c i2c_slave;
     net t_i2c i2c_master;
 
-    net t_i2c_master_request  master_request "Request from master client";
-    net t_i2c_master_response master_response "Response to master client";
-    comb t_i2c_master_conf master_conf "Configuration of timing of master";
-
+    net t_i2c_conf i2c_conf;
+    comb t_i2c_slave_select slave_select;
     net t_i2c_action i2c_action;
     net t_i2c_slave_request slave_request;
     net t_i2c_slave_response slave_response;
-    net t_apb_request  apb_request;
-    net t_apb_response apb_response;
-    net t_i2c_conf i2c_conf;
-    comb t_i2c_slave_select slave_select;
     net bit[16] gpio_output;
     net bit[16] gpio_output_enable;
 
@@ -71,47 +70,46 @@ module tb_i2c( clock clk,
         i2c_in.scl = i2c_in.scl & i2c_master.scl;
         i2c_in.sda = i2c_in.sda & i2c_master.sda;
         slave_select = {mask=7h70, value=7h10};
-        master_conf = {data_hold_delay=9, data_setup_delay=1, period_delay=10};
-
         se_test_harness th( clk <- clk,
+                            apb_request => apb_request,
+                            apb_response <= apb_response,
                             i2c_in  <= i2c_in,
                             i2c_out => i2c_th,
                             i2c_conf => i2c_conf,
-                            master_request => master_request,
-                            master_response <= master_response,
                             gpio_output <= gpio_output
             );
-        
+
+        apb_target_i2c_master apb_i2c( clk <- clk,
+                                       reset_n <= reset_n,
+                                       apb_request  <= apb_request,
+                                       apb_response => apb_response,
+                                       i2c_in  <= i2c_in,
+                                       i2c_out => i2c_master );
+
         i2c_interface i2c( clk <- clk,
                            reset_n <= reset_n,
                            i2c_in <= i2c_in,
                            i2c_action => i2c_action,
                            i2c_conf <= i2c_conf );
         
-        i2c_master master(clk <- clk,
-                          reset_n <= reset_n,
-                          i2c_action <= i2c_action,
-                          i2c_out => i2c_master,
-                          master_request <= master_request,
-                          master_response => master_response,
-                          master_conf <= master_conf );
         i2c_slave slave(clk <- clk,
-                        reset_n <= reset_n,
+                        reset_n    <= reset_n,
                         i2c_action <= i2c_action,
-                        i2c_out => i2c_slave,
-                        slave_select <= slave_select, 
-                        slave_request => slave_request,
+                        i2c_out    => i2c_slave,
+                        slave_select   <= slave_select, 
+                        slave_request  => slave_request,
                         slave_response <= slave_response );
+
         i2c_slave_apb_master i2c_apb( clk <- clk,
                                       reset_n <= reset_n,
                                       slave_request <= slave_request,
                                       slave_response => slave_response,
-                                      apb_request => apb_request,
-                                      apb_response <= apb_response );
+                                      apb_request => i2c_apb_request,
+                                      apb_response <= i2c_apb_response );
         apb_target_gpio gpio(clk <- clk,
                              reset_n <= reset_n,
-                             apb_request <= apb_request,
-                             apb_response => apb_response,
+                             apb_request <= i2c_apb_request,
+                             apb_response => i2c_apb_response,
                              gpio_output => gpio_output,
                              gpio_output_enable => gpio_output_enable,
                              gpio_input <= gpio_output);
@@ -119,10 +117,3 @@ module tb_i2c( clock clk,
 
     /*b All done */
 }
-
-/*a Editor preferences and notes
-mode: c ***
-c-basic-offset: 4 ***
-c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
-outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
-*/

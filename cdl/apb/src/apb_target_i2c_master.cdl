@@ -1,0 +1,200 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_target_i2c_master.cdl
+ * @brief  Simple I2C master as an APB bus target
+ *
+ * CDL implementation of a simple I2C master driven by the APB
+ *
+ */
+/*a Includes
+ */
+/*a Includes */
+include "types/i2c.h"
+include "types/apb.h"
+include "input/i2c_modules.h"
+include "apb/apb_targets.h"
+
+/*a Types */
+/*t t_apb_address
+ * APB address map, used to decode paddr
+ */
+typedef enum [3] {
+    apb_address_i2c_config      = 0,
+    apb_address_master_status   = 1,
+    apb_address_master_control  = 2,
+    apb_address_master_data     = 3,
+    apb_address_master_command  = 4,
+} t_apb_address;
+
+/*t t_access
+ * APB access that is in progress; a decode of psel and paddr
+ */
+typedef enum[4] {
+    access_none                     "No access being performed",
+    access_issue_command            "Issue command to master state machine (e.g. start, abort, reset)",
+    access_read_i2c_config          "Read I2C and master config",
+    access_write_i2c_config         "Write I2C and master config",
+    access_read_master_control      "Read master control request",
+    access_write_master_control     "Write master control request",
+    access_read_master_data         "Read master control request",
+    access_write_master_data        "Write master control request",
+    access_read_status              "Read status",
+} t_access;
+
+/*t t_apb_state
+ */
+typedef struct {
+    t_access          access;
+    t_i2c_conf        i2c_conf    "Configuration of timing of I2C";
+    t_i2c_master_conf master_conf "Configuration of timing of master";
+    t_i2c_master_request master_request;
+} t_apb_state;
+
+/*a Module
+ */
+module apb_target_i2c_master( clock clk         "System clock",
+                              input bit reset_n "Active low reset",
+
+                              input  t_apb_request  apb_request  "APB request",
+                              output t_apb_response apb_response "APB response",
+
+                              input  t_i2c       i2c_in "Pin values in",
+                              output t_i2c       i2c_out "Pin values to drive - 1 means float high, 0 means pull low"
+    )
+"""
+Simple APB interface to an I2C master
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b APB state */
+    clocked t_apb_state apb_state = {*=0, access=access_none}   "APB state";
+
+    /*b Nets */
+    net t_i2c i2c_out;
+    net t_i2c_master_response master_response "Response to master client";
+    net t_i2c_action i2c_action;
+
+    /*b APB interface */
+    apb_interface_logic """
+    The APB interface is decoded to @a access when @p psel is asserted
+    and @p penable is deasserted - this is the first cycle of an APB
+    access. This permits the access type to be registered, so that the
+    APB @p prdata can be driven from registers, and so that writes
+    will occur correctly when @p penable is asserted.
+
+    The APB read data @p prdata can then be generated based on @a
+    access.
+    """ : {
+        /*b Decode access */
+        apb_state.access <= access_none;
+        part_switch (apb_request.paddr[2;0]) {
+        case apb_address_i2c_config:     { apb_state.access <= apb_request.pwrite ? access_write_i2c_config     : access_read_i2c_config; }
+        case apb_address_master_status:  { apb_state.access <= apb_request.pwrite ? access_none                 : access_read_status; }
+        case apb_address_master_command: { apb_state.access <= apb_request.pwrite ? access_issue_command        : access_none; }
+        case apb_address_master_data:    { apb_state.access <= apb_request.pwrite ? access_write_master_data    : access_read_master_data; }
+        case apb_address_master_control: { apb_state.access <= apb_request.pwrite ? access_write_master_control : access_read_master_control; }
+        }
+        if (!apb_request.psel || apb_request.penable) {
+            apb_state.access <= access_none;
+        }
+
+        /*b Handle APB read data */
+        if (master_response.ack) {
+            apb_state.master_request.valid <= 0;
+        }
+        apb_response = {*=0, pready=1};
+        part_switch (apb_state.access) {
+        case access_read_status: {
+            apb_response.prdata = 0;
+            apb_response.prdata[3;4]  = master_response.response_type;
+            apb_response.prdata[1]    = master_response.in_progress;
+            apb_response.prdata[0]    = apb_state.master_request.valid;
+        }
+        case access_read_i2c_config: {
+            apb_response.prdata = 0;
+            apb_response.prdata[4;24] = apb_state.master_conf.data_setup_delay;
+            apb_response.prdata[4;20] = apb_state.master_conf.data_hold_delay;
+            apb_response.prdata[4;16] = apb_state.master_conf.period_delay;
+            apb_response.prdata[8; 8] = apb_state.i2c_conf.period;
+            apb_response.prdata[8; 0] = apb_state.i2c_conf.divider;
+        }
+        case access_read_master_control: {
+            apb_response.prdata = 0;
+            apb_response.prdata[9]     = apb_state.master_request.valid;
+            apb_response.prdata[8]     = apb_state.master_request.cont;
+            apb_response.prdata[ 3; 4] = apb_state.master_request.num_in;
+            apb_response.prdata[ 3; 0] = apb_state.master_request.num_out;
+        }
+        case access_read_master_data: {
+            apb_response.prdata = master_response.data;
+        }
+        }
+
+        /*b Handle APB state update */
+        part_switch (apb_state.access) {
+        case access_write_i2c_config: {
+            apb_state.master_conf.data_setup_delay <= apb_request.pwdata[4;24];
+            apb_state.master_conf.data_hold_delay  <= apb_request.pwdata[4;20];
+            apb_state.master_conf.period_delay     <= apb_request.pwdata[4;16];
+            apb_state.i2c_conf.period              <= apb_request.pwdata[8; 8];
+            apb_state.i2c_conf.divider             <= apb_request.pwdata[8; 0];
+        }
+        case access_issue_command: {
+            if (apb_request.pwdata==1) {
+                apb_state.master_request.valid <= 1;
+            }
+        }
+        case access_write_master_control: {
+            apb_state.master_request.valid       <= apb_request.pwdata[9];
+            apb_state.master_request.cont        <= apb_request.pwdata[8];
+            apb_state.master_request.num_in      <= apb_request.pwdata[ 3; 4];
+            apb_state.master_request.num_out     <= apb_request.pwdata[ 3; 0];
+        }
+        case access_write_master_data: {
+            apb_state.master_request.data <= apb_request.pwdata;
+        }
+        }
+
+        /*b All done */
+    }
+
+    /*b I2C module instantiations */
+    i2c_module_instantiations: {
+        i2c_interface i2c( clk <- clk,
+                           reset_n <= reset_n,
+                           i2c_in <= i2c_in,
+                           i2c_action => i2c_action,
+                           i2c_conf <= apb_state.i2c_conf );
+        
+        i2c_master master(clk <- clk,
+                          reset_n <= reset_n,
+                          i2c_action <= i2c_action,
+                          i2c_out => i2c_out,
+                          master_request <= apb_state.master_request,
+                          master_response => master_response,
+                          master_conf <= apb_state.master_conf );
+    }
+
+    /*b All done */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/

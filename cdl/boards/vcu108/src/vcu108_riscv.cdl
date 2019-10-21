@@ -51,7 +51,6 @@ module vcu108_riscv( clock clk,
                      clock clk_50,
                      input bit reset_n,
 
-
                      input  t_vcu108_inputs vcu108_inputs,
                      output t_vcu108_outputs vcu108_outputs,
 
@@ -78,6 +77,7 @@ module vcu108_riscv( clock clk,
     comb bit[4]        apb_request_sel;
     comb t_apb_request timer_apb_request;
     comb t_apb_request gpio_apb_request;
+    comb t_apb_request i2c_apb_request;
     comb t_apb_request uart_apb_request;
     comb t_apb_request dprintf_apb_request;
     comb t_apb_request csr_apb_request;
@@ -88,6 +88,7 @@ module vcu108_riscv( clock clk,
 
     net t_apb_response  timer_apb_response;
     net t_apb_response  gpio_apb_response;
+    net t_apb_response  i2c_apb_response;
     net t_apb_response  uart_apb_response;
     net t_apb_response  dprintf_apb_response;
     net t_apb_response  csr_apb_response;
@@ -140,6 +141,8 @@ module vcu108_riscv( clock clk,
     comb t_uart_rx_data  uart_rx;
     net   t_uart_tx_data uart_tx;
     net   t_uart_status  uart_status;
+
+    net t_i2c i2c_master;
 
     net  t_riscv_debug_mst   riscv_debug_mst;
     net t_riscv_debug_tgt    riscv_debug_tgt;
@@ -265,6 +268,7 @@ module vcu108_riscv( clock clk,
         fb_sram_apb_request      = apb_request;
         dprintf_uart_apb_request = apb_request;
         riscv_dbg_apb_request    = apb_request;
+        i2c_apb_request          = apb_request;
 
         timer_apb_request.paddr        = apb_request.paddr >> 2;
         gpio_apb_request.paddr         = apb_request.paddr >> 2;
@@ -274,6 +278,7 @@ module vcu108_riscv( clock clk,
         fb_sram_apb_request.paddr      = apb_request.paddr >> 2;
         dprintf_uart_apb_request.paddr = apb_request.paddr >> 2;
         riscv_dbg_apb_request.paddr    = apb_request.paddr >> 2;
+        i2c_apb_request.paddr          = apb_request.paddr >> 2;
 
         timer_apb_request.psel        = apb_request.psel && (apb_request_sel==0);
         gpio_apb_request.psel         = apb_request.psel && (apb_request_sel==1);
@@ -284,6 +289,7 @@ module vcu108_riscv( clock clk,
         uart_apb_request.psel         = apb_request.psel && (apb_request_sel==9);
         dprintf_uart_apb_request.psel = apb_request.psel && (apb_request_sel==10);
         riscv_dbg_apb_request.psel    = apb_request.psel && (apb_request_sel==11);
+        i2c_apb_request.psel          = apb_request.psel && (apb_request_sel==12);
         
         csr_apb_request.paddr[16;16]  = bundle(12b0,apb_request.paddr[4;12]);
         csr_apb_request.paddr[16;0]   = bundle( 6b0,apb_request.paddr[10;2]);
@@ -297,6 +303,7 @@ module vcu108_riscv( clock clk,
         if (apb_request_sel==9) { apb_response = uart_apb_response; }
         if (apb_request_sel==10) { apb_response = dprintf_uart_apb_response; }
         if (apb_request_sel==10) { apb_response = riscv_dbg_apb_response; }
+        if (apb_request_sel==12) { apb_response = i2c_apb_response; }
     }
 
     /*b Dprintf requesting */
@@ -309,11 +316,12 @@ module vcu108_riscv( clock clk,
         dprintf_req[0] <= apb_dprintf_req;
         apb_dprintf_ack = dprintf_ack[0];
 
-        if (apb_request.psel) {
+        if (apb_request.psel && apb_request.penable && apb_response.pready) {
             dprintf_req[6] <= {valid=1, address=240,
-                    data_0=bundle(40h41_50_42_3a_80, 7b0,apb_request.pwrite, 16h_20_87), // APB:%x %08x %08x (pwrite paddr pwdata)
+                    data_0=bundle(40h41_50_42_3a_80, 7b0,apb_request.pwrite, 16h_20_87), // APB:%x %08x %08x %08x (pwrite paddr pwdata prdata)
                     data_1=bundle(apb_request.paddr, 32h20000087),
-                    data_2=bundle(apb_request.pwdata, 8hff, 24h0) };
+                    data_2=bundle(apb_request.pwdata, 32h20000087),
+                    data_3=bundle(apb_response.prdata,    8hff, 24h0) };
         }
         if (csr_request.valid) {
             dprintf_req[7] <= {valid=1, address=280,
@@ -419,6 +427,13 @@ module vcu108_riscv( clock clk,
                                       uart_tx => uart_tx,
                                       status => uart_status
             );
+
+        apb_target_i2c_master i2c( clk <- clk,
+                                       reset_n <= reset_n,
+                                       apb_request  <= i2c_apb_request,
+                                       apb_response => i2c_apb_response,
+                                       i2c_in  <= vcu108_inputs.i2c,
+                                       i2c_out => i2c_master );
 
         csr_master_apb master( clk <- clk,
                                reset_n <= reset_n,
@@ -556,8 +571,12 @@ module vcu108_riscv( clock clk,
 
         gpio_input[0] <= vcu108_inputs.i2c.scl;
         gpio_input[1] <= vcu108_inputs.i2c.sda;
-        vcu108_outputs.i2c.scl = gpio_output_enable[0] ? gpio_output[0] : 1;
-        vcu108_outputs.i2c.sda = gpio_output_enable[1] ? gpio_output[1] : 1;
+        vcu108_outputs.i2c = {*=1};
+        if (gpio_output_enable[0] && !gpio_output[0]) {vcu108_outputs.i2c.scl = 0;}
+        if (gpio_output_enable[1] && !gpio_output[1]) {vcu108_outputs.i2c.sda = 0;}
+        if (!i2c_master.scl) {vcu108_outputs.i2c.scl = 0;}
+        if (!i2c_master.sda) {vcu108_outputs.i2c.sda = 0;}
+
         vcu108_outputs.i2c_reset_mux_n = gpio_output_enable[2] ? gpio_output[2b0] : 1;
 
         flash_out <= {*=0}; // wp, reset not used

@@ -72,16 +72,28 @@ typedef struct {
     bit[32] data;
 } t_i2c_master_request;
 
+/*t t_i2c_master_response_type */
+typedef enum[3] {
+    i2c_master_response_okay = 0,
+    i2c_master_response_arbitration_fail = 1,
+    i2c_master_response_no_acknowledge   = 2,
+    i2c_master_response_timeout          = 3,
+    i2c_master_response_protocol_error   = 4
+} t_i2c_master_response_type;
+        
 /*t t_i2c_master_response */
 typedef struct {
     bit    ack   "Asserted for writes when they are taken, and for reads when data is valid";
-    bit[8] data  "Result of last read - must be held steady until next request";
+    bit    in_progress "A transaction is in progress";
+    t_i2c_master_response_type response_type "Response for last transaction - invalid if in_progress";
+    bit[32] data  "Result of last read - must be held steady until next request";
 } t_i2c_master_response;
 
 /*t t_i2c_master_conf */
 typedef struct {
-    bit[4] minor_delay "Delay in periods for data setup before clock";
-    bit[4] major_delay "Delay in periods for other timings";
+    bit[4] data_hold_delay  "Delay in periods for data change after falling clock";
+    bit[4] data_setup_delay "Delay in periods betwween data change and rising clock";
+    bit[4] period_delay     "Delay in periods for other timings";
 } t_i2c_master_conf;
 
 /*t t_i2c_slave_select */
@@ -92,8 +104,8 @@ typedef struct {
 
 /*t t_i2c_conf */
 typedef struct {
-    bit[16] divider "Clock divider to generate internal clock for capturing edges etc (e.g. 100ns or 10MHz)";
-    bit[16] period  "Divide value to divide internal clock to a period of (e.g.) 500ns for standard I2C";
+    bit[8] divider "Clock divider to generate internal clock for capturing edges etc (e.g. 100ns or 10MHz)";
+    bit[8] period  "Divide value to divide internal clock to a period of (e.g.) 500ns for standard I2C";
 } t_i2c_conf;
 
 /*t t_i2c - open drain on output, so no enables */

@@ -219,6 +219,23 @@ extern module apb_target_dprintf_uart( clock clk,
 
 }
 
+/*m apb_target_i2c_master */
+extern module apb_target_i2c_master( clock clk         "System clock",
+                              input bit reset_n "Active low reset",
+
+                              input  t_apb_request  apb_request  "APB request",
+                              output t_apb_response apb_response "APB response",
+
+                              input  t_i2c       i2c_in "Pin values in",
+                              output t_i2c       i2c_out "Pin values to drive - 1 means float high, 0 means pull low"
+    )
+{
+    timing to   rising clock clk apb_request;
+    timing from rising clock clk apb_response;
+    timing to   rising clock clk i2c_in;
+    timing from rising clock clk i2c_out;
+}
+
 /*a Editor preferences and notes
 mode: c ***
 c-basic-offset: 4 ***

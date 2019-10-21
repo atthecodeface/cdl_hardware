@@ -491,12 +491,14 @@ class i2c_test_hw(simple_tb.cdl_test_hw):
                                "i2c_in__sda "+
                                "gpio_output[16] "+
                                "master_response__ack "+
-                               "master_response__data[8] "+
+                               "master_response__in_progress "+
+                               "master_response__response_type[3] "+
+                               "master_response__data[32] "+
                                ""),
                   "th.outputs":("i2c_out__sda "+
                                 "i2c_out__scl "+
-                                "i2c_conf__divider[16] "+
-                                "i2c_conf__period[16] "+
+                                "i2c_conf__divider[8] "+
+                                "i2c_conf__period[8] "+
                                 "master_request__valid "+
                                 "master_request__cont "+
                                 "master_request__data[32] "+

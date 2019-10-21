@@ -167,6 +167,7 @@ cdl cdl/input_devices/tb_src     tb_i2c                 inc:cdl/inc
 cdl cdl/apb/src  apb_master_mux   inc:cdl/inc
 cdl cdl/apb/src  apb_master_axi   inc:cdl/inc
 cdl cdl/apb/src  apb_target_gpio   inc:cdl/inc
+cdl cdl/apb/src  apb_target_i2c_master     inc:cdl/inc
 cdl cdl/apb/src  apb_target_uart_minimal   inc:cdl/inc
 cdl cdl/apb/src  apb_target_dprintf_uart   inc:cdl/inc
 cdl cdl/apb/src  apb_target_jtag   inc:cdl/inc
@@ -180,6 +181,7 @@ cdl cdl/apb/src  apb_target_ps2_host   inc:cdl/inc
 cdl cdl/apb/src  apb_processor  inc:cdl/inc
 cdl cdl/apb/tb_src  tb_apb_processor  inc:cdl/inc
 cdl cdl/apb/tb_src  tb_apb_target_rv_timer  inc:cdl/inc
+cdl cdl/apb/tb_src  tb_apb_target_i2c  inc:cdl/inc
 
 cdl cdl/crypt/kasumi/src  kasumi_sbox7        inc:cdl/inc
 cdl cdl/crypt/kasumi/src  kasumi_sbox9        inc:cdl/inc
