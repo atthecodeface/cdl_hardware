@@ -27,6 +27,7 @@ include "types/axi.h"
 include "types/dprintf.h"
 include "types/sram.h"
 include "types/ps2.h"
+include "types/i2c.h"
 include "types/jtag.h"
 
 /*a Modules - see also csr_target_apb, csr_master_apb in csr_interface.h */

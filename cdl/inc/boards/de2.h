@@ -37,12 +37,6 @@ typedef struct {
     bit lrc;
 } t_de2_audio;
 
-/*t t_i2c */
-typedef struct {
-    bit sclk   "Open collector output";
-    bit sdat   "Open collector output";
-} t_i2c;
-
 /*t t_de2_lcd */
 typedef struct {
     bit backlight;
@@ -52,18 +46,6 @@ typedef struct {
     bit enable;
     bit[8] data;
 } t_de2_lcd;
-
-/*t t_uart_in */
-typedef struct {
-    bit rxd;
-    bit rts;
-} t_uart_in;
-
-/*t t_uart_out */
-typedef struct {
-    bit txd;
-    bit cts;
-} t_uart_out;
 
 /*t t_de2_leds */
 typedef struct {

@@ -36,6 +36,8 @@ include "types/dprintf.h"
 include "types/csr.h"
 include "types/ps2.h"
 include "types/led.h"
+include "types/i2c.h"
+include "types/uart.h"
 include "types/teletext.h"
 include "types/video.h"
 include "srams.h"
@@ -81,8 +83,8 @@ module picorisc_de2( clock clk,
                      output bit de2_td_reset_n,
                      input t_adv7180 de2_td,
 
-                     input t_uart_in   de2_uart_in,
-                     output t_uart_out de2_uart_out,
+                     input t_uart_rx_data   de2_uart_in,
+                     output t_uart_tx_data de2_uart_out,
 
                      clock de2_vga_clk,
                      input bit de2_vga_reset_n,
