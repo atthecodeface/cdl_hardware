@@ -446,8 +446,8 @@ class c_i2c_test_two(c_i2c_test_base):
         self.ios.master_request__valid.drive(1)
         self.ios.master_request__cont.drive(0)
         self.ios.master_request__num_in.drive(0)
-        self.ios.master_request__num_out.drive(2)
-        self.ios.master_request__data.drive(0xf000 | ((0x1b<<1)|0))
+        self.ios.master_request__num_out.drive(3)
+        self.ios.master_request__data.drive(0xf00000 | 0x0000 | ((0x1b<<1)|0))
         self.bfm_wait(10)
         self.ios.master_request__valid.drive(0)
         self.bfm_wait(1000)
@@ -501,7 +501,7 @@ class i2c_test_hw(simple_tb.cdl_test_hw):
                                 "master_request__cont "+
                                 "master_request__data[32] "+
                                 "master_request__num_in[3] "+
-                                "master_request__num_out[2] "+
+                                "master_request__num_out[3] "+
                                ""),
                   }
     module_name = "tb_i2c"

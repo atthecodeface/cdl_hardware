@@ -77,7 +77,6 @@ typedef struct {
  */
 typedef struct {
     t_master_fsm fsm_state;
-    bit[32] data            "Data shift register";
     bit[4] bit_num;
     t_i2c  i2c_out;
     t_i2c_master_request master_request;
@@ -95,6 +94,7 @@ typedef struct {
     bit cont_not_stop;
     bit last_bit_of_byte;
     bit last_byte;
+    bit take_request;
 } t_master_combs;
 
 /*a Module
@@ -161,14 +161,17 @@ ContHold     : future_done         -> Idle
     clocked t_master_state       master_state={*=0, i2c_out={*=1}}  "Master state";
     comb t_master_combs          master_combs                       "Decode of stalce state and i2c_action in";
     
-    /*b Drive outputs */
+    /*b Master interface and outputs */
     drive_outputs """
     """: {
-        i2c_out = master_state.i2c_out;
-        if (master_request.valid) {
-            master_state.master_request <= master_request;
-        }
         master_state.master_response <= {*=0};
+        if (master_state.master_response.ack) {
+            master_state.master_response.ack <= 0;
+        }
+        if (master_combs.take_request) {
+            master_state.master_response.ack <= 1;
+        }
+        i2c_out = master_state.i2c_out;
         master_response = master_state.master_response;
     }
                     
@@ -181,7 +184,7 @@ ContHold     : future_done         -> Idle
             master_combs.future_action_completed = 1;
         }
         master_combs.last_bit_of_byte = (master_state.bit_num==0);
-        master_combs.last_byte = 1;
+        master_combs.last_byte        = (master_state.master_request.num_out==0);
         master_combs.cont_not_stop = 0;
 
         /*b Determine action to perform */
@@ -189,7 +192,7 @@ ContHold     : future_done         -> Idle
         master_combs.abort_future_action = 0;
         full_switch (master_state.fsm_state) {
         case master_fsm_idle: {
-            if (master_state.master_request.valid) {
+            if (master_request.valid) {
                 // drive SDA low now; future(X) SDA low, SCL low
                 master_combs.action = master_action_start_request;
             }
@@ -288,6 +291,7 @@ ContHold     : future_done         -> Idle
         }
         
         /*b Handle action */
+        master_combs.take_request = 0;
         full_switch (master_combs.action) {
         case master_action_none: {
             master_state.fsm_state <= master_state.fsm_state;
@@ -304,7 +308,8 @@ ContHold     : future_done         -> Idle
             master_state.fsm_state <= master_fsm_idle;
         }
         case master_action_start_request: {
-            master_state.data <= master_request.data;
+            master_state.master_request <= master_request;
+            master_combs.take_request = 1;
             master_state.bit_num        <= 8;
             master_state.fsm_state <= master_fsm_start;
             master_state.i2c_out      <= {sda=0, scl=1};
@@ -314,8 +319,8 @@ ContHold     : future_done         -> Idle
         case master_action_setup_bit: { // SDA low, SCL low - drive SDA to value after clock low period
             master_state.fsm_state <= master_fsm_setup_bit;
             master_state.future.delay <= master_conf.major_delay;
-            master_state.future.i2c   <= {sda=master_state.data[7], scl=0};
-            master_state.data[7;1]    <= master_state.data[7;0];
+            master_state.future.i2c   <= {sda=master_state.master_request.data[7], scl=0};
+            master_state.master_request.data[7;1]    <= master_state.master_request.data[7;0];
         }
         case master_action_posedge_clock: { // SDA D, SCL low - let SCL float high after data hold
             master_state.fsm_state      <= master_fsm_wait_posedge_clock;
@@ -336,7 +341,9 @@ ContHold     : future_done         -> Idle
         }
         case master_action_negedge_clock_ack: { // SDA high, SCL high - pull SCL low after clock high
             master_state.fsm_state      <= master_fsm_wait_negedge_clock_ack;
-            master_state.data           <= master_state.data>>8;
+            master_state.master_request.data    <= master_state.master_request.data>>8;
+            master_state.master_request.num_out <= master_state.master_request.num_out-1;
+            master_state.bit_num        <= 8;
             master_state.future.delay   <= master_conf.major_delay;
             master_state.future.i2c.scl <= 0;
         }

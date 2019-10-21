@@ -67,8 +67,8 @@ typedef struct {
     // Need a way to force reset of state machine and master
     bit valid;
     bit cont "If asserted then do not issue a stop at the end but prepare for repeated start";
-    bit[2]  num_out;
-    bit[3]  num_in;
+    bit[3]  num_out "From 1 to 4";
+    bit[3]  num_in  "From 0 to 4";
     bit[32] data;
 } t_i2c_master_request;
 
