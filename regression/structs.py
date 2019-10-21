@@ -42,7 +42,14 @@ timer_control = {"reset_counter":1,
                  "integer_adder":8,
 }
 
-# timer_value
+#t timer_value
 timer_value = {"irq":1,
                "value":64,
 }
+
+#t i2c
+i2c = {"scl":1, "sda":1}
+
+#t i2c_conf
+i2c_conf = {"divider":8, "period":8}
+

@@ -512,7 +512,7 @@ class i2c_test_hw(simple_tb.cdl_test_hw):
 #a Simulation test classes
 #c ps2
 class ps2(simple_tb.base_test):
-    def xtest_one(self):
+    def test_one(self):
         test = c_ps2_test_one()
         hw = ps2_test_hw(test=test)
         self.do_test_run(hw, num_cycles=1000*1000)
@@ -521,7 +521,7 @@ class ps2(simple_tb.base_test):
 
 #c i2c
 class i2c(simple_tb.base_test):
-    def xtest_one(self):
+    def test_one(self):
         test = c_i2c_test_one()
         hw = i2c_test_hw(test=test)
         self.do_test_run(hw, num_cycles=20*1000)

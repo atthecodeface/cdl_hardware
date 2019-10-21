@@ -101,7 +101,7 @@ Simple APB interface to an I2C master
     """ : {
         /*b Decode access */
         apb_state.access <= access_none;
-        part_switch (apb_request.paddr[2;0]) {
+        part_switch (apb_request.paddr[3;0]) {
         case apb_address_i2c_config:     { apb_state.access <= apb_request.pwrite ? access_write_i2c_config     : access_read_i2c_config; }
         case apb_address_master_status:  { apb_state.access <= apb_request.pwrite ? access_none                 : access_read_status; }
         case apb_address_master_command: { apb_state.access <= apb_request.pwrite ? access_issue_command        : access_none; }
@@ -113,9 +113,6 @@ Simple APB interface to an I2C master
         }
 
         /*b Handle APB read data */
-        if (master_response.ack) {
-            apb_state.master_request.valid <= 0;
-        }
         apb_response = {*=0, pready=1};
         part_switch (apb_state.access) {
         case access_read_status: {
@@ -145,6 +142,9 @@ Simple APB interface to an I2C master
         }
 
         /*b Handle APB state update */
+        if (master_response.ack) {
+            apb_state.master_request.valid <= 0;
+        }
         part_switch (apb_state.access) {
         case access_write_i2c_config: {
             apb_state.master_conf.data_setup_delay <= apb_request.pwdata[4;24];

@@ -368,15 +368,20 @@ ContHold     : future_done         -> Idle
         case master_action_no_acknowledge: { // SDA out high, SDA in high, SCL just gone high
             // can do SDA low, wait, SDA high
             master_state.fsm_state <= master_fsm_idle;
+            master_combs.finish_request = 1;            
+            master_combs.response_type = i2c_master_response_no_acknowledge;
         }
         case master_action_arbitration_fail: { // Somebody else has one the bus - wait till they give up
             master_state.fsm_state <= master_fsm_wait_for_stop;
+            master_combs.finish_request = 1;            
+            master_combs.response_type = i2c_master_response_arbitration_fail;
         }
         case master_action_prepare_stop: { // SDA out high, SDA in low, SCL just gone low
             master_state.fsm_state <= master_fsm_prepare_stop;
             master_state.future.delay   <= master_conf.period_delay;
             master_state.i2c_out.sda    <= 0; // force it low (it should be low and SCL is low so it can change)
             master_state.future.i2c     <= {sda=0, scl=1};
+            master_combs.finish_request = 1;            
         }
         case master_action_issue_stop: { // SDA low, SCL high, so pull SDA high after hold
             master_state.fsm_state <= master_fsm_wait_for_stop;
@@ -387,6 +392,7 @@ ContHold     : future_done         -> Idle
             master_state.fsm_state      <= master_fsm_prepare_cont;
             master_state.future.delay   <= master_conf.period_delay;
             master_state.future.i2c     <= {sda=1, scl=0};
+            master_combs.finish_request = 1;            
         }
         case master_action_issue_cont: { // SDA out is high, SDA in high, SCL low - let SCL rise
             master_state.fsm_state      <= master_fsm_cont_hold;
