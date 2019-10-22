@@ -12,6 +12,8 @@ def program(defines):
     program["code"] += [
                          (apb_rom.rom.op_set("address",apb_dprintf_uart_brg),),
                          (apb_rom.rom.op_req("write_arg",brg_config),),
+                         #(apb_rom.rom.op_set("address",apb_uart_brg),),
+                         #(apb_rom.rom.op_req("write_arg",brg_config),),
         ]
     program["code"] += [ (apb_rom.rom.op_set("address",apb_rv_sram_control),),
                          (apb_rom.rom.op_req("write_arg",1),), # Enable clock on RISC-V

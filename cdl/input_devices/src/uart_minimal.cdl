@@ -310,10 +310,13 @@ It has a single byte of holding register in each direction.
             }
         }
         }
-        if (!brg_output.clock_enable && receive_combs.sync_rxd) {
+        if (!brg_output.clock_enable) {
             receive_combs.action = rx_action_none;
         }
         
+        /*b Enable BRG if data is ready or receiving - nothing gets clocked here unless the BRG is going */
+        receive_combs.brg_enable = receive_state.active || (!receive_combs.sync_rxd);
+            
         /*b Rx actions */
         receive_combs.produce_holding_register = 0;
         receive_combs.framing_error = 0;
@@ -353,9 +356,6 @@ It has a single byte of holding register in each direction.
         }
         }
 
-        /*b Enable BRG if data is ready or receiving - nothing gets clocked here unless the BRG is going */
-        receive_combs.brg_enable = receive_state.active || (!receive_combs.sync_rxd);
-            
         /*b All done */
     }
 

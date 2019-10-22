@@ -338,9 +338,27 @@ class apb_target_i2c_test_one(apb_target_i2c_test_base):
         if d != i2c_conf:
             self.failtest(self.global_cycle(),"Mismatch in reading back I2C conf")
             pass
-        self.apb_write_no_error( address=0, data=i2c_conf )
-        self.apb_write_no_error( address=3, data=0xf00020 )
-        self.apb_write_no_error( address=2, data=0x203 )
+        self.apb_write_no_error( address=0x00000, data=i2c_conf )
+        self.apb_write_no_error( address=0x00003, data=0xf00020 )
+        self.apb_write_no_error( address=0x10000, data=i2c_conf )
+        self.apb_write_no_error( address=0x10003, data=0xf00040 )
+        self.apb_write_no_error( address=0x00002, data=0x303 )
+        self.apb_write_no_error( address=0x10002, data=0x303 )
+        for i in range(20):
+            status = self.apb_read_no_error( address=1 )
+            print "Status %08x"%status
+            if (status&3)==0: break
+            self.bfm_wait(1000)
+            pass
+        if i>18:
+            self.failtest(self.global_cycle(),"Expected I2C transaction to complete")
+            pass
+        if self.ios.gpio_output.value()!=0xc:
+            self.failtest(self.global_cycle(),"Expected GPIO to have been written over I2C to 0xc")
+            pass
+        self.apb_write_no_error( address=0x00000, data=i2c_conf )
+        self.apb_write_no_error( address=0x00003, data=0x21 )
+        self.apb_write_no_error( address=0x00002, data=0x201 )
         for i in range(20):
             status = self.apb_read_no_error( address=1 )
             print "Status %08x"%status

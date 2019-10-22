@@ -134,7 +134,7 @@ class vcu108_debug_hw(vcu108_generic_hw):
 #c vcu108_riscv_hw
 class vcu108_riscv_hw(vcu108_generic_hw):
     module_name = "tb_vcu108_riscv"
-    apb_rom_mif  = "roms/apb_riscv_start_rom.mif"
+    apb_rom_mif  = "roms/apb_riscv_start_100_rom.mif"
     #f __init__
     def __init__(self, test):
         self.memory = dump.c_dump()

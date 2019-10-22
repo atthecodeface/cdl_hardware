@@ -44,14 +44,16 @@ module tb_apb_target_i2c( clock clk,
 {
 
     /*b Nets */
-    net t_apb_request   apb_request;
-    net t_apb_response  apb_response;
+    net  t_apb_request    apb_request;
+    comb t_apb_request[2]   apb_request_mod;
+    net  t_apb_response[2]  apb_response_mod;
+    comb t_apb_response  apb_response;
     net t_apb_request   i2c_apb_request;
     net t_apb_response  i2c_apb_response;
     comb t_i2c i2c_in;
     net t_i2c i2c_th;
     net t_i2c i2c_slave;
-    net t_i2c i2c_master;
+    net t_i2c[2] i2c_master;
 
     net t_i2c_conf i2c_conf;
     comb t_i2c_slave_select slave_select;
@@ -67,8 +69,10 @@ module tb_apb_target_i2c( clock clk,
         // i2c_in &= i2c_slave;
         i2c_in.scl = i2c_in.scl & i2c_slave.scl;
         i2c_in.sda = i2c_in.sda & i2c_slave.sda;
-        i2c_in.scl = i2c_in.scl & i2c_master.scl;
-        i2c_in.sda = i2c_in.sda & i2c_master.sda;
+        for (i; 2) {
+            i2c_in.scl = i2c_in.scl & i2c_master[i].scl;
+            i2c_in.sda = i2c_in.sda & i2c_master[i].sda;
+        }
         slave_select = {mask=7h70, value=7h10};
         se_test_harness th( clk <- clk,
                             apb_request => apb_request,
@@ -79,12 +83,20 @@ module tb_apb_target_i2c( clock clk,
                             gpio_output <= gpio_output
             );
 
-        apb_target_i2c_master apb_i2c( clk <- clk,
-                                       reset_n <= reset_n,
-                                       apb_request  <= apb_request,
-                                       apb_response => apb_response,
-                                       i2c_in  <= i2c_in,
-                                       i2c_out => i2c_master );
+        apb_response = {*=0};
+        for (i; 2) {
+            apb_request_mod[i]      = apb_request;
+            apb_request_mod[i].psel = apb_request.psel && (apb_request.paddr[4;16]==i);
+            apb_response           |= apb_response_mod[i];
+        }
+        for (i; 2) {
+            apb_target_i2c_master apb_i2c[i]( clk <- clk,
+                                              reset_n <= reset_n,
+                                              apb_request  <= apb_request_mod[i],
+                                              apb_response => apb_response_mod[i],
+                                              i2c_in  <= i2c_in,
+                                              i2c_out => i2c_master[i] );
+        }
 
         i2c_interface i2c( clk <- clk,
                            reset_n <= reset_n,
