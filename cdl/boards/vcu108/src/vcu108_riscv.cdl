@@ -108,7 +108,7 @@ module vcu108_riscv( clock clk,
     net bit[32] fb_sram_ctrl;
 
     net  t_dprintf_req_4 apb_dprintf_req "Dprintf request from APB target";
-    comb bit             apb_dprintf_ack "Ack for dprintf request from APB target";
+    comb bit          apb_dprintf_ack "Ack for dprintf request from APB target";
 
     net bit[num_dprintf_requesters]                 dprintf_ack;
     clocked t_dprintf_req_4[num_dprintf_requesters] dprintf_req={*=0};
@@ -313,8 +313,8 @@ module vcu108_riscv( clock clk,
                 dprintf_req[i].valid <= 0;
             }
         }
-        dprintf_req[0] <= apb_dprintf_req;
-        apb_dprintf_ack = dprintf_ack[0];
+        dprintf_req[0]  <= apb_dprintf_req;
+        apb_dprintf_ack = !dprintf_req[0].valid;
 
         if (apb_request.psel && apb_request.penable && apb_response.pready) {
             dprintf_req[6] <= {valid=1, address=240,
@@ -577,7 +577,7 @@ module vcu108_riscv( clock clk,
         if (!i2c_master.scl) {vcu108_outputs.i2c.scl = 0;}
         if (!i2c_master.sda) {vcu108_outputs.i2c.sda = 0;}
 
-        vcu108_outputs.i2c_reset_mux_n = gpio_output_enable[2] ? gpio_output[2b0] : 1;
+        vcu108_outputs.i2c_reset_mux_n = gpio_output_enable[2] ? gpio_output[2] : 1;
 
         flash_out <= {*=0}; // wp, reset not used
         flash_out.we_n <= 1;

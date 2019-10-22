@@ -105,6 +105,9 @@ If not empty and output register will be empty move register[read_ptr] to output
         if (!fifo_combs.req_out_will_be_empty) {
             fifo_combs.req_in_to_req_out = 0;
         }
+        if (fifo_state.buffer_is_not_empty) {
+            fifo_combs.req_in_to_req_out = 0;
+        }
         fifo_combs.push_req_in    = fifo_combs.can_take_request      && !fifo_combs.req_in_to_req_out  && req_in.valid;
         fifo_combs.pop_to_req_out = fifo_combs.req_out_will_be_empty && fifo_state.buffer_is_not_empty;
         
@@ -113,6 +116,7 @@ If not empty and output register will be empty move register[read_ptr] to output
             req_out.valid <= 0;
             if (fifo_combs.pop_to_req_out) {
                 req_out <= fifo_combs.fifo_data_out;
+                
             }
             if (fifo_combs.req_in_to_req_out) {
                 req_out <= req_in;

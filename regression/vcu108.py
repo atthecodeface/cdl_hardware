@@ -142,6 +142,20 @@ class vcu108_riscv_hw(vcu108_generic_hw):
         self.th_forces = self.th_forces.copy()
         self.th_forces["dut.riscv.mem.filename"] = self.mif.name
         vcu108_generic_hw.__init__(self,test)
+        class named:
+            def __init__(self, name):
+                self._name = name
+                pass
+            def __repr__(self):
+                return self._name
+            pass
+        self.wave_hierarchies = [named("dut.dut.apb_dprintf_uart"),
+                                 named("dut.dut.rv_apb"),
+                                 named("dut.dut.apb_dprintf"),
+                                 named("dut.dut.tdm___0"),
+                                 named("dut.dut.dpf"),
+                                 #named("dut.dut.riscv"),
+        ]
         pass
 
 #c c_test_one
@@ -172,6 +186,6 @@ class vcu108_riscv_regression(simple_tb.base_test):
     def test_uart_loopback(self):
         test = c_test_one()
         hw = vcu108_riscv_hw(test)
-        self.do_test_run(hw, 20*1000)
+        self.do_test_run(hw, 400*1000)
     pass
 
