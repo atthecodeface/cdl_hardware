@@ -90,7 +90,7 @@ for c in config.__subclasses__():
     pass
 
 csrs = configs["vga_640x480p60"].framebuffer_timing()
-#csrs = configs["hd_1920x1080p60"].framebuffer_timing()
+csrs = configs["hd_1920x1080p60"].framebuffer_timing()
 #csrs = configs["svga_800x600p60"].framebuffer_timing()
 #print csrs
 for (cn,cv) in csrs.iteritems():

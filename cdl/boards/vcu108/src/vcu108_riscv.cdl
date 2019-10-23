@@ -114,7 +114,13 @@ module vcu108_riscv( clock clk,
     clocked t_dprintf_req_4[num_dprintf_requesters] dprintf_req={*=0};
     net bit[num_dprintf_requesters-1]               mux_dprintf_ack "Ack for dprintf request after multiplexing";
     net t_dprintf_req_4[num_dprintf_requesters-1]   mux_dprintf_req "Dprintf request after multiplexing";
-    net bit                                         fifo_dprintf_ack "Ack for dprintf request after multiplexing";
+
+    net  bit                                        fifo_dprintf_ack_fb   "Ack for dprintf request after multiplexing";
+    net  bit                                        fifo_dprintf_ack_uart "Ack for dprintf request after multiplexing";
+    comb t_dprintf_req_4                            fifo_dprintf_req_fb   "Dprintf request after multiplexing";
+    comb t_dprintf_req_4                            fifo_dprintf_req_uart "Dprintf request after multiplexing";
+
+    comb bit                                        fifo_dprintf_ack "Ack for dprintf request after multiplexing";
     net t_dprintf_req_4                             fifo_dprintf_req "Dprintf request after multiplexing";
     net t_dprintf_byte dprintf_byte;
 
@@ -323,7 +329,7 @@ module vcu108_riscv( clock clk,
                     data_2=bundle(apb_request.pwdata, 32h20000087),
                     data_3=bundle(apb_response.prdata,    8hff, 24h0) };
         }
-        if (csr_request.valid) {
+        if (csr_request.valid && !csr_response.acknowledge) {
             dprintf_req[7] <= {valid=1, address=280,
                     data_0=bundle(40h43_53_52_3a_80, 7b0,csr_request.read_not_write, 16h_20_83), // CSR:%x %04x %04x %08x (read_not_write select address data)
                     data_1=bundle(csr_request.select,  48h200000000083),
@@ -447,18 +453,29 @@ module vcu108_riscv( clock clk,
     /*b Dprintf/framebuffer */
     net bit dprintf_uart_txd;
     dprintf_framebuffer_instances: {
-    apb_target_dprintf_uart apb_dprintf_uart( clk <- clk,
+        fifo_dprintf_req_fb    = fifo_dprintf_req;
+        fifo_dprintf_req_uart  = fifo_dprintf_req;
+        fifo_dprintf_ack       = fifo_dprintf_ack_fb;
+
+        if (vcu108_inputs_r.switches[0]) {
+            fifo_dprintf_ack       = fifo_dprintf_ack_uart;
+            fifo_dprintf_req_fb.valid  = 0;
+        } else {
+            fifo_dprintf_ack       = fifo_dprintf_ack_fb;
+            fifo_dprintf_req_uart.valid  = 0;
+        }
+        apb_target_dprintf_uart apb_dprintf_uart( clk <- clk,
                                               reset_n <= reset_n,
                                               apb_request  <= dprintf_uart_apb_request,
                                               apb_response => dprintf_uart_apb_response,
-                                              dprintf_req <= fifo_dprintf_req,
-                                              dprintf_ack => fifo_dprintf_ack,
+                                              dprintf_req <= fifo_dprintf_req_uart,
+                                              dprintf_ack => fifo_dprintf_ack_uart,
                                               uart_txd => dprintf_uart_txd );
 
         dprintf dprintf( clk <- clk,
                          reset_n <= reset_n,
-                         dprintf_req <= fifo_dprintf_req,
-                         // dprintf_ack => mux_dprintf_ack[0],
+                         dprintf_req <= fifo_dprintf_req_fb,
+                         dprintf_ack => fifo_dprintf_ack_fb,
                          byte_blocked <= 0,
                          dprintf_byte => dprintf_byte
             );
