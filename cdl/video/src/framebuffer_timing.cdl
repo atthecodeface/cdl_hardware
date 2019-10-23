@@ -25,7 +25,15 @@ include "types/csr.h"
 include "types/video.h"
 include "csr/csr_targets.h"
 
+/*
+a Constants */
+constant integer timing_width=12; // Suitable for 2k and lower
+//constant integer timing_width=10; // Not suitable for 1024x768 and higher
+
 /*a Types */
+/*t t_timing */
+typedef bit[timing_width] t_timing;
+
 /*t t_csr_address
  *
  * CSR address decode for the framebuffer timing module
@@ -80,11 +88,11 @@ typedef struct {
     bit vs      "Actual strobe output";
     bit display_enable;
     t_display_fsm h_state;
-    bit[10] h_pixel;
-    bit[10] hs_counter;
+    t_timing h_pixel;
+    t_timing hs_counter;
     t_display_fsm v_state;
-    bit[10] v_line;
-    bit[10] vs_counter;
+    t_timing v_line;
+    t_timing vs_counter;
 
     bit pixel_data_required;
 
@@ -95,16 +103,16 @@ typedef struct {
  * Registers to control the timing of the display, written on the CSR clock
  */
 typedef struct {
-    bit[10] h_back_porch      "Number of pixels betwen hsync rising and the first displayed pixel on a scanline";
-    bit[10] h_display         "Number of pixels to display per scanline";
-    bit[10] h_front_porch     "Number of pixels after displayed pixels before hsync rising on a scanline";
-    bit[10] v_back_porch      "Number of scanlines between vsync rising and the first displayed scanline";
-    bit[10] v_display         "Number of scanlines to display per frame";
-    bit[10] v_front_porch     "Number of scanlines after displayed scanlines before vsync rising in a frame";
-    bit     h_strobe_polarity "If high the hs is active high; if low, then active low";
-    bit[10] h_strobe_length   "Number of scanlines to assert hs for";
-    bit     v_strobe_polarity "If high the vs is active high; if low, then active low";
-    bit[10] v_strobe_length   "Number of scanlines to assert hs for";
+    t_timing h_back_porch      "Number of pixels betwen hsync rising and the first displayed pixel on a scanline";
+    t_timing h_display         "Number of pixels to display per scanline";
+    t_timing h_front_porch     "Number of pixels after displayed pixels before hsync rising on a scanline";
+    t_timing v_back_porch      "Number of scanlines between vsync rising and the first displayed scanline";
+    t_timing v_display         "Number of scanlines to display per frame";
+    t_timing v_front_porch     "Number of scanlines after displayed scanlines before vsync rising in a frame";
+    bit      h_strobe_polarity "If high the hs is active high; if low, then active low";
+    t_timing h_strobe_length   "Number of scanlines to assert hs for";
+    bit      v_strobe_polarity "If high the vs is active high; if low, then active low";
+    t_timing v_strobe_length   "Number of scanlines to assert hs for";
 } t_csrs;
 
 /*a Module
@@ -343,37 +351,39 @@ Bits     | Meaning
         csr_read_data = 0;
         part_switch (csr_access.address[4;0]) {
         case csr_address_display_size: {
-            csr_read_data = bundle( 6b0, csrs.v_display,
-                                    6b0, csrs.h_display );
+            csr_read_data[timing_width;  0] = csrs.h_display;
+            csr_read_data[timing_width; 16] = csrs.v_display;
             if (csr_access.valid && !csr_access.read_not_write) {
-                csrs.h_display   <= csr_access.data[10;0];
-                csrs.v_display   <= csr_access.data[10;16];
+                csrs.h_display   <= csr_access.data[timing_width;0];
+                csrs.v_display   <= csr_access.data[timing_width;16];
             }
         }
         case csr_address_strobes: {
-            csr_read_data = bundle( csrs.v_strobe_polarity, 5b0, csrs.v_strobe_length,
-                                    csrs.h_strobe_polarity, 5b0, csrs.h_strobe_length );
+            csr_read_data[timing_width;  0] = csrs.h_strobe_length;
+            csr_read_data[15] = csrs.h_strobe_polarity;
+            csr_read_data[timing_width; 16] = csrs.v_strobe_length;
+            csr_read_data[31] = csrs.v_strobe_polarity;
             if (csr_access.valid && !csr_access.read_not_write) {
                 csrs.v_strobe_polarity  <= csr_access.data[31];
-                csrs.v_strobe_length    <= csr_access.data[10;16];
+                csrs.v_strobe_length    <= csr_access.data[timing_width;16];
                 csrs.h_strobe_polarity  <= csr_access.data[15];
-                csrs.h_strobe_length    <= csr_access.data[10;0];
+                csrs.h_strobe_length    <= csr_access.data[timing_width;0];
             }
         }
         case csr_address_h_porch: {
-            csr_read_data = bundle( 6b0, csrs.h_front_porch,
-                                    6b0, csrs.h_back_porch );
+            csr_read_data[timing_width;  0] = csrs.h_back_porch;
+            csr_read_data[timing_width; 16] = csrs.h_front_porch;
             if (csr_access.valid && !csr_access.read_not_write) {
-                csrs.h_back_porch   <= csr_access.data[10;0];
-                csrs.h_front_porch  <= csr_access.data[10;16];
+                csrs.h_back_porch   <= csr_access.data[timing_width;0];
+                csrs.h_front_porch  <= csr_access.data[timing_width;16];
             }
         }
         case csr_address_v_porch: {
-            csr_read_data = bundle( 6b0, csrs.v_front_porch,
-                                    6b0, csrs.v_back_porch );
+            csr_read_data[timing_width;  0] = csrs.v_back_porch;
+            csr_read_data[timing_width; 16] = csrs.v_front_porch;
             if (csr_access.valid && !csr_access.read_not_write) {
-                csrs.v_back_porch   <= csr_access.data[10;0];
-                csrs.v_front_porch  <= csr_access.data[10;16];
+                csrs.v_back_porch   <= csr_access.data[timing_width;0];
+                csrs.v_front_porch  <= csr_access.data[timing_width;16];
             }
         }
         }

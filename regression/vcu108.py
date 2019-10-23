@@ -152,8 +152,7 @@ class vcu108_riscv_hw(vcu108_generic_hw):
         self.wave_hierarchies = [named("dut.dut.apb_dprintf_uart"),
                                  named("dut.dut.rv_apb"),
                                  named("dut.dut.apb_dprintf"),
-                                 named("dut.dut.tdm___0"),
-                                 named("dut.dut.dpf"),
+                                 named("dut.dut.gpio"),
                                  #named("dut.dut.riscv"),
         ]
         pass
