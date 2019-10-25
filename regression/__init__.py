@@ -16,6 +16,7 @@ tests = [#"base6502",
          "de1_cl",
          "bbc_submodules",
          "jtag",
+         "clocking",
          # clarvi
          ]
 if "BBC" in os.environ.keys():

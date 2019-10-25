@@ -53,3 +53,14 @@ i2c = {"scl":1, "sda":1}
 #t i2c_conf
 i2c_conf = {"divider":8, "period":8}
 
+#t t_bit_delay_config 
+bit_delay_config = { "load":1, "value":9}
+
+#t t_bit_delay_response
+bit_delay_response = { "load_ack":1, "value":9, "sync_value":1}
+
+#t phase_measure_request
+phase_measure_request = {"valid":1}
+
+#t phase_measure_response
+phase_measure_response = {"ack":1, "abort":1, "valid":1, "delay":9, "initial_delay":9, "initial_value":1}

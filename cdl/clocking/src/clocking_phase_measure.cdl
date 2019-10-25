@@ -1,0 +1,326 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   clocking_phase_measure.cdl
+ * @brief  A module to control a delay module and synchronizer to determine phase length
+ *
+ * CDL implementation of a module to control a delay module and synchronizer to determine
+ * phase length of a clock signal
+ *
+ * The clock should have as close to a 50-50 duty cycle as possible
+ *
+ * The module can be prompted to start a measurement; when it does so it will set the
+ * delay module to use a zero delay, and it will run through increasing the delay until
+ * it gets a consistent value of a synchronized delayed clock for N cycles.
+ *
+ * It will record this delay and value, then increase the delay again untilt it gets a consistent
+ * inverse value. It will then complete the measurement, and report the difference in cycles
+ *
+ */
+/*a Includes */
+include "types/clocking.h"
+
+/*a Constants
+*/
+constant integer delay_program_count=8;
+
+/*a Types
+*/
+/*t t_delay_request */
+typedef struct {
+    bit valid;
+    bit zero;
+} t_delay_request;
+
+/*t t_delay_fsm */
+typedef fsm {
+    delay_fsm_idle     "Waiting to reconfigure the delay";
+    delay_fsm_load     "Issuing a load to the delay module (waiting for ack)";
+    delay_fsm_wait     "Waiting for delay after load ack";
+    delay_fsm_shifting "Shifting in data (for eight ticks)";
+} t_delay_fsm;
+
+/*t t_delay_action - Action for state machine */
+typedef enum[3] {
+    delay_action_none,
+    delay_action_load             "In idle and receive request to load delay",
+    delay_action_load_wait        "Waiting for load to be taken",
+    delay_action_wait             "Waiting for load to take effect",
+    delay_action_capture_start    "Start capturing shift register",
+    delay_action_capture          "Capturing shift register",
+    delay_action_capture_complete "Shift register, present result"
+} t_delay_action;
+
+/*t t_delay_combs */
+typedef struct {
+    t_delay_action action;
+    bit shift_register_constant;
+    bit max_delay;
+    t_delay_request request;
+} t_delay_combs;
+
+/*t t_delay_state - clocked state for delay side */
+typedef struct {
+    t_delay_fsm fsm_state;
+    t_bit_delay_config delay_config;
+    bit[4]      counter;
+    bit         shift_register_valid;
+    bit[8]      shift_register;
+} t_delay_state;
+
+/*t t_measure_fsm */
+typedef fsm {
+    measure_fsm_idle                        "Waiting for request - on request zero delay and wait for delay to load etc";
+    measure_fsm_initial_delay_request  "Waiting for delay FSM to report valid data";
+    measure_fsm_initial_wait_delay     "Waiting for delay FSM to report valid data";
+    measure_fsm_inverse_delay_request  "Waiting for delay FSM to report valid data";
+    measure_fsm_inverse_wait_delay     "Waiting for delay FSM to report valid data";
+    measure_fsm_abort                       "Maximum delay reached - report error";
+    measure_fsm_complete                    "Report succesful result";
+} t_measure_fsm;
+
+/*t t_measure_action - Action for measurement state machine */
+typedef enum [4] {
+    measure_action_none,
+    measure_action_start                        "From idle when a request happens - kick of delay machine with zero delay",
+    measure_action_initial_value_delay_started  "From idle when a request happens - kick of delay machine with zero delay",
+    measure_action_initial_value_increase_delay "From idle when a request happens - kick of delay machine with zero delay",
+    measure_action_initial_value_delay_found    "From idle when a request happens - kick of delay machine with zero delay",
+    measure_action_inverse_value_delay_started  "From idle when a request happens - kick of delay machine with zero delay",
+    measure_action_inverse_value_increase_delay "From idle when a request happens - kick of delay machine with zero delay",
+    measure_action_inverse_value_delay_found    "From idle when a request happens - kick of delay machine with zero delay",
+    measure_action_abort                        "From idle when a request happens - kick of delay machine with zero delay",
+    measure_action_idle                         "From idle when a request happens - kick of delay machine with zero delay",
+} t_measure_action;
+
+/*t t_measure_combs */
+typedef struct {
+    t_measure_action action;
+} t_measure_combs;
+
+/*t t_measure_state - clocked state for measurement side */
+typedef struct {
+    t_measure_fsm fsm_state;
+    t_phase_measure_response measure_response;
+    bit    initial_value;
+    bit[9] initial_delay;
+    t_delay_request delay_request;
+} t_measure_state;
+
+/*a Module
+*/
+/*m clocking_phase_measure */
+module clocking_phase_measure( clock clk,
+                               input bit reset_n,
+
+                               output t_bit_delay_config   delay_config,
+                               input  t_bit_delay_response delay_response,
+                               input   t_phase_measure_request measure_request,
+                               output  t_phase_measure_response measure_response
+    )
+"""
+
+"""
+{
+    /*b Default clock/reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Delay + measure FSM and state */
+    clocked t_delay_state  delay_state   = {*=0}  "Delay state machine";
+    comb t_delay_combs     delay_combs;
+    clocked t_measure_state  measure_state   = {*=0}  "Measure state machine";
+    comb t_measure_combs     measure_combs;
+
+    /*b Delay FSM and state logic */
+    delay_fsm_and_state : {
+        delay_combs.request = measure_state.delay_request;
+        delay_combs.shift_register_constant = 0;
+        if ((delay_state.shift_register==0) || (delay_state.shift_register==-1)) {
+            delay_combs.shift_register_constant = 1;
+        }
+        delay_combs.max_delay = (delay_state.delay_config.value==-1);
+
+        /*b Delay combs */
+        delay_combs.action = delay_action_none;
+        full_switch (delay_state.fsm_state) {
+        case delay_fsm_idle: {
+            if (delay_combs.request.valid) {
+                delay_combs.action = delay_action_load;
+            }
+        }
+        case delay_fsm_load: {
+            if (delay_state.delay_config.load && delay_response.load_ack) {
+                delay_combs.action = delay_action_load_wait;
+            }
+        }
+        case delay_fsm_wait: {
+            delay_combs.action = delay_action_wait;
+            if (delay_state.counter==0) {
+                delay_combs.action = delay_action_capture_start;
+            }
+        }
+        case delay_fsm_shifting: {
+            delay_combs.action = delay_action_capture;
+            if (delay_state.counter==0) {
+                delay_combs.action = delay_action_capture_complete;
+            }
+        }
+        }
+
+        /*b Delay state */
+        full_switch (delay_combs.action) {
+        case delay_action_none: {
+            delay_state.shift_register_valid <= 0;
+        }
+        case delay_action_load: {
+            delay_state.delay_config.value <= delay_state.delay_config.value+1;
+            if (delay_combs.request.zero) {
+                delay_state.delay_config.value <= 0;
+            }
+            delay_state.delay_config.load <= 1;
+            delay_state.counter   <= delay_program_count;
+            delay_state.fsm_state <= delay_fsm_load;
+        }
+        case delay_action_load_wait: {
+            delay_state.delay_config.load <= 0;
+            delay_state.fsm_state <= delay_fsm_wait;
+        }
+        case delay_action_wait: {
+            delay_state.counter   <= delay_state.counter-1;
+        }
+        case delay_action_capture_start: {
+            delay_state.counter   <= 8;
+            delay_state.fsm_state <= delay_fsm_shifting;
+        }
+        case delay_action_capture: {
+            delay_state.counter   <= delay_state.counter-1;
+            delay_state.shift_register    <= delay_state.shift_register<<1;
+            delay_state.shift_register[0] <= delay_response.sync_value;
+            delay_state.fsm_state         <= delay_fsm_shifting;
+        }
+        case delay_action_capture_complete: {
+            delay_state.shift_register_valid <= 1;
+            delay_state.fsm_state            <= delay_fsm_idle;
+        }
+        }
+
+        /*b All done */
+    }
+        
+    /*b Measurement FSM and state logic */
+    measurement_fsm_and_state : {
+
+        /*b Measurement combs */
+        measure_combs.action = measure_action_none;
+        full_switch (measure_state.fsm_state) {
+        case measure_fsm_idle: {
+            if (measure_request.valid) {
+                measure_combs.action = measure_action_start;
+            }
+        }
+        case measure_fsm_initial_delay_request: {
+            measure_combs.action = measure_action_initial_value_delay_started;
+        }
+        case measure_fsm_initial_wait_delay: {
+            if (delay_state.shift_register_valid) {
+                measure_combs.action = measure_action_initial_value_increase_delay;
+                if (delay_combs.max_delay) {
+                    measure_combs.action = measure_action_abort;
+                }
+                if (delay_combs.shift_register_constant) {
+                    measure_combs.action = measure_action_initial_value_delay_found;
+                }
+            }
+        }
+        case measure_fsm_inverse_delay_request: {
+            measure_combs.action = measure_action_inverse_value_delay_started;
+        }
+        case measure_fsm_inverse_wait_delay: {
+            if (delay_state.shift_register_valid) {
+                measure_combs.action = measure_action_inverse_value_increase_delay;
+                if (delay_combs.max_delay) {
+                    measure_combs.action = measure_action_abort;
+                }
+                if (delay_combs.shift_register_constant &&
+                    (delay_state.shift_register[0]!=measure_state.initial_value)) {
+                    measure_combs.action = measure_action_inverse_value_delay_found;
+                }
+            }
+        }
+        case measure_fsm_complete: {
+            measure_combs.action = measure_action_idle;
+        }
+        }
+
+        /*b Measure state */
+        full_switch (measure_combs.action) {
+        case measure_action_none: {
+            measure_state.measure_response.valid <= 0;
+        }
+        case measure_action_start: { // in Idle, asked to do a measurement. Delay must be idle too
+            measure_state.measure_response.ack <= 1;
+            measure_state.delay_request <= {valid=1, zero=1};
+            measure_state.fsm_state <= measure_fsm_initial_delay_request;
+        }
+        case measure_action_initial_value_delay_started: {
+            measure_state.measure_response.ack <= 0;
+            measure_state.fsm_state <= measure_fsm_initial_wait_delay;
+            measure_state.delay_request.valid <= 0;
+        }
+        case measure_action_initial_value_increase_delay: { // in initial_wait, got result, need to increment delay
+            measure_state.delay_request <= {valid=1, zero=0};
+            measure_state.fsm_state <= measure_fsm_initial_delay_request;
+        }
+        case measure_action_initial_value_delay_found: { // in initial_wait, got valid result
+            measure_state.initial_value <= delay_state.shift_register[0];
+            measure_state.initial_delay <= delay_state.delay_config.value;
+            measure_state.delay_request <= {valid=1, zero=0};
+            measure_state.fsm_state <= measure_fsm_inverse_delay_request;
+        }
+        case measure_action_inverse_value_delay_started: {
+            measure_state.fsm_state <= measure_fsm_inverse_wait_delay;
+            measure_state.delay_request.valid <= 0;
+        }
+        case measure_action_inverse_value_increase_delay: { // in inverse_wait, got result, need to increment delay
+            measure_state.delay_request <= {valid=1, zero=0};
+            measure_state.fsm_state <= measure_fsm_inverse_delay_request;
+        }
+        case measure_action_inverse_value_delay_found: { // in initial_wait, got valid result
+            measure_state.fsm_state <= measure_fsm_complete;
+            measure_state.measure_response <= {valid=1,
+                    abort=0,
+                    initial_value=measure_state.initial_value,
+                    delay = delay_state.delay_config.value - measure_state.initial_delay,
+                    initial_delay = measure_state.initial_delay
+                    };
+        }
+        case measure_action_abort: {
+            measure_state.fsm_state <= measure_fsm_complete;
+            measure_state.measure_response <= {valid=1, abort=1};
+        }
+        case measure_action_idle: {
+            measure_state.measure_response.valid <= 0;
+            measure_state.fsm_state <= measure_fsm_idle;
+        }
+        }
+
+        /*b Outputs */
+        measure_response = measure_state.measure_response;
+        delay_config     = delay_state.delay_config;
+        
+        /*b All done */
+    }
+        
+    /*b All done */
+}

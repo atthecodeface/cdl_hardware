@@ -1,0 +1,63 @@
+/** Copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_clocking.cdl
+ * @brief Testbench for numerous clocking modules
+ *
+ */
+/*a Includes */
+include "types/clocking.h"
+include "clocking/clocking_modules.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk,
+                               input t_bit_delay_config   delay_config,
+                               output  t_bit_delay_response delay_response,
+                               output   t_phase_measure_request measure_request,
+                               input  t_phase_measure_response measure_response
+    )
+{
+    timing to   rising clock clk delay_config, measure_response;
+    timing from rising clock clk delay_response, measure_request;
+}
+
+/*a Module */
+module tb_clocking( clock clk,
+               input bit reset_n
+)
+{
+
+    /*b Nets */
+    net t_bit_delay_config   delay_config;
+    net  t_bit_delay_response delay_response;
+    net   t_phase_measure_request measure_request;
+    net  t_phase_measure_response measure_response;
+
+    /*b Instantiations */
+    instantiations: {
+        se_test_harness th( clk <- clk,
+                            delay_config <= delay_config,
+                            delay_response => delay_response,
+                            measure_request => measure_request,
+                            measure_response <= measure_response );
+        clocking_phase_measure cpm(clk <- clk,
+                                   reset_n <= reset_n,
+                                   delay_config   => delay_config,
+                                   delay_response <= delay_response,
+                                   measure_request <= measure_request,
+                                   measure_response => measure_response );
+    }
+
+    /*b All done */
+}

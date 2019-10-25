@@ -183,6 +183,9 @@ cdl cdl/apb/tb_src  tb_apb_processor  inc:cdl/inc
 cdl cdl/apb/tb_src  tb_apb_target_rv_timer  inc:cdl/inc
 cdl cdl/apb/tb_src  tb_apb_target_i2c  inc:cdl/inc
 
+cdl cdl/clocking/src  clocking_phase_measure        inc:cdl/inc
+cdl cdl/clocking/tb_src  tb_clocking                inc:cdl/inc
+
 cdl cdl/crypt/kasumi/src  kasumi_sbox7        inc:cdl/inc
 cdl cdl/crypt/kasumi/src  kasumi_sbox9        inc:cdl/inc
 cdl cdl/crypt/kasumi/src  kasumi_fi           inc:cdl/inc
