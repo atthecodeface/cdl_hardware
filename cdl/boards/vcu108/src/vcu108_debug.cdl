@@ -50,7 +50,7 @@ module vcu108_debug( clock clk,
                      clock clk_50,
                      input bit reset_n,
 
-
+                     input  bit[64] vcu108_data,
                      input  t_vcu108_inputs vcu108_inputs,
                      output t_vcu108_outputs vcu108_outputs,
 
@@ -234,6 +234,11 @@ module vcu108_debug( clock clk,
                     data_1=bundle(vga_counters[0], 32h20000087),
                     data_2=bundle(vga_counters[1], 32h20000087),
                     data_3=bundle(vga_counters[2], 8hff, 24h0) };
+        }
+        if (vcu108_data[0]) {
+            dprintf_req[12] <= {valid=1, address=480,
+                    data_0=bundle(24h443a87,vcu108_data[32;0],8h20),
+                    data_1=bundle(8h87,vcu108_data[32;32],8hff,16h0) };
         }
         for (i; num_dprintf_requesters) {
             if (fb_sram_ctrl[i]) {
