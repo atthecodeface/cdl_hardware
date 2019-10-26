@@ -16,6 +16,7 @@
 import pycdl
 import sys, os, unittest
 import simple_tb
+import structs
 
 #a Useful functions
 def int_of_bits(bits):
@@ -410,8 +411,8 @@ class c_i2c_test_one(c_i2c_test_base):
         simple_tb.base_th.run_start(self)
         self.bfm_wait(25)
         self.i2c_idle()
-        self.ios.i2c_conf__divider.drive(self.cfg_divider)
-        self.ios.i2c_conf__period.drive(self.cfg_period)
+        self.ios.i2c_conf_0__divider.drive(self.cfg_divider)
+        self.ios.i2c_conf_0__period.drive(self.cfg_period)
         self.bfm_wait(100)
         self.i2c_write(cont=False, data=[(0x1<<1) | 0, 0x12, 0x34, 0x56, 0x78])
         self.i2c_apb_device_write(0x1b, 0, 0xf0)
@@ -440,16 +441,16 @@ class c_i2c_test_two(c_i2c_test_base):
         simple_tb.base_th.run_start(self)
         self.bfm_wait(25)
         self.i2c_idle()
-        self.ios.i2c_conf__divider.drive(self.cfg_divider)
-        self.ios.i2c_conf__period.drive(self.cfg_period)
+        self.ios.i2c_conf_0__divider.drive(self.cfg_divider)
+        self.ios.i2c_conf_0__period.drive(self.cfg_period)
         self.bfm_wait(100)
-        self.ios.master_request__valid.drive(1)
-        self.ios.master_request__cont.drive(0)
-        self.ios.master_request__num_in.drive(0)
-        self.ios.master_request__num_out.drive(3)
-        self.ios.master_request__data.drive(0xf00000 | 0x0000 | ((0x1b<<1)|0))
+        self.ios.master_request_0__valid.drive(1)
+        self.ios.master_request_0__cont.drive(0)
+        self.ios.master_request_0__num_in.drive(0)
+        self.ios.master_request_0__num_out.drive(3)
+        self.ios.master_request_0__data.drive(0xf00000 | 0x0000 | ((0x1b<<1)|0))
         self.bfm_wait(10)
-        self.ios.master_request__valid.drive(0)
+        self.ios.master_request_0__valid.drive(0)
         self.bfm_wait(1000)
         self.finishtest(0,"")
         pass
@@ -486,25 +487,22 @@ class i2c_test_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of LED chain
     """
+    i2c                  = pycdl.wirebundle(structs.i2c)
+    i2c_conf             = pycdl.wirebundle(structs.i2c_conf)
+    i2c_master_request   = pycdl.wirebundle(structs.i2c_master_request)
+    i2c_master_response  = pycdl.wirebundle(structs.i2c_master_response)
     th_forces = { "th.clock":"clk",
-                  "th.inputs":("i2c_in__scl "+
-                               "i2c_in__sda "+
-                               "gpio_output[16] "+
-                               "master_response__ack "+
-                               "master_response__in_progress "+
-                               "master_response__response_type[3] "+
-                               "master_response__data[32] "+
-                               ""),
-                  "th.outputs":("i2c_out__sda "+
-                                "i2c_out__scl "+
-                                "i2c_conf__divider[8] "+
-                                "i2c_conf__period[8] "+
-                                "master_request__valid "+
-                                "master_request__cont "+
-                                "master_request__data[32] "+
-                                "master_request__num_in[3] "+
-                                "master_request__num_out[3] "+
-                               ""),
+                  "th.inputs":" ".join(i2c._name_list("i2c_in")+
+                                        i2c_master_response._name_list("master_response_0")+
+                                        i2c_master_response._name_list("master_response_1")+
+                                       ["gpio_output[16]"]
+                                       ),
+                  "th.outputs":" ".join(i2c._name_list("i2c_out") +
+                                        i2c_conf._name_list("i2c_conf_0") +
+                                        i2c_conf._name_list("i2c_conf_1") +
+                                        i2c_master_request._name_list("master_request_0")+
+                                        i2c_master_request._name_list("master_request_1")
+                  ),
                   }
     module_name = "tb_i2c"
     pass

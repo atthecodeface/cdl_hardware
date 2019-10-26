@@ -62,6 +62,21 @@ mdio = {"mdc":1, "mdio":1, "mdio_enable":1}
 #t i2c
 i2c = {"scl":1, "sda":1}
 
+#t i2c_master_request
+i2c_master_request = {"valid":1,
+                      "cont":1,
+                      "data":32,
+                      "num_in":3,
+                      "num_out":3,
+}
+
+#t i2c_master_response
+i2c_master_response = {"ack":1,
+                       "in_progress":1,
+                      "response_type":3,
+                      "data":32,
+}
+
 #t i2c_conf
 i2c_conf = {"divider":8, "period":8}
 

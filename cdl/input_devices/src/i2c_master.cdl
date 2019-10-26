@@ -26,6 +26,8 @@ Determine means of I2C reset and state machine abort
 
 Reset should probably release all signals, wait for both high, then toggle SDA low, wait 2 periods, SDA high wait 2 periods, 32 times
 
+Change master ack to have setup and hold on SDA
+
  */
 /*a Includes */
 include "types/i2c.h"
@@ -41,13 +43,16 @@ typedef enum [5] {
     master_action_stop_hold            "Bus out idle, and keep it so for hold period",
     master_action_idle                 "Enter idle after hold period after stop or cont",
     master_action_start_request        "Drive SDA low and SCL high; pull SCL low after hold",
-    master_action_setup_bit            "SDA -, SCL low; drive SDA to bite value after clock low period",
+    master_action_setup_bit            "SDA -, SCL low; drive SDA to bit value after clock low period",
     master_action_posedge_clock        "SDA D, SCL low; pull SCL high after SDA hold",
     master_action_negedge_clock        "SDA D, SCL high; pull SCL low after high period - and move on a bit",
     master_action_posedge_clock_ack    "SDA high, SCL low; pull SCL high after low period",
     master_action_negedge_clock_ack    "SDA high, SCL high; pull SCL low after high period - and move on a byte",
+    master_action_first_posedge_clock_in     "SDA D, SCL low; pull SCL high after low period - for the first bit of first input byte",
     master_action_posedge_clock_in     "SDA D, SCL low; pull SCL high after low period",
     master_action_negedge_clock_in     "SDA D, SCL high; pull SCL low after high period - and move on a bit",
+    master_action_posedge_clock_ack_in "SDA D, SCL low; drive SDA low now and pull SCL high after low period",
+    master_action_negedge_clock_ack_in "SDA L, SCL high; pull SCL low and release SDA high after high period - and move on a byte",
     master_action_no_acknowledge       "SDA high in acknowledge phase of output byte",
     master_action_arbitration_fail     "SDA in low when SDA out was high on posedge SCL",
     master_action_prepare_stop         "SDA low, SCL low; pull SCL high after hold then issue stop",
@@ -73,6 +78,8 @@ typedef fsm {
     master_fsm_wait_negedge_clock_ack;
     master_fsm_wait_posedge_clock_in;
     master_fsm_wait_negedge_clock_in;
+    master_fsm_wait_posedge_clock_ack_in;
+    master_fsm_wait_negedge_clock_ack_in;
     master_fsm_prepare_stop;
     master_fsm_prepare_cont;
 } t_master_fsm;
@@ -275,7 +282,7 @@ ContHold     : future_done         -> Idle
                 master_combs.action = master_action_setup_bit;
                 if (master_combs.last_byte_of_output) {
                     if (!master_combs.last_byte_of_input) {
-                        master_combs.action = master_action_posedge_clock_in;
+                        master_combs.action = master_action_first_posedge_clock_in;
                     } elsif (master_combs.cont_not_stop) {
                         master_combs.action = master_action_prepare_cont;
                     } else {
@@ -296,9 +303,25 @@ ContHold     : future_done         -> Idle
             if (i2c_action.action==i2c_action_bit_end) {
                 master_combs.action = master_action_posedge_clock_in;
                 if (master_combs.last_bit_of_byte) {
-                    master_combs.action = master_action_prepare_stop;
+                    master_combs.action = master_action_posedge_clock_ack_in;
+                    if (master_combs.last_byte_of_input) {
+                        master_combs.action = master_action_prepare_stop;
+                        if (master_combs.cont_not_stop) {
+                            master_combs.action = master_action_prepare_cont;
+                        }
+                    }
                 }
                 // future(X) values SDA hold, SCL low
+            }
+        }
+        case master_fsm_wait_posedge_clock_ack_in: { // SDA L, SCL low, waiting for clock rising
+            if (i2c_action.action==i2c_action_bit_start) {
+                master_combs.action = master_action_negedge_clock_ack_in; // shift byte up, stop driving data
+            }
+        }
+        case master_fsm_wait_negedge_clock_ack_in: { // SDA L, SCL high, waiting for clock falling
+            if (i2c_action.action==i2c_action_bit_end) {
+                master_combs.action = master_action_posedge_clock_in;
             }
         }
         case master_fsm_prepare_stop: { // SDA L, SCL L, waiting for clock rising
@@ -365,7 +388,7 @@ ContHold     : future_done         -> Idle
             master_state.future.delay   <= master_conf.data_setup_delay;
             master_state.future.i2c.scl <= 1;
         }
-        case master_action_negedge_clock: { // SDA D, SCL high - pull SCL low after clock high
+        case master_action_negedge_clock: { // SDA D, SCL high - pull SCL low after clock high - and move on a bit
             master_state.fsm_state      <= master_fsm_wait_negedge_clock;
             master_state.future.delay   <= master_conf.period_delay;
             master_state.bit_num        <= master_state.bit_num-1;
@@ -385,18 +408,39 @@ ContHold     : future_done         -> Idle
             master_state.future.delay   <= master_conf.period_delay;
             master_state.future.i2c.scl <= 0;
         }
+        case master_action_first_posedge_clock_in: { // SDA D, SCL low - let SCL float high after clock low period
+            master_state.master_request.num_in <= master_state.master_request.num_in-1;
+            master_state.fsm_state      <= master_fsm_wait_posedge_clock_in;
+            master_state.future.delay   <= master_conf.period_delay;
+            master_state.future.i2c.scl <= 1;
+        }
         case master_action_posedge_clock_in: { // SDA D, SCL low - let SCL float high after clock low period
             master_state.fsm_state      <= master_fsm_wait_posedge_clock_in;
             master_state.future.delay   <= master_conf.period_delay;
             master_state.future.i2c.scl <= 1;
         }
-        case master_action_negedge_clock_in: { // SDA D, SCL high - pull SCL low after clock high
+        case master_action_negedge_clock_in: { // SDA D, SCL high - pull SCL low after clock high - and move on a bit
             master_state.fsm_state      <= master_fsm_wait_negedge_clock_in;
             master_state.future.delay   <= master_conf.period_delay;
             master_state.bit_num        <= master_state.bit_num-1;
             master_state.master_response.data[7;1] <= master_state.master_response.data[7;0];
             master_state.master_response.data[0]   <= i2c_action.bit_value;
             master_state.future.i2c.scl <= 0;
+        }
+        case master_action_posedge_clock_ack_in: { // SDA D, SCL low; drive SDA low now and pull SCL high after low period
+            master_state.fsm_state      <= master_fsm_wait_posedge_clock_ack_in;
+            master_state.i2c_out.sda    <= 0; // Pull SDA low now ready for SCL to go high as our acknowledge
+            master_state.future.delay   <= master_conf.period_delay;
+            master_state.future.i2c.scl <= 1;
+            master_state.future.i2c.sda <= 0;
+        }
+        case master_action_negedge_clock_ack_in: { // SDA L, SCL high; pull SCL low and release SDA high after high period - and move on a byte
+            master_state.fsm_state      <= master_fsm_wait_negedge_clock_ack_in;
+            master_state.master_request.num_in <= master_state.master_request.num_in-1;
+            master_state.future.delay   <= master_conf.period_delay;
+            master_state.bit_num        <= master_state.bit_num-1;
+            master_state.future.i2c.scl <= 0;
+            master_state.future.i2c.sda <= 1;
         }
         case master_action_no_acknowledge: { // SDA out high, SDA in high, SCL just gone low
             master_state.fsm_state <= master_fsm_prepare_stop;

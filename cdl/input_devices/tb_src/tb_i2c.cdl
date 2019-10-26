@@ -26,14 +26,17 @@ include "apb/apb_targets.h"
 extern module se_test_harness( clock clk,
                                input  t_i2c i2c_in,
                                output t_i2c i2c_out,
-                               output t_i2c_master_request master_request,
-                               input t_i2c_master_response master_response,
-                               output t_i2c_conf i2c_conf,
+                               output t_i2c_master_request master_request_0,
+                               input t_i2c_master_response master_response_0,
+                               output t_i2c_master_request master_request_1,
+                               input t_i2c_master_response master_response_1,
+                               output t_i2c_conf i2c_conf_0,
+                               output t_i2c_conf i2c_conf_1,
                                input  bit[16] gpio_output
     )
 {
-    timing from rising clock clk i2c_out, i2c_conf, master_request;
-    timing to   rising clock clk i2c_in, gpio_output, master_response;
+    timing from rising clock clk i2c_out, i2c_conf_0, i2c_conf_1, master_request_0, master_request_1;
+    timing to   rising clock clk i2c_in, gpio_output, master_response_0, master_response_1;
 }
 
 /*a Module */
@@ -43,21 +46,23 @@ module tb_i2c( clock clk,
 {
 
     /*b Nets */
+    default clock clk;
+    default reset active_low reset_n;
     comb t_i2c i2c_in;
     net t_i2c i2c_th;
     net t_i2c i2c_slave;
-    net t_i2c i2c_master;
 
-    net t_i2c_master_request  master_request "Request from master client";
-    net t_i2c_master_response master_response "Response to master client";
-    comb t_i2c_master_conf master_conf "Configuration of timing of master";
+    net t_i2c[2] i2c_master;
+    net t_i2c_master_request[2]  master_request "Request from master client";
+    net t_i2c_master_response[2] master_response "Response to master client";
+    clocked t_i2c_master_conf[2] master_conf = {*=0} "Configuration of timing of master";
+    net t_i2c_conf[2] i2c_conf;
+    net t_i2c_action[2] i2c_action;
 
-    net t_i2c_action i2c_action;
     net t_i2c_slave_request slave_request;
     net t_i2c_slave_response slave_response;
     net t_apb_request  apb_request;
     net t_apb_response apb_response;
-    net t_i2c_conf i2c_conf;
     comb t_i2c_slave_select slave_select;
     net bit[16] gpio_output;
     net bit[16] gpio_output_enable;
@@ -68,40 +73,51 @@ module tb_i2c( clock clk,
         // i2c_in &= i2c_slave;
         i2c_in.scl = i2c_in.scl & i2c_slave.scl;
         i2c_in.sda = i2c_in.sda & i2c_slave.sda;
-        i2c_in.scl = i2c_in.scl & i2c_master.scl;
-        i2c_in.sda = i2c_in.sda & i2c_master.sda;
+        for (i; 2) {
+            i2c_in.scl = i2c_in.scl & i2c_master[i].scl;
+            i2c_in.sda = i2c_in.sda & i2c_master[i].sda;
+        }
         slave_select = {mask=7h70, value=7h10};
-        master_conf = {data_hold_delay=9, data_setup_delay=1, period_delay=10};
+        for (i; 2) {
+            master_conf[i] <= {data_hold_delay=9, data_setup_delay=1, period_delay=10};
+        }
 
         se_test_harness th( clk <- clk,
                             i2c_in  <= i2c_in,
                             i2c_out => i2c_th,
-                            i2c_conf => i2c_conf,
-                            master_request => master_request,
-                            master_response <= master_response,
+                            i2c_conf_0 => i2c_conf[0],
+                            i2c_conf_1 => i2c_conf[1],
+                            master_request_0 => master_request[0],
+                            master_response_0 <= master_response[0],
+                            master_request_1 => master_request[1],
+                            master_response_1 <= master_response[1],
                             gpio_output <= gpio_output
             );
+
+        for (i; 2) {
+            i2c_interface i2c[i]( clk <- clk,
+                                  reset_n <= reset_n,
+                                  i2c_in <= i2c_in,
+                                  i2c_action => i2c_action[i],
+                                  i2c_conf <= i2c_conf[i] );
         
-        i2c_interface i2c( clk <- clk,
-                           reset_n <= reset_n,
-                           i2c_in <= i2c_in,
-                           i2c_action => i2c_action,
-                           i2c_conf <= i2c_conf );
-        
-        i2c_master master(clk <- clk,
-                          reset_n <= reset_n,
-                          i2c_action <= i2c_action,
-                          i2c_out => i2c_master,
-                          master_request <= master_request,
-                          master_response => master_response,
-                          master_conf <= master_conf );
+            i2c_master master[i](clk <- clk,
+                                reset_n <= reset_n,
+                                i2c_action <= i2c_action[i],
+                                i2c_out => i2c_master[i],
+                                master_request <= master_request[i],
+                                master_response => master_response[i],
+                                master_conf <= master_conf[i] );
+        }
+
         i2c_slave slave(clk <- clk,
                         reset_n <= reset_n,
-                        i2c_action <= i2c_action,
+                        i2c_action <= i2c_action[0],
                         i2c_out => i2c_slave,
                         slave_select <= slave_select, 
                         slave_request => slave_request,
                         slave_response <= slave_response );
+
         i2c_slave_apb_master i2c_apb( clk <- clk,
                                       reset_n <= reset_n,
                                       slave_request <= slave_request,
