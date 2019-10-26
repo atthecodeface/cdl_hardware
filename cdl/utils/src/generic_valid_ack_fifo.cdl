@@ -18,9 +18,6 @@
  * types, each of which has an individual @ack response signal, and it
  * combines them with a round-robin arbiter to a single request out.
  */
-/*a Includes */
-include "types/dprintf.h"
-
 /*a Constants */
 constant integer fifo_depth=16;
 constant integer fifo_ptr_size=sizeof(fifo_depth-1);

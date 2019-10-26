@@ -80,27 +80,32 @@ typedef struct {
 
 /*t t_measure_fsm */
 typedef fsm {
-    measure_fsm_idle                        "Waiting for request - on request zero delay and wait for delay to load etc";
-    measure_fsm_initial_delay_request  "Waiting for delay FSM to report valid data";
-    measure_fsm_initial_wait_delay     "Waiting for delay FSM to report valid data";
-    measure_fsm_inverse_delay_request  "Waiting for delay FSM to report valid data";
-    measure_fsm_inverse_wait_delay     "Waiting for delay FSM to report valid data";
-    measure_fsm_abort                       "Maximum delay reached - report error";
-    measure_fsm_complete                    "Report succesful result";
+    measure_fsm_idle                     "Waiting for request - on request zero delay and wait for delay to load etc";
+    measure_fsm_initial_delay_request    "Waiting for delay FSM to take request";
+    measure_fsm_initial_wait_delay       "Waiting for delay FSM to report valid data for finding first edge";
+    measure_fsm_stable_delay_request     "Waiting for delay FSM to take request";
+    measure_fsm_stable_wait_delay        "Waiting for delay FSM to report valid data for finding first stable data after first edge";
+    measure_fsm_inverse_delay_request    "Waiting for delay FSM to report valid data";
+    measure_fsm_inverse_wait_delay       "Waiting for delay FSM to report valid data for finding inverse of first stable data";
+    measure_fsm_abort                    "Maximum delay reached - report error";
+    measure_fsm_complete                 "Report succesful result";
 } t_measure_fsm;
 
 /*t t_measure_action - Action for measurement state machine */
 typedef enum [4] {
     measure_action_none,
     measure_action_start                        "From idle when a request happens - kick of delay machine with zero delay",
-    measure_action_initial_value_delay_started  "From idle when a request happens - kick of delay machine with zero delay",
-    measure_action_initial_value_increase_delay "From idle when a request happens - kick of delay machine with zero delay",
-    measure_action_initial_value_delay_found    "From idle when a request happens - kick of delay machine with zero delay",
-    measure_action_inverse_value_delay_started  "From idle when a request happens - kick of delay machine with zero delay",
-    measure_action_inverse_value_increase_delay "From idle when a request happens - kick of delay machine with zero delay",
-    measure_action_inverse_value_delay_found    "From idle when a request happens - kick of delay machine with zero delay",
-    measure_action_abort                        "From idle when a request happens - kick of delay machine with zero delay",
-    measure_action_idle                         "From idle when a request happens - kick of delay machine with zero delay",
+    measure_action_edge_delay_started           "When delay FSM takes request for starting edge detect loop",
+    measure_action_edge_increase_delay          "When delay FSM reports result and it is not an edge, start to ask delay FSM to try delay+1",
+    measure_action_edge_delay_found             "When delay FSM reports result and it is an edge, start to look for stable value",
+    measure_action_stable_value_delay_started   "When delay FSM takes request for stable value detect loop",
+    measure_action_stable_value_increase_delay  "When delay FSM reports result and it is not stable, start to ask delay FSM to try delay+1",
+    measure_action_stable_value_delay_found     "When delay FSM reports result and it is stable, start to look for inverse value",
+    measure_action_inverse_value_delay_started  "When delay FSM takes request for inverse value detect loop",
+    measure_action_inverse_value_increase_delay "When delay FSM reports result and it is not stable inverse, start to ask delay FSM to try delay+1",
+    measure_action_inverse_value_delay_found    "When delay FSM reports result and it is stable inverse, report success",
+    measure_action_abort                        "When delay FSM reports a result that would increase delay, but delay is maxed out",
+    measure_action_idle                         "When a result has been reported",
 } t_measure_action;
 
 /*t t_measure_combs */
@@ -129,7 +134,20 @@ module clocking_phase_measure( clock clk,
                                output  t_phase_measure_response measure_response
     )
 """
+Module to generate a delay config load/value and utilize a delay module to
+determine the number of delay taps for a high or low phase of a clock signal
 
+The delay module should take the clock signal in and delay it and then synchronize it to the clk
+for here.
+
+The clock here must have a fixed phase relationship with the clock being measured (and be 2x or more slower)
+
+The clock here is used to control the configuration of the delay module.
+The synchronized value is fed in to a shift register. If the shift register is all zeros or all ones then the
+clock value is stable; otherwise an edge is found.
+The time of a phase is the time between two clock edges.
+
+So a master state machine starts with delay 0 and increments it until an edge is found; the delay value
 """
 {
     /*b Default clock/reset */
@@ -230,16 +248,30 @@ module clocking_phase_measure( clock clk,
             }
         }
         case measure_fsm_initial_delay_request: {
-            measure_combs.action = measure_action_initial_value_delay_started;
+            measure_combs.action = measure_action_edge_delay_started;
         }
         case measure_fsm_initial_wait_delay: {
             if (delay_state.shift_register_valid) {
-                measure_combs.action = measure_action_initial_value_increase_delay;
+                measure_combs.action = measure_action_edge_increase_delay;
+                if (delay_combs.max_delay) {
+                    measure_combs.action = measure_action_abort;
+                }
+                if (!delay_combs.shift_register_constant) {
+                    measure_combs.action = measure_action_edge_delay_found;
+                }
+            }
+        }
+        case measure_fsm_stable_delay_request: {
+            measure_combs.action = measure_action_stable_value_delay_started;
+        }
+        case measure_fsm_stable_wait_delay: {
+            if (delay_state.shift_register_valid) {
+                measure_combs.action = measure_action_stable_value_increase_delay;
                 if (delay_combs.max_delay) {
                     measure_combs.action = measure_action_abort;
                 }
                 if (delay_combs.shift_register_constant) {
-                    measure_combs.action = measure_action_initial_value_delay_found;
+                    measure_combs.action = measure_action_stable_value_delay_found;
                 }
             }
         }
@@ -273,16 +305,29 @@ module clocking_phase_measure( clock clk,
             measure_state.delay_request <= {valid=1, zero=1};
             measure_state.fsm_state <= measure_fsm_initial_delay_request;
         }
-        case measure_action_initial_value_delay_started: {
+        case measure_action_edge_delay_started: {
             measure_state.measure_response.ack <= 0;
             measure_state.fsm_state <= measure_fsm_initial_wait_delay;
             measure_state.delay_request.valid <= 0;
         }
-        case measure_action_initial_value_increase_delay: { // in initial_wait, got result, need to increment delay
+        case measure_action_edge_increase_delay: { // in initial_wait, got result, need to increment delay
             measure_state.delay_request <= {valid=1, zero=0};
             measure_state.fsm_state <= measure_fsm_initial_delay_request;
         }
-        case measure_action_initial_value_delay_found: { // in initial_wait, got valid result
+        case measure_action_edge_delay_found: { // in initial_wait, got valid result
+            measure_state.delay_request <= {valid=1, zero=0};
+            measure_state.fsm_state <= measure_fsm_stable_delay_request;
+        }
+        case measure_action_stable_value_delay_started: {
+            measure_state.measure_response.ack <= 0;
+            measure_state.fsm_state <= measure_fsm_stable_wait_delay;
+            measure_state.delay_request.valid <= 0;
+        }
+        case measure_action_stable_value_increase_delay: { // in stable_wait, got result, need to increment delay
+            measure_state.delay_request <= {valid=1, zero=0};
+            measure_state.fsm_state <= measure_fsm_stable_delay_request;
+        }
+        case measure_action_stable_value_delay_found: { // in stable_wait, got valid result
             measure_state.initial_value <= delay_state.shift_register[0];
             measure_state.initial_delay <= delay_state.delay_config.value;
             measure_state.delay_request <= {valid=1, zero=0};
@@ -296,7 +341,7 @@ module clocking_phase_measure( clock clk,
             measure_state.delay_request <= {valid=1, zero=0};
             measure_state.fsm_state <= measure_fsm_inverse_delay_request;
         }
-        case measure_action_inverse_value_delay_found: { // in initial_wait, got valid result
+        case measure_action_inverse_value_delay_found: { // in inverse_wait, got valid result
             measure_state.fsm_state <= measure_fsm_complete;
             measure_state.measure_response <= {valid=1,
                     abort=0,

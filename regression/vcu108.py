@@ -17,6 +17,7 @@ import pycdl
 import simple_tb
 import dump
 import tempfile
+import structs
 
 #a Useful functions
 #f get_mif_of_file
@@ -87,31 +88,17 @@ class vcu108_generic_hw(simple_tb.cdl_test_hw):
                "flash_clk":(0,None,None),
                }
     th_forces = {}
-    th_inputs = ["vcu108_outputs__i2c_reset_mux_n",
-                 "vcu108_outputs__i2c__scl",
-                 "vcu108_outputs__i2c__sda",
-                 "vcu108_outputs__eth_reset_n",
-                 "vcu108_outputs__mdio__mdc",
-                 "vcu108_outputs__mdio__mdio",
-                 "vcu108_outputs__mdio__mdio_enable",
-                 "vcu108_outputs__uart_tx__txd",
-                 "vcu108_outputs__uart_tx__cts",
-                 "vcu108_outputs__leds[8]",
-                 "vcu108_video__spdif",
-                 "vcu108_video__hsync",
-                 "vcu108_video__vsync",
-                 "vcu108_video__de",
-                 "vcu108_video__data[16]",
-                 ]
-    th_outputs = ["vcu108_inputs__i2c__scl",
-                  "vcu108_inputs__i2c__sda",
-                  "vcu108_inputs__eth_int_n",
-                  "vcu108_inputs__mdio",
-                  "vcu108_inputs__uart_rx__rxd",
-                  "vcu108_inputs__uart_rx__rts",
-                  "vcu108_inputs__switches[4]",
-                  "vcu108_inputs__buttons[5]",
-                  ]
+    dprintf_req_4  = pycdl.wirebundle(structs.dprintf_req_4)
+    vcu108_outputs = pycdl.wirebundle(structs.vcu108_outputs)
+    vcu108_inputs  = pycdl.wirebundle(structs.vcu108_inputs)
+    adv7511        = pycdl.wirebundle(structs.adv7511)
+    th_inputs = ( # [ "vcu108_dprintf_ack", ] +
+                  adv7511._name_list("vcu108_video") +
+                  vcu108_outputs._name_list("vcu108_outputs")
+    )
+    th_outputs = ( vcu108_inputs._name_list("vcu108_inputs") +
+                   dprintf_req_4._name_list("vcu108_dprintf_req")
+    )
     #f __init__
     def __init__(self, test ):
         self.th_forces = self.th_forces.copy()

@@ -63,16 +63,16 @@ class c_clocking_phase_measure_test_base(simple_tb.base_th):
 class c_clocking_phase_measure_test_0(c_clocking_phase_measure_test_base):
     def wait_for_delay(self):
         toggle = 0
-        if self.delay==self.stable_low:
-            self.sync_value = 0
-        elif self.delay==self.stable_high:
-            self.sync_value = 1
+        if self.delay in self.stable_values:
+            self.sync_value = self.stable_values[self.delay]
         else:
             toggle = 1
             pass
         while not self.delay_config__load.value():
             self.sync_value = self.sync_value ^ toggle
             self.delay_response__sync_value.drive(self.sync_value)
+            if self.measure_response__valid.value():
+                return True
             self.bfm_wait(1)
             pass
         self.measure_request__valid.drive(0)
@@ -81,23 +81,34 @@ class c_clocking_phase_measure_test_0(c_clocking_phase_measure_test_base):
         self.delay_response__load_ack.drive(0)
         self.bfm_wait(4)
         self.delay = self.delay_config__value.value()
-        pass
+        return False
     #f run
     def run(self):
         self.sim_msg = self.sim_message()
         self.bfm_wait(100)
-        self.stable_low = 5
-        self.stable_high = 36
+        self.stable_values = {0:0,1:0,2:0,
+                              31:1,32:1,33:1,34:1,35:1,
+                              66:0,67:0,68:0,69:0,70:0,
+                              101:1,102:1,103:1,104:1}
         self.delay = 0
         self.sync_value = 0
         failures = 0
         self.measure_request__valid.drive(1)
         self.wait_for_delay()
         self.measure_request__valid.drive(0)
-        for i in range(64):
-            self.wait_for_delay()
-        
-        self.bfm_wait(994)
+        while True:
+            if self.wait_for_delay():
+                break
+            pass
+
+        result = { "initial_value":self.measure_response__initial_value.value(),
+                   "initial_delay":self.measure_response__initial_delay.value(),
+                   "delay":self.measure_response__delay.value(),
+                   }
+        self.compare_expected("initial value", 1,  result["initial_value"])
+        self.compare_expected("initial delay", 31, result["initial_delay"])
+        self.compare_expected("delay",         35, result["delay"])
+        self.bfm_wait(10)
         self.measure_request__valid.drive(1)
         if failures==0:
             self.passtest(self.global_cycle(),"Ran okay")

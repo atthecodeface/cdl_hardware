@@ -51,7 +51,8 @@ module vcu108_riscv( clock clk,
                      clock clk_50,
                      input bit reset_n,
 
-                     input  bit[64] vcu108_data,
+                     input  t_dprintf_req_4 vcu108_dprintf_req "Dprintf request from board (sync to clk)",
+                     output bit             vcu108_dprintf_ack "Ack for dprintf request",
                      input  t_vcu108_inputs vcu108_inputs,
                      output t_vcu108_outputs vcu108_outputs,
 
@@ -330,7 +331,7 @@ module vcu108_riscv( clock clk,
                     data_2=bundle(apb_request.pwdata, 32h20000087),
                     data_3=bundle(apb_response.prdata,    8hff, 24h0) };
         }
-        if (csr_request.valid && !csr_response.acknowledge) {
+        if (csr_request.valid && csr_response.acknowledge) {
             dprintf_req[7] <= {valid=1, address=280,
                     data_0=bundle(40h43_53_52_3a_80, 7b0,csr_request.read_not_write, 16h_20_83), // CSR:%x %04x %04x %08x (read_not_write select address data)
                     data_1=bundle(csr_request.select,  48h200000000083),
@@ -344,11 +345,19 @@ module vcu108_riscv( clock clk,
                     data_2=bundle(vga_counters[1], 32h20000087),
                     data_3=bundle(vga_counters[2], 8hff, 24h0) };
         }
-        if (vcu108_data[0]) {
-            dprintf_req[12] <= {valid=1, address=480,
-                    data_0=bundle(24h443a87,vcu108_data[32;0],8h20),
-                    data_1=bundle(8h87,vcu108_data[32;32],8hff,16h0) };
+
+        vcu108_dprintf_ack = 1;
+        if (dprintf_req[12].valid) {
+            vcu108_dprintf_ack = 0;
+            if (dprintf_ack[12]) {
+                dprintf_req[12].valid <= 0;
+            }
+        } else {
+            if (vcu108_dprintf_req.valid) {
+                dprintf_req[12] <= vcu108_dprintf_req;
+            }
         }
+
         for (i; num_dprintf_requesters) {
             if (fb_sram_ctrl[i]) {
                 dprintf_req[i].valid <= 0;

@@ -1,0 +1,147 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   generic_valid_ack_mux.cdl
+ * @brief  A generic valid/ack multiplexer to combine buses with valid/ack protocol
+ *
+ * CDL implementation of a module that takes a pair of input request
+ * types, each of which has an individual @ack response signal, and it
+ * combines them with a round-robin arbiter to a single request out.
+ */
+/*a Includes */
+include "technology/sync_modules.h"
+
+/*a Types */
+/*t t_input_state
+ *
+ * State held by the input side
+ */
+typedef struct {
+    bit                  ack_in           "Acknowledge of valid request in";
+    bit                  last_ack_toggle  "Last synced value of ack toggel from output side";
+    bit                  req_toggle       "Bit toggled on every new valid request to output side";
+    gt_generic_valid_req req              "Request captured when toggled";
+    bit                  data_pending     "Asserted from toggle until sync ack received";
+} t_input_state;
+
+/*t t_output_state
+ *
+ * State held by the output side
+ */
+typedef struct {
+    bit                  last_req_toggle  "Last synced value of req toggle from input side";
+    bit                  ack_toggle       "Bit toggled on every accepted output";
+    gt_generic_valid_req req              "Request captured when toggled";
+    bit                  data_pending     "Asserted from toggle until sync ack received";
+} t_output_state;
+
+/*t t_arbiter_combs
+ *
+ * Combinatorial decode of downstream ack and upstream requests,
+ * arbiter state and state of output
+ */
+typedef struct {
+    bit new_request_permitted "Asserted if a new upstream request may be taken";
+    bit take_req_a            "Asserted if upstream port 'A' request is being taken";
+    bit take_req_b            "Asserted if upstream port 'B' request is being taken";
+} t_arbiter_combs;
+
+/*a Module
+ */
+module generic_valid_async_slow( clock clk_in                        "Clock for input",
+                                 clock clk_out                       "Clock for output",
+                                 input bit reset_n                   "Active low reset deassertion sync to clk_out",
+                                 input gt_generic_valid_req req_in   "Request in",
+                                 output bit ack_in                   "Acknowledge of to upstream in",
+                                 output gt_generic_valid_req req_out "Request out downstream",
+                                 input bit ack_out                   "Acknowledge of out from downstream"
+    )
+"""
+Simple valid/ack synchronization using toggle for going between domains.
+
+Suitable for slow transfer such as for dprintf.
+"""
+{
+    /*b State etc  */
+    default reset active_low reset_n;
+
+    clocked clock clk_in t_input_state input_state   = {*=0} "Input state on clk_in";
+    clocked clock clk_in t_output_state output_state = {*=0} "Output state on clk_out";
+    net bit sync_in_ack_toggle   "Clk_in domain sync version of output_state.ack_toggle";
+    net bit sync_out_req_toggle  "Clk_out domain sync version of output_state.req_toggle";
+
+    /*b Input state */
+    input_state """
+    """: {
+        /*b Manage ack toggle */
+        tech_sync_bit ist(clk <- clk_in,
+                          reset_n <= reset_n,
+                          d <= output_state.ack_toggle,
+                          q => sync_in_ack_toggle );
+        input_state.last_ack_toggle <= sync_in_ack_toggle;
+        if (input_state.last_ack_toggle != sync_in_ack_toggle) {
+            input_state.data_pending <= 0;
+        }
+
+        /*b Determine if a request can be consumed */
+        if (input_state.ack_in) {
+            input_state.ack_in <= 0;
+        } else { // input_state.valid == 0
+            if (req_in.valid && !input_state.data_pending) {
+                input_state.ack_in       <= 1;
+                input_state.data_pending <= 1;
+                input_state.req_toggle   <= !input_state.req_toggle;
+                input_state.req          <= req_in;
+            }
+        }
+        
+        /*b Drive outputs */
+        ack_in = input_state.ack_in;
+        
+        /*b All done */
+    }
+        
+    /*b Output state */
+    output_state """
+    """: {
+        /*b Manage request toggle */
+        tech_sync_bit ost(clk <- clk_out,
+                          reset_n <= reset_n,
+                          d <= input_state.req_toggle,
+                          q => sync_out_req_toggle );
+        output_state.last_req_toggle <= sync_out_req_toggle;
+        if (output_state.last_req_toggle != sync_out_req_toggle) {
+            output_state.data_pending <= 1;
+        }
+
+        /*b Handle request out */
+        if (output_state.req.valid) {
+            if (ack_out) {
+                output_state.req.valid <= 0;
+            }
+        } else { // output_state.valid == 0
+            if (output_state.data_pending) {
+                output_state.data_pending <= 0;
+                output_state.ack_toggle   <= !output_state.ack_toggle;
+                output_state.req          <= input_state.req;
+            }
+        }
+
+        /*b Drive outputs */
+        req_out = output_state.req;
+        
+        /*b All done */
+    }
+
+    /*b All done */
+}

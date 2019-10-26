@@ -26,5 +26,8 @@
  *
  * The FIFO depth in the constant can be 1 less than the required size as the FIFO as an output register
  */
+/*a Includes */
+include "types/dprintf.h"
+
 /*a Module */
 include "generic_valid_ack_fifo.cdl"

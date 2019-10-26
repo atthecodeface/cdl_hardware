@@ -1,3 +1,4 @@
+#a APB
 #t apb_request
 apb_request = {
     "paddr":32,
@@ -32,6 +33,7 @@ apb_rom_request = {
     "address":16,
 }
 
+#a Timer
 #t timer_control
 timer_control = {"reset_counter":1,
                  "enable_counter":1,
@@ -47,12 +49,23 @@ timer_value = {"irq":1,
                "value":64,
 }
 
+#a I/O
+#t uart_rx
+uart_rx = {"rxd":1, "rts":1}
+
+#t uart_tx
+uart_tx = {"txd":1, "cts":1}
+
+#t mdio
+mdio = {"mdc":1, "mdio":1, "mdio_enable":1}
+
 #t i2c
 i2c = {"scl":1, "sda":1}
 
 #t i2c_conf
 i2c_conf = {"divider":8, "period":8}
 
+#a clocking - bit_delay and phase_measure
 #t t_bit_delay_config 
 bit_delay_config = { "load":1, "value":9}
 
@@ -64,3 +77,57 @@ phase_measure_request = {"valid":1}
 
 #t phase_measure_response
 phase_measure_response = {"ack":1, "abort":1, "valid":1, "delay":9, "initial_delay":9, "initial_value":1}
+#a dprintf
+#t dprintf_byte
+dprintf_byte = {"address":16,
+                "data":8,
+                "last":1,
+                "valid":1,
+}
+
+#t dprintf_req_4
+dprintf_req_4 = {
+    "valid":1,
+    "address":16,
+    "data_0":64,
+    "data_1":64,
+    "data_2":64,
+    "data_3":64,
+    }
+
+#t dprintf_req_2
+dprintf_req_2 = {
+    "valid":1,
+    "address":16,
+    "data_0":64,
+    "data_1":64,
+    }
+
+#t vcu108_inputs
+vcu108_inputs = {
+    "i2c":i2c,
+    "eth_int_n":1,
+    "mdio":1,
+    "uart_rx":uart_rx,
+    "switches":4,
+    "buttons":5}
+
+#t vcu108_outputs
+vcu108_outputs = {
+    "i2c":i2c,
+    "i2c_reset_mux_n":1,
+    "eth_reset_n":1,
+    "mdio":mdio,
+    "uart_tx":uart_tx,
+    "leds":8,
+}
+
+#t adv7511
+adv7511 = {"spdif":1,
+           "hsync":1,
+           "vsync":1,
+           "de":1,
+           "data":16,
+}
+#t mem_flash_in
+#t mem_flash_out

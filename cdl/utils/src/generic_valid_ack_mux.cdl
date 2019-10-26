@@ -18,9 +18,6 @@
  * types, each of which has an individual @ack response signal, and it
  * combines them with a round-robin arbiter to a single request out.
  */
-/*a Includes */
-include "types/dprintf.h"
-
 /*a Types */
 /*t t_arbiter_state
  *

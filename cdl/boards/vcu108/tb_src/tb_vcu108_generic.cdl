@@ -26,11 +26,12 @@ extern
 module se_test_harness(clock clk,
                        input bit reset_n,
                        output t_vcu108_inputs vcu108_inputs,
+                       output t_dprintf_req_4 vcu108_dprintf_req,
                        input t_vcu108_outputs vcu108_outputs,
                        input t_adv7511 vcu108_video
     )
 {
-    timing from rising clock clk vcu108_inputs;
+    timing from rising clock clk vcu108_inputs, vcu108_dprintf_req;
     timing to   rising clock clk vcu108_outputs, vcu108_video;
 }
 
@@ -46,6 +47,7 @@ module tb_vcu108_generic( clock clk,
     /*b Nets */
     net t_vcu108_inputs  vcu108_inputs;
     net t_vcu108_outputs vcu108_outputs;
+    net t_dprintf_req_4 vcu108_dprintf_req;
 
     net t_adv7511 vcu108_video;
     default clock flash_clk;
@@ -57,6 +59,7 @@ module tb_vcu108_generic( clock clk,
         se_test_harness th(  clk <- clk,
                              reset_n <= reset_n,
 
+                             vcu108_dprintf_req => vcu108_dprintf_req,
                              vcu108_inputs   => vcu108_inputs,
                              vcu108_outputs  <= vcu108_outputs,
 
@@ -68,6 +71,7 @@ module tb_vcu108_generic( clock clk,
                              clk_50 <- clk_50,
                              reset_n <= reset_n,
 
+                             vcu108_dprintf_req <= vcu108_dprintf_req,
                              vcu108_inputs  <= vcu108_inputs,
                              vcu108_outputs => vcu108_outputs,
 

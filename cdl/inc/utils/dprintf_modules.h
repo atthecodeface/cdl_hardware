@@ -106,3 +106,21 @@ module dprintf_4_fifo_4( clock clk,
     timing from  rising clock clk req_out;
     timing to    rising clock clk ack_out;
 }
+
+/*m dprintf_4_async */
+extern
+module dprintf_4_async( clock clk_in                        "Clock for input",
+                        clock clk_out                       "Clock for output",
+                        input bit reset_n                   "Active low reset deassertion sync to clk_out",
+                        input t_dprintf_req_4 req_in,
+                        output bit ack_in,
+                        output t_dprintf_req_4 req_out,
+                        input bit ack_out
+    )
+{
+    timing to    rising clock clk_in req_in;
+    timing from  rising clock clk_in ack_in;
+
+    timing from  rising clock clk_out req_out;
+    timing to    rising clock clk_out ack_out;
+}

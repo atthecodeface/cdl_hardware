@@ -52,10 +52,11 @@ module tb_dprintf( clock clk,
                                 );
         
         dprintf dut( clk <- clk,
-                          reset_n <= reset_n,
-                          dprintf_req <= dprintf_req,
-                          dprintf_ack => dprintf_ack,
-                          dprintf_byte =>  dprintf_byte
+                     reset_n <= reset_n,
+                     dprintf_req <= dprintf_req,
+                     dprintf_ack => dprintf_ack,
+                     byte_blocked <= 0,
+                     dprintf_byte =>  dprintf_byte
             );
     }
 

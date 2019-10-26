@@ -105,6 +105,12 @@ class base_th(pycdl._thfile):
             pass
 
     _auto_wire_same_name = False
+    #f compare_expected
+    def compare_expected(self, reason, expectation, actual):
+        if actual!=expectation:
+            self.failtest(0,"Mismatch in %s (%d/%d)"%(reason,actual,expectation))
+            pass
+        pass
     #f compare_expected_list
     def compare_expected_list(self, reason, expectation, actual):
         expectation = list(expectation[:])

@@ -1,3 +1,4 @@
+include "types/dprintf.h"
 include "types/video.h"
 include "types/memories.h"
 include "boards/vcu108.h"
@@ -6,7 +7,7 @@ module vcu108_generic( clock clk,
                        clock clk_50,
                        input bit reset_n,
 
-                       input  bit[64] vcu108_data,
+                       input  t_dprintf_req_4 vcu108_dprintf_req,
                        input  t_vcu108_inputs vcu108_inputs,
                        output t_vcu108_outputs vcu108_outputs,
 
@@ -19,7 +20,7 @@ module vcu108_generic( clock clk,
                        output t_mem_flash_out flash_out
     )
 {
-    timing to   rising clock clk vcu108_inputs, vcu108_data;
+    timing to   rising clock clk vcu108_inputs, vcu108_dprintf_req;
     timing from rising clock clk vcu108_outputs;
 
     timing to   rising clock clk_50 vcu108_inputs; // keep clk_50!

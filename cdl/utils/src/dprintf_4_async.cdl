@@ -18,7 +18,7 @@
  *
  * Needs to be built in CDL with the options:
  *
- *  rmt:gt_generic_valid_req=t_dprintf_req
+ *  rmt:gt_generic_valid_req=t_dprintf_req_4
  *
  *  rmn:generic_valid_fifo=dprintf_4_fifo
  *
@@ -30,4 +30,4 @@
 include "types/dprintf.h"
 
 /*a Module */
-include "generic_valid_ack_fifo.cdl"
+include "generic_valid_async_slow.cdl"

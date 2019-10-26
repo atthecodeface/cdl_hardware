@@ -16,6 +16,7 @@
 import pycdl
 import sys, os, unittest
 import simple_tb
+import structs
 
 #a Test classes
 #c c_base_th
@@ -113,8 +114,9 @@ class c_test_dprintf_base(simple_tb.base_th):
     def bfm_tick(self, cycles):
         for i in range(cycles):
             if (self.ios.dprintf_byte__valid.value()):
-                self.sram_writes.append( (self.ios.dprintf_byte__address.value(),
-                                          self.ios.dprintf_byte__data.value(),) )
+                if (self.ios.dprintf_byte__last.value()==0):
+                    self.sram_writes.append( (self.ios.dprintf_byte__address.value(),
+                                              self.ios.dprintf_byte__data.value(),) )
                 pass
             self.bfm_wait(1)
             pass
@@ -420,8 +422,10 @@ class c_test_dprintf_mux_one(simple_tb.base_th):
                 pass
             self.tick = self.tick + 1
             if (self.ios.dprintf_byte__valid.value()):
-                self.sram_writes.append( (self.ios.dprintf_byte__address.value(),
-                                          self.ios.dprintf_byte__data.value(),) )
+                if (self.ios.dprintf_byte__last.value()==0):
+                    self.sram_writes.append( (self.ios.dprintf_byte__address.value(),
+                                              self.ios.dprintf_byte__data.value(),) )
+                    pass
                 pass
             self.bfm_wait(1)
             pass
@@ -477,21 +481,14 @@ class teletext_dprintf_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of the teletext dprintf module
     """
+    dprintf_req_4  = pycdl.wirebundle(structs.dprintf_req_4)
+    dprintf_byte   = pycdl.wirebundle(structs.dprintf_byte)
     th_forces = { "th.clock":"clk",
-                  "th.inputs":("" +
-                               "dprintf_byte__address[16] " +
-                               "dprintf_byte__data[8] " +
-                               "dprintf_byte__valid " +
-                               "dprintf_ack " +
-                               ""),
-                  "th.outputs":("" +
-                                "dprintf_req__data_3[64] " +
-                                "dprintf_req__data_2[64] " +
-                                "dprintf_req__data_1[64] " +
-                                "dprintf_req__data_0[64] " +
-                                "dprintf_req__address[16] " +
-                                "dprintf_req__valid " +
-                                ""),
+                  "th.inputs":" ".join( dprintf_byte._name_list("dprintf_byte") +
+                                ["dprintf_ack"]
+                               ),
+                  "th.outputs": " ".join( dprintf_req_4._name_list("dprintf_req")
+                               ),
                   }
     module_name = "tb_dprintf"
     pass
@@ -501,13 +498,11 @@ class teletext_dprintf_mux_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of the teletext dprintf mux module
     """
+    dprintf_byte   = pycdl.wirebundle(structs.dprintf_byte)
     th_forces = { "th.clock":"clk",
-                  "th.inputs":("" +
-                               "dprintf_byte__address[16] " +
-                               "dprintf_byte__data[8] " +
-                               "dprintf_byte__valid " +
-                               "acks[4] " +
-                               ""),
+                  "th.inputs":" ".join( dprintf_byte._name_list("dprintf_byte") +
+                                ["acks[4]"]
+                               ),
                   "th.outputs":("" +
                                 "reqs[4] "+
                                 ""),
