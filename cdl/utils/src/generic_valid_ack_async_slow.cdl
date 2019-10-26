@@ -58,13 +58,13 @@ typedef struct {
 
 /*a Module
  */
-module generic_valid_async_slow( clock clk_in                        "Clock for input",
-                                 clock clk_out                       "Clock for output",
-                                 input bit reset_n                   "Active low reset deassertion sync to clk_out",
-                                 input gt_generic_valid_req req_in   "Request in",
-                                 output bit ack_in                   "Acknowledge of to upstream in",
-                                 output gt_generic_valid_req req_out "Request out downstream",
-                                 input bit ack_out                   "Acknowledge of out from downstream"
+module generic_valid_ack_async_slow( clock clk_in                        "Clock for input",
+                                     clock clk_out                       "Clock for output",
+                                     input bit reset_n                   "Active low reset deassertion sync to clk_out",
+                                     input gt_generic_valid_req req_in   "Request in",
+                                     output bit ack_in                   "Acknowledge of to upstream in",
+                                     output gt_generic_valid_req req_out "Request out downstream",
+                                     input bit ack_out                   "Acknowledge of out from downstream"
     )
 """
 Simple valid/ack synchronization using toggle for going between domains.
@@ -75,8 +75,8 @@ Suitable for slow transfer such as for dprintf.
     /*b State etc  */
     default reset active_low reset_n;
 
-    clocked clock clk_in t_input_state input_state   = {*=0} "Input state on clk_in";
-    clocked clock clk_in t_output_state output_state = {*=0} "Output state on clk_out";
+    clocked clock clk_in  t_input_state input_state   = {*=0} "Input state on clk_in";
+    clocked clock clk_out t_output_state output_state = {*=0} "Output state on clk_out";
     net bit sync_in_ack_toggle   "Clk_in domain sync version of output_state.ack_toggle";
     net bit sync_out_req_toggle  "Clk_out domain sync version of output_state.req_toggle";
 

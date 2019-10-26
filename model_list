@@ -46,6 +46,9 @@ cdl cdl/axi/tb_src tb_axi inc:cdl/inc
 c_model cmodel/src   chk_riscv_ifetch  inc:cmodel/inc
 c_model cmodel/src   chk_riscv_trace  inc:cmodel/inc
 
+cdl cdl/technology/src    tech_sync_flop  inc:cdl/inc
+cdl cdl/technology/src    tech_sync_bit  inc:cdl/inc
+
 cdl cdl/utils/src    clock_divider    inc:cdl/inc
 cdl cdl/utils/src    hysteresis_switch    inc:cdl/inc
 cdl cdl/utils/src    dprintf              inc:cdl/inc
@@ -54,7 +57,7 @@ cdl cdl/utils/src dprintf_2_mux     inc:cdl/inc inc:cdl/utils/src rmt:gt_generic
 cdl cdl/utils/src dprintf_4_mux   inc:cdl/inc inc:cdl/utils/src rmt:gt_generic_valid_req=t_dprintf_req_4 rmn:generic_valid_ack_mux=dprintf_4_mux
 cdl cdl/utils/src dprintf_2_fifo_4  inc:cdl/inc inc:cdl/utils/src rmt:gt_generic_valid_req=t_dprintf_req_2 rmn:generic_valid_ack_fifo=dprintf_2_fifo_4 dc:fifo_depth=3
 cdl cdl/utils/src dprintf_4_fifo_4  inc:cdl/inc inc:cdl/utils/src rmt:gt_generic_valid_req=t_dprintf_req_4 rmn:generic_valid_ack_fifo=dprintf_4_fifo_4 dc:fifo_depth=3
-cdl cdl/utils/src dprintf_4_async   inc:cdl/inc inc:cdl/utils/src rmt:gt_generic_valid_req=t_dprintf_req_4 rmn:generic_valid_async_slow=dprintf_4_async
+cdl cdl/utils/src dprintf_4_async   inc:cdl/inc inc:cdl/utils/src rmt:gt_generic_valid_req=t_dprintf_req_4 rmn:generic_valid_ack_async_slow=dprintf_4_async
 cdl cdl/utils/tb_src tb_dprintf      inc:cdl/inc
 cdl cdl/utils/tb_src tb_dprintf_mux  inc:cdl/inc
 

@@ -106,6 +106,7 @@ class c_test_hysteresis_5(c_base_th):
 
 #c c_test_dprintf_base
 class c_test_dprintf_base(simple_tb.base_th):
+    test_ctl_setting = 0
     writes_to_do = [
         ]
     expected_sram_ops = [
@@ -138,6 +139,8 @@ class c_test_dprintf_base(simple_tb.base_th):
         self.sram_writes = []
         simple_tb.base_th.run_start(self)
         self.bfm_wait(10)
+        self.ios.test_ctl.drive(self.test_ctl_setting)
+        self.bfm_wait(10)
         for (address, data) in self.writes_to_do:
             self.dprintf(address, data)
             pass
@@ -158,6 +161,7 @@ class c_test_dprintf_base(simple_tb.base_th):
                     pass
                 pass
             pass
+        self.passtest(self.global_cycle(),"Test passed")
         self.finishtest(0,"")
         pass
 
@@ -358,6 +362,14 @@ class c_test_dprintf_three(c_test_dprintf_base):
                          (0x5109, 0x30),
 
         ]
+#c c_test_dprintf_four
+class c_test_dprintf_four(c_test_dprintf_three):
+    test_ctl_setting = 1
+
+#c c_test_dprintf_five
+class c_test_dprintf_five(c_test_dprintf_three):
+    test_ctl_setting = 2
+
 #c c_test_dprintf_mux_one
 class c_test_dprintf_mux_one(simple_tb.base_th):
     sram_reqs = {0:[(0x1010, 0x41),
@@ -483,11 +495,15 @@ class teletext_dprintf_hw(simple_tb.cdl_test_hw):
     """
     dprintf_req_4  = pycdl.wirebundle(structs.dprintf_req_4)
     dprintf_byte   = pycdl.wirebundle(structs.dprintf_byte)
+    clocks = { "clk":(0,None,None),
+               "clk_async":(0,7,13)
+    }               
     th_forces = { "th.clock":"clk",
                   "th.inputs":" ".join( dprintf_byte._name_list("dprintf_byte") +
                                 ["dprintf_ack"]
                                ),
-                  "th.outputs": " ".join( dprintf_req_4._name_list("dprintf_req")
+                  "th.outputs": " ".join( dprintf_req_4._name_list("dprintf_req") +
+                                          ["test_ctl[4]"]
                                ),
                   }
     module_name = "tb_dprintf"
@@ -526,9 +542,11 @@ class hysteresis_switch(simple_tb.base_test):
     pass
 #c dprintf
 class dprintf(simple_tb.base_test):
-    def test_one(self): self.do_test_run(teletext_dprintf_hw(test=c_test_dprintf_one()), num_cycles=100*1000)
-    def test_two(self): self.do_test_run(teletext_dprintf_hw(test=c_test_dprintf_two()), num_cycles=1000*1000)
-    def test_three(self): self.do_test_run(teletext_dprintf_hw(test=c_test_dprintf_three()), num_cycles=1000*1000)
+    def test_one(self): self.do_test_run(teletext_dprintf_hw(test=c_test_dprintf_one()), num_cycles=10*1000)
+    def test_two(self): self.do_test_run(teletext_dprintf_hw(test=c_test_dprintf_two()), num_cycles=10*1000)
+    def test_three(self): self.do_test_run(teletext_dprintf_hw(test=c_test_dprintf_three()), num_cycles=10*1000)
+    def test_four(self): self.do_test_run(teletext_dprintf_hw(test=c_test_dprintf_four()), num_cycles=10*1000)
+    def test_five(self): self.do_test_run(teletext_dprintf_hw(test=c_test_dprintf_five()), num_cycles=10*1000)
     pass
 #c dprintf_mux
 class dprintf_mux(simple_tb.base_test):
