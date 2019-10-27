@@ -85,6 +85,7 @@ typedef enum[3] {
 typedef struct {
     bit    ack   "Asserted for writes when they are taken, and for reads when data is valid";
     bit    in_progress "A transaction is in progress";
+    bit    response_valid "Asserted for one cycle as in_progress goes low";
     t_i2c_master_response_type response_type "Response for last transaction - invalid if in_progress";
     bit[32] data  "Result of last read - must be held steady until next request";
 } t_i2c_master_response;

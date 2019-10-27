@@ -19,6 +19,7 @@
  */
 
 /*a Includes */
+include "apb/apb_utilities.h"
 include "types/apb.h"
 include "types/i2c.h"
 
@@ -75,11 +76,9 @@ Simple APB master for 8-bit address and 8-bit data to show use of I2C slave
                 }
             }        
         } elsif (slave_request.valid && !slave_state.slave_response.ack) {
-            if (slave_request.first) {
+            if (slave_request.first && !slave_request.read_not_write) {
                 slave_state.slave_response.ack <= 1;
-                if (!slave_request.read_not_write) { // write of a byte is the address
-                    slave_state.apb_request.paddr[8;0] <= slave_request.data;
-                }
+                slave_state.apb_request.paddr[8;0] <= slave_request.data;
             } else {
                 slave_state.apb_request <= {psel=1,
                         penable=0,
@@ -87,6 +86,22 @@ Simple APB master for 8-bit address and 8-bit data to show use of I2C slave
                         pwdata=bundle(24b0,slave_request.data)};
             }
         }
+
+        /*b Logging */
+        apb_logging apb_log( clk <- clk,
+                             reset_n <= reset_n,
+                             apb_request <= apb_request,
+                             apb_response <= apb_response );
+        if (slave_request.valid && slave_state.slave_response.ack) {
+            log("Slave request and response",
+                "first", slave_request.first,
+                "rnw",   slave_request.read_not_write,
+                "wdata",  slave_request.data,
+                "rdata",  slave_response.data
+                );
+        }
+
+        /*b All done */
     }
 
     /*b All done */

@@ -73,8 +73,9 @@ i2c_master_request = {"valid":1,
 #t i2c_master_response
 i2c_master_response = {"ack":1,
                        "in_progress":1,
-                      "response_type":3,
-                      "data":32,
+                       "response_valid":1,
+                       "response_type":3,
+                       "data":32,
 }
 
 #t i2c_conf

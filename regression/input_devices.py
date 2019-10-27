@@ -434,6 +434,37 @@ class c_i2c_test_one(c_i2c_test_base):
 
 #c c_i2c_test_two
 class c_i2c_test_two(c_i2c_test_base):
+    #f i2c_do_transaction
+    def i2c_do_transaction(self, i2c_data, num_out=1, num_in=0, cont=0, master=0 ):
+        self.ios.master_request_0__valid.drive(1)
+        self.ios.master_request_0__cont.drive(cont)
+        self.ios.master_request_0__num_in.drive(num_in)
+        self.ios.master_request_0__num_out.drive(num_out)
+        self.ios.master_request_0__data.drive(i2c_data)
+        self.bfm_wait(1)
+        while self.ios.master_response_0__ack.value()==0:
+            self.bfm_wait(1)
+            pass
+        self.ios.master_request_0__valid.drive(0)
+        while self.ios.master_response_0__response_valid.value()==0:
+            self.bfm_wait(1)
+            pass
+        response_data = self.ios.master_response_0__data.value()
+        response_type = self.ios.master_response_0__response_type.value()
+        return (response_type, response_data)
+    #f i2c_apb_slave_write
+    def i2c_apb_slave_write(self, address, data):
+        i2c_data = (data<<16) | (address<<8) | (0x1b<<1) | 0
+        return self.i2c_do_transaction( i2c_data, num_out=3, num_in=0, cont=0 ) 
+    #f i2c_apb_slave_read
+    def i2c_apb_slave_read(self, address):
+        i2c_data = (address<<8) | (0x1b<<1) | 0
+        (response_type, response_data) = self.i2c_do_transaction( i2c_data, num_out=2, num_in=0, cont=1 )
+        if response_type==0:
+            i2c_data = (0x1b<<1) | 1
+            (response_type, response_data) = self.i2c_do_transaction( i2c_data, num_out=1, num_in=1, cont=0 )
+            pass
+        return (response_type, response_data)
     #f run
     def run(self):
         self.cfg_divider = 3
@@ -444,14 +475,16 @@ class c_i2c_test_two(c_i2c_test_base):
         self.ios.i2c_conf_0__divider.drive(self.cfg_divider)
         self.ios.i2c_conf_0__period.drive(self.cfg_period)
         self.bfm_wait(100)
-        self.ios.master_request_0__valid.drive(1)
-        self.ios.master_request_0__cont.drive(0)
-        self.ios.master_request_0__num_in.drive(0)
-        self.ios.master_request_0__num_out.drive(3)
-        self.ios.master_request_0__data.drive(0xf00000 | 0x0000 | ((0x1b<<1)|0))
-        self.bfm_wait(10)
-        self.ios.master_request_0__valid.drive(0)
-        self.bfm_wait(1000)
+        (rt, rd)=self.i2c_apb_slave_write(0, 0xf0)
+        self.compare_expected("APB write of GPIO response",rt, 0)
+        (rt, rd)=self.i2c_apb_slave_read(0)
+        self.compare_expected("APB read of GPIO response",rt, 0)
+        self.compare_expected("APB read of GPIO response",rd, 0xf0)
+        (rt, rd)=self.i2c_apb_slave_write(0, 0x0f)
+        self.compare_expected("APB write of GPIO response",rt, 0)
+        (rt, rd)=self.i2c_apb_slave_read(0)
+        self.compare_expected("APB read of GPIO response",rt, 0)
+        self.compare_expected("APB read of GPIO response",rd, 0x0f)
         self.finishtest(0,"")
         pass
 
@@ -491,6 +524,9 @@ class i2c_test_hw(simple_tb.cdl_test_hw):
     i2c_conf             = pycdl.wirebundle(structs.i2c_conf)
     i2c_master_request   = pycdl.wirebundle(structs.i2c_master_request)
     i2c_master_response  = pycdl.wirebundle(structs.i2c_master_response)
+    loggers = {"i2c_slave": {"verbose":0, "filename":"i2c_slave.log", "modules":("dut.slave dut.i2c_apb dut.i2c_apb.apb_log ")},
+               "i2c_master_0": {"verbose":0, "filename":"i2c_master.log", "modules":("dut.master___0 ")},
+               }
     th_forces = { "th.clock":"clk",
                   "th.inputs":" ".join(i2c._name_list("i2c_in")+
                                         i2c_master_response._name_list("master_response_0")+
@@ -527,6 +563,6 @@ class i2c(simple_tb.base_test):
     def test_two(self):
         test = c_i2c_test_two()
         hw = i2c_test_hw(test=test)
-        self.do_test_run(hw, num_cycles=20*1000)
+        self.do_test_run(hw, num_cycles=100*1000)
         pass
     pass
