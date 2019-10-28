@@ -17,6 +17,7 @@ import pycdl
 import sys, os, unittest, tempfile
 import simple_tb
 import structs
+import math
 
 #a Useful functions
 def int_of_bits(bits):
@@ -59,7 +60,7 @@ class c_clocking_phase_measure_test_base(simple_tb.base_th):
         self.finishtest(0,"")
         pass
 
-#c c_clocking_phase_measure_test_base
+#c c_clocking_phase_measure_test_0
 class c_clocking_phase_measure_test_0(c_clocking_phase_measure_test_base):
     def wait_for_delay(self):
         toggle = 0
@@ -68,7 +69,7 @@ class c_clocking_phase_measure_test_0(c_clocking_phase_measure_test_base):
         else:
             toggle = 1
             pass
-        while not self.delay_config__load.value():
+        while self.delay_config_cpm__op.value()!=1:
             self.sync_value = self.sync_value ^ toggle
             self.delay_response__sync_value.drive(self.sync_value)
             if self.measure_response__valid.value():
@@ -76,11 +77,11 @@ class c_clocking_phase_measure_test_0(c_clocking_phase_measure_test_base):
             self.bfm_wait(1)
             pass
         self.measure_request__valid.drive(0)
-        self.delay_response__load_ack.drive(1)
+        self.delay_response__op_ack.drive(1)
         self.bfm_wait(1)
-        self.delay_response__load_ack.drive(0)
+        self.delay_response__op_ack.drive(0)
         self.bfm_wait(4)
-        self.delay = self.delay_config__value.value()
+        self.delay = self.delay_config_cpm__value.value()
         return False
     #f run
     def run(self):
@@ -119,6 +120,85 @@ class c_clocking_phase_measure_test_0(c_clocking_phase_measure_test_base):
         self.finishtest(0,"")
         pass
 
+#c c_clocking_eye_tracking_test_base
+class c_clocking_eye_tracking_test_base(c_clocking_phase_measure_test_base):
+    pass
+#c c_clocking_eye_tracking_test_0
+class c_clocking_eye_tracking_test_0(c_clocking_eye_tracking_test_base):
+    phase_width = 73
+    eye_center  = int(phase_width*1.4)
+    eye_width = phase_width/2
+    #f feed_data_after_delay
+    def feed_data_after_delay(self):
+        while self.delay_config_cet__op.value()==0:
+            self.bfm_wait(1)
+            pass
+        if ( (self.delay_config_cet__op.value()==1) and
+             (self.delay_config_cet__select.value()==1) ):
+            self.tracking_delay = self.delay_config_cet__value.value()
+            pass
+        self.bfm_wait(10)
+        self.delay_response__op_ack.drive(1)
+        self.bfm_wait(1)
+        self.delay_response__op_ack.drive(0)
+        dist = self.tracking_delay - self.eye_center
+        if abs(dist)<self.eye_width/2:
+            quality=1
+            pass
+        else:
+            quality = math.pow(1.0 / (abs(dist) - self.eye_width/2),0.3)
+            print quality
+            pass
+        data = 0xfeedbeefcafe
+        for i in range(200):
+            data_p = data & 0x1f
+            data_n = data & 0x1f
+            if quality>0.99:
+                data_n = data & 0x1f
+            elif (quality>0.75):
+                if ((data>>17)&17)==7: data_n = data_n>>1
+                pass
+            elif (quality>0.5):
+                if ((data>>17)&3)==3: data_n = data_n>>1
+                pass
+            else:
+                data_n = data_n>>1
+                pass
+            data = (data>>4) | ((data*0xfedcaf81) & 0xf00000000000)
+            self.data_p_in.drive(data_p&0xf)
+            self.data_n_in.drive(data_n^0xf)
+            self.bfm_wait(1)
+            pass
+        pass
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(100)
+        failures = 1
+        print "Eye %d to %d"%(self.eye_center-self.eye_width/2, self.eye_center+self.eye_width/2)
+        self.bfm_wait(10)
+        self.eye_track_request__enable.drive(1)
+        self.eye_track_request__phase_width.drive(self.phase_width)
+        self.bfm_wait(10)
+        self.eye_track_request__measure.drive(1)
+        while self.eye_track_response__measure_ack.value()==0:
+            self.bfm_wait(1)
+            pass
+        self.eye_track_request__measure.drive(0)
+        for i in range(16):
+            self.feed_data_after_delay()
+            pass
+        self.bfm_wait(1000)
+        self.eye_track_request__enable.drive(0)
+        if failures==0:
+            self.passtest(self.global_cycle(),"Ran okay")
+            pass
+        else:
+            self.failtest(self.global_cycle(),"Failed")
+            pass
+        self.finishtest(0,"")
+        pass
+
 #a Hardware classes
 #c clocking_test_hw
 class clocking_test_hw(simple_tb.cdl_test_hw):
@@ -131,12 +211,20 @@ class clocking_test_hw(simple_tb.cdl_test_hw):
     bit_delay_response      = pycdl.wirebundle(structs.bit_delay_response)
     phase_measure_request   = pycdl.wirebundle(structs.phase_measure_request)
     phase_measure_response  = pycdl.wirebundle(structs.phase_measure_response)
+    eye_track_request   = pycdl.wirebundle(structs.eye_track_request)
+    eye_track_response  = pycdl.wirebundle(structs.eye_track_response)
+
     th_forces = { "th.clock":"clk",
                   "th.outputs":(" ".join(phase_measure_request._name_list("measure_request")) + " " +
                                 " ".join(bit_delay_response._name_list("delay_response")) + " " +
+                                " ".join(eye_track_request._name_list("eye_track_request")) + " " +
+                                " data_p_in[4]"+
+                                " data_n_in[4]"+
                                 " "),
                   "th.inputs":(" ".join(phase_measure_response._name_list("measure_response")) + " " +
-                               " ".join(bit_delay_config._name_list("delay_config")) + " " +
+                                " ".join(eye_track_response._name_list("eye_track_response")) + " " +
+                               " ".join(bit_delay_config._name_list("delay_config_cpm")) + " " +
+                               " ".join(bit_delay_config._name_list("delay_config_cet")) + " " +
                                " "),
                   }
     module_name = "tb_clocking"
@@ -152,6 +240,13 @@ class clocking_test_hw(simple_tb.cdl_test_hw):
 class clocking_phase_measure(simple_tb.base_test):
     def test_simple(self):
         self.do_test_run(clocking_test_hw(c_clocking_phase_measure_test_0()), num_cycles=10000)
+        pass
+    pass
+
+#c clocking_eye_tracking
+class clocking_eye_tracking(simple_tb.base_test):
+    def test_simple(self):
+        self.do_test_run(clocking_test_hw(c_clocking_eye_tracking_test_0()), num_cycles=20000)
         pass
     pass
 

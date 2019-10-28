@@ -175,7 +175,8 @@ So a master state machine starts with delay 0 and increments it until an edge is
             }
         }
         case delay_fsm_load: {
-            if (delay_state.delay_config.load && delay_response.load_ack) {
+            if ( (delay_state.delay_config.op!=bit_delay_op_none) &&
+                 delay_response.op_ack ) {
                 delay_combs.action = delay_action_load_wait;
             }
         }
@@ -199,16 +200,17 @@ So a master state machine starts with delay 0 and increments it until an edge is
             delay_state.result_valid <= 0;
         }
         case delay_action_load: {
-            delay_state.delay_config.value <= delay_state.delay_config.value+1;
+            delay_state.delay_config.select <= 0;
+            delay_state.delay_config.value  <= delay_state.delay_config.value+1;
             if (delay_combs.request.zero) {
                 delay_state.delay_config.value <= 0;
             }
-            delay_state.delay_config.load <= 1;
+            delay_state.delay_config.op <= bit_delay_op_load;
             delay_state.counter   <= delay_program_count;
             delay_state.fsm_state <= delay_fsm_load;
         }
         case delay_action_load_wait: {
-            delay_state.delay_config.load <= 0;
+            delay_state.delay_config.op <= bit_delay_op_none;
             delay_state.fsm_state <= delay_fsm_wait;
         }
         case delay_action_wait: {

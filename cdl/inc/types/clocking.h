@@ -19,16 +19,25 @@
  *
  */
 
+/*t t_bit_delay_op */
+typedef enum [2] {
+    bit_delay_op_none,
+    bit_delay_op_load,
+    bit_delay_op_inc,
+    bit_delay_op_dec
+} t_bit_delay_op;
+
 /*t t_bit_delay_config */
 typedef struct {
-    bit    load;
+    bit    select  "If a delay pair, which delay to update";
+    t_bit_delay_op op;
     bit[9] value;
 } t_bit_delay_config;
 
 /*t t_bit_delay_response */
 typedef struct {
-    bit    load_ack;
-    bit[9] value;
+    bit    op_ack;
+    bit[9] delay_value;
     bit    sync_value;
 } t_bit_delay_response;
 
@@ -48,3 +57,22 @@ typedef struct {
     bit[9] initial_delay;
     bit initial_value;
 } t_phase_measure_response;
+
+/*t t_eye_track_request
+ */
+typedef struct {
+    bit enable         "If deasserted, stop tracking and seeking. Do not assert until phase_width is stable and valid";
+    bit measure        "Assert to start a measurement of the eye";
+    bit seek_enable    "If asserted and enabled, then data delay can be adjusted; otherwise eye width is measured and centre determined by data delay is not adjusted";
+    bit[9] phase_width "Width in taps of a phase of clock - no eye can be wider than this! Must be valid if enable is asserted";
+} t_eye_track_request;
+
+/*t t_eye_track_response
+ */
+typedef struct {
+    bit measure_ack    "Asserted to acknowledge a request to measure the eye - later eye_data_valid will be asserted";
+    bit locked         "Asserted if enabled and measured eye width is large enough and data is sufficiently centred";
+    bit eye_data_valid "Asserted for a single clock tick when eye data measurements are valid";
+    bit[9] eye_width;
+    bit[9] eye_center;
+} t_eye_track_response;

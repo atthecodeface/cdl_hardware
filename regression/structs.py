@@ -83,16 +83,23 @@ i2c_conf = {"divider":8, "period":8}
 
 #a clocking - bit_delay and phase_measure
 #t t_bit_delay_config 
-bit_delay_config = { "load":1, "value":9}
+bit_delay_config = { "op":2, "select":1, "value":9}
 
 #t t_bit_delay_response
-bit_delay_response = { "load_ack":1, "value":9, "sync_value":1}
+bit_delay_response = { "op_ack":1, "delay_value":9, "sync_value":1}
 
 #t phase_measure_request
 phase_measure_request = {"valid":1}
 
 #t phase_measure_response
 phase_measure_response = {"ack":1, "abort":1, "valid":1, "delay":9, "initial_delay":9, "initial_value":1}
+
+#t eye_track_request
+eye_track_request = {"enable":1, "seek_enable":1, "measure":1, "phase_width":9}
+
+#t eye_track_response
+eye_track_response = {"measure_ack":1, "locked":1, "eye_data_valid":1, "eye_width":9, "eye_center":9}
+
 #a dprintf
 #t dprintf_byte
 dprintf_byte = {"address":16,

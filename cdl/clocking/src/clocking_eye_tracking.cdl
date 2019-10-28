@@ -1,0 +1,472 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   clocking_phase_measure.cdl
+ * @brief  A module to control a delay module and synchronizer to determine phase length
+ *
+ * CDL implementation of a module to control a delay module and synchronizer to determine
+ * phase length of a clock signal
+ *
+ * The clock should have as close to a 50-50 duty cycle as possible
+ *
+ * The module can be prompted to start a measurement; when it does so it will set the
+ * delay module to use a zero delay, and it will run through increasing the delay until
+ * it gets a consistent value of a synchronized delayed clock for N cycles.
+ *
+ * It will record this delay and value, then increase the delay again untilt it gets a consistent
+ * inverse value. It will then complete the measurement, and report the difference in cycles
+ *
+ */
+/*a Includes */
+include "technology/sync_modules.h"
+include "types/clocking.h"
+
+/*a Constants
+*/
+constant integer qwidth = 10               "1<<qwidth must be >= 8*eye_data_count_running to stop it overflowing";
+constant integer eye_data_count_stabilize = 32 "Number of data_clk ticks to wait for stable data after delay has been updated";
+constant integer eye_data_count_running   = ((1<<qwidth)/8)-5;
+constant integer delay_width = 9;
+
+/*a Types
+*/
+/*t t_direction
+ */
+typedef enum[2] {
+    direction_minus = 0,
+    direction_plus = 1
+} t_direction;
+
+/*t t_eye_data_fsm */
+typedef fsm {
+    eye_data_fsm_idle;
+    eye_data_fsm_stabilize;
+    eye_data_fsm_running;
+    eye_data_fsm_completing;
+} t_eye_data_fsm;
+
+/*t t_eye_data_action - Action for measurement state machine */
+typedef enum[4] {
+    eye_data_action_none,
+    eye_data_action_init,
+    eye_data_action_start_run,
+    eye_data_action_complete,
+    eye_data_action_count,
+    eye_data_action_idle
+} t_eye_data_action;
+
+/*t t_eye_data_combs */
+typedef struct {
+    bit activate "Asserted to activate FSM";
+    t_eye_data_action action;
+    bit reset_quality;
+    bit completing;
+    bit[4] p_is_edge;
+    bit[4] p_is_rising_edge;
+    bit[4] p_is_falling_edge;
+    bit[4] n_is_edge;
+    bit[4] n_is_rising_edge;
+    bit[4] n_is_falling_edge;
+    bit[4] matching_edges;
+    bit[4] mismatching_edges;
+    bit[qwidth] quality_plus;
+    bit[qwidth] quality_minus;
+    bit[qwidth] quality_delta;
+    bit good_quality;
+} t_eye_data_combs;
+
+/*t t_eye_data_state */
+typedef struct {
+    bit[sizeof(eye_data_count_running)] counter;
+    t_eye_data_fsm fsm_state;
+    bit clock_enable   "Asserted when the eye data state machine is active";
+    bit last_req_toggle;
+    bit requested      "Asserted when a toggle is detected, cleared when activated";
+    bit result_toggle  "Toggled when a result is ready";
+    bit[5] data_p;
+    bit[5] data_n;
+    bit[4] matching_edges;
+    bit[4] mismatching_edges;
+    bit[qwidth] quality;
+    t_bit_delay_config delay_config;
+} t_eye_data_state;
+
+/*t t_eye_track_fsm */
+typedef fsm {
+    eye_track_fsm_inactive;
+    eye_track_fsm_idle;
+    eye_track_fsm_delay_request;
+    eye_track_fsm_wait_delay;
+    eye_track_fsm_check_edge_found;
+    eye_track_fsm_wait_quality;
+    eye_track_fsm_eye_found;
+    eye_track_fsm_complete;
+} t_eye_track_fsm;
+
+/*t t_eye_track_action - Action for eye tracking state machine */
+typedef enum[4] {
+    eye_track_action_none,
+    eye_track_action_idle,
+    eye_track_action_activate,
+    eye_track_action_find_eye_left_edge,
+    eye_track_action_find_eye_right_edge,
+    eye_track_action_request_delay,
+    eye_track_action_check_edge_found,
+    eye_track_action_request_quality,
+    eye_track_action_reject_delta,
+    eye_track_action_accept_delta,
+    eye_track_action_eye_found,
+    eye_track_action_report_result,
+    eye_track_action_inactivate
+} t_eye_track_action;
+
+/*t t_eye_track_combs */
+typedef struct {
+    t_eye_track_action action;
+    bit[delay_width]   width;
+    bit[delay_width+1] sum;
+    bit[delay_width]   center;
+} t_eye_track_combs;
+
+/*t t_eye_track_state */
+typedef struct {
+    t_eye_track_fsm fsm_state;
+    bit last_result_toggle;
+    bit quality_valid "Asserted for one clock tick after synchronized response from eye_data_state";
+    bit[delay_width] center;
+    bit[delay_width] x;
+    bit[delay_width] dx;
+    t_direction      direction;
+    bit[delay_width] left_edge;
+    bit[delay_width] right_edge;
+    t_bit_delay_config delay_config;
+    bit eye_data_req_toggle "Toggled to ask eye_data FSM to determine quality";
+    t_eye_track_response response;
+} t_eye_track_state;
+
+/*a Module
+*/
+/*m clocking_eye_tracking */
+module clocking_eye_tracking( clock clk,
+                              clock data_clk "Clock generating data_p_in and data_n_in (tracking data)",
+                              input bit reset_n,
+
+                              input   bit[4] data_p_in,
+                              input   bit[4] data_n_in,
+                              output  t_bit_delay_config   delay_config,
+                              input   t_bit_delay_response delay_response,
+                              input   t_eye_track_request  eye_track_request,
+                              output  t_eye_track_response eye_track_response
+    )
+"""
+Module to use two configurable delay taps - one for data, one for tracking - to attempt
+to track the center and width of the eye
+
+The delay modules should take the data signal +ve and -ve and delay them and serialize them,
+using a clock that is synchronous to the bitstream (data_clk). Oldest data is in bit 0.
+
+In matching data rising edges of data_p_in should match falling edges in data_n_in.
+The number of matches minus the number of mismatches is an indication of data quality.
+
+"""
+{
+    /*b Default reset */
+    default reset active_low reset_n;
+
+    /*b Eye data FSM and state - data_clk domain */
+    clocked clock data_clk t_eye_data_state  eye_data_state   = {*=0}  "Delay state machine";
+    comb t_eye_data_combs     eye_data_combs;
+    net bit sync_eye_data_req_toggle;
+
+    /*b Eye tracking FSM and state - clk  domain*/
+    clocked clock clk t_eye_track_state  eye_track_state   = {*=0}  "Measure state machine";
+    comb t_eye_track_combs     eye_track_combs;
+    net bit sync_clk_eye_data_result_toggle;
+
+    /*b Eye data FSM - data_clk domain */
+    eye_data_fsm_and_state : {
+        /*b Eye_data combs */
+        eye_data_combs.activate = eye_data_state.requested;
+        eye_data_combs.action   = eye_data_action_none;
+        full_switch (eye_data_state.fsm_state) {
+        case eye_data_fsm_idle: {
+            eye_data_combs.action = eye_data_action_init;
+        }
+        case eye_data_fsm_stabilize: {
+            eye_data_combs.action = eye_data_action_count;
+            if (eye_data_state.counter==0) {
+                eye_data_combs.action = eye_data_action_start_run;
+            }
+        }
+        case eye_data_fsm_running: {
+            eye_data_combs.action = eye_data_action_count;
+            if (eye_data_state.counter==0) {
+                eye_data_combs.action = eye_data_action_complete;
+            }
+        }
+        case eye_data_fsm_completing: {
+            eye_data_combs.action = eye_data_action_idle;
+        }
+        }
+
+        /*b Eye_data state - data_clk domain */
+        eye_data_combs.completing = 0;
+        eye_data_combs.reset_quality = 0;
+        full_switch (eye_data_combs.action) {
+        case eye_data_action_init : {
+            eye_data_state.fsm_state <= eye_data_fsm_stabilize;
+            eye_data_state.counter   <= eye_data_count_stabilize;
+        }
+        case eye_data_action_start_run : {
+            eye_data_state.fsm_state <= eye_data_fsm_running;
+            eye_data_state.counter   <= eye_data_count_running;
+            eye_data_combs.reset_quality = 1;
+        }
+        case eye_data_action_complete : {
+            eye_data_state.fsm_state <= eye_data_fsm_completing;
+            eye_data_state.result_toggle <= !eye_data_state.result_toggle;
+        }
+        case eye_data_action_count : {
+            eye_data_state.counter   <= eye_data_state.counter - 1;
+        }
+        case eye_data_action_idle : {
+            eye_data_state.fsm_state <= eye_data_fsm_idle;
+            eye_data_combs.completing = 1;
+        }
+        }
+
+        /*b Eye_data data recording */
+        eye_data_state.data_p <= bundle( data_p_in, eye_data_state.data_p[4] );
+        eye_data_state.data_n <= bundle( data_n_in, eye_data_state.data_n[4] );
+
+        /*b Detect edges, and hence mismatching and matching edges */
+        eye_data_combs.p_is_edge         = eye_data_state.data_p[4;1] ^ eye_data_state.data_p[4;0];
+        eye_data_combs.p_is_rising_edge  = eye_data_combs.p_is_edge &  eye_data_state.data_p[4;1];
+        eye_data_combs.p_is_falling_edge = eye_data_combs.p_is_edge & ~eye_data_state.data_p[4;1];
+        eye_data_combs.n_is_edge = eye_data_state.data_n[4;1] ^ eye_data_state.data_n[4;0];
+        eye_data_combs.n_is_rising_edge  = eye_data_combs.n_is_edge &  eye_data_state.data_n[4;1];
+        eye_data_combs.n_is_falling_edge = eye_data_combs.n_is_edge & ~eye_data_state.data_n[4;1];
+
+        // Note that n falling should coincide with p rising, and vice versa
+        eye_data_combs.matching_edges    = ( (eye_data_combs.n_is_falling_edge &  eye_data_combs.p_is_rising_edge) |
+                                             (eye_data_combs.n_is_rising_edge  &  eye_data_combs.p_is_falling_edge) );
+        eye_data_combs.mismatching_edges = (eye_data_combs.n_is_edge | eye_data_combs.p_is_edge) & ~eye_data_combs.matching_edges;
+
+        /*b Record (mis)matching edges */
+        eye_data_state.matching_edges    <= eye_data_combs.matching_edges;
+        eye_data_state.mismatching_edges <= eye_data_combs.mismatching_edges;
+
+        /*b Update quality */
+        eye_data_combs.quality_plus  = 0;
+        eye_data_combs.quality_minus = 0;
+        full_switch (eye_data_state.matching_edges) {
+        case 0:             {eye_data_combs.quality_plus = 0;}
+        case 1,2,4,8:       {eye_data_combs.quality_plus = 1;}
+        case 15:            {eye_data_combs.quality_plus = 4;}
+        case 14,13,11,7:    {eye_data_combs.quality_plus = 3;}
+        default:            {eye_data_combs.quality_plus = 2;}
+        }
+        full_switch (eye_data_state.mismatching_edges) {
+        case 0:             {eye_data_combs.quality_minus = 0;}
+        case 1,2,4,8:       {eye_data_combs.quality_minus = 1;}
+        case 15:            {eye_data_combs.quality_minus = 4;}
+        case 14,13,11,7:    {eye_data_combs.quality_minus = 3;}
+        default:            {eye_data_combs.quality_minus = 2;}
+        }
+        eye_data_combs.quality_delta = eye_data_combs.quality_plus - eye_data_combs.quality_minus;
+        if (eye_data_combs.reset_quality) {
+            eye_data_state.quality <= 0;
+        } else {
+            eye_data_state.quality <= eye_data_state.quality + eye_data_combs.quality_delta;
+        }
+        eye_data_combs.good_quality = ((eye_data_state.quality>>(qwidth-3)) > 0);
+        if (eye_data_state.quality[qwidth-1]) {
+            eye_data_combs.good_quality = 0;
+        }
+
+        /*b Manage clock enable and async start request */
+        if (!eye_data_state.clock_enable) {
+            eye_data_state <= eye_data_state;
+        }
+        if (eye_data_combs.activate) {
+            eye_data_state.clock_enable <= 1;
+            eye_data_state.requested    <= 0;
+        }
+        if (eye_data_combs.completing) {
+            eye_data_state.clock_enable <= 0;
+        }
+        tech_sync_bit edrt(clk <- data_clk,
+                           reset_n <= reset_n,
+                           d <= eye_track_state.eye_data_req_toggle,
+                           q => sync_eye_data_req_toggle );
+        eye_data_state.last_req_toggle <= sync_eye_data_req_toggle;
+        if (eye_data_state.last_req_toggle != sync_eye_data_req_toggle) {
+            eye_data_state.requested <= 1;
+        }
+
+        /*b All done */
+    }
+        
+    /*b Measurement FSM and state logic */
+    measurement_fsm_and_state : {
+
+        /*b Eye_track combs */
+        eye_track_combs.width  = eye_track_state.right_edge - eye_track_state.left_edge;
+        eye_track_combs.sum    = bundle(1b0, eye_track_state.right_edge) + bundle(1b0, eye_track_state.left_edge);
+        eye_track_combs.center = eye_track_combs.sum[delay_width;1];
+        eye_track_combs.action = eye_track_action_none;
+        full_switch (eye_track_state.fsm_state) {
+        case eye_track_fsm_inactive: {
+            if (eye_track_request.enable) {
+                eye_track_combs.action = eye_track_action_activate;
+            }
+        }
+        case eye_track_fsm_idle: { // waiting for eye_track measurement request
+            if (eye_track_request.measure) {
+                eye_track_combs.action = eye_track_action_find_eye_left_edge;
+            }
+        }
+        case eye_track_fsm_delay_request: {
+            eye_track_combs.action = eye_track_action_request_delay;
+            if (eye_track_state.dx==0) {
+                if (eye_track_state.direction == direction_minus) {
+                    eye_track_combs.action = eye_track_action_find_eye_right_edge;
+                } else {
+                    eye_track_combs.action = eye_track_action_eye_found;
+                }
+            }
+        }
+        case eye_track_fsm_wait_delay: {
+            if (delay_response.op_ack) {
+                eye_track_combs.action = eye_track_action_check_edge_found;
+            }
+        }
+        case eye_track_fsm_check_edge_found: {
+            eye_track_combs.action = eye_track_action_request_quality;
+        }
+        case eye_track_fsm_wait_quality: {
+            if (eye_track_state.quality_valid) {  // goes back to delay_request
+                eye_track_combs.action = eye_track_action_reject_delta;
+                if (eye_data_combs.good_quality) {
+                    eye_track_combs.action = eye_track_action_accept_delta;
+                }
+            }
+        }
+        case eye_track_fsm_eye_found: {
+            eye_track_combs.action = eye_track_action_report_result;
+        }
+        case eye_track_fsm_complete: {
+            eye_track_combs.action = eye_track_action_idle;
+            if (eye_track_request.seek_enable) {
+                if (eye_track_response.eye_center != eye_track_state.center) {
+                    // eye_track_combs.action = eye_track_action_adjust_center;
+                }
+            }
+            if (!eye_track_request.enable) {
+                eye_track_combs.action = eye_track_action_inactivate;
+            }
+        }
+        }
+
+        /*b Eye_track actions implementation - state update */
+        eye_track_state.response.eye_data_valid <= 0;
+        full_switch (eye_track_combs.action) {
+        case eye_track_action_none: {
+            eye_track_state.fsm_state <= eye_track_state.fsm_state;
+        }
+        case eye_track_action_activate: {
+            // Set center to phase_width * 5/4 - this gives up to 1/4 tracking back capability
+            // We should never have to track back that much if the clocks are synchronous
+            eye_track_state.fsm_state <= eye_track_fsm_idle;
+            eye_track_state.center <= eye_track_request.phase_width + (eye_track_request.phase_width>>2);
+        }
+        case eye_track_action_idle: {
+            eye_track_state.fsm_state <= eye_track_fsm_idle;
+        }
+        case eye_track_action_find_eye_left_edge: {
+            eye_track_state.fsm_state <= eye_track_fsm_delay_request;
+            eye_track_state.x  <= eye_track_state.center;
+            eye_track_state.dx <= eye_track_request.phase_width;
+            eye_track_state.direction <= direction_minus;
+            eye_track_state.response.measure_ack <= 1;
+        }
+        case eye_track_action_find_eye_right_edge: {
+            eye_track_state.fsm_state <= eye_track_fsm_delay_request;
+            eye_track_state.left_edge <= eye_track_state.x;
+            eye_track_state.x  <= eye_track_state.center;
+            eye_track_state.dx <= eye_track_request.phase_width;
+            eye_track_state.direction <= direction_plus;
+        }
+        case eye_track_action_request_delay: {
+            eye_track_state.delay_config.op     <= bit_delay_op_load;
+            eye_track_state.delay_config.select <= 1;
+            if (eye_track_state.direction == direction_plus) {
+                eye_track_state.delay_config.value <= eye_track_state.x + (eye_track_state.dx>>1);
+            } else {
+                eye_track_state.delay_config.value <= eye_track_state.x - (eye_track_state.dx>>1);
+            }
+            eye_track_state.fsm_state <= eye_track_fsm_wait_delay;
+        }
+        case eye_track_action_check_edge_found: {
+            eye_track_state.fsm_state <= eye_track_fsm_check_edge_found;
+            eye_track_state.delay_config.op <= bit_delay_op_none;
+        }
+        case eye_track_action_request_quality: {
+            eye_track_state.fsm_state <= eye_track_fsm_wait_quality;
+            eye_track_state.eye_data_req_toggle <= !eye_track_state.eye_data_req_toggle;
+        }
+        case eye_track_action_reject_delta: {
+            eye_track_state.dx <= eye_track_state.dx>>1;
+            eye_track_state.fsm_state <= eye_track_fsm_delay_request;
+        }
+        case eye_track_action_accept_delta: {
+            eye_track_state.x  <= eye_track_state.delay_config.value;
+            eye_track_state.dx <= eye_track_state.dx>>1;
+            eye_track_state.fsm_state <= eye_track_fsm_delay_request;
+        }
+        case eye_track_action_eye_found: {
+            eye_track_state.fsm_state <= eye_track_fsm_eye_found;
+            eye_track_state.right_edge <= eye_track_state.x;
+        }
+        case eye_track_action_report_result: {
+            eye_track_state.fsm_state <= eye_track_fsm_complete;
+            eye_track_state.response.eye_data_valid <= 1;
+            eye_track_state.response.eye_center     <= eye_track_combs.center;
+            eye_track_state.response.eye_width      <= eye_track_combs.width;
+            eye_track_state.response.locked         <= 1;
+        }
+        case eye_track_action_inactivate: {
+            eye_track_state.fsm_state <= eye_track_fsm_inactive;
+            eye_track_state.response.locked <= 0;
+        }
+        }
+
+        tech_sync_bit ert(clk <- clk,
+                          reset_n <= reset_n,
+                          d <= eye_data_state.result_toggle,
+                          q => sync_clk_eye_data_result_toggle );
+        eye_track_state.last_result_toggle <= sync_clk_eye_data_result_toggle;
+        eye_track_state.quality_valid <= 0;
+        if (eye_track_state.last_result_toggle != sync_clk_eye_data_result_toggle) {
+            eye_track_state.quality_valid <= 1;
+        }
+
+        /*b Outputs */
+        eye_track_response = eye_track_state.response;
+        delay_config       = eye_track_state.delay_config;
+        
+        /*b All done */
+    }
+        
+    /*b All done */
+}

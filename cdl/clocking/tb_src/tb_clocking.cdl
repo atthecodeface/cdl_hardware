@@ -22,14 +22,19 @@ include "clocking/clocking_modules.h"
 
 /*a External modules */
 extern module se_test_harness( clock clk,
-                               input t_bit_delay_config   delay_config,
+                               input t_bit_delay_config   delay_config_cpm,
+                               input t_bit_delay_config   delay_config_cet,
                                output  t_bit_delay_response delay_response,
                                output   t_phase_measure_request measure_request,
-                               input  t_phase_measure_response measure_response
+                               input  t_phase_measure_response measure_response,
+                               output   t_eye_track_request eye_track_request,
+                               input  t_eye_track_response  eye_track_response,
+                               output bit[4] data_p_in,
+                               output bit[4] data_n_in
     )
 {
-    timing to   rising clock clk delay_config, measure_response;
-    timing from rising clock clk delay_response, measure_request;
+    timing to   rising clock clk delay_config_cpm, delay_config_cet, measure_response, eye_track_response;
+    timing from rising clock clk delay_response, measure_request, eye_track_request, data_p_in, data_n_in;
 }
 
 /*a Module */
@@ -39,24 +44,44 @@ module tb_clocking( clock clk,
 {
 
     /*b Nets */
-    net t_bit_delay_config   delay_config;
-    net  t_bit_delay_response delay_response;
-    net   t_phase_measure_request measure_request;
-    net  t_phase_measure_response measure_response;
+    net t_bit_delay_config   delay_config_cpm;
+    net t_bit_delay_config   delay_config_cet;
+    net t_bit_delay_response delay_response;
+    net t_phase_measure_request measure_request;
+    net t_phase_measure_response measure_response;
+    net t_eye_track_request  eye_track_request;
+    net t_eye_track_response eye_track_response;
+    net bit[4] data_p_in;
+    net bit[4] data_n_in;
 
     /*b Instantiations */
     instantiations: {
         se_test_harness th( clk <- clk,
-                            delay_config <= delay_config,
+                            delay_config_cpm <= delay_config_cpm,
+                            delay_config_cet <= delay_config_cet,
                             delay_response => delay_response,
                             measure_request => measure_request,
-                            measure_response <= measure_response );
+                            measure_response <= measure_response,
+                            eye_track_request => eye_track_request,
+                            eye_track_response <= eye_track_response,
+                            data_p_in => data_p_in,
+                            data_n_in => data_n_in
+            );
         clocking_phase_measure cpm(clk <- clk,
                                    reset_n <= reset_n,
-                                   delay_config   => delay_config,
+                                   delay_config   => delay_config_cpm,
                                    delay_response <= delay_response,
                                    measure_request <= measure_request,
                                    measure_response => measure_response );
+        clocking_eye_tracking cet(clk <- clk,
+                                  data_clk <- clk,
+                                  reset_n <= reset_n,
+                                  data_p_in <= data_p_in,
+                                  data_n_in <= data_n_in,
+                                  delay_config   => delay_config_cet,
+                                  delay_response <= delay_response,
+                                  eye_track_request <= eye_track_request,
+                                  eye_track_response => eye_track_response );
     }
 
     /*b All done */

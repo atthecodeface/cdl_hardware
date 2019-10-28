@@ -34,3 +34,20 @@ extern module clocking_phase_measure( clock clk,
     timing from rising clock clk delay_config, measure_response;
     timing to   rising clock clk delay_response, measure_request;
 }
+
+extern module clocking_eye_tracking( clock clk,
+                              clock data_clk "Clock generating data_p_in and data_n_in (tracking data)",
+                              input bit reset_n,
+
+                              input   bit[4] data_p_in,
+                              input   bit[4] data_n_in,
+                              output  t_bit_delay_config   delay_config,
+                              input   t_bit_delay_response delay_response,
+                              input   t_eye_track_request  eye_track_request,
+                              output  t_eye_track_response eye_track_response
+    )
+{
+    timing to   rising clock data_clk data_p_in, data_n_in;
+    timing from rising clock clk delay_config, eye_track_response;
+    timing to   rising clock clk delay_response, eye_track_request;
+}
