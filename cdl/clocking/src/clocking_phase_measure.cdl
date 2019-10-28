@@ -32,7 +32,8 @@ include "types/clocking.h"
 
 /*a Constants
 */
-constant integer delay_program_count=8;
+constant integer delay_program_count=8  "Delay between ack of delay load and sync data being stable";
+constant integer delay_capture_count=32 "Number of bits to compare to initial sync data bit to test for stability";
 
 /*a Types
 */
@@ -64,7 +65,6 @@ typedef enum[3] {
 /*t t_delay_combs */
 typedef struct {
     t_delay_action action;
-    bit shift_register_constant;
     bit max_delay;
     t_delay_request request;
 } t_delay_combs;
@@ -73,9 +73,10 @@ typedef struct {
 typedef struct {
     t_delay_fsm fsm_state;
     t_bit_delay_config delay_config;
-    bit[4]      counter;
-    bit         shift_register_valid;
-    bit[8]      shift_register;
+    bit[8]      counter;
+    bit         result_valid;
+    bit         data_stable;
+    bit         data_value;
 } t_delay_state;
 
 /*t t_measure_fsm */
@@ -163,10 +164,6 @@ So a master state machine starts with delay 0 and increments it until an edge is
     /*b Delay FSM and state logic */
     delay_fsm_and_state : {
         delay_combs.request = measure_state.delay_request;
-        delay_combs.shift_register_constant = 0;
-        if ((delay_state.shift_register==0) || (delay_state.shift_register==-1)) {
-            delay_combs.shift_register_constant = 1;
-        }
         delay_combs.max_delay = (delay_state.delay_config.value==-1);
 
         /*b Delay combs */
@@ -199,7 +196,7 @@ So a master state machine starts with delay 0 and increments it until an edge is
         /*b Delay state */
         full_switch (delay_combs.action) {
         case delay_action_none: {
-            delay_state.shift_register_valid <= 0;
+            delay_state.result_valid <= 0;
         }
         case delay_action_load: {
             delay_state.delay_config.value <= delay_state.delay_config.value+1;
@@ -218,18 +215,21 @@ So a master state machine starts with delay 0 and increments it until an edge is
             delay_state.counter   <= delay_state.counter-1;
         }
         case delay_action_capture_start: {
-            delay_state.counter   <= 8;
+            delay_state.counter   <= delay_capture_count;
             delay_state.fsm_state <= delay_fsm_shifting;
+            delay_state.data_stable <= 1;
+            delay_state.data_value  <= delay_response.sync_value;
         }
         case delay_action_capture: {
-            delay_state.counter   <= delay_state.counter-1;
-            delay_state.shift_register    <= delay_state.shift_register<<1;
-            delay_state.shift_register[0] <= delay_response.sync_value;
+            delay_state.counter           <= delay_state.counter-1;
+            if (delay_response.sync_value != delay_state.data_value) {
+                delay_state.data_stable <= 0;
+            }
             delay_state.fsm_state         <= delay_fsm_shifting;
         }
         case delay_action_capture_complete: {
-            delay_state.shift_register_valid <= 1;
-            delay_state.fsm_state            <= delay_fsm_idle;
+            delay_state.result_valid      <= 1;
+            delay_state.fsm_state         <= delay_fsm_idle;
         }
         }
 
@@ -251,12 +251,12 @@ So a master state machine starts with delay 0 and increments it until an edge is
             measure_combs.action = measure_action_edge_delay_started;
         }
         case measure_fsm_initial_wait_delay: {
-            if (delay_state.shift_register_valid) {
+            if (delay_state.result_valid) {
                 measure_combs.action = measure_action_edge_increase_delay;
                 if (delay_combs.max_delay) {
                     measure_combs.action = measure_action_abort;
                 }
-                if (!delay_combs.shift_register_constant) {
+                if (!delay_state.data_stable) {
                     measure_combs.action = measure_action_edge_delay_found;
                 }
             }
@@ -265,12 +265,12 @@ So a master state machine starts with delay 0 and increments it until an edge is
             measure_combs.action = measure_action_stable_value_delay_started;
         }
         case measure_fsm_stable_wait_delay: {
-            if (delay_state.shift_register_valid) {
+            if (delay_state.result_valid) {
                 measure_combs.action = measure_action_stable_value_increase_delay;
                 if (delay_combs.max_delay) {
                     measure_combs.action = measure_action_abort;
                 }
-                if (delay_combs.shift_register_constant) {
+                if (delay_state.data_stable) {
                     measure_combs.action = measure_action_stable_value_delay_found;
                 }
             }
@@ -279,13 +279,13 @@ So a master state machine starts with delay 0 and increments it until an edge is
             measure_combs.action = measure_action_inverse_value_delay_started;
         }
         case measure_fsm_inverse_wait_delay: {
-            if (delay_state.shift_register_valid) {
+            if (delay_state.result_valid) {
                 measure_combs.action = measure_action_inverse_value_increase_delay;
                 if (delay_combs.max_delay) {
                     measure_combs.action = measure_action_abort;
                 }
-                if (delay_combs.shift_register_constant &&
-                    (delay_state.shift_register[0]!=measure_state.initial_value)) {
+                if (delay_state.data_stable &&
+                    (delay_state.data_value!=measure_state.initial_value)) {
                     measure_combs.action = measure_action_inverse_value_delay_found;
                 }
             }
@@ -328,7 +328,7 @@ So a master state machine starts with delay 0 and increments it until an edge is
             measure_state.fsm_state <= measure_fsm_stable_delay_request;
         }
         case measure_action_stable_value_delay_found: { // in stable_wait, got valid result
-            measure_state.initial_value <= delay_state.shift_register[0];
+            measure_state.initial_value <= delay_state.data_value;
             measure_state.initial_delay <= delay_state.delay_config.value;
             measure_state.delay_request <= {valid=1, zero=0};
             measure_state.fsm_state <= measure_fsm_inverse_delay_request;

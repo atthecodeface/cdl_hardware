@@ -26,6 +26,10 @@ class rom(object):
         "rom_op_beq": 1,
         "rom_op_bne": 2,
         "rom_op_loop": 3,
+        "rom_op_branch_link": 4,
+        "rom_op_beq_link": 5,
+        "rom_op_bne_link": 6,
+        "rom_op_ret": 7,
 
         "rom_op_req_read": 0,
         "rom_op_req_write_arg": 1,

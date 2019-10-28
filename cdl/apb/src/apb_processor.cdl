@@ -59,6 +59,10 @@ typedef enum[3] {
     rom_op_beq = 1             "For Branch operations, branch if accumulator is zero to ROM data[32;0]",
     rom_op_bne = 2             "For Branch operations, branch if accumulator is nonzero to ROM data[32;0]",
     rom_op_loop = 3            "For Branch operations, decrement loop count, and branch if loop count was nonzero to ROM data[32;0]",
+    rom_op_branch_link = 4     "For Branch operations, branch always to ROM data[32;0], set increment to",
+    rom_op_beq_link = 5        "For Branch operations, branch if accumulator is zero to ROM data[32;0], set increment to",
+    rom_op_bne_link = 6        "For Branch operations, branch if accumulator is nonzero to ROM data[32;0], set increment to",
+    rom_op_ret      = 7        "For Branch operations, branch to value in 'increment'",
 
     rom_op_req_read=0          "For APB request operations, perform APB read - if bit[2], is set then post-increment APB address",
     rom_op_req_write_arg=1     "For APB request operations, perform APB write with ROM data[32;0] as the write data - if bit[2], is set then post-increment APB address",
@@ -174,7 +178,9 @@ typedef struct {
     bit acc_is_zero                  "Asserted if the processor state accumulator is zero";
     bit inc_is_zero                  "Asserted if the processor state incrementer is zero";
     bit rpt_is_zero                  "Asserted if the processor state repeat count is zero";
+    bit set_link                     "Asserted if increment should be set to the ROM address";
     bit take_branch                  "Asserted if a branch is being taken - requires a branch action, and the branch condition to be met; causes the ROM to load the arg_data as the ROM address";
+    bit ret_to_inc                   "Asserted if a return instruction; causes the ROM to load 'increment' as the ROM address";
     bit completes_op                 "Asserted if the processor is completing execution of the opcode - hence the ROM should fetch another opcode";
     bit finishing                    "Asserted if the processor is executing a 'finish' instruction, hence the ROM should become not busy";
     t_apb_rom_opcode_subclass  opcode_subclass "Opcode subclass of the ROM data @a opcode - ignore if @a opcode_valid deasserted";
@@ -433,6 +439,8 @@ accepts an APB response back, including @a pready.
 
         /*b Handle processor action */
         processor_combs.take_branch = 0;
+        processor_combs.ret_to_inc = 0;
+        processor_combs.set_link = 0;
         processor_combs.completes_op = 0;
         processor_combs.finishing = 0;
         processor_combs.apb_req = {valid=0, read_not_write=0, wdata=processor_state.accumulator};
@@ -487,12 +495,16 @@ accepts an APB response back, including @a pready.
         }
         case processor_action_branch: {
             full_switch (processor_combs.opcode_subclass[3;0]) {
-            case rom_op_branch:  { processor_combs.take_branch = 1; }
-            case rom_op_beq:     { processor_combs.take_branch = processor_combs.acc_is_zero; }
-            case rom_op_bne:     { processor_combs.take_branch = !processor_combs.acc_is_zero; }
+            case rom_op_branch:       { processor_combs.take_branch = 1; }
+            case rom_op_branch_link:  { processor_combs.take_branch = 1; processor_combs.set_link = 1; }
+            case rom_op_beq:          { processor_combs.take_branch = processor_combs.acc_is_zero;  processor_combs.set_link = 1; }
+            case rom_op_bne:          { processor_combs.take_branch = !processor_combs.acc_is_zero; processor_combs.set_link = 1; }
             case rom_op_loop:    {
                 processor_combs.take_branch = !processor_combs.rpt_is_zero;
                 processor_state.repeat_count <= processor_state.repeat_count - 1;
+            }
+            case rom_op_ret:    {
+                processor_combs.ret_to_inc = 1;
             }
             }
             processor_combs.completes_op = 1;
@@ -518,6 +530,9 @@ accepts an APB response back, including @a pready.
         case processor_action_none: {
             processor_state.fsm_state <= processor_state.fsm_state;
         }
+        }
+        if (processor_combs.set_link) {
+            processor_state.increment <= bundle(16b0, rom_state.address+1);
         }
     }
 
