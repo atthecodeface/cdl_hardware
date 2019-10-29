@@ -95,10 +95,10 @@ phase_measure_request = {"valid":1}
 phase_measure_response = {"ack":1, "abort":1, "valid":1, "delay":9, "initial_delay":9, "initial_value":1}
 
 #t eye_track_request
-eye_track_request = {"enable":1, "seek_enable":1, "measure":1, "phase_width":9}
+eye_track_request = {"enable":1, "seek_enable":1, "track_enable":1, "measure":1, "phase_width":9, "min_eye_width":9}
 
 #t eye_track_response
-eye_track_response = {"measure_ack":1, "locked":1, "eye_data_valid":1, "eye_width":9, "eye_center":9}
+eye_track_response = {"measure_ack":1, "locked":1, "eye_data_valid":1, "data_delay":9, "eye_width":9, "eye_center":9}
 
 #a dprintf
 #t dprintf_byte

@@ -106,7 +106,8 @@ typedef fsm {
     eye_track_fsm_inactive;
     eye_track_fsm_idle;
     eye_track_fsm_delay_request;
-    eye_track_fsm_wait_delay;
+    eye_track_fsm_wait_data_delay;
+    eye_track_fsm_wait_tracking_delay;
     eye_track_fsm_check_edge_found;
     eye_track_fsm_wait_quality;
     eye_track_fsm_eye_found;
@@ -127,7 +128,9 @@ typedef enum[4] {
     eye_track_action_accept_delta,
     eye_track_action_eye_found,
     eye_track_action_report_result,
-    eye_track_action_inactivate
+    eye_track_action_inactivate,
+    eye_track_action_tweak_center,
+    eye_track_action_move_center
 } t_eye_track_action;
 
 /*t t_eye_track_combs */
@@ -317,10 +320,10 @@ The number of matches minus the number of mismatches is an indication of data qu
         /*b All done */
     }
         
-    /*b Measurement FSM and state logic */
+    /*b Tracking FSM and state logic */
     measurement_fsm_and_state : {
 
-        /*b Eye_track combs */
+        /*b Eye_track state machine decode */
         eye_track_combs.width  = eye_track_state.right_edge - eye_track_state.left_edge;
         eye_track_combs.sum    = bundle(1b0, eye_track_state.right_edge) + bundle(1b0, eye_track_state.left_edge);
         eye_track_combs.center = eye_track_combs.sum[delay_width;1];
@@ -336,6 +339,11 @@ The number of matches minus the number of mismatches is an indication of data qu
                 eye_track_combs.action = eye_track_action_find_eye_left_edge;
             }
         }
+        case eye_track_fsm_wait_data_delay: {
+            if (delay_response.op_ack) {
+                eye_track_combs.action = eye_track_action_idle;
+            }
+        }
         case eye_track_fsm_delay_request: {
             eye_track_combs.action = eye_track_action_request_delay;
             if (eye_track_state.dx==0) {
@@ -346,7 +354,7 @@ The number of matches minus the number of mismatches is an indication of data qu
                 }
             }
         }
-        case eye_track_fsm_wait_delay: {
+        case eye_track_fsm_wait_tracking_delay: {
             if (delay_response.op_ack) {
                 eye_track_combs.action = eye_track_action_check_edge_found;
             }
@@ -367,10 +375,12 @@ The number of matches minus the number of mismatches is an indication of data qu
         }
         case eye_track_fsm_complete: {
             eye_track_combs.action = eye_track_action_idle;
-            if (eye_track_request.seek_enable) {
-                if (eye_track_response.eye_center != eye_track_state.center) {
-                    // eye_track_combs.action = eye_track_action_adjust_center;
-                }
+            if ( (eye_track_request.min_eye_width > eye_track_combs.width) &&
+                 eye_track_request.seek_enable ) {
+                eye_track_combs.action = eye_track_action_move_center;
+            } elsif ( (eye_track_combs.center != eye_track_state.center) &
+                      eye_track_request.track_enable ) {
+                eye_track_combs.action = eye_track_action_tweak_center;
             }
             if (!eye_track_request.enable) {
                 eye_track_combs.action = eye_track_action_inactivate;
@@ -387,10 +397,14 @@ The number of matches minus the number of mismatches is an indication of data qu
         case eye_track_action_activate: {
             // Set center to phase_width * 5/4 - this gives up to 1/4 tracking back capability
             // We should never have to track back that much if the clocks are synchronous
-            eye_track_state.fsm_state <= eye_track_fsm_idle;
-            eye_track_state.center <= eye_track_request.phase_width + (eye_track_request.phase_width>>2);
+            eye_track_state.fsm_state <= eye_track_fsm_wait_data_delay;
+            eye_track_state.delay_config.select <= 0;
+            eye_track_state.delay_config.op     <= bit_delay_op_load;
+            eye_track_state.delay_config.value  <= eye_track_request.phase_width + (eye_track_request.phase_width>>2);
+            eye_track_state.center              <= eye_track_request.phase_width + (eye_track_request.phase_width>>2);
         }
         case eye_track_action_idle: {
+            eye_track_state.delay_config.op     <= bit_delay_op_none;
             eye_track_state.fsm_state <= eye_track_fsm_idle;
         }
         case eye_track_action_find_eye_left_edge: {
@@ -415,7 +429,7 @@ The number of matches minus the number of mismatches is an indication of data qu
             } else {
                 eye_track_state.delay_config.value <= eye_track_state.x - (eye_track_state.dx>>1);
             }
-            eye_track_state.fsm_state <= eye_track_fsm_wait_delay;
+            eye_track_state.fsm_state <= eye_track_fsm_wait_tracking_delay;
         }
         case eye_track_action_check_edge_found: {
             eye_track_state.fsm_state <= eye_track_fsm_check_edge_found;
@@ -441,6 +455,7 @@ The number of matches minus the number of mismatches is an indication of data qu
         case eye_track_action_report_result: {
             eye_track_state.fsm_state <= eye_track_fsm_complete;
             eye_track_state.response.eye_data_valid <= 1;
+            eye_track_state.response.data_delay     <= eye_track_state.center;
             eye_track_state.response.eye_center     <= eye_track_combs.center;
             eye_track_state.response.eye_width      <= eye_track_combs.width;
             eye_track_state.response.locked         <= 1;
@@ -448,6 +463,28 @@ The number of matches minus the number of mismatches is an indication of data qu
         case eye_track_action_inactivate: {
             eye_track_state.fsm_state <= eye_track_fsm_inactive;
             eye_track_state.response.locked <= 0;
+        }
+        case eye_track_action_tweak_center: {
+            eye_track_state.delay_config.select <= 0;
+            if (eye_track_combs.center > eye_track_state.center) {
+                eye_track_state.delay_config.op     <= bit_delay_op_inc;
+                eye_track_state.center              <= eye_track_state.center + 1;
+            } else {
+                eye_track_state.delay_config.op     <= bit_delay_op_dec;
+                eye_track_state.center              <= eye_track_state.center - 1;
+            }
+            eye_track_state.fsm_state <= eye_track_fsm_wait_data_delay;
+        }
+        case eye_track_action_move_center: {
+            eye_track_state.delay_config.select <= 0;
+            eye_track_state.delay_config.op     <= bit_delay_op_load;
+            eye_track_state.delay_config.value  <= eye_track_state.center + 16;
+            eye_track_state.center              <= eye_track_state.center + 16;
+            if (eye_track_state.center[delay_width-1]) {
+                eye_track_state.delay_config.value  <= eye_track_request.phase_width + (eye_track_request.phase_width>>2);
+                eye_track_state.center              <= eye_track_request.phase_width + (eye_track_request.phase_width>>2);
+            }
+            eye_track_state.fsm_state <= eye_track_fsm_wait_data_delay;
         }
         }
 

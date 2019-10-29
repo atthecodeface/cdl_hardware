@@ -126,48 +126,87 @@ class c_clocking_eye_tracking_test_base(c_clocking_phase_measure_test_base):
 #c c_clocking_eye_tracking_test_0
 class c_clocking_eye_tracking_test_0(c_clocking_eye_tracking_test_base):
     phase_width = 73
-    eye_center  = int(phase_width*1.4)
+    eye_center  = int(phase_width*2.2)
     eye_width = phase_width/2
+    #f update_random_data
+    def update_random_data(self):
+        self.random_data = (self.random_data>>4) | ((self.random_data*0xfedcaf81) & 0xf00000000000)
+        pass
+    #f find_data_quality
+    def find_data_quality(self, delay):
+        phases = (delay - self.eye_center + 4*self.phase_width + self.phase_width/2) / self.phase_width
+        dist = (delay - self.eye_center + self.phase_width) % self.phase_width
+        if dist>self.phase_width/2: # -pw/2 to +pw/2
+            dist -= self.phase_width
+            pass
+        dist = abs(dist) # 0 to +pw/2
+        err = dist - self.eye_width/2
+        if err<=0:
+            quality=1
+            pass
+        else:
+            quality = math.pow(err,-0.3)
+            pass
+        #print delay, self.eye_center, self.phase_width, dist, err, phases, quality
+        return (phases,quality)
+    #f data_of_quality
+    def data_of_quality(self, quality, step=17):
+        (phases, quality) = quality
+        data = self.random_data >> phases
+        if quality>0.99:
+            data = data & 0x1f
+        elif (quality>0.75):
+            if ((data>>step)&7)==7: data = data>>1
+            pass
+        elif (quality>0.5):
+            if ((data>>step)&3)==3: data = data>>1
+            pass
+        else:
+            data = data ^ (data>>step)
+            pass
+        return data
+    #f eye_track_bfam_wait
+    def eye_track_bfm_wait(self, cycles):
+        for i in range(cycles):
+            if self.eye_track_response__eye_data_valid.value():
+                self.eye_track_measure_complete = True
+                pass
+            self.bfm_wait(1)
+            pass
+        pass
     #f feed_data_after_delay
     def feed_data_after_delay(self):
         while self.delay_config_cet__op.value()==0:
             self.bfm_wait(1)
             pass
-        if ( (self.delay_config_cet__op.value()==1) and
-             (self.delay_config_cet__select.value()==1) ):
-            self.tracking_delay = self.delay_config_cet__value.value()
+        delay_value = self.data_delay
+        if self.delay_config_cet__select.value(): delay_value = self.tracking_delay
+        if self.delay_config_cet__op.value()==1:  delay_value = self.delay_config_cet__value.value()
+        elif self.delay_config_cet__op.value()==3: delay_value -= 1
+        elif self.delay_config_cet__op.value()==2: delay_value += 1
+        if self.delay_config_cet__select.value():
+            self.tracking_delay = delay_value
+            pass
+        else:
+            self.data_delay = delay_value
+            print "Set data_delay to ",delay_value
             pass
         self.bfm_wait(10)
         self.delay_response__op_ack.drive(1)
         self.bfm_wait(1)
         self.delay_response__op_ack.drive(0)
-        dist = self.tracking_delay - self.eye_center
-        if abs(dist)<self.eye_width/2:
-            quality=1
-            pass
-        else:
-            quality = math.pow(1.0 / (abs(dist) - self.eye_width/2),0.3)
-            print quality
-            pass
-        data = 0xfeedbeefcafe
+        data_quality     = self.find_data_quality(self.data_delay)
+        tracking_quality = self.find_data_quality(self.tracking_delay)
         for i in range(200):
-            data_p = data & 0x1f
-            data_n = data & 0x1f
-            if quality>0.99:
-                data_n = data & 0x1f
-            elif (quality>0.75):
-                if ((data>>17)&17)==7: data_n = data_n>>1
-                pass
-            elif (quality>0.5):
-                if ((data>>17)&3)==3: data_n = data_n>>1
-                pass
-            else:
-                data_n = data_n>>1
-                pass
-            data = (data>>4) | ((data*0xfedcaf81) & 0xf00000000000)
+            data_p = self.data_of_quality(data_quality,     step=17)
+            data_n = self.data_of_quality(tracking_quality, step=23)
+            self.update_random_data()
             self.data_p_in.drive(data_p&0xf)
             self.data_n_in.drive(data_n^0xf)
-            self.bfm_wait(1)
+            self.eye_track_bfm_wait(1)
+            if self.eye_track_measure_complete:
+                self.eye_track_request__measure.drive(0)
+                return
             pass
         pass
     #f run
@@ -175,18 +214,25 @@ class c_clocking_eye_tracking_test_0(c_clocking_eye_tracking_test_base):
         self.sim_msg = self.sim_message()
         self.bfm_wait(100)
         failures = 1
-        print "Eye %d to %d"%(self.eye_center-self.eye_width/2, self.eye_center+self.eye_width/2)
+        self.data_delay = 0
+        self.tracking_delay = 0
+        self.random_data = 0xf1723622
+        print "Eye %d to %d, center %d"%(self.eye_center-self.eye_width/2, self.eye_center+self.eye_width/2, self.eye_center)
         self.bfm_wait(10)
         self.eye_track_request__enable.drive(1)
+        self.eye_track_request__track_enable.drive(1)
+        self.eye_track_request__seek_enable.drive(1)
+        self.eye_track_request__min_eye_width.drive(16)
         self.eye_track_request__phase_width.drive(self.phase_width)
         self.bfm_wait(10)
-        self.eye_track_request__measure.drive(1)
-        while self.eye_track_response__measure_ack.value()==0:
-            self.bfm_wait(1)
-            pass
-        self.eye_track_request__measure.drive(0)
-        for i in range(16):
-            self.feed_data_after_delay()
+        self.eye_track_measure_complete = False            
+        self.feed_data_after_delay()
+        for i in range(50):
+            self.eye_track_request__measure.drive(1)
+            self.eye_track_measure_complete = False            
+            while not self.eye_track_measure_complete:
+                self.feed_data_after_delay()
+                pass
             pass
         self.bfm_wait(1000)
         self.eye_track_request__enable.drive(0)
@@ -246,7 +292,7 @@ class clocking_phase_measure(simple_tb.base_test):
 #c clocking_eye_tracking
 class clocking_eye_tracking(simple_tb.base_test):
     def test_simple(self):
-        self.do_test_run(clocking_test_hw(c_clocking_eye_tracking_test_0()), num_cycles=20000)
+        self.do_test_run(clocking_test_hw(c_clocking_eye_tracking_test_0()), num_cycles=400000)
         pass
     pass
 
