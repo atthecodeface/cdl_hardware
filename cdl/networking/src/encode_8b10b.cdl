@@ -1,0 +1,217 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   clocking_phase_measure.cdl
+ * @brief  A module to control a delay module and synchronizer to determine phase length
+ *
+ * CDL implementation of a module to control a delay module and synchronizer to determine
+ * phase length of a clock signal
+ *
+ * The clock should have as close to a 50-50 duty cycle as possible
+ *
+ * The module can be prompted to start a measurement; when it does so it will set the
+ * delay module to use a zero delay, and it will run through increasing the delay until
+ * it gets a consistent value of a synchronized delayed clock for N cycles.
+ *
+ * It will record this delay and value, then increase the delay again untilt it gets a consistent
+ * inverse value. It will then complete the measurement, and report the difference in cycles
+ *
+ */
+/*a Includes */
+include "types/encoding.h"
+
+/*a Constants
+*/
+/*a Types */
+/*t t_e5b6b - inputs and outputs for 5B6B encoder */
+typedef struct {
+    bit    is_control;
+    bit    disparity;
+    bit[5] data;
+    bit    toggle_dis "Asserted if encoded symbol toggles disparity";
+    bit[6] symbol     "Encoded symbol";
+    bit    use_alt    "Asseted if a control symbol OR relevant 5B6B data symbol with required disparity";
+} t_e5b6b;
+
+/*t t_e3b4b - inputs and outputs for 3B4B encoder */
+typedef struct {
+    bit    is_control;
+    bit    disparity;
+    bit[3] data;
+    bit    use_alt    "Asseted if a control symbol OR relevant 5B6B data symbol with required disparity";
+    bit    toggle_dis "Asserted if encoded symbol toggles disparity";
+    bit[4] symbol     "Encoded symbol";
+} t_e3b4b;
+
+/*a Module
+*/
+/*m encode_8b10b */
+module encode_8b10b( input t_8b10b_enc_data enc_data,
+                     output t_8b10b_symbol  symbol
+    )
+/*b Documentation */
+"""
+8b10b encoding operates with a zeros and one disparity of at most 2 per symbol.
+It splits the symbols into a 5B6B and a 3B4B encoding.
+
+A disparity of more zeros is denoted Z below.
+A disparity of more ones is denoted O below.
+
+There are 16 possiblities for a 3B4B symbol. Two are not allowed (0000 and 1111)
+as they would introduce too much disparity independent of the incoming disparity.
+There are then four symbols with a zero disparity (0001, 0010, 0100, 1000) and four
+symbols with a one disparity (1110, 1101, 1011, 0111).
+There are six symbols with no disparity (1100, 1010, 0110, 1001, 0101, 0011).
+
+For a 3B4B symbol to handle data we require 8 valid symbols.
+With a Z incoming disparity we have 10 possibilities: those with a one disparity
+and those with no disparity. If the symbols 0011 and (0111/1110) are *not* used then:
+a Z incoming disparity will a 3B4B symbol starting with at most one zero and at most
+two ones - with the exception if a choice is made to use 1110.
+A Z outgoing disparity for a 3B4B symbol with an incoming Z disparity will end with at
+most one one and at most two zeros.
+A O outgoing disparity for a 3B4B symbol with an incoming Z disparity will end with at
+most three ones and at most one zero.
+Similarly a Z outgoing disparity for a 3B4B symbol with an incoming O disparity will end
+with at most one one and at most three zeros.
+Hence a Z outgoing disparity for a 3B4B symbol end with at most one one and at most three zeros.
+
+A Z incoming disparity to a 3B4B symbol will then also be met with one of the following nine
+codes: 1110/0111, 1101, 1011, 1100, 1010, 0110, 1001, 0101. These start with at most one zero
+and at most two ones - with the exception of 1110.
+
+
+Not also that each 6B symbol must have at least two ones and at least two zeros to have
+a permitted disparity.
+If the 5B6B symbol ends with a Z disparity then it can have one of the following 35 codes:
+A:  000101, 000110, 001001, 001010, 001100, 010001, 010010, 010100, 011000, 100001, 100010, 100100, 101000
+B1: 001011, 001101, 001110, 010011, 010101, 010110, 011001, 011010, 011100, 100011, 100101, 100110, 101001
+B2: 101010, 101100, 110001, 110010, 110100
+C:  000111, 111000
+D:  110000, 001111
+Class D codes would have a run of five zeros with many 3B4B codes, so they are not used
+Class C code 000111 would have a run of six ones in conjuction with 3B4B code 1110, but as it
+is an even code and 3B4B 1110 is only to be used with a Z disparity, 000111 is used with a O disparity.
+Class C code 111000 is then used for an output Z disparity.
+Hence the 32 symbols used for data for a 5B6B symbols with a Z outgoing disparity are:
+class 00: 001100, 010100, 011000, 011100, 100100, 101000, 101100, 110100, 111000
+class 01: 000101, 001001, 001101, 010001, 010101, 011001, 100001, 100101, 101001, 110001
+class 10: 000110, 001010, 001110, 010010, 010110, 011010, 100010, 100110, 101010, 110010
+class 11: 001011, 010011, 100011
+(9 class 00, 10 class 01, 10 class 10, and 3 class 11 for a total of 32)
+Now consider the class 11 symbols (the three ending with two ones). If they are followed by the 3B4B
+symbols 1110 then there will be a run of five ones within a symbol. This is not desired, hence *only*
+in these cases is the 3B4B symbol 0111 used. In these cases the outgoing disparity of the 3B4B symbol
+will be O.
+Not that these symbols above are those seen with an incoming O disparity except 111000 which is
+replaced by 000111 (see above note). The symbols that start with two ones - which combined with the
+3B4B symbol of 0111 would lead to an inter-symbol run of five ones - are: 110100, 110001, 110010
+The combinations would be: xxx011.0111.110100, xxx011.0111.110001 and xxx011.0111.110010
+These sequences all have 10111110 with their run of 5 ones.
+
+Consider now the 'comma' sequences - these all have 00111110 as their run of ones:
+K28.1 = 001111.1001 / 110000.0110
+K28.5 = 001111.1010 / 110000.0101
+K28.7 = 001111.1000 / 110000.0111
+
+Hence a decoder can look for 00111110xx in a serial stream and determine this to be the definition
+of the start of the 8B10B symbol. Note that xx cannot be 11 as that would have too much disparity.
+Also, note that the inverse 11000001xx is the alternative comma sequence.
+
+"""
+/*b module */
+{
+    comb t_e5b6b eb5b6b;
+    comb t_e3b4b eb3b4b;
+    
+    encode_5b6b : {
+        eb5b6b = { is_control = enc_data.is_control,
+                   disparity  = enc_data.disparity,
+                   data       = enc_data.data[5;0] };
+        
+        eb5b6b.symbol = bundle(eb5b6b.data[0], eb5b6b.data[1], eb5b6b.data[2], eb5b6b.data[3], eb5b6b.data[4], 1b0);
+        if (eb5b6b.data==0x1c) {
+            eb5b6b.symbol = 6b001111; // K28 is odd-one out - bit 0 gets set
+        }
+        if (eb5b6b.disparity) {
+            eb5b6b.symbol = ~eb5b6b.symbol;
+        }
+        eb5b6b.use_alt     = 1;
+        eb5b6b.toggle_dis  = 1;
+        if (!eb5b6b.is_control) {
+            eb5b6b.use_alt     = 0;
+            eb5b6b.toggle_dis  = 1;
+            full_switch (eb5b6b.data) {
+            /*  00 */ case 5b00000: { eb5b6b.symbol = eb5b6b.disparity ? 6b011000 : 6b100111; }
+            /*  01 */ case 5b00001: { eb5b6b.symbol = eb5b6b.disparity ? 6b100010 : 6b011101; }
+            /*  02 */ case 5b00010: { eb5b6b.symbol = eb5b6b.disparity ? 6b010010 : 6b101101; }
+            /*  03 */ case 5b00011: { eb5b6b.symbol = eb5b6b.disparity ? 6b110001 : 6b110001; eb5b6b.toggle_dis = 0;}
+            /*  04 */ case 5b00100: { eb5b6b.symbol = eb5b6b.disparity ? 6b001010 : 6b110101; }
+            /*  05 */ case 5b00101: { eb5b6b.symbol = eb5b6b.disparity ? 6b101001 : 6b101001; eb5b6b.toggle_dis = 0;}
+            /*  06 */ case 5b00110: { eb5b6b.symbol = eb5b6b.disparity ? 6b011001 : 6b011001; eb5b6b.toggle_dis = 0;}
+            /*  07 */ case 5b00111: { eb5b6b.symbol = eb5b6b.disparity ? 6b000111 : 6b111000; }
+            /*  08 */ case 5b01000: { eb5b6b.symbol = eb5b6b.disparity ? 6b000110 : 6b111001; }
+            /*  09 */ case 5b01001: { eb5b6b.symbol = eb5b6b.disparity ? 6b100101 : 6b100101; eb5b6b.toggle_dis = 0;}
+            /*  10 */ case 5b01010: { eb5b6b.symbol = eb5b6b.disparity ? 6b010101 : 6b010101; eb5b6b.toggle_dis = 0;}
+            /*  11 */ case 5b01011: { eb5b6b.symbol = eb5b6b.disparity ? 6b110100 : 6b110100; eb5b6b.toggle_dis = 0; eb5b6b.use_alt = eb5b6b.disparity;}
+            /*  12 */ case 5b01100: { eb5b6b.symbol = eb5b6b.disparity ? 6b001101 : 6b001101; eb5b6b.toggle_dis = 0;}
+            /*  13 */ case 5b01101: { eb5b6b.symbol = eb5b6b.disparity ? 6b101100 : 6b101100; eb5b6b.toggle_dis = 0; eb5b6b.use_alt = eb5b6b.disparity;}
+            /*  14 */ case 5b01110: { eb5b6b.symbol = eb5b6b.disparity ? 6b011100 : 6b011100; eb5b6b.toggle_dis = 0; eb5b6b.use_alt = eb5b6b.disparity;}
+            /*  15 */ case 5b01111: { eb5b6b.symbol = eb5b6b.disparity ? 6b101000 : 6b010111; }
+            /*  16 */ case 5b10000: { eb5b6b.symbol = eb5b6b.disparity ? 6b100100 : 6b011011; }
+            /*  17 */ case 5b10001: { eb5b6b.symbol = eb5b6b.disparity ? 6b100011 : 6b100011; eb5b6b.toggle_dis = 0; eb5b6b.use_alt = !eb5b6b.disparity;}
+            /*  18 */ case 5b10010: { eb5b6b.symbol = eb5b6b.disparity ? 6b010011 : 6b010011; eb5b6b.toggle_dis = 0; eb5b6b.use_alt = !eb5b6b.disparity;}
+            /*  19 */ case 5b10011: { eb5b6b.symbol = eb5b6b.disparity ? 6b110010 : 6b110010; eb5b6b.toggle_dis = 0;}
+            /*  20 */ case 5b10100: { eb5b6b.symbol = eb5b6b.disparity ? 6b001011 : 6b001011; eb5b6b.toggle_dis = 0; eb5b6b.use_alt = !eb5b6b.disparity;}
+            /*  21 */ case 5b10101: { eb5b6b.symbol = eb5b6b.disparity ? 6b101010 : 6b101010; eb5b6b.toggle_dis = 0;}
+            /*  22 */ case 5b10110: { eb5b6b.symbol = eb5b6b.disparity ? 6b011010 : 6b011010; eb5b6b.toggle_dis = 0;}
+            /*  23 */ case 5b10111: { eb5b6b.symbol = eb5b6b.disparity ? 6b000101 : 6b111010; }
+            /*  24 */ case 5b11000: { eb5b6b.symbol = eb5b6b.disparity ? 6b001100 : 6b110011; }
+            /*  25 */ case 5b11001: { eb5b6b.symbol = eb5b6b.disparity ? 6b100110 : 6b100110; eb5b6b.toggle_dis = 0;}
+            /*  26 */ case 5b11010: { eb5b6b.symbol = eb5b6b.disparity ? 6b010110 : 6b010110; eb5b6b.toggle_dis = 0;}
+            /*  27 */ case 5b11011: { eb5b6b.symbol = eb5b6b.disparity ? 6b001001 : 6b110110; }
+            /*  28 */ case 5b11100: { eb5b6b.symbol = eb5b6b.disparity ? 6b001110 : 6b001110; eb5b6b.toggle_dis = 0;}
+            /*  29 */ case 5b11101: { eb5b6b.symbol = eb5b6b.disparity ? 6b010001 : 6b101110; }
+            /*  30 */ case 5b11110: { eb5b6b.symbol = eb5b6b.disparity ? 6b100001 : 6b011110; }
+            /*  31 */ case 5b11111: { eb5b6b.symbol = eb5b6b.disparity ? 6b010100 : 6b101011; }
+            }
+        }
+    }
+
+    encode_3b4b : {
+        eb3b4b = {
+            is_control = enc_data.is_control,
+            disparity  = eb5b6b.disparity ^ eb5b6b.toggle_dis,
+            data       = enc_data.data[3;5],
+            use_alt    = eb5b6b.use_alt && (enc_data.data[3;5]==3b111)
+        };
+        eb3b4b.symbol = 0;
+        eb3b4b.toggle_dis = 1;
+        full_switch (eb3b4b.data) {
+        case 3b000: { eb3b4b.symbol = eb3b4b.disparity ? 4b0100 : 4b1011; }
+        case 3b001: { eb3b4b.symbol = (eb3b4b.disparity||!eb3b4b.is_control) ? 4b1001 : 4b0110; eb3b4b.toggle_dis = 0;}
+        case 3b010: { eb3b4b.symbol = (eb3b4b.disparity||!eb3b4b.is_control) ? 4b0101 : 4b1010; eb3b4b.toggle_dis = 0;}
+        case 3b011: { eb3b4b.symbol = eb3b4b.disparity ? 4b0011 : 4b1100; }
+        case 3b100: { eb3b4b.symbol = eb3b4b.disparity ? 4b0010 : 4b1101; }
+        case 3b101: { eb3b4b.symbol = (eb3b4b.disparity||!eb3b4b.is_control) ? 4b1010 : 4b0101; eb3b4b.toggle_dis = 0;}
+        case 3b110: { eb3b4b.symbol = (eb3b4b.disparity||!eb3b4b.is_control) ? 4b0110 : 4b1001; eb3b4b.toggle_dis = 0;}
+        case 3b111: { eb3b4b.symbol = eb3b4b.disparity ? 4b1110 : 4b0001; }
+        }
+        if (eb3b4b.use_alt) {
+             eb3b4b.symbol = eb3b4b.disparity ? 4b1000 : 4b0111;            
+        }
+
+        symbol.disparity_positive = eb3b4b.disparity ^ eb3b4b.toggle_dis;
+        symbol.symbol = bundle(eb5b6b.symbol, eb3b4b.symbol );
+    }
+}

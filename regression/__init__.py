@@ -17,6 +17,7 @@ tests = [#"base6502",
          "bbc_submodules",
          "jtag",
          "clocking",
+         "ethernet",
          # clarvi
          ]
 if "BBC" in os.environ.keys():

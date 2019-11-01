@@ -154,3 +154,13 @@ adv7511 = {"spdif":1,
 }
 #t mem_flash_in
 #t mem_flash_out
+
+#a Ethernet
+#t tbi_valid
+tbi_valid = {"valid":1, "data":10}
+
+#t gmii_tx
+gmii_tx = {"tx_en":1, "tx_er":1, "txd":8}
+
+#t gmii_rx
+gmii_rx = {"rx_dv":1, "rx_er":1, "rxd":8, "rx_crs":1}

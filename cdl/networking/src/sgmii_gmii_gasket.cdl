@@ -1,0 +1,992 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   sgmii_gmii_gasket.cdl
+ * @brief  Gasket between SGMII and GMII, conforming to IEEE802.3-2008-clause 36
+ *
+ * CDL implementation of a GMII to SGMII converter
+ * phase length of a clock signal
+ *
+ * The clock should have as close to a 50-50 duty cycle as possible
+ *
+ * The module can be prompted to start a measurement; when it does so it will set the
+ * delay module to use a zero delay, and it will run through increasing the delay until
+ * it gets a consistent value of a synchronized delayed clock for N cycles.
+ *
+ * It will record this delay and value, then increase the delay again untilt it gets a consistent
+ * inverse value. It will then complete the measurement, and report the difference in cycles
+ *
+ */
+/*a Includes */
+include "technology/sync_modules.h"
+include "types/encoding.h"
+include "types/ethernet.h"
+include "networking/encoders.h"
+
+/*a Constants
+*/
+constant integer symbol_K_k28_5 = (5<<5) | 28;
+constant integer symbol_S_k27_7 = (7<<5) | 27;
+constant integer symbol_V_k30_7 = (7<<5) | 30;
+constant integer symbol_T_k29_7 = (7<<5) | 29;
+constant integer symbol_R_k23_7 = (7<<5) | 23;
+constant integer symbol_d5_6    = (6<<5) | 5;
+constant integer symbol_d16_2   = (2<<5) | 16;
+constant integer symbol_d21_5   = (5<<5) | 21;
+constant integer symbol_d2_2    = (2<<5) | 2;
+
+/*a Types */
+/*t UNUSED t_sync_fsm - from IEEE 802.3-2008 clause 36 synchronization state diagram */
+typedef fsm {
+    sync_fsm_loss_of_sync     "Synchronization lost - or never gained";
+    sync_fsm_comma_detect_1   "First comma just seen (hence this is even) - should have valid data code group";
+    sync_fsm_acquire_sync_1   "First comma has been seen, expecting another comma on odd character";
+    sync_fsm_comma_detect_2   "Second comma just seen (hence this is even)";
+    sync_fsm_acquire_sync_2   "Second comma has been seen, expecting another comma on odd character";
+    sync_fsm_comma_detect_3   "Third comma just seen (hence this is even)";
+    sync_fsm_sync_acquired_1  "All good, happy with code groups";
+    sync_fsm_sync_acquired_2  "Just saw a bad code group in acquired_1 or three successive good code groups in acquired_3a";
+    sync_fsm_sync_acquired_2a "Waiting for three good code groups to go back to acquired_1 - or bad one to go to acquired_3";
+    sync_fsm_sync_acquired_3  "Just saw a bad code group in acquired_2 or three successive good code groups in acquired_4a";
+    sync_fsm_sync_acquired_3a "Waiting for three good code groups to go back to acquired_2 - or bad one to go to acquired_4";
+    sync_fsm_sync_acquired_4  "Just saw a bad code group in acquired_3";
+    sync_fsm_sync_acquired_4a "Waiting for three good code groups to go back to acquired_3 - or bad one to hit loss of sync";
+} t_sync_fsm;
+
+/*t t_gmii_tx_fsm */
+typedef fsm {
+    gmii_tx_fsm_idle           "Idle, no carrier, post-autonegotiation (if configured)";
+    gmii_tx_fsm_data_error     "SOP being sent, V must be sent now, then off to data";
+    gmii_tx_fsm_data           "SOP, V or data being sent; send more data (or V) if we have it, else T";
+    gmii_tx_fsm_first_carrier  "Sent R, send R, then finish carrier";
+    gmii_tx_fsm_finish_carrier "Send R; if even character, then stay, else idle - unless we are given more to do!";
+} t_gmii_tx_fsm;
+
+/*t t_gmii_tx_action */
+typedef enum [4] {
+    gmii_tx_action_none, // only if no symbol to go out
+    gmii_tx_action_idle,
+    gmii_tx_action_sop_data,
+    gmii_tx_action_sop_error,
+    gmii_tx_action_data,
+    gmii_tx_action_error,
+    gmii_tx_action_eop,
+    gmii_tx_action_carrier,
+    gmii_tx_action_carrier_idle
+} t_gmii_tx_action;
+
+/*t t_sgmii_tx_fsm */
+typedef fsm {
+    sgmii_tx_fsm_init           "No valid symbols yet";
+    sgmii_tx_fsm_first_symbol   "First valid symbol in output shift register; waiting for pending";
+    sgmii_tx_fsm_nybble_0       "First nybble of even symbol is being driven";
+    sgmii_tx_fsm_nybble_1       "Second nybble of even symbol is being driven";
+    sgmii_tx_fsm_nybble_2       "Two bits each of even/odd symbol is being driven";
+    sgmii_tx_fsm_nybble_3       "Second nybble of odd symbol is being driven";
+    sgmii_tx_fsm_nybble_4       "Last nybble of odd symbol is being driven";
+} t_sgmii_tx_fsm;
+
+/*t t_sgmii_tx_action */
+typedef enum [4] {
+    sgmii_tx_action_idle,
+    sgmii_tx_action_first_symbol,
+    sgmii_tx_action_start,
+    sgmii_tx_action_shift_0,
+    sgmii_tx_action_pending_to_2,
+    sgmii_tx_action_shift_2,
+    sgmii_tx_action_shift_3,
+    sgmii_tx_action_pending_to_0
+} t_sgmii_tx_action;
+
+/*t t_gmii_tx_combs */
+typedef struct {
+    t_gmii_tx_action action;
+    t_gmii_op        gmii_op;
+    bit[4]           symbols_empty "";
+    bit              will_take_symbol  "Asserted if the next symbol slot is empty";
+    t_8b10b_enc_data enc_data          "Symbol to transmit from the GMII state machine";
+    bit              tx_symbol_valid   "Asserted if the transmit symbol is valid from the GMII state machine";
+} t_gmii_tx_combs;
+
+/*t t_gmii_tx_state */
+typedef struct {
+    bit           gmii_tx_valid "Asserted if gmii_tx was clocked in on previous cycle";
+    t_gmii_tx     gmii_tx;
+    t_gmii_tx_fsm fsm_state;
+    bit           disparity   "Current disparity (0 for -ve, 1 for +ve)";
+    bit           tx_even         "Toggles on every symbol - in theory should be wr_one_hot[1] | [3]";
+    bit[4]        wr_one_hot   "One-hot bit vector of next data symbol to write to";
+    bit[4]        valid_toggle "Toggled each time a symol is written to";
+} t_gmii_tx_state;
+
+/*t t_sgmii_tx_combs */
+typedef struct {
+    t_sgmii_tx_action action;
+    bit               consume_pending;
+    bit[4]            symbols_valid   "Symbols in clock-domain crossing array that are valid according to sgmii tx clock";
+    bit               data_valid      "Asserted if required symbol crossing clock boundary is valid";
+    bit[10]           selected_symbol "Symbol selected from crossing array based on rd_one_hot";
+} t_sgmii_tx_combs;
+
+/*t t_sgmii_tx_state */
+typedef struct {
+    t_sgmii_tx_fsm fsm_state;
+    bit[4]         rd_one_hot           "One-hot bit vector of next data symbol to read from";
+    bit[4]         valid_toggle         "Last consumed value of valid toggle - if differs from synced value, indicates data is valid";
+    bit            pending_symbol_valid "Asserted if pending_symbol is valid";
+    bit[10]        pending_symbol       "Pending symbol to be moved to shift register when ready";
+    bit[12]        data_out             "Shift register - top 4 bits valid - filled in parallel from pending_symbol";
+} t_sgmii_tx_state;
+
+/*t t_gmii_rx_fsm */
+typedef fsm {
+    gmii_rx_fsm_sync            " awaiting comma sequence";
+    gmii_rx_fsm_wait_for_k      " Waiting for a K28 in an even cycle";
+    gmii_rx_fsm_k               " Have just received a K28.5 in even cycle; first cycle of a C1/C2/I1/I2, rx_even will be low";
+    gmii_rx_fsm_invalid         " Potential loss of sync - expect on even to get a K28.5; any other symbol on even is loss of sync";
+    gmii_rx_fsm_cfg_b           " Have received C1/C2 - should be first of two data bytes";
+    gmii_rx_fsm_cfg_c           " Have received C1/C2 and one data byte - should be second of two data bytes";
+    gmii_rx_fsm_cfg_d           " Have completed C1/C2 and two data byte - next should be K28.5";
+    gmii_rx_fsm_idle_d          " Have received I1/I2 - could be an S!";
+    gmii_rx_fsm_false_carrier   " Wait for K28.5 on even boundary - to get out of this otherwise requires loss of sync";
+    gmii_rx_fsm_receive         " Data for packet!";
+    gmii_rx_fsm_eop             " T was received, expecting R - but packet is already marked as okay";
+    gmii_rx_fsm_extend_carrier  " R was received - expect R, S, or (K if even)";
+} t_gmii_rx_fsm;
+
+/*t t_gmii_rx_action */
+typedef enum [5] {
+    gmii_rx_action_none,
+    gmii_rx_action_resync,
+    gmii_rx_action_comma_found,
+    gmii_rx_action_idle_k,
+    gmii_rx_action_invalid,
+    gmii_rx_action_idle_d,
+    gmii_rx_action_cfg_a,
+    gmii_rx_action_cfg_data_1,
+    gmii_rx_action_cfg_data_2,
+    gmii_rx_action_carrier_detect,
+    gmii_rx_action_data,
+    gmii_rx_action_eop,
+    gmii_rx_action_extend_carrier,
+    gmii_rx_action_data_error,
+    gmii_rx_action_early_end,
+    gmii_rx_action_early_extend_carrier,
+    gmii_rx_action_extend_error,
+    gmii_rx_action_false_carrier_detect,
+    gmii_rx_action_lose_sync
+} t_gmii_rx_action;
+
+/*t t_sgmii_rx_state */
+typedef struct {
+    bit[4] wr_ptr;
+    bit[8] rx_build "Data built from serdes data";
+    bit[4] rx_valid "One bit per clock crossing array entry";
+} t_sgmii_rx_state;
+
+/*t t_gmii_rx_combs */
+typedef struct {
+    bit[10] selected_serial_data;
+    bit[10] comma_found      "Asserted if a comma is found at starting a bit position";
+    bit[10] selected_symbol  "Symbol selected from serial_data";
+    bit     seeking_comma    "Asserted if seeking comma sequence";
+    t_8b10b_symbol symbol_to_decode;
+    bit symbol_is_K;
+    bit symbol_is_S;
+    bit symbol_is_T;
+    bit symbol_is_R;
+    bit symbol_is_V;
+    bit carrier_detect "Asserted if symbol is sufficiently 'far' from a K28.5 according to the spec";
+    bit              an_in_xmit        "Asserted if auto-negotiation is disabled or AN fsm is in xmit";
+    t_gmii_rx_action action;
+} t_gmii_rx_combs;
+
+/*t t_gmii_rx_state */
+typedef struct {
+    t_gmii_rx_fsm fsm_state;
+    bit[4] rd_one_hot;
+    bit serial_data_valid  "Asserted if the serial data register has valid data";
+    bit[20] serial_data    "Assembled serial data (oldest bit most significant)";
+    bit[10] symbol_one_hot "One-hot indicator as to where the sync data starts in serial_data";
+    bit           disparity   "Current disparity (0 for -ve, 1 for +ve)";
+    bit rx_even            "Cleared on entry to fsm_k, toggled on every symbol";
+    t_gmii_rx gmii_rx;
+    bit       gmii_rx_enable;
+    bit[16] rx_config_data;
+} t_gmii_rx_state;
+
+/*a Module
+*/
+/*m sgmii_gmii_gasket */
+module sgmii_gmii_gasket( clock tx_clk   "Transmit clock domain - must be at least 2/5 of the serial clock speed",
+                          clock tx_clk_312_5 "Four-bit transmit serializing data clock",
+                          clock rx_clk   "Receive clock domain - must be at least 2/5 of the serial clock speed",
+                          clock rx_clk_312_5,
+                          input bit tx_reset_n,
+                          input bit tx_reset_312_5_n,
+                          input bit rx_reset_n,
+                          input bit rx_reset_312_5_n,
+
+                          input t_gmii_tx gmii_tx,
+                          output bit gmii_tx_enable "With a 2/5 tx_clk to tx_clk_312_5 this will never gap",
+                          output t_tbi_valid tbi_tx "Optional TBI instead of SGMII",
+                          output bit[4] sgmii_txd,
+
+                          input bit[4] sgmii_rxd,
+                          input t_tbi_valid tbi_rx "Optional TBI instead of SGMII",
+                          output bit gmii_rx_enable "With a 2/5 rx_clk to rx_clk_312_5 this will never gap",
+                          output t_gmii_rx gmii_rx
+    )
+/*b Documentation */
+"""
+Ethernet uses Sequences (see IEEE 802.3-2008 clause 36)
+
+K28.5 is the key symbol. It is transmitted on *even* characters. *NEVER* on odd characters.
+K27.7 is SOP; K29.7 is EOP1; K23.7 is EOP2; K30.7 is EOP invalid
+D5.6, D10.5, D16.2, D21.5 have special value
+Packets end with EOP and are extended with EOP2's to get to even number of characters.
+
+The transmitter starts all carrier events in negative disparity; when there is no carrier,
+idle is transmitted.
+
+K28.5 can be followed by one of D5.6, D16.2, D21.5 and D2.2. These characters were chosen as they
+have a decent coding distance between themselves and have high transtion density.
+
+Idle keeps the link up (but not the carrier). There are two idle sequences:
+ I1 K28.5 D5.6 for +ve disparity in -ve out
+ I2 K28.5 D16.2 for -ve disparity in -ve out
+
+Start with I1 if at +ve disparity.
+Use I2 to keep -ve disparity
+
+SOP is indicated with S (this starts the carrier if coming from idle):
+  S K27.7
+
+After a packet the carrier can be maintained with R instead of Idles.
+
+EOP is indicated with T
+ T K29.7
+
+After EOP to get to an even character boundary, or in pairs to keep the carrier on, use R (EOP2):
+ R K23.7
+
+For a corrupted packet use V instead of data or T - but not R - (error propagation):
+ V K30.7
+
+Last V in a burst must be on at an odd character.
+
+Link configuration (repeated C1,C2 pairs) are used to configure a link and for the response:
+ C1 K28.5 D21.5 16-bit-config_reg-data
+ C2 K28.5 D2.2 16-bit-config_reg-data
+
+The message is always sent with both messages as the disparity after both messages is guaranteed
+to be the inverse of the start.
+
+Config_Register format is styled after the Link Code Word (LCW) defined in IEEE 802.3u clause 28.
+
+Config register bits:
+D5/FD: Full duplex capable
+D6/HD: Half duplex capable
+D7/PS1: Pause
+D8/PS2: ASM_DIR
+D12/RF1: Remote Fault1
+D13/RF2: Remote Fault2
+D14/ACK: Acknowledge
+D15/NP: Next Page (Escape)
+
+D[2;7] = 00 for no pause; 01 for asymmetric pause toward link partner; 10 for symmetrictr pause; 11 for both asym towards local and symmetric pause
+
+A transmitter then runs with:
+
+( F+ C+ [I1] ( I2* S Data(inc preamble+SFD+payload+FCS) T R [R] R{2n} [I1] )* )*
+
+transmitter_fsm_down:
+if (bring_link_up) { start -ve disparity; transmit Link_Not_Available; transmit Link_Configuration sequence; go to link up;}
+transmitter_fsm_idle:
+if (request) {
+} else {action = +ve_disparity ? (I1 pair) else (I2 pair)
+
+"""
+/*b Module body */
+{
+    /*b Tx side */
+    comb     t_gmii_tx_combs gmii_tx_combs;
+    clocked clock tx_clk reset active_low tx_reset_n t_gmii_tx_state gmii_tx_state = {*=0, wr_one_hot=1};
+    clocked clock tx_clk reset active_low tx_reset_n bit[10][4]      gmii_tx_symbol = {*=0};
+    comb     t_sgmii_tx_combs sgmii_tx_combs;
+    clocked  clock tx_clk_312_5 reset active_low tx_reset_312_5_n t_sgmii_tx_state sgmii_tx_state = {*=0, rd_one_hot=1};
+    net t_8b10b_symbol gmii_tx_encoded_symbol;
+    net bit[4]         gmii_tx_sync_toggle;
+    net bit[4]         sgmii_tx_sync_toggle;
+    clocked clock tx_clk reset active_low tx_reset_n t_tbi_valid tbi_tx={*=0};
+    tx_gasket : {
+        /*b TX GMII bus decode */
+        gmii_tx_combs.gmii_op = gmii_op_idle;
+        if (gmii_tx_state.gmii_tx.tx_en) {
+            gmii_tx_combs.gmii_op = gmii_op_data;
+            if (gmii_tx_state.gmii_tx.tx_er) {
+                gmii_tx_combs.gmii_op = gmii_op_transmit_error;
+            }
+        } elsif (gmii_tx_state.gmii_tx.tx_er) { // not tx_en & tx_er => decode data
+            gmii_tx_combs.gmii_op = gmii_op_idle;
+            part_switch (gmii_tx_state.gmii_tx.txd) {
+            case 0x0f: {gmii_tx_combs.gmii_op = gmii_op_carrier_extend;}
+            // case 0x01: {gmii_tx_combs.gmii_op = gmii_op_low_power_idle;}
+            // case 0x1f: {gmii_tx_combs.gmii_op = gmii_op_carrier_extend_error;}
+            // case 0x9c: {gmii_tx_combs.gmii_op = gmii_op_sequence;}
+            }
+        }
+
+        /*b TX GMII interface and FSM */
+        gmii_tx_combs.action = gmii_tx_action_none;
+        full_switch (gmii_tx_state.fsm_state) {
+        case gmii_tx_fsm_idle: { // in first cycle of an I1/I2, tx_even will be low
+            gmii_tx_combs.action = gmii_tx_action_idle; // Send I1 or I2 as appropriate (takes two ticks)
+            part_switch (gmii_tx_combs.gmii_op) {
+            case gmii_op_data:           { gmii_tx_combs.action = gmii_tx_action_sop_data;    } // Send S then data
+            case gmii_op_transmit_error: { gmii_tx_combs.action = gmii_tx_action_sop_error;   } // Send S then V
+            }
+            if (!gmii_tx_state.tx_even) { // If have already output K28.5 of I1/I2 then stay in the state
+                gmii_tx_combs.action = gmii_tx_action_idle; // If in middle of I1/I2, do nothing
+            }
+        }
+        case gmii_tx_fsm_data_error: {
+            gmii_tx_combs.action = gmii_tx_action_error; // Send V, go to data
+            part_switch (gmii_tx_combs.gmii_op) {
+            case gmii_op_data:           { gmii_tx_combs.action = gmii_tx_action_error;   } // Send V, go to data
+            case gmii_op_transmit_error: { gmii_tx_combs.action = gmii_tx_action_error;   } // Send V, go to data
+            default:                     { gmii_tx_combs.action = gmii_tx_action_eop;     } // Send T
+            }
+        }
+        case gmii_tx_fsm_data: {
+            gmii_tx_combs.action = gmii_tx_action_data; // Send data, stay in data
+            full_switch (gmii_tx_combs.gmii_op) {
+            case gmii_op_data:           { gmii_tx_combs.action = gmii_tx_action_data;    } // Send data, stay in data
+            case gmii_op_transmit_error: { gmii_tx_combs.action = gmii_tx_action_error;   } // Send V, stay in data
+            default:                     { gmii_tx_combs.action = gmii_tx_action_eop;     } // Send T
+            }
+        }
+        case gmii_tx_fsm_first_carrier: { // send R
+            gmii_tx_combs.action = gmii_tx_action_carrier; // Send R
+        }
+        case gmii_tx_fsm_finish_carrier: { // send second R or S, may need to send one more R before idle
+            gmii_tx_combs.action = gmii_tx_action_carrier; // Send R and come back (unless S!)
+            if (!gmii_tx_state.tx_even) {
+                gmii_tx_combs.action = gmii_tx_action_carrier_idle; // Send R and go to idle (where it will send K)
+            }
+            part_switch (gmii_tx_combs.gmii_op) {
+            case gmii_op_data:           { gmii_tx_combs.action = gmii_tx_action_sop_data;  } // Send S then data
+            case gmii_op_transmit_error: { gmii_tx_combs.action = gmii_tx_action_sop_error; } // Send S then V
+            case gmii_op_carrier_extend: { gmii_tx_combs.action = gmii_tx_action_carrier;   } // Send R and come back
+            }
+        }
+        }
+
+        /*b Decode action to state update
+         */
+        gmii_tx_combs.enc_data = {
+            disparity  = gmii_tx_state.disparity,
+            data       = gmii_tx_state.gmii_tx.txd,
+            is_control = 0
+        };
+        full_switch (gmii_tx_combs.action) {
+        case gmii_tx_action_none: {
+            gmii_tx_state.fsm_state <= gmii_tx_state.fsm_state;
+        }
+        case gmii_tx_action_idle: {
+            gmii_tx_state.fsm_state <= gmii_tx_state.fsm_state;
+            if (gmii_tx_state.tx_even) { // Output I1 or I2 depending on parity
+                gmii_tx_combs.enc_data.is_control = 1;
+                gmii_tx_combs.enc_data.data       = symbol_K_k28_5; // K28.5
+            } else {
+                if (!gmii_tx_state.disparity) { // Note IF disparity is NOW -ve then use D5.6 (i.e. was -ve before K28.5)
+                    gmii_tx_combs.enc_data.is_control = 0;
+                    gmii_tx_combs.enc_data.data       = symbol_d5_6; // D5.6
+                } else {
+                    gmii_tx_combs.enc_data.is_control = 0;
+                    gmii_tx_combs.enc_data.data       = symbol_d16_2; // D16.2
+                }
+            }
+        }
+        case gmii_tx_action_sop_data: {
+            gmii_tx_state.fsm_state <= gmii_tx_fsm_data;
+            gmii_tx_combs.enc_data.is_control = 1;
+            gmii_tx_combs.enc_data.data       = symbol_S_k27_7; // S = K27.7
+        }
+        case gmii_tx_action_sop_error: {
+            gmii_tx_state.fsm_state <= gmii_tx_fsm_data_error;
+            gmii_tx_combs.enc_data.is_control = 1;
+            gmii_tx_combs.enc_data.data       = symbol_S_k27_7; // S = K27.7
+        }
+        case gmii_tx_action_error: {
+            gmii_tx_state.fsm_state <= gmii_tx_fsm_data;
+            gmii_tx_combs.enc_data.is_control = 1;
+            gmii_tx_combs.enc_data.data       = symbol_V_k30_7; // V = K30.7
+        }
+        case gmii_tx_action_data: {
+            gmii_tx_state.fsm_state <= gmii_tx_fsm_data;
+            gmii_tx_combs.enc_data.is_control = 0;
+            gmii_tx_combs.enc_data.data       = gmii_tx_state.gmii_tx.txd;
+        }
+        case gmii_tx_action_eop: {
+            gmii_tx_state.fsm_state <= gmii_tx_fsm_first_carrier;
+            gmii_tx_combs.enc_data.is_control = 1;
+            gmii_tx_combs.enc_data.data       = symbol_T_k29_7; // T = K29.7
+        }
+        case gmii_tx_action_carrier: {
+            gmii_tx_state.fsm_state <= gmii_tx_fsm_finish_carrier;
+            gmii_tx_combs.enc_data.is_control = 1;
+            gmii_tx_combs.enc_data.data       = symbol_R_k23_7; // R = K23.7
+        }
+        case gmii_tx_action_carrier_idle: {
+            gmii_tx_state.fsm_state <= gmii_tx_fsm_idle;
+            gmii_tx_combs.enc_data.is_control = 1;
+            gmii_tx_combs.enc_data.data       = symbol_R_k23_7; // R = K23.7
+        }
+        }
+        
+        gmii_tx_combs.tx_symbol_valid = 1;
+        encode_8b10b encoder( enc_data <= gmii_tx_combs.enc_data,
+                               symbol   => gmii_tx_encoded_symbol );
+
+        /*b Symbol domain
+         */
+        for (i; 4) {
+            tech_sync_bit gmii_tx_sync_flops[i](clk <- tx_clk, reset_n <= tx_reset_n,
+                                                d <= sgmii_tx_state.valid_toggle[i],
+                                                q => gmii_tx_sync_toggle[i] );
+        }
+        gmii_tx_combs.symbols_empty = gmii_tx_sync_toggle ^~ gmii_tx_state.valid_toggle;
+        gmii_tx_combs.will_take_symbol = ((gmii_tx_state.wr_one_hot & gmii_tx_combs.symbols_empty)!=0);
+
+        if (gmii_tx_combs.will_take_symbol && gmii_tx_combs.tx_symbol_valid) {
+            gmii_tx_state.valid_toggle <= gmii_tx_state.valid_toggle ^ gmii_tx_state.wr_one_hot;
+            gmii_tx_state.tx_even      <= !gmii_tx_state.tx_even;
+            gmii_tx_state.wr_one_hot   <= gmii_tx_state.wr_one_hot << 1;
+            gmii_tx_state.wr_one_hot[0]<= gmii_tx_state.wr_one_hot[3];
+            gmii_tx_state.disparity    <= gmii_tx_encoded_symbol.disparity_positive;
+            for (i; 4) {
+                if (gmii_tx_state.wr_one_hot[i]) {
+                    gmii_tx_symbol[i] <= gmii_tx_encoded_symbol.symbol;
+                }
+            }
+        } else {
+            gmii_tx_state.fsm_state <= gmii_tx_state.fsm_state;
+        }
+        gmii_tx_enable = 1;
+        if (gmii_tx_state.gmii_tx_valid && !gmii_tx_combs.will_take_symbol) {
+            gmii_tx_enable = 0;
+        }
+        /*b TBI output */
+        tbi_tx.valid <= gmii_tx_combs.will_take_symbol && gmii_tx_combs.tx_symbol_valid;
+        tbi_tx.data  <= gmii_tx_encoded_symbol.symbol;
+
+        /*b Capture TX GMII bus */
+        if (gmii_tx_combs.will_take_symbol) {
+            gmii_tx_state.gmii_tx_valid <= 0;
+        }
+        if (gmii_tx_enable) {
+            gmii_tx_state.gmii_tx_valid <= 1;
+            gmii_tx_state.gmii_tx       <= gmii_tx;
+        }
+
+        /*b Serial state machine decode
+         */
+        sgmii_tx_combs.action = sgmii_tx_action_idle;
+        full_switch (sgmii_tx_state.fsm_state) {
+        case sgmii_tx_fsm_init: {
+            if (sgmii_tx_state.pending_symbol_valid) {
+                sgmii_tx_combs.action = sgmii_tx_action_first_symbol;
+            }
+        }
+        case sgmii_tx_fsm_first_symbol: {
+            if (sgmii_tx_state.pending_symbol_valid) {
+                sgmii_tx_combs.action = sgmii_tx_action_start;
+            }
+        }
+        case sgmii_tx_fsm_nybble_0: {  // [10;0] valid
+            sgmii_tx_combs.action = sgmii_tx_action_shift_0;
+        }
+        case sgmii_tx_fsm_nybble_1: {  // [6;0] valid
+            sgmii_tx_combs.action = sgmii_tx_action_pending_to_2;
+        }
+        case sgmii_tx_fsm_nybble_2: {  // [12;0] valid
+            sgmii_tx_combs.action = sgmii_tx_action_shift_2;
+        }
+        case sgmii_tx_fsm_nybble_3: {  // [ 8;0] valid
+            sgmii_tx_combs.action = sgmii_tx_action_shift_3;
+        }
+        case sgmii_tx_fsm_nybble_4: {  // [ 4;0] valid
+            sgmii_tx_combs.action = sgmii_tx_action_pending_to_0;
+        }
+        }
+
+        /*b Handle symbol action */
+        sgmii_tx_combs.consume_pending = 0;
+        full_switch (sgmii_tx_combs.action) {
+        case sgmii_tx_action_idle: {
+            sgmii_tx_state.fsm_state      <= sgmii_tx_state.fsm_state;
+        }
+        case sgmii_tx_action_first_symbol: {
+            sgmii_tx_state.fsm_state      <= sgmii_tx_fsm_first_symbol;
+            sgmii_tx_state.data_out[10;2] <= sgmii_tx_state.pending_symbol;
+            sgmii_tx_combs.consume_pending = 1;
+        }
+        case sgmii_tx_action_start: {
+            sgmii_tx_state.fsm_state  <= sgmii_tx_fsm_nybble_0;
+        }
+        case sgmii_tx_action_shift_0: {
+            sgmii_tx_state.fsm_state  <= sgmii_tx_fsm_nybble_1;
+            sgmii_tx_state.data_out   <= sgmii_tx_state.data_out << 4;
+        }
+        case sgmii_tx_action_shift_2: {
+            sgmii_tx_state.fsm_state  <= sgmii_tx_fsm_nybble_3;
+            sgmii_tx_state.data_out   <= sgmii_tx_state.data_out << 4;
+        }
+        case sgmii_tx_action_shift_3: {
+            sgmii_tx_state.fsm_state  <= sgmii_tx_fsm_nybble_4;
+            sgmii_tx_state.data_out   <= sgmii_tx_state.data_out << 4;
+        }
+        case sgmii_tx_action_pending_to_2: {
+            sgmii_tx_state.fsm_state  <= sgmii_tx_fsm_nybble_2;
+            sgmii_tx_state.data_out   <= sgmii_tx_state.data_out << 4;
+            sgmii_tx_state.data_out[10;0] <= sgmii_tx_state.pending_symbol;
+            sgmii_tx_combs.consume_pending = 1;
+        }
+        case sgmii_tx_action_pending_to_0: {
+            sgmii_tx_state.fsm_state  <= sgmii_tx_fsm_nybble_0;
+            sgmii_tx_state.data_out[10;2] <= sgmii_tx_state.pending_symbol;
+            sgmii_tx_combs.consume_pending = 1;
+        }
+        }
+
+        /*b Handle pending data and synchronization from GMII domain */
+        for (i; 4) {
+            tech_sync_bit sgmii_tx_sync_flops[i](clk <- tx_clk_312_5, reset_n <= tx_reset_312_5_n,
+                                                 d <= gmii_tx_state.valid_toggle[i],
+                                                 q => sgmii_tx_sync_toggle[i] );
+        }
+        sgmii_tx_combs.symbols_valid = sgmii_tx_state.valid_toggle ^ sgmii_tx_sync_toggle;
+        sgmii_tx_combs.data_valid    = ((sgmii_tx_state.rd_one_hot & sgmii_tx_combs.symbols_valid)!=0);
+        sgmii_tx_combs.selected_symbol = 0;
+        for (i; 4) {
+            if (sgmii_tx_state.rd_one_hot[i]) {
+                sgmii_tx_combs.selected_symbol |= gmii_tx_symbol[i];
+            }
+        }
+        if (sgmii_tx_combs.consume_pending) {
+            sgmii_tx_state.pending_symbol_valid <= 0;
+        }
+        if (sgmii_tx_combs.data_valid &&
+            (sgmii_tx_combs.consume_pending || !sgmii_tx_state.pending_symbol_valid)) {
+            sgmii_tx_state.pending_symbol       <= sgmii_tx_combs.selected_symbol;
+            sgmii_tx_state.pending_symbol_valid <= 1;
+            sgmii_tx_state.valid_toggle         <= sgmii_tx_state.rd_one_hot ^ sgmii_tx_state.valid_toggle;
+            sgmii_tx_state.rd_one_hot           <= sgmii_tx_state.rd_one_hot<<1;
+            sgmii_tx_state.rd_one_hot[0]        <= sgmii_tx_state.rd_one_hot[3];
+        }
+        sgmii_txd = sgmii_tx_state.data_out[4;8];
+    }
+
+    /*b Rx side state and nets */
+    default clock             rx_clk_312_5;
+    default reset active_low  rx_reset_312_5_n;
+    clocked  t_sgmii_rx_state  sgmii_rx_state = {*=0};
+    clocked   bit[10][4]       sgmii_rx_data  = {*=0};
+
+    default clock             rx_clk;
+    default reset active_low  rx_reset_n;
+    comb     t_gmii_rx_combs   gmii_rx_combs;
+    clocked  t_gmii_rx_state   gmii_rx_state = {*=0, rd_one_hot=1};
+    net      bit[4]            gmii_rx_sync_valid;
+    net      t_8b10b_dec_data  gmii_rx_decoded_symbol;
+
+    /*b Rx serial clock domain logic */
+    rx_serial : {
+        /*b 4-bit domain - stack 8 bits and copy to four 10-bit output buffers.
+          Output buffers are then valid for 40ns.
+          Valid is asserted for 24ns and deasserted for 16ns
+          When synchronized valid should have at least 1 125MHz clock tick low out of every 5.
+         */
+        sgmii_rx_state.wr_ptr <= sgmii_rx_state.wr_ptr+1;
+        full_switch (sgmii_rx_state.wr_ptr) {
+        case 0: {
+            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd;
+            sgmii_rx_state.rx_valid[1]    <= 0; // valid[1] was held high for 6 ticks = 18ns > 2 slow clock periods
+        }
+            case 1: {sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd;} // Now all 8 bits of rx_build are valid
+        case 2: {
+            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd; // top 2 bits are not used
+            sgmii_rx_data[0]              <= bundle(sgmii_rx_state.rx_build[8;0], sgmii_rxd[2;2]);
+            sgmii_rx_state.rx_valid[0]    <= 1;
+        }
+        case 3: {
+            sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd; // now bits [6;0] are valid
+            sgmii_rx_state.rx_valid[2]    <= 0; // valid[2] was held high for 6 ticks = 18ns > 2 slow clock periods
+        }
+        case 4: {
+            sgmii_rx_data[1]           <= bundle(sgmii_rx_state.rx_build[6;0], sgmii_rxd);
+            sgmii_rx_state.rx_valid[1] <= 1;
+        }
+        case 5: {
+            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd;
+            sgmii_rx_state.rx_valid[3]    <= 0; // valid[3] was held high for 6 ticks = 18ns > 2 slow clock periods
+        }
+        case 6: {sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd;} // Now all 8 bits of rx_build are valid
+        case 7: {
+            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd; // top 2 bits are not used
+            sgmii_rx_data[2]              <= bundle(sgmii_rx_state.rx_build[8;0], sgmii_rxd[2;2]);
+            sgmii_rx_state.rx_valid[2]    <= 1;
+        }
+        case 8: {
+            sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd; // now bits [6;0] are valid
+            sgmii_rx_state.rx_valid[0] <= 0; // valid[0] was held high for 6 ticks = 18ns > 2 slow clock periods
+        }
+        default: {
+            sgmii_rx_data[3]           <= bundle(sgmii_rx_state.rx_build[6;0], sgmii_rxd);
+            sgmii_rx_state.rx_valid[3] <= 1;
+            sgmii_rx_state.wr_ptr <= 0;            
+        }
+        }
+    }
+
+    /*b Rx clock crossing, comma detection and symbol decode */
+    rx_symbol_generation : {
+
+        /*b 10-bit domain - sync the valid bits, and use them in order */
+        for (i; 4) {
+            tech_sync_bit gmii_rx_sync_flops[i](clk <- rx_clk, reset_n <= rx_reset_n,
+                                                d <= sgmii_rx_state.rx_valid[i],
+                                                q => gmii_rx_sync_valid[i] );
+        }
+
+        gmii_rx_combs.selected_serial_data = 0;
+        for (i; 4) {
+            if (gmii_rx_state.rd_one_hot[i]) {
+                gmii_rx_combs.selected_serial_data |= sgmii_rx_data[i];
+            }
+        }
+        gmii_rx_state.serial_data_valid <= 0;
+        if (gmii_rx_state.rd_one_hot & gmii_rx_sync_valid) { // should really always be the case once we are running on a 125MHz clock
+            gmii_rx_state.rd_one_hot    <= gmii_rx_state.rd_one_hot<<1;
+            gmii_rx_state.rd_one_hot[0] <= gmii_rx_state.rd_one_hot[3];
+            gmii_rx_state.serial_data_valid <= 1;
+            gmii_rx_state.serial_data        <= gmii_rx_state.serial_data << 10;
+            gmii_rx_state.serial_data[10; 0] <= gmii_rx_combs.selected_serial_data;
+        }
+
+        /*b Comma detect and ten-bit symbol selection
+          Comma detection is looking for 00111110xx in gmii_rx_state.serial_data
+          This is used in the K28.5 symbol with a -ve incoming disparity
+         */
+        gmii_rx_combs.comma_found = 0;
+        for (i; 10) {
+            if (gmii_rx_state.serial_data[8;2+i] == 8b00111110) {
+                gmii_rx_combs.comma_found[i] = 1;
+            }
+        }
+        if (!gmii_rx_state.serial_data_valid) {
+            gmii_rx_combs.comma_found = 0;
+        }
+
+        /*b Track input symbol boundary
+          To allow for bit errors, only look for comma if in 'seek'
+         */
+        if (gmii_rx_combs.seeking_comma) {
+            gmii_rx_state.symbol_one_hot <= 0;
+            if (gmii_rx_combs.comma_found!=0) {
+                for (i; 10) {
+                    if (gmii_rx_combs.comma_found[i]) {
+                        gmii_rx_state.symbol_one_hot <= 0;            
+                        gmii_rx_state.symbol_one_hot[i] <= 1;            
+                    }
+                }
+            }
+        }
+
+        /*b Select received symbol based on comma position */
+        gmii_rx_combs.selected_symbol = 0;
+        for (i; 10) {
+            if (gmii_rx_state.symbol_one_hot[i]) {
+                gmii_rx_combs.selected_symbol |= gmii_rx_state.serial_data[10;i];
+            }
+        }
+
+        /*b Decode received symbol to code group (d/k + data + err) */
+        gmii_rx_combs.symbol_to_decode.disparity_positive = gmii_rx_state.disparity;
+        gmii_rx_combs.symbol_to_decode.symbol = gmii_rx_combs.selected_symbol;
+        decode_8b10b decoder(  symbol   <= gmii_rx_combs.symbol_to_decode,
+                               dec_data => gmii_rx_decoded_symbol
+                               );
+        gmii_rx_combs.symbol_is_K = gmii_rx_decoded_symbol.is_control && (gmii_rx_decoded_symbol.data==symbol_K_k28_5);
+        gmii_rx_combs.symbol_is_S = gmii_rx_decoded_symbol.is_control && (gmii_rx_decoded_symbol.data==symbol_S_k27_7);
+        gmii_rx_combs.symbol_is_V = gmii_rx_decoded_symbol.is_control && (gmii_rx_decoded_symbol.data==symbol_V_k30_7);
+        gmii_rx_combs.symbol_is_T = gmii_rx_decoded_symbol.is_control && (gmii_rx_decoded_symbol.data==symbol_T_k29_7);
+        gmii_rx_combs.symbol_is_R = gmii_rx_decoded_symbol.is_control && (gmii_rx_decoded_symbol.data==symbol_R_k23_7);
+        gmii_rx_combs.carrier_detect = !gmii_rx_combs.symbol_is_K;
+    }
+
+    /*b Rx GMII FSM */
+    rx_gmii_fsm : {
+        gmii_rx_combs.an_in_xmit = 1;
+        
+        /*b RX GMII FSM */
+        gmii_rx_combs.action = gmii_rx_action_none;
+        gmii_rx_combs.seeking_comma = 0;
+        full_switch (gmii_rx_state.fsm_state) {
+        case gmii_rx_fsm_sync: { // awaiting comma sequence
+            gmii_rx_combs.seeking_comma = 1;
+            gmii_rx_combs.action = gmii_rx_action_resync;
+            if (gmii_rx_combs.comma_found) { // only asserted if data is valid
+                gmii_rx_combs.action = gmii_rx_action_comma_found;
+            }
+        }
+        case gmii_rx_fsm_wait_for_k: {
+            if (gmii_rx_combs.symbol_is_K && gmii_rx_state.rx_even) {
+                gmii_rx_combs.action = gmii_rx_action_idle_k;
+            }
+            if (!gmii_rx_state.serial_data_valid) {
+                gmii_rx_combs.action = gmii_rx_action_none;
+            }
+        }
+        case gmii_rx_fsm_k: { // Have just received a K28.5 in even cycle; first cycle of a C1/C2/I1/I2, rx_even will be low
+            if (gmii_rx_decoded_symbol.is_control) { // back-to-back control can happen in data, but not cfg/idle
+                gmii_rx_combs.action = gmii_rx_action_invalid; // will handle potential loss of sync
+                if (gmii_rx_combs.an_in_xmit) { // assume it is an idle d as per IEEE spec (seems odd but...)
+                    gmii_rx_combs.action = gmii_rx_action_idle_d;
+                }
+            } else { // is data
+                full_switch (gmii_rx_decoded_symbol.data) {
+                case symbol_d21_5, symbol_d2_2: { // C1/C2 received
+                    gmii_rx_combs.action = gmii_rx_action_cfg_a;
+                }
+                default:{ // Assume it is an I1/I2 (per IEEE spec)
+                    gmii_rx_combs.action = gmii_rx_action_idle_d;
+                }
+                }
+            }
+            if (!gmii_rx_state.serial_data_valid) {
+                gmii_rx_combs.action = gmii_rx_action_none;
+            }
+        }
+        case gmii_rx_fsm_invalid: { // Potential loss of sync - expect on even to get a K28.5; any other symbol on even is loss of sync
+            if (gmii_rx_state.rx_even) {
+                gmii_rx_combs.action = gmii_rx_action_lose_sync;
+                if (gmii_rx_combs.symbol_is_K) {
+                    gmii_rx_combs.action = gmii_rx_action_idle_k; // in sync
+                }
+            }
+            if (!gmii_rx_state.serial_data_valid) {
+                gmii_rx_combs.action = gmii_rx_action_none;
+            }
+        }
+        case gmii_rx_fsm_cfg_b: { // Have received C1/C2 - should be first of two data bytes
+            gmii_rx_combs.action = gmii_rx_action_cfg_data_1;
+            if (gmii_rx_decoded_symbol.is_control) {
+                gmii_rx_combs.action = gmii_rx_action_invalid;
+            }
+            if (!gmii_rx_state.serial_data_valid) {
+                gmii_rx_combs.action = gmii_rx_action_none;
+            }
+        }
+        case gmii_rx_fsm_cfg_c: { // Have received C1/C2 and one data byte - should be second of two data bytes
+            gmii_rx_combs.action = gmii_rx_action_cfg_data_2;
+            if (gmii_rx_decoded_symbol.is_control) {
+                gmii_rx_combs.action = gmii_rx_action_invalid;
+            }
+            if (!gmii_rx_state.serial_data_valid) {
+                gmii_rx_combs.action = gmii_rx_action_none;
+            }
+        }
+        case gmii_rx_fsm_cfg_d: { // Have completed C1/C2 and two data byte - next should be K28.5
+            gmii_rx_combs.action = gmii_rx_action_idle_k;
+            if (!gmii_rx_combs.symbol_is_K) {
+                gmii_rx_combs.action = gmii_rx_action_invalid;
+            }
+            if (!gmii_rx_state.serial_data_valid) {
+                gmii_rx_combs.action = gmii_rx_action_none;
+            }
+        }
+        case gmii_rx_fsm_idle_d: { // Have received I1/I2 - could be an S!
+            if (gmii_rx_combs.an_in_xmit) { // Data mode
+                gmii_rx_combs.action = gmii_rx_action_false_carrier_detect;
+                if (gmii_rx_combs.symbol_is_S) {
+                    gmii_rx_combs.action = gmii_rx_action_carrier_detect; // go to receive packet, output SFD
+                }
+                if (gmii_rx_combs.symbol_is_K || !gmii_rx_combs.carrier_detect) {
+                    gmii_rx_combs.action = gmii_rx_action_idle_k;
+                }
+            } else { // config or idle mode - a K28.5 is expected
+                gmii_rx_combs.action = gmii_rx_action_idle_k;
+                if (!gmii_rx_combs.symbol_is_K) {
+                    gmii_rx_combs.action = gmii_rx_action_invalid;
+                }
+            }
+            if (!gmii_rx_state.serial_data_valid) {
+                gmii_rx_combs.action = gmii_rx_action_none;
+            }
+        }
+        case gmii_rx_fsm_false_carrier: { // Wait for K28.5 on even boundary - to get out of this otherwise requires loss of sync
+            if (gmii_rx_combs.symbol_is_K && gmii_rx_state.rx_even) {
+                gmii_rx_combs.action = gmii_rx_action_idle_k;
+            }
+            if (!gmii_rx_state.serial_data_valid) {
+                gmii_rx_combs.action = gmii_rx_action_none;
+            }
+        }
+        case gmii_rx_fsm_receive: { // Data for packet!
+            gmii_rx_combs.action = gmii_rx_action_data; // receive a data byte
+            if (gmii_rx_combs.symbol_is_V) {
+                gmii_rx_combs.action = gmii_rx_action_data_error; // receive data byte, set rx_er, stay in receive
+            } elsif (gmii_rx_combs.symbol_is_T) { // EOP 
+                gmii_rx_combs.action = gmii_rx_action_eop; // pull rx_dv low
+            } elsif (gmii_rx_combs.symbol_is_R) { // Extend carrier
+                gmii_rx_combs.action = gmii_rx_action_early_extend_carrier; // rx_er and go to extend carrier
+            } elsif (gmii_rx_combs.symbol_is_K) { // Early end
+                gmii_rx_combs.action = gmii_rx_action_early_end; // rx_er and go back to idle_k
+            }
+            if (!gmii_rx_state.serial_data_valid) {
+                gmii_rx_combs.action = gmii_rx_action_none;
+            }
+        }
+        case gmii_rx_fsm_eop: { // T was received, expecting R - but packet is already marked as okay
+            gmii_rx_combs.action = gmii_rx_action_extend_error; // default of error
+            if (gmii_rx_combs.symbol_is_R) {
+                gmii_rx_combs.action = gmii_rx_action_extend_carrier; // extend carrier
+            }
+            if (!gmii_rx_state.serial_data_valid) {
+                gmii_rx_combs.action = gmii_rx_action_none;
+            }
+        }
+        case gmii_rx_fsm_extend_carrier: { // R was received - expect R, S, or (K if even)
+            gmii_rx_combs.action = gmii_rx_action_extend_error; // receive a data byte
+            if (gmii_rx_combs.symbol_is_R) {
+                gmii_rx_combs.action = gmii_rx_action_extend_carrier; // extend carrier
+            } elsif (gmii_rx_combs.symbol_is_S) { // EOP
+                gmii_rx_combs.action = gmii_rx_action_carrier_detect; // go to receive packet, output SFD
+            } elsif (gmii_rx_combs.symbol_is_K && gmii_rx_state.rx_even) { // good end - go back to idle_k
+                gmii_rx_combs.action = gmii_rx_action_idle_k;
+            }
+            if (!gmii_rx_state.serial_data_valid) {
+                gmii_rx_combs.action = gmii_rx_action_none;
+            }
+        }
+        }
+        if (0 /*complete loss of sync*/) {
+            gmii_rx_combs.action = gmii_rx_action_resync;
+        }
+
+        /*b Decode action */
+        if (gmii_rx_state.serial_data_valid) {
+            gmii_rx_state.rx_even   <= !gmii_rx_state.rx_even;
+            gmii_rx_state.disparity <= gmii_rx_state.disparity ^ gmii_rx_decoded_symbol.toggles_disparity;
+        }
+
+        full_switch (gmii_rx_combs.action) {
+        case gmii_rx_action_none: {
+            gmii_rx_state.fsm_state <= gmii_rx_state.fsm_state;
+        }
+        case gmii_rx_action_resync: {
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_sync;
+            gmii_rx_state.gmii_rx.rx_er <= 0;
+            gmii_rx_state.gmii_rx.rx_dv <= 0;
+        }
+        case gmii_rx_action_comma_found: {
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_k;
+            gmii_rx_state.rx_even   <= 0;
+            gmii_rx_state.disparity <= 1; // After a K28.5 disparity toggles - and it should generally be -ve when comma starts
+        }
+        case gmii_rx_action_idle_k: { // from cfg_d, idle_d, false_carrier, extend_carrier
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_k;
+            gmii_rx_state.gmii_rx.rx_er <= 0;
+            gmii_rx_state.gmii_rx.rx_dv <= 0;
+        }
+        case gmii_rx_action_invalid: { // from k, cfg_b, cfg_c, cfg_d, idle_d - may be lose sync
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_invalid;
+            gmii_rx_state.gmii_rx.rx_er <= 0;
+            gmii_rx_state.gmii_rx.rx_dv <= 0;
+        }
+        case gmii_rx_action_idle_d: { // from k
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_idle_d;
+            gmii_rx_state.gmii_rx.rx_er <= 0;
+            gmii_rx_state.gmii_rx.rx_dv <= 0;
+            gmii_rx_state.disparity <= 0; // After idle disparity must be -ve
+        }
+        case gmii_rx_action_cfg_a: { // from k
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_cfg_b;
+            gmii_rx_state.gmii_rx.rx_er <= 0;
+            gmii_rx_state.gmii_rx.rx_dv <= 0;
+        }
+        case gmii_rx_action_cfg_data_1: { // from cfg_b
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_cfg_c;
+            gmii_rx_state.rx_config_data[8;0] <= gmii_rx_decoded_symbol.data;
+        }
+        case gmii_rx_action_cfg_data_2: { // from cfg_c
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_cfg_d;
+            gmii_rx_state.rx_config_data[8;8] <= gmii_rx_decoded_symbol.data;
+        }
+        case gmii_rx_action_carrier_detect: { // from extend_carrier and idle_d
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_receive;
+            gmii_rx_state.gmii_rx.rx_dv <= 1;
+            gmii_rx_state.gmii_rx.rxd <= 0x55;
+        }
+        case gmii_rx_action_data: { // from extend_carrier and idle_d
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_receive;
+            gmii_rx_state.gmii_rx.rxd <= gmii_rx_decoded_symbol.data;
+        }
+        case gmii_rx_action_data_error: { // from receive - set error and stay in receive
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_receive;
+            gmii_rx_state.gmii_rx.rx_er <= 1;
+        }
+        case gmii_rx_action_eop: { // from receive - pull rx_dv_low
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_eop;
+            gmii_rx_state.gmii_rx.rx_dv <= 0;
+        }
+        case gmii_rx_action_extend_carrier: { // from eop and extend_carrier
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_extend_carrier;
+        }
+        case gmii_rx_action_early_end: { // from receive - early K or other symbol, so packet is errored
+            gmii_rx_state.gmii_rx.rx_er <= 1;
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_k;
+        }
+        case gmii_rx_action_early_extend_carrier: { // from receive, got R - indicate carrier error 
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_extend_carrier;
+            gmii_rx_state.gmii_rx.rx_er <= 1;
+        }
+        case gmii_rx_action_extend_error: { // from extend_carrier when not R, S nor even K
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_extend_carrier;
+            gmii_rx_state.gmii_rx.rx_er <= 1;
+            gmii_rx_state.gmii_rx.rxd <= 0x1f;
+        }
+        case gmii_rx_action_false_carrier_detect: { // from idle_d with unknown symbol
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_false_carrier;
+            gmii_rx_state.gmii_rx.rx_er <= 1;
+            gmii_rx_state.gmii_rx.rx_dv <= 0;
+            gmii_rx_state.gmii_rx.rxd <= 0x0e;
+        }
+        case gmii_rx_action_lose_sync: { // from invalid
+            gmii_rx_state.fsm_state <= gmii_rx_fsm_wait_for_k;
+            gmii_rx_state.gmii_rx.rx_er <= 0;
+            gmii_rx_state.gmii_rx.rx_dv <= 0;
+        }
+        }
+        gmii_rx_state.gmii_rx.rx_crs <= 0;
+        gmii_rx_state.gmii_rx_enable <= gmii_rx_state.serial_data_valid;
+        gmii_rx = gmii_rx_state.gmii_rx;
+        gmii_rx_enable = gmii_rx_state.gmii_rx_enable;
+        
+        /*b All done */
+    }
+    /*b All done */
+}
+

@@ -619,7 +619,7 @@ module vcu108_riscv( clock clk,
         flash_out.data_enable <= 0;
         
         vcu108_outputs.mdio = { mdc=1, mdio=1, mdio_enable=0 };
-        vcu108_outputs.eth_reset_n = 1;
+        vcu108_outputs.eth_reset_n = reset_n;
         
         vcu108_outputs.leds = counter[8;0];
         vcu108_outputs.leds[7] = uart_tx.txd;
