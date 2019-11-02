@@ -92,6 +92,20 @@ static t_ef_property ef_read_response_obj_properties[] =
     {NULL, 0, ef_type_int,  0}
 };
 
+/*v ef_axi4s_obj_properties - Properties of an AXI request
+ */
+static t_ef_property ef_axi4s_obj_properties[] =
+{
+    {"data",   64, ef_type_int64,  offsetof(t_axi4s, data)},
+    {"strb",   64, ef_type_int64,  offsetof(t_axi4s, strb)},
+    {"keep",   64, ef_type_int64,  offsetof(t_axi4s, keep)},
+    {"user",   64, ef_type_int64,  offsetof(t_axi4s, user)},
+    {"last",   1,  ef_type_int,    offsetof(t_axi4s, last)},
+    {"id",     64, ef_type_int64,  offsetof(t_axi4s, id)},
+    {"dest",   64, ef_type_int64,  offsetof(t_axi4s, dest)},
+    {NULL, 0, ef_type_int,  0}
+};
+
 /*a Exec file functions
  */
 /*f ef_axi_req_create
@@ -122,31 +136,50 @@ extern void *ef_axi_read_response_create( t_sl_exec_file_data *file_data, const 
     return (void *)ef_object_create(file_data, name, owner, (void *)axi_read_response, ef_read_response_obj_properties, additional_methods );
 }
 
+/*f ef_axi4s_create
+ */
+extern void *ef_axi4s_create( t_sl_exec_file_data *file_data, const char *name, void *owner, t_axi4s *axi4s, t_sl_exec_file_method *additional_methods )
+{
+    return (void *)ef_object_create(file_data, name, owner, (void *)axi4s, ef_axi4s_obj_properties, additional_methods );
+}
+
+/*f ef_owner_of_objf */
 extern void *ef_owner_of_objf(t_sl_exec_file_object_desc *object_desc)
 {
     return ef_object_owner(object_desc->handle);
 }
 
+/*f ef_axi_request_of_objf */
 extern t_axi_request *ef_axi_request_of_objf(t_sl_exec_file_object_desc *object_desc)
 {
     return (t_axi_request *)ef_object_contents(object_desc->handle);
 }
 
+/*f ef_axi_write_data_of_objf */
 extern t_axi_write_data *ef_axi_write_data_of_objf(t_sl_exec_file_object_desc *object_desc)
 {
     return (t_axi_write_data *)ef_object_contents(object_desc->handle);
 }
 
+/*f ef_axi_write_response_of_objf */
 extern t_axi_write_response *ef_axi_write_response_of_objf(t_sl_exec_file_object_desc *object_desc)
 {
     return (t_axi_write_response *)ef_object_contents(object_desc->handle);
 }
 
+/*f ef_axi_read_response_of_objf */
 extern t_axi_read_response *ef_axi_read_response_of_objf(t_sl_exec_file_object_desc *object_desc)
 {
     return (t_axi_read_response *)ef_object_contents(object_desc->handle);
 }
 
+/*f ef_axi4s_of_objf */
+extern t_axi4s *ef_axi4s_of_objf(t_sl_exec_file_object_desc *object_desc)
+{
+    return (t_axi4s *)ef_object_contents(object_desc->handle);
+}
+
+/*f c_axi_queue<t> constructor */
 template <typename T>
 c_axi_queue<T>::c_axi_queue(int max_size)
 {
@@ -156,11 +189,13 @@ c_axi_queue<T>::c_axi_queue(int max_size)
     tail = NULL;
 }
 
+/*f c_axi_queue<t> destructor */
 template <typename T>
 c_axi_queue<T>::~c_axi_queue()
 {
 }
 
+/*f c_axi_queue<t> enqueue */
 template <typename T>
 int c_axi_queue<T>::enqueue(T *elt, int option)
 {
@@ -179,6 +214,7 @@ int c_axi_queue<T>::enqueue(T *elt, int option)
     return 1;
 }
 
+/*f c_axi_queue<t> dequeue */
 template <typename T>
 int c_axi_queue<T>::dequeue(T *elt, int *option)
 {
@@ -193,6 +229,8 @@ int c_axi_queue<T>::dequeue(T *elt, int *option)
     return 1;
 }
 
+/*f c_axi_queue instantiations */
+template class c_axi_queue<t_axi4s>;
 template class c_axi_queue<t_axi_request>;
 template class c_axi_queue<t_axi_write_data>;
 template class c_axi_queue<t_axi_write_response>;

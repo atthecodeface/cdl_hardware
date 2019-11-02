@@ -1,0 +1,415 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   gbe_axi4s32.cdl
+ * @brief  GbE MAC (supporting 10/100/1000) full duplex using AXI-4S to GMII
+ *
+ * CDL implementation of a fully synchronous GbE MAC
+ *
+ * The implementation is very lightweight. It requires that data in be valid
+ * for a packet, once started, until the end of the packet.
+ *
+ */
+/*a To do
+ *  Optionally pad short packets
+ *  Optionally (configurable) insert timestamp in to packet
+ *  Capture timestamp on end of preamble (more predictable than SOP)
+ *  Timer to count continuously
+ *  Module to retard / accelerate nanosecond timestamp using divide-by-N
+ */
+/*a Includes */
+include "types/timer.h"
+include "types/axi.h"
+include "types/ethernet.h"
+
+/*a Constants
+*/
+constant integer preamble_length=8; // 7 of 0x55 one of 0xd5
+
+/*a Types */
+/*t t_tx_fsm */
+typedef fsm {
+    tx_fsm_idle         "Waiting for valid data in";
+    tx_fsm_preamble     "Outputting preamble";
+    tx_fsm_data         "Outputting data, calculating FCS";
+    tx_fsm_fcs          "Outputting FCS";
+    tx_fsm_ipg          "Waiting for inter-packet gap";
+    tx_fsm_aborting     "Data not valid when required - aborting packet";
+    tx_fsm_skipping     "Dropping input data until 'last' asserted";
+} t_tx_fsm;
+
+/*t t_tx_action */
+typedef enum [5] {
+    tx_action_none,
+    tx_action_sop                "Packet data valid, send SOP",
+    tx_action_preamble           "Send preamble",
+    tx_action_preamble_end       "Send last byte of preamble",
+    tx_action_data               "Send next byte of packet data and update FCS",
+    tx_action_last_data_of_word  "Send last byte of current packet data and update FCS",
+    tx_action_data_eop           "Send last byte of packet data and update FCS",
+    tx_action_fcs                "Send next byte of FCS",
+    tx_action_fcs_end            "Send last byte of FCS",
+    tx_action_ipg                "Send idle",
+    tx_action_idle               "Start wait for packet data in to be valid",
+    tx_action_abort_start        "Send inverted FCS out",
+    tx_action_abort              "Send inverted FCS out",
+    tx_action_abort_end          "Send inverted FCS out and move to skip",
+    tx_action_drop               "Drop any incoming packet data (will not be last)",
+    tx_action_drop_idle          "Drop last incoming packet data and move to ipg"
+} t_tx_action;
+
+/*t t_fcs_op */
+typedef enum [2] {
+    fcs_op_none,
+    fcs_op_init,
+    fcs_op_calc,
+    fcs_op_shift
+} t_fcs_op;
+
+/*t t_tx_combs */
+typedef struct {
+    t_tx_action action;
+    bit consuming_axi4s;
+    bit can_output_symbol;
+    bit last_byte_of_packet "Asserted if AXI4S 'last' and last tx strobe";
+    bit data_invalid        "Asserted if AXI4S data is not ready for state machine";
+    bit[8] axi4s_data_byte;
+    bit[8] axi4s_fcs_byte;
+    bit[32] fcs_xor         "Residue of bottom 4 bits of FCS and data";
+    bit[32] fcs_xor2        "Residue of next 4 bits of FCS and data and bottom 4 bits of fcs_xor";
+    bit[32] next_fcs;
+    bit shift_data;
+    t_fcs_op fcs_op;
+    bit[7] byte_of_packet_plus_one;
+} t_tx_combs;
+
+/*t t_tx_state */
+typedef struct {
+    t_tx_fsm  fsm_state;
+    bit[4]    count          "State machine counter";
+    t_axi4s32 axi4s          "AXI4S data being consumed";
+    t_axi4s32 pending_axi4s  "AXI4S data waiting to be moved to axi4s";
+    bit[32]   fcs;
+    bit       gmii_tx_valid  "If low, then all GMII TX outputs are low - else to values in gmii_tx";
+    t_gmii_tx gmii_tx        "GMII TX data out (if gmii_tx_valid)";
+    bit[7]    byte_of_packet "Byte of packet";
+    bit[4]    ipg;
+} t_tx_state;
+
+/*t t_rx_combs */
+typedef struct {
+    bit a;
+} t_rx_combs;
+
+/*t t_rx_state */
+typedef struct {
+    t_axi4s32 axi4s          "AXI4S data being consumed";
+} t_rx_state;
+
+/*a Module
+*/
+/*m gbe_axi4s32 */
+module gbe_axi4s32( clock tx_aclk   "Transmit clock domain - AXI-4-S and GMII TX clock",
+                    input bit tx_areset_n,
+                    input t_axi4s32 tx_axi4s,
+                    output bit      tx_axi4s_tready,
+                    input   bit gmii_tx_enable "Clock enable for tx_aclk for GMII",
+                    output  t_gmii_tx gmii_tx,
+
+                    clock rx_aclk    "Receive clock domain - AXI-4-S and GMII RX clock",
+                    input bit rx_areset_n,
+                    output t_axi4s32 rx_axi4s,
+                    input bit        rx_axi4s_tready,
+                    input   bit gmii_rx_enable "Clock enable for rx_aclk for GMII",
+                    input   t_gmii_rx gmii_rx,
+                    input t_timer_control tx_timer_control "Timer control in TX clock domain"
+    )
+/*b Documentation */
+"""
+A light-weight full-duplex Ethernet MAC supporting GMII.
+"""
+/*b Module body */
+{
+    /*b Tx combs and state */
+    comb     t_tx_combs tx_combs;
+    clocked clock tx_aclk reset active_low tx_areset_n t_tx_state tx_state = {*=0};
+
+    /*b Tx AXI-4S interface */
+    tx_axi4s : {
+        tx_axi4s_tready = 1;
+        if (tx_combs.shift_data) {
+            tx_state.axi4s.t.data[24;0] <= tx_state.axi4s.t.data[24;8];
+            tx_state.axi4s.t.strb <= tx_state.axi4s.t.strb>>1;
+        }
+        if (tx_combs.consuming_axi4s) {
+            tx_state.axi4s.valid <= 0;                
+        }
+        if (tx_state.pending_axi4s.valid) {
+            tx_axi4s_tready = 0;
+            if (!tx_state.axi4s.valid || tx_combs.consuming_axi4s) {
+                tx_state.axi4s               <= tx_state.pending_axi4s;
+                tx_state.pending_axi4s.valid <= 0;                
+            }
+        } elsif (tx_axi4s.valid) {
+            tx_state.pending_axi4s <= tx_axi4s;
+        }
+    }
+
+    /*b Tx state machine */
+    tx_fsm : {
+        /*b Decode AXI state for FSM */
+        tx_combs.data_invalid    = !tx_state.axi4s.valid;
+        tx_combs.last_byte_of_packet = (tx_state.axi4s.t.strb<2) && tx_state.axi4s.t.last;
+        tx_state.ipg <= 12;
+        tx_combs.can_output_symbol = (!tx_state.gmii_tx_valid) || gmii_tx_enable;
+        
+        /*b TX FSM */
+        tx_combs.action = tx_action_none;
+        full_switch (tx_state.fsm_state) {
+        case tx_fsm_idle: {
+            if (tx_state.axi4s.valid && tx_combs.can_output_symbol) {
+                tx_combs.action = tx_action_sop;
+            }
+        }
+        case tx_fsm_preamble: {
+            if (tx_combs.can_output_symbol) {
+                tx_combs.action = tx_action_preamble;
+                if (tx_state.count==0) {
+                    tx_combs.action = tx_action_preamble_end;
+                }
+            }
+        }
+        case tx_fsm_data: {
+            if (tx_combs.can_output_symbol) {
+                tx_combs.action = tx_action_data;
+                if (tx_state.count==0) {
+                    tx_combs.action = tx_action_last_data_of_word;
+                }
+                if (tx_combs.last_byte_of_packet) {
+                    tx_combs.action = tx_action_data_eop;
+                }
+                if (tx_combs.data_invalid) {
+                    tx_combs.action = tx_action_abort_start;
+                }
+            }
+        }
+        case tx_fsm_fcs: {
+            if (tx_combs.can_output_symbol) {
+                tx_combs.action = tx_action_fcs;
+                if (tx_state.count==0) {
+                    tx_combs.action = tx_action_fcs_end;
+                }
+            }
+        }
+        case tx_fsm_ipg: {
+            if (tx_combs.can_output_symbol) {
+                tx_combs.action = tx_action_ipg;
+                if (tx_state.count==0) {
+                    tx_combs.action = tx_action_idle;
+                }
+            }
+        }
+        case tx_fsm_aborting: {
+            if (tx_combs.can_output_symbol) {
+                tx_combs.action = tx_action_abort;
+                if (tx_state.count==0) {
+                    tx_combs.action = tx_action_abort_end;
+                }
+            }
+        }
+        case tx_fsm_skipping: {
+            if (tx_state.axi4s.valid) {
+                tx_combs.action = tx_action_drop;
+                if (tx_state.axi4s.t.last) {
+                    tx_combs.action = tx_action_drop_idle;
+                }
+            }
+        }
+        }
+
+        /*b Decode action to state update and other controls
+         */
+        tx_combs.consuming_axi4s = 0;
+        tx_combs.shift_data      = 0;
+        tx_combs.fcs_op          = 0;
+        tx_state.count <= tx_state.count - 1;
+        tx_combs.byte_of_packet_plus_one = tx_state.byte_of_packet+1;
+        if (tx_state.byte_of_packet==-1) { // Saturate 
+            tx_combs.byte_of_packet_plus_one = -1;
+        }
+
+        tx_combs.axi4s_data_byte = tx_state.axi4s.t.data[8;0];
+        tx_combs.axi4s_fcs_byte  = tx_state.fcs[8;0]; 
+        if (gmii_tx_enable) {
+            tx_state.gmii_tx_valid <= 0;
+        }
+        
+        full_switch (tx_combs.action) {
+        case tx_action_none: {
+            tx_state.fsm_state <= tx_state.fsm_state;
+            tx_state.count     <= tx_state.count;
+        }
+        case tx_action_sop: {
+            tx_state.fsm_state <= tx_fsm_preamble;
+            tx_state.gmii_tx_valid <= 1;
+            tx_state.gmii_tx.tx_en <= 1;
+            tx_state.gmii_tx.tx_er <= 0;
+            tx_state.gmii_tx.txd   <= 0x55;
+            tx_state.count         <= preamble_length-2; // Since SOP is one, and last preamble byte is different
+            tx_state.byte_of_packet <= 0;
+        }
+        case tx_action_preamble: {
+            tx_state.gmii_tx_valid <= 1;
+        }
+        case tx_action_preamble_end: {
+            tx_state.fsm_state <= tx_fsm_data;
+            tx_state.gmii_tx_valid <= 1;
+            tx_state.gmii_tx.txd   <= 0xd5;
+            tx_state.count         <= 3;
+        }
+        case tx_action_data: {
+            tx_state.gmii_tx_valid <= 1;
+            tx_state.gmii_tx.txd   <= tx_combs.axi4s_data_byte;
+            tx_state.byte_of_packet <= tx_combs.byte_of_packet_plus_one;
+            tx_combs.shift_data    = 1;
+            tx_combs.fcs_op        = fcs_op_calc;
+        }
+        case tx_action_last_data_of_word: {
+            tx_state.gmii_tx_valid <= 1;
+            tx_state.gmii_tx.txd   <= tx_combs.axi4s_data_byte;
+            tx_state.count         <= 3;
+            tx_state.byte_of_packet <= tx_combs.byte_of_packet_plus_one;
+            tx_combs.fcs_op        = fcs_op_calc;
+            tx_combs.consuming_axi4s = 1;
+        }
+        case tx_action_data_eop: {
+            tx_state.fsm_state <= tx_fsm_fcs;
+            tx_state.gmii_tx_valid <= 1;
+            tx_state.gmii_tx.txd   <= tx_combs.axi4s_data_byte;
+            tx_state.byte_of_packet <= tx_combs.byte_of_packet_plus_one;
+            tx_state.count         <= 3;
+            tx_combs.fcs_op        = fcs_op_calc;
+            tx_combs.consuming_axi4s = 1;
+        }
+        case tx_action_fcs: {
+            tx_state.gmii_tx_valid <= 1;
+            tx_state.gmii_tx.txd   <= tx_combs.axi4s_fcs_byte;
+            tx_combs.fcs_op        = fcs_op_shift;
+        }
+        case tx_action_fcs_end: {
+            tx_state.fsm_state     <= tx_fsm_ipg;
+            tx_state.gmii_tx_valid <= 1;
+            tx_state.gmii_tx.txd   <= tx_combs.axi4s_fcs_byte;
+            tx_state.count         <= tx_state.ipg;
+        }
+        case tx_action_ipg: {
+            tx_state.fsm_state     <= tx_fsm_ipg;
+            tx_state.gmii_tx_valid <= 0;
+        }
+        case tx_action_idle: {
+            tx_state.fsm_state     <= tx_fsm_idle;
+            tx_state.gmii_tx_valid <= 0;
+        }
+        case tx_action_abort_start: {
+            tx_state.fsm_state <= tx_fsm_aborting;
+            tx_state.count         <= 3;
+            tx_state.gmii_tx_valid <= 1;
+            tx_state.gmii_tx.txd   <= ~tx_combs.axi4s_fcs_byte;
+        }
+        case tx_action_abort: {
+            tx_state.gmii_tx_valid <= 1;
+            tx_state.gmii_tx.txd   <= ~tx_combs.axi4s_fcs_byte;
+        }
+        case tx_action_abort_end: {
+            tx_state.fsm_state <= tx_fsm_skipping;
+            tx_state.gmii_tx_valid <= 1;
+            tx_state.gmii_tx.txd   <= ~tx_combs.axi4s_fcs_byte;
+        }
+        case tx_action_drop: {
+            tx_state.gmii_tx_valid <= 0;
+            tx_combs.consuming_axi4s = 1;
+        }
+        case tx_action_drop_idle: {
+            tx_state.fsm_state <= tx_fsm_ipg;
+            tx_state.gmii_tx_valid <= 0;
+            tx_combs.consuming_axi4s = 1;
+        }
+        }
+
+        /*b GMII TX output */
+        gmii_tx = {*=0};
+        if (tx_state.gmii_tx_valid) {
+            gmii_tx = tx_state.gmii_tx;
+        }
+    }        
+
+    /*b Tx FCS */
+    tx_fcs:{
+        full_switch (tx_state.fcs[4;0] ^ tx_combs.axi4s_data_byte[4;0]) {
+        case 4h0: { tx_combs.fcs_xor = 32h4DBDF21C;}
+        case 4h1: { tx_combs.fcs_xor = 32h500AE278; }
+        case 4h2: { tx_combs.fcs_xor = 32h76D3D2D4; }
+        case 4h3: { tx_combs.fcs_xor = 32h6B64C2B0; }
+        case 4h4: { tx_combs.fcs_xor = 32h3B61B38C; }
+        case 4h5: { tx_combs.fcs_xor = 32h26D6A3E8; }
+        case 4h6: { tx_combs.fcs_xor = 32h000F9344; }
+        case 4h7: { tx_combs.fcs_xor = 32h1DB88320; }
+        case 4h8: { tx_combs.fcs_xor = 32hA005713C; }
+        case 4h9: { tx_combs.fcs_xor = 32hBDB26158; }
+        case 4ha: { tx_combs.fcs_xor = 32h9B6B51F4; }
+        case 4hb: { tx_combs.fcs_xor = 32h86DC4190; }
+        case 4hc: { tx_combs.fcs_xor = 32hD6D930AC; }
+        case 4hd: { tx_combs.fcs_xor = 32hCB6E20C8; }
+        case 4he: { tx_combs.fcs_xor = 32hEDB71064; }
+        default:  { tx_combs.fcs_xor = 32hF0000000; }
+        }
+        full_switch (tx_state.fcs[4;4] ^ tx_combs.axi4s_data_byte[4;4] ^ tx_combs.fcs_xor[4;0]) {
+        case 4h0: { tx_combs.fcs_xor2 = 32h4DBDF21C;}
+        case 4h1: { tx_combs.fcs_xor2 = 32h500AE278; }
+        case 4h2: { tx_combs.fcs_xor2 = 32h76D3D2D4; }
+        case 4h3: { tx_combs.fcs_xor2 = 32h6B64C2B0; }
+        case 4h4: { tx_combs.fcs_xor2 = 32h3B61B38C; }
+        case 4h5: { tx_combs.fcs_xor2 = 32h26D6A3E8; }
+        case 4h6: { tx_combs.fcs_xor2 = 32h000F9344; }
+        case 4h7: { tx_combs.fcs_xor2 = 32h1DB88320; }
+        case 4h8: { tx_combs.fcs_xor2 = 32hA005713C; }
+        case 4h9: { tx_combs.fcs_xor2 = 32hBDB26158; }
+        case 4ha: { tx_combs.fcs_xor2 = 32h9B6B51F4; }
+        case 4hb: { tx_combs.fcs_xor2 = 32h86DC4190; }
+        case 4hc: { tx_combs.fcs_xor2 = 32hD6D930AC; }
+        case 4hd: { tx_combs.fcs_xor2 = 32hCB6E20C8; }
+        case 4he: { tx_combs.fcs_xor2 = 32hEDB71064; }
+        default:  { tx_combs.fcs_xor2 = 32hF0000000; }
+        }
+        tx_combs.next_fcs = bundle(8b0, tx_state.fcs[24;8]) ^ bundle(4b0, tx_combs.fcs_xor[28;4]) ^ tx_combs.fcs_xor2;
+
+        full_switch (tx_combs.fcs_op) {
+        case fcs_op_init:  { tx_state.fcs <= -1; }
+        case fcs_op_calc:  { tx_state.fcs <= tx_combs.next_fcs; }
+        case fcs_op_shift: { tx_state.fcs[24;0] <= tx_state.fcs[24;8]; }
+        default:           { tx_state.fcs <= tx_state.fcs; }
+        }
+    }
+
+    /*b Rx combs and state */
+    comb     t_rx_combs rx_combs;
+    clocked clock rx_aclk reset active_low rx_areset_n t_rx_state rx_state = {*=0};
+    /*b Rx */
+    rx:{
+        rx_combs.a = 0;
+        rx_state.axi4s <= {*=0};
+        rx_axi4s = rx_state.axi4s;
+    }
+    /*b All done */
+}
+

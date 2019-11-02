@@ -100,5 +100,16 @@ typedef struct {
     int user;
 } t_axi_read_response;
 
+/*t t_axi4s32 */
+typedef struct {
+    t_sl_uint64 data;
+    t_sl_uint64 strb;
+    t_sl_uint64 keep;
+    t_sl_uint64 last;
+    t_sl_uint64 user;
+    t_sl_uint64 id;
+    t_sl_uint64 dest;
+} t_axi4s;
+
 /*a Wrapper */
 #endif

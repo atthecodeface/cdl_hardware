@@ -50,12 +50,14 @@ extern void *ef_axi_req_create( t_sl_exec_file_data *file_data, const char *name
 extern void *ef_axi_write_data_create( t_sl_exec_file_data *file_data, const char *name, void *owner, t_axi_write_data *axi_req, t_sl_exec_file_method *additional_methods );
 extern void *ef_axi_write_response_create( t_sl_exec_file_data *file_data, const char *name, void *owner, t_axi_write_response *axi_req, t_sl_exec_file_method *additional_methods );
 extern void *ef_axi_read_response_create( t_sl_exec_file_data *file_data, const char *name, void *owner, t_axi_read_response *axi_req, t_sl_exec_file_method *additional_methods );
+extern void *ef_axi4s_create( t_sl_exec_file_data *file_data, const char *name, void *owner, t_axi4s *axi_req, t_sl_exec_file_method *additional_methods );
 
-extern void *ef_owner_of_objf(t_sl_exec_file_object_desc *object_desc);
-extern t_axi_request *ef_axi_request_of_objf(t_sl_exec_file_object_desc *object_desc);
-extern t_axi_write_data *ef_axi_write_data_of_objf(t_sl_exec_file_object_desc *object_desc);
+extern void                 *ef_owner_of_objf(t_sl_exec_file_object_desc *object_desc);
+extern t_axi_request        *ef_axi_request_of_objf(t_sl_exec_file_object_desc *object_desc);
+extern t_axi_write_data     *ef_axi_write_data_of_objf(t_sl_exec_file_object_desc *object_desc);
 extern t_axi_write_response *ef_axi_write_response_of_objf(t_sl_exec_file_object_desc *object_desc);
-extern t_axi_read_response *ef_axi_read_response_of_objf(t_sl_exec_file_object_desc *object_desc);
+extern t_axi_read_response  *ef_axi_read_response_of_objf(t_sl_exec_file_object_desc *object_desc);
+extern t_axi4s              *ef_axi4s_of_objf(t_sl_exec_file_object_desc *object_desc);
 
 /*a Wrapper */
 #endif

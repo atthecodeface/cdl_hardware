@@ -32,6 +32,7 @@ cdl_options ass:on
 
 c_model cmodel/src   srams
 c_model cmodel/src   axi_master      inc:cmodel/inc
+c_model cmodel/src   axi4s32_master_slave      inc:cmodel/inc
 c_src cmodel/src   ef_object      inc:cmodel/inc
 c_src cmodel/src   axi_types      inc:cmodel/inc
 c_model cmodel/src   bbc_display     inc:cmodel/inc
@@ -170,8 +171,10 @@ cdl cdl/input_devices/tb_src     tb_i2c                 inc:cdl/inc
 
 cdl cdl/networking/src           decode_8b10b           inc:cdl/inc
 cdl cdl/networking/src           encode_8b10b           inc:cdl/inc
+cdl cdl/networking/src           gbe_axi4s32            inc:cdl/inc
 cdl cdl/networking/src           sgmii_gmii_gasket      inc:cdl/inc
 cdl cdl/networking/tb_src        tb_sgmii               inc:cdl/inc
+cdl cdl/networking/tb_src        tb_gbe                 inc:cdl/inc
 
 cdl cdl/apb/src  apb_logging   inc:cdl/inc
 cdl cdl/apb/src  apb_master_mux   inc:cdl/inc

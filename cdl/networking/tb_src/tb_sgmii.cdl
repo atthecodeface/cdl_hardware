@@ -1,0 +1,118 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   tb_sgmii.cdl
+ * @brief  Testbench for sgmii_gmii_gasket
+ *
+ */
+/*a Includes */
+include "types/ethernet.h"
+include "types/encoding.h"
+include "networking/gmii_modules.h"
+include "networking/encoders.h"
+
+/*a External modules */
+extern module se_test_harness( clock clk,
+                               output t_gmii_tx gmii_tx,
+                               input bit gmii_tx_enable "With a 2/5 tx_clk to tx_clk_312_5 this will never gap",
+                               input t_tbi_valid tbi_tx "Optional TBI instead of SGMII",
+                               input bit[4] sgmii_txd,
+
+                               output bit[4] sgmii_rxd,
+                               output t_tbi_valid tbi_rx "Optional TBI instead of SGMII",
+                               input t_gmii_rx gmii_rx
+    )
+{
+    timing to   rising clock clk gmii_tx_enable, tbi_tx, sgmii_txd;
+    timing from rising clock clk gmii_tx;
+
+    timing to   rising clock clk gmii_rx;
+    timing from rising clock clk sgmii_rxd, tbi_rx;
+}
+
+/*a Module */
+module tb_sgmii( clock clk,
+                 input bit reset_n
+)
+{
+
+    /*b Nets */
+    net t_gmii_tx gmii_tx;
+    net bit gmii_tx_enable "With a 2/5 tx_clk to tx_clk_312_5 this will never gap";
+    net t_tbi_valid tbi_tx "Optional TBI instead of SGMII";
+    net bit[4] sgmii_txd;
+
+    net bit[4] sgmii_rxd;
+    net t_tbi_valid tbi_rx "Optional TBI instead of SGMII";
+    net t_gmii_rx gmii_rx;
+
+    clocked clock clk reset active_low reset_n t_8b10b_symbol  tbi_tx_symbol={*=0};
+    clocked clock clk reset active_low reset_n bit             tbi_tx_symbol_valid=0;
+    clocked clock clk reset active_low reset_n bit[16]         sgmii_stream=0;
+    net t_8b10b_dec_data dec_data;
+
+    /*b Instantiations */
+    instantiations: {
+        se_test_harness th( clk <- clk,
+                            gmii_tx => gmii_tx,
+                            gmii_tx_enable <= gmii_tx_enable,
+                            tbi_tx <= tbi_tx,
+                            sgmii_txd <= sgmii_txd,
+
+                            sgmii_rxd => sgmii_rxd,
+                            tbi_rx => tbi_rx,
+                            gmii_rx <= gmii_rx
+            );
+        sgmii_gmii_gasket sgg(tx_clk <- clk,
+                              tx_clk_312_5 <- clk,
+                              rx_clk <- clk,
+                              rx_clk_312_5 <- clk,
+                              tx_reset_n <= reset_n,
+                              tx_reset_312_5_n <= reset_n,
+                              rx_reset_n <= reset_n,
+                              rx_reset_312_5_n <= reset_n,
+
+                              gmii_tx <= gmii_tx,
+                              gmii_tx_enable => gmii_tx_enable,
+                              tbi_tx => tbi_tx,
+                              sgmii_txd => sgmii_txd,
+
+                              sgmii_rxd <= sgmii_stream[4;1],
+                              tbi_rx <= tbi_rx,
+                              gmii_rx => gmii_rx
+            );
+        sgmii_stream      <= sgmii_stream << 4;
+        sgmii_stream[4;0] <= sgmii_txd;
+        tbi_tx_symbol_valid <= 0;
+        if (tbi_tx.valid) {
+            tbi_tx_symbol.symbol <= tbi_tx.data;
+            tbi_tx_symbol_valid <= 1;
+        }
+        if (tbi_tx_symbol_valid) {
+            tbi_tx_symbol.disparity_positive <= tbi_tx_symbol.disparity_positive ^ dec_data.toggles_disparity;
+            if (tbi_tx_symbol.disparity_positive && dec_data.illegal_if_disparity_positive) {
+                tbi_tx_symbol.disparity_positive <= 0;
+            }
+        }
+        decode_8b10b decoder(  symbol  <= tbi_tx_symbol,
+                               dec_data => dec_data
+                               );
+
+
+
+        /*b All done */
+    }
+
+    /*b All done */
+}
+

@@ -51,17 +51,6 @@ riscv_atcf_regression_dir = "../riscv-atcf-tests/build/dump/"
 #c sgmii_test_base
 class sgmii_test_base(simple_tb.base_th):
     verbose = False
-    #f run
-    def run(self):
-        self.sim_msg = self.sim_message()
-        self.bfm_wait(10)
-        simple_tb.base_th.run_start(self)
-        self.bfm_wait(self.run_time-10)
-        self.finishtest(0,"")
-        pass
-
-#c sgmii_test_0
-class sgmii_test_0(sgmii_test_base):
     #f gmii_bfm_wait
     def gmii_bfm_wait(self, delay):
         for i in range(delay):
@@ -88,6 +77,17 @@ class sgmii_test_0(sgmii_test_base):
     #f run
     def run(self):
         self.sim_msg = self.sim_message()
+        self.bfm_wait(10)
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(self.run_time-10)
+        self.finishtest(0,"")
+        pass
+
+#c sgmii_test_0
+class sgmii_test_0(sgmii_test_base):
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
         self.bfm_wait(100)
         for i in range(10):
             self.send_packet([0,1,2,3,4,5,6,7])
@@ -103,6 +103,69 @@ class sgmii_test_0(sgmii_test_base):
             pass
         self.gmii_bfm_wait(30)
                       
+        failures = 0
+        if failures==0:
+            self.passtest(self.global_cycle(),"Ran okay")
+            pass
+        else:
+            self.failtest(self.global_cycle(),"Failed")
+            pass
+        self.finishtest(0,"")
+        pass
+
+#c gbe_test_base
+class gbe_test_base(simple_tb.base_th):
+    verbose = False
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(10)
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(self.run_time-10)
+        self.finishtest(0,"")
+        pass
+
+#c gbe_test_0
+class gbe_test_0(gbe_test_base):
+    #f run
+    def run(self):
+        pkt = [ (0xF0E60A00,0xf,0),
+                (0x1200A305,0xf,0),
+                (0x90785634,0xf,0),
+                (0x00450008,0xf,0),
+                (0xFEB33000,0xf,0),
+                (0x11800000,0xf,0),
+                (0x000ABA72,0xf,0),
+                (0x000A0300,0xf,0),
+                (0x00040200,0xf,0),
+                (0x1C000004,0xf,0),
+                (0x01004D89,0xf,0),
+                (0x05040302,0xf,0),
+                (0x09080706,0xf,0),
+                (0x0D0C0B0A,0xf,0),
+                (0x11100F0E,0xf,0),
+                (0x00001312,0x3,1),
+                ]
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(100)
+        self.axi_bfm.axi4s("axi4s")
+        self.axi4s.set("strb",0xf)
+        self.axi4s.set("keep",0xf)
+        self.axi4s.set("user",0)
+        self.axi4s.set("id",0)
+        self.axi4s.set("dest",0)
+        self.axi4s.set("last",0)
+        # FCS: 7A D5 6B B3
+        for i in range(2):
+            for (d,s,l) in pkt:
+                self.axi4s.set("data",d)
+                self.axi4s.set("strb",s)
+                self.axi4s.set("last",l)
+                self.axi4s.master_enqueue()
+                pass
+            self.bfm_wait(100)
+            pass
+        self.bfm_wait(100)
         failures = 0
         if failures==0:
             self.passtest(self.global_cycle(),"Ran okay")
@@ -144,10 +207,46 @@ class sgmii_test_hw(simple_tb.cdl_test_hw):
         pass
     pass
 
+#c gbe_test_hw
+class gbe_test_hw(simple_tb.cdl_test_hw):
+    """
+    Simple instantiation of tb_sgmii
+    """
+    loggers = {#"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
+               }
+    timer_control           = pycdl.wirebundle(structs.timer_control)
+    tbi_valid               = pycdl.wirebundle(structs.tbi_valid)
+    gmii_tx                 = pycdl.wirebundle(structs.gmii_tx)
+    gmii_rx                 = pycdl.wirebundle(structs.gmii_rx)
+
+    th_forces = { "th.clock":"clk",
+                  "th.outputs":(" ".join(timer_control._name_list("tx_timer_control")) + " " +
+                                " ".join(tbi_valid._name_list("tbi_rx")) + " " +
+                                " sgmii_rxd[4]"+
+                                " "),
+                  "th.inputs":(" ".join(tbi_valid._name_list("tbi_tx")) + " " +
+                               " sgmii_txd[4]"+
+                               " "),
+                  }
+    module_name = "tb_gbe"
+    #f __init__
+    def __init__(self, test):
+        self.th_forces = self.th_forces.copy()
+        simple_tb.cdl_test_hw.__init__(self,test)
+        pass
+    pass
+
 #a Simulation test classes
-#c clocking_phase_measure
-class clocking_phase_measure(simple_tb.base_test):
+#c sgmii
+class sgmii(simple_tb.base_test):
     def test_simple(self):
         self.do_test_run(sgmii_test_hw(sgmii_test_0()), num_cycles=10000)
+        pass
+    pass
+
+#c gbe
+class gbe(simple_tb.base_test):
+    def test_simple(self):
+        self.do_test_run(gbe_test_hw(gbe_test_0()), num_cycles=10000)
         pass
     pass

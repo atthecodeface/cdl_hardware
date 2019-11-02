@@ -98,3 +98,19 @@ typedef struct {
     bit[4] user;
 } t_axi_read_response;
 
+/*t t_axi4s32_content */
+typedef struct {
+    bit     last;
+    bit[64] id;
+    bit[64] dest;
+    bit[64] user  "May be byte-specific - in which case 16 bits per byte - or transfer-wide";
+    bit[4]  strb  "Optional if every transfer is full 32-bits (default is high)";
+    bit[4]  keep  "Optional if every transfer is packed (default is high)";
+    bit[32] data;
+} t_axi4s32_content;
+
+/*t t_axi4s32 */
+typedef struct {
+    bit valid;
+    t_axi4s32_content t;
+} t_axi4s32;
