@@ -37,6 +37,11 @@ apb_rom_request = {
 #t timer_control
 timer_control = {"reset_counter":1,
                  "enable_counter":1,
+                 "advance":1,
+                 "retard":1,
+                 "lock_to_master":1,
+                 "synchronize":2,
+                 "synchronize_value":64,
                  "block_writes":1,
                  "bonus_subfraction_numer":8,
                  "bonus_subfraction_denom":8,
@@ -46,6 +51,7 @@ timer_control = {"reset_counter":1,
 
 #t timer_value
 timer_value = {"irq":1,
+               "locked":1,
                "value":64,
 }
 

@@ -32,6 +32,8 @@ typedef struct {
     bit[32] upper_sum        "Result of upper timer addition - actually an increment based on result of lower_sum carry";
     bit[4]  fractional_half_adder       "Fractional part of half value of interger/fractional adder";
     bit[8]  integer_half_adder          "Integer part of half value of interger/fractional adder";
+    bit[5]  fractional_one_and_half_adder       "1-bit int plus fractional part of 3/2 value of interger/fractional adder";
+    bit[8]  integer_one_and_half_adder          "Integer part of 3/2 value of interger/fractional adder";
 } t_timer_combs;
 
 /*t t_timer_state
@@ -102,7 +104,7 @@ The period should be:
 
   * subfraction numer/denum=0/x: (Int + fraction/16)
 
-  * subfraction numer/denum=M/N: (Int + (fraction+(N-M-1)/N)/16) 
+  * subfraction numer/denum=M/N: (Int + (fraction+(N-M)/(N+1))/16) 
 
 In addition a synchronous advance/retard option is provided for.
 Each time advance is seen going high (i.e. positive edge of advance)
@@ -137,16 +139,21 @@ clock edge where the clock is loaded with the 64-bit synchronization value.
         /*b Support advance and retard */
         timer_combs.fractional_half_adder = timer_control.fractional_adder >> 1;
         timer_combs.fractional_half_adder[3] = timer_control.integer_adder[0];
-        timer_combs.integer_half_adder    = timer_control.integer_adder >> 1;
+        timer_combs.fractional_one_and_half_adder = bundle(1b0, timer_combs.fractional_half_adder) + bundle(1b0, timer_control.fractional_adder);
+        timer_combs.integer_half_adder          = timer_control.integer_adder >> 1;
+        timer_combs.integer_one_and_half_adder  = timer_combs.integer_half_adder + timer_control.integer_adder;
+        if (timer_combs.fractional_one_and_half_adder[4]) {
+            timer_combs.integer_one_and_half_adder  = timer_combs.integer_half_adder + timer_control.integer_adder + 1;
+        }
         
-        if (!timer_state.hold_adder) {
+        if (!timer_state.hold_adder || timer_control.reset_counter) {
             timer_state.fractional_adder <= timer_control.fractional_adder;
             timer_state.integer_adder    <= timer_control.integer_adder;
             timer_state.hold_adder <= 1;
         }
         if (timer_control.advance && !timer_state.advance) {
-            timer_state.fractional_adder <= timer_control.fractional_adder + timer_combs.fractional_half_adder;
-            timer_state.integer_adder    <= timer_control.integer_adder    + timer_combs.integer_half_adder;
+            timer_state.fractional_adder <= timer_combs.fractional_one_and_half_adder[4;0];
+            timer_state.integer_adder    <= timer_combs.integer_one_and_half_adder;
             timer_state.hold_adder       <= 0;
         } elsif (timer_control.retard && !timer_state.retard) {
             timer_state.fractional_adder <= timer_combs.fractional_half_adder;
@@ -201,8 +208,11 @@ clock edge where the clock is loaded with the 64-bit synchronization value.
         }
 
         /*b Allow synchronization */
-        if (timer_control.synchronize) {
+        if (timer_control.synchronize[0]) {
             timer_state.timer_lower  <= timer_control.synchronize_value[32; 0];
+            timer_state.fraction     <= 0;
+        }
+        if (timer_control.synchronize[1]) {
             timer_state.timer_upper  <= timer_control.synchronize_value[32;32];
             timer_state.fraction     <= 0;
         }

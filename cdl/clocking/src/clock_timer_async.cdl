@@ -17,38 +17,219 @@
  * CDL implementation of a standard 64-bit timer using synchronous control.
  *
  */
+/*a Constants */
+/*v sync_window_size
+ *
+ * This is the window in slave clock ticks in which a toggle of one
+ * signal may be earlier than the other while they
+ * are still deemed to be 'locked'.
+ *
+ * Outside this region a toggle is unexpected, and so the clocks
+ * will be deemed 'unlocked'.
+ *
+ * Successive toggles should be kept apart by at least 4* this value,
+ * so half of the time is 'dead time' - or unexpected.
+ *
+ * The a slave clock with less *absolute* jitter this window size may be
+ * smaller; a value of 8 permits a fair amount of jitter in the clocks.
+ *
+ * We denote the slave clock period as S ns.
+ * We call the time between toggles the toggle period.
+ *
+ * The toggle period should be greater than 4 * sync_window_size * S (ns)
+ *
+ * The toggle period is determined by selecting two consecutive bits of the timer value
+ * The toggle occurs whenever these two bits of the timer value become '01'
+ *
+ * The bits of the timer value that are used can be selected dynamically
+ *
+ * If bits [2;6] are chosen then the toggle happens every 2^8 ns; if bits
+ * [2;9] are chosen then the toggle happens every 2^11 ns.
+ *
+ */
+constant integer sync_window_size=8;
+
+/*v sync_toggle_count
+ *
+ * This is the number of toggle window cycles to operate on for counting
+ *  early/late/unexpected toggles.
+ *
+ * The maximum retard/advance is once per this number of toggles
+ *
+ * The time between retard/advances is then once per:
+ *    sync_toggle_count * toggle_period 
+ *
+ * The standard timer adjusts by 1/2 a slave clock tick per retard/advance
+ *
+ * For a 100MHz slave (10ns clock period) the retard/advance adjustment is 5ns.
+ * For sync_toggle_count of 16 with toggle_period of 512ns (i.e ~8200 ns) this
+ * accounts for 600ppm
+ *
+ * For a 600MHz slave (1.6ns clock period) the retard/advance adjustment is 800ps.
+ * For sync_toggle_count of 16 with toggle_period of 256ns (i.e ~4000 ns) this
+ * accounts for 200ppm
+ *
+ * Note that the ppm here should be the sum of all clocks and long-term PLL jitter
+ * leading to the slave clock
+ *
+ * T.period(ns)  STC SWS  AdjPeriod Clk(MHz) Clk(ns)  Adj(ns)  ppm  MaxSkew
+ *   128         16   8     2.0us     1000     1.0       0.5   244   6.2%
+ *   128         16   8     2.0us      600     1.6       0.8   390   10%
+ *   128         16   8     2.0us      500     2.0       1.0   488   12.5%
+ *   128         16   8     2.0us      250     4.0       2.0   977   25%
+ *
+ *   256         16   8     4.1us     1000     1.0       0.5   122   3.1%
+ *   256         16   8     4.1us      600     1.6       0.8   195   5%
+ *   256         16   8     4.1us      500     2.0       1.0   244   6.2%
+ *   256         16   8     4.1us      250     4.0       2.0   488   12.5%
+ *   256         16   8     4.1us      125     8.0       4.0   976   25%
+ *
+ *   512         16   8     8.2us     1000     1.0       0.5    61   1.5%
+ *   512         16   8     8.2us      600     1.6       0.8    98   2.5%
+ *   512         16   8     8.2us      500     2.0       1.0   122   3.1%
+ *   512         16   8     8.2us      250     4.0       2.0   244   6.2%
+ *   512         16   8     8.2us      125     8.0       4.0   488   12.5%
+ *   512         16   8     8.2us       64    15.6       7.8   953   24.4%
+ *
+ *  1024         16   8    16.4us      500     2.0       1.0    61   1.5%
+ *  1024         16   8    16.4us      250     4.0       2.0   122   3.1%
+ *  1024         16   8    16.4us      125     8.0       4.0   244   6.2%
+ *  1024         16   8    16.4us       64    15.6       7.8   477   12.2%
+ *  1024         16   8    16.4us       32    31.2      15.6   954   24.4%
+ *
+ *  2048         16   8    32.8us      250     4.0       2.0    61   1.5%
+ *  2048         16   8    32.8us      125     8.0       4.0   122   3.1%
+ *  2048         16   8    32.8us       64    15.6       7.8   238   6.1%
+ *  2048         16   8    32.8us       32    31.2      15.6   477   12.2%
+ *
+ *  4096         16   8    65.5us      125     8.0       4.0    61   1.6%
+ *  4096         16   8    65.5us       64    15.6       7.8   119   3.1%
+ *  4096         16   8    65.5us       32    31.2      15.6   238   6.1%
+ *  4096         16   8    65.5us       10    31.2      15.6   763   19.5%
+ *
+ * Table shows ppm of >50 and MaxSkew of <=25%
+ *
+ * AdjPeriod is T.period * STC
+ *
+ * Clock period is 1000.0 / Clk(MHz)
+ *
+ * The adjustment is half the clock period
+ *
+ * The maximum skew is the maximum short-term clock rate skew that has to fit
+ * within the toggle early/late window
+ * More skew than this forces out of lock. This is SWS * clock period out of the T.period
+ * This must be kept to <50%, ideally <25%
+ *
+ * The ppm is adjustment / AdjPeriod
+ *
+ * To support the range of clocks from 10MHz to 1GHz a selection of
+ *  128ns, 512ns, 2048ns and 8192ns seems sensible
+ *
+ */
+constant integer sync_toggle_count=16;
+
+constant integer toggle_count_width = sizeof(2*sync_toggle_count-1);
+
 /*a Includes
  */
-include "types/apb.h"
+include "technology/sync_modules.h"
 include "types/timer.h"
+include "clocking/clock_timer_modules.h"
 
 /*a Types */
-/*t t_timer_combs
- *
+/*t t_slave_fsm
  */
-typedef struct {
-    bit[5] fractional_sum    "Result of fractional addition, including fractional_bonus";
-    bit[33] lower_sum        "Result of integer part of timer, lower bits, summing with timer integer add and fractional overflow";
-    bit[32] upper_sum        "Result of upper timer addition - actually an increment based on result of lower_sum carry";
-    bit[4]  fractional_half_adder       "Fractional part of half value of interger/fractional adder";
-    bit[8]  integer_half_adder          "Integer part of half value of interger/fractional adder";
-} t_timer_combs;
+typedef fsm {
+    slave_fsm_idle                "Waiting for one or other toggle";
+    slave_fsm_slave_toggle_seen   "Slave toggle seen but not master as yet";
+    slave_fsm_master_toggle_seen  "Master toggle seen but not slave as yet";
+    slave_fsm_toggle_complete     "Both toggles seen - record and back to idle";
+} t_slave_fsm;
 
-/*t t_timer_state
+/*t t_slave_action
+ */
+typedef enum [4] {
+    slave_action_none,
+    slave_action_idle,
+    slave_action_slave_seen_first,
+    slave_action_master_seen_first,
+    slave_action_simultaneous_toggle,
+    slave_action_slave_early,
+    slave_action_slave_late,
+    slave_action_unexpected_toggle,
+    slave_action_not_locked,
+    slave_action_locked,
+    slave_action_locked_retard,
+    slave_action_locked_advance,
+} t_slave_action;
+
+/*t t_timing_op
+ */
+typedef enum [2] {
+    timing_op_none,
+    timing_op_advance,
+    timing_op_retard
+} t_timing_op;
+
+/*t t_slave_combs
  *
  */
 typedef struct {
-    bit[8]  bonus_subfraction_step "Counter in range 0..denom-1; compared with numer to determine fractional_bonus";
-    bit fractional_bonus           "Carry in to timer fractional bonus adder, depending on numer/denom";
-    bit[4]  fraction               "Fraction of timer value, accumulating on each enabled cycle";
-    bit[32] timer_lower            "Lower 32-bits of integer timer value";
-    bit[32] timer_upper            "Upper 32-bits of integer timer value";
-    bit     advance                "Last value of timer_control.advance - used in posedge detection";
-    bit     retard                 "Last value of timer_control.retard - used in posedge detection";
-    bit     hold_adder             "If asserted, hold current adder value";
-    bit[4]  fractional_adder       "Fractional adder to use";
-    bit[8]  integer_adder          "Integer adder to use";
-} t_timer_state;
+    bit master_toggle    "Asserted if a master toggle seen";
+    bit slave_toggle     "Asserted if a slave toggle seen";
+    bit[64] top_value "Top bits of timer value, bottom window_bits downward zeroed out";
+    bit     top_value_matches;
+    bit[2] window_bits;
+    t_slave_action action;
+    bit toggles_close_enough;
+    bit more_early_toggles;
+    bit[toggle_count_width] toggle_diff;
+} t_slave_combs;
+
+/*t t_slave_toggles
+ *
+ */
+typedef struct {
+    bit[toggle_count_width] seen;
+    bit[toggle_count_width] early;
+    bit[toggle_count_width] late;
+    bit[toggle_count_width] unexpected;
+} t_slave_toggles;
+
+/*t t_slave_state
+ *
+ */
+typedef struct {
+    bit last_master_quarter_window_passed   "Used for edge detection on sync version of quarter_window_passed";
+    bit[2] last_window_bits                 "Last value of first 2 bits of slave timer value window";
+    bit[3] quarter_window_passed_sr         "Shift register to delay slave window detection by 2 ticks";
+    t_slave_fsm fsm_state;
+    bit[sizeof(sync_toggle_count)+1] count;
+    t_slave_toggles toggles "Toggle counts";
+    bit synchronize_request;
+    t_timing_op request_timing  "Request to timer control to advance/retard - but only if locking enabled";
+    t_timer_control timer_control;
+    bit phase_locked    "Asserted if phase locked to master";
+    bit locked          "Asserted if phase locked to master and upper value bits match";
+} t_slave_state;
+
+/*t t_master_combs
+ *
+ */
+typedef struct {
+    bit[64] top_value "Top bits of timer value, bottom window_bits downward zeroed out";
+    bit[2] window_bits;
+} t_master_combs;
+
+/*t t_master_state
+ *
+ */
+typedef struct {
+    bit synchronize_pending  "Asserted if master timer control has synchronize set at some point, until request is taken";
+    bit synchronize_request  "Asserted for a window size from 1/4 of the way through the window to request sync";
+    bit quarter_window_passed "Asserted when the 1/4 window is passed";
+    bit[2] last_window_bits   "Last value of first 2 bits of window";
+} t_master_state;
 
 /*a Module */
 module clock_timer_async( clock master_clk             "Master clock",
@@ -57,8 +238,8 @@ module clock_timer_async( clock master_clk             "Master clock",
                           input bit slave_reset_n     " Active low reset",
                           input t_timer_control  master_timer_control     "Timer control in the master domain - synchronize, reset, enable and lock_to_master are used",
                           input t_timer_value    master_timer_value       "Timer value in the master domain - only 'value' is used",
-                          input t_timer_control   slave_timer_control_in  "Timer control in the slave domain - only adder values are used";
-                          output t_timer_control  slave_timer_control_out "Timer control in the slave domain for other synchronous clock_timers - all valid";
+                          input t_timer_control   slave_timer_control_in  "Timer control in the slave domain - only adder values are used",
+                          output t_timer_control  slave_timer_control_out "Timer control in the slave domain for other synchronous clock_timers - all valid",
                           output t_timer_value    slave_timer_value       "Timer value in the slave domain"
     )
 """
@@ -69,7 +250,7 @@ The 'synchronize' control requires a small state machine - when this is asserted
 is monitored and when it crosses from below 1/4 to above 1/4 of a window of N lower bits a control is passed to the
 slave to inform it to synchronize to the upper master_timer_value bits at half the window size.
 
-Both the slave and master monitor the below 3/4 to above 3/4 of a window of N lower bits. Each toggles a signal
+Both the slave and master monitor the below 1/4 to above 1/4 of a window of N lower bits. Each toggles a signal
 when the boundary is crossed.
 The master signal is synchronized by the slave using two flops - hence it is expected to be two clock ticks later
 than the slave version. Hence the slave version is delayed by two flops also.
@@ -82,102 +263,232 @@ the slave 'advance' or 'retard' signals may be set; the counts are reset.
 If more than one unexpected toggled occurs then the timer is deemed 'not locked'.
 """
 {
-    /*b Clock and reset */
-    default clock clk;
-    default reset active_low reset_n;
-
-    /*b Timer state */
-    clocked t_timer_state timer_state= {*=0} "State of the timer and comparator";
-    comb    t_timer_combs timer_combs        "Combinatorial decode of timer state and controls";
-
-    /*b Handle the timer and comparator */
-    timer_logic """
-    The @a timer value can be reset or it may count on a tick, or it
-    may just hold its value.
-
-    The timer update logic adds the integer and fractional increments
-    to the timer value, with an optional carry (@a fractional_bonus)
-    in that is generated and registered on the previous cycle. This
-    bonus is one for @a bonus_subfraction_numer out of @a
-    bonus_subfraction_denom.
-
+    /*b Master state */
+    default clock master_clk;
+    default reset active_low master_reset_n;
+    clocked t_master_state master_state= {*=0} "State of the master";
+    comb    t_master_combs master_combs;
+    
+    /*b Handle the master side */
+    master_logic """
     """: {
-        /*b Support advance and retard */
-        timer_combs.fractional_half_adder = timer_control.fractional_adder >> 1;
-        timer_combs.fractional_half_adder[3] = timer_control.integer_adder[0];
-        timer_combs.integer_half_adder    = timer_control.integer_adder >> 1;
+        master_combs.window_bits = master_timer_value.value[2;sync_window_lsb];
+        master_combs.top_value   = master_timer_value.value & ((-1)<<(sync_window_lsb+2));
+        if (master_timer_control.synchronize!=0) {
+            master_state.synchronize_pending <= 1;
+        }
+        master_state.last_window_bits <= master_combs.window_bits;
+        if ((master_combs.window_bits==2b01) &&
+            (master_state.last_window_bits==2b00)) {
+            master_state.quarter_window_passed <= !master_state.quarter_window_passed;
+            master_state.synchronize_request   <= 0;
+            if (master_state.synchronize_pending && !master_state.synchronize_request) {
+                master_state.synchronize_request   <= 1;
+                master_state.synchronize_pending <= 0;
+            }
+        }
+    }
+
+    /*b Synchronizers to slave */
+    net bit slave_sync_master_reset_counter;
+    net bit slave_sync_master_enable_counter;
+    net bit slave_sync_master_lock_to_master;
+    net bit slave_sync_master_synchronize_request;
+    net bit slave_sync_master_quarter_window_passed;
+    slave_synchronizers """
+    Synchronization from the master to the slave domain.
+
+    Some signals are static and hence level sensitive, others are edge sensitive
+    """: {
+        tech_sync_bit slave_reset_counter_flop(clk <- slave_clk, reset_n<=slave_reset_n,
+                                               d <= master_timer_control.reset_counter,
+                                               q => slave_sync_master_reset_counter ); // level sensitive
+        tech_sync_bit slave_enable_counter_flop(clk <- slave_clk, reset_n<=slave_reset_n,
+                                               d <= master_timer_control.enable_counter,
+                                               q => slave_sync_master_enable_counter ); // level sensitive
+        tech_sync_bit slave_lock_to_master_flop(clk <- slave_clk, reset_n<=slave_reset_n,
+                                               d <= master_timer_control.lock_to_master,
+                                               q => slave_sync_master_lock_to_master ); // level sensitive
+        tech_sync_bit slave_synchronize_flop(clk <- slave_clk, reset_n<=slave_reset_n,
+                                             d <= master_state.synchronize_request,
+                                             q => slave_sync_master_synchronize_request ); // rising edge important
+        tech_sync_bit slave_window_flop(clk <- slave_clk, reset_n<=slave_reset_n,
+                                        d <= master_state.quarter_window_passed,
+                                        q => slave_sync_master_quarter_window_passed ); // toggle important
+    }
+    
+    /*b Slave state */
+    default clock slave_clk;
+    default reset active_low slave_reset_n;
+    clocked t_slave_state slave_state= {*=0} "State of the slave";
+    comb    t_slave_combs slave_combs        "Combinatorial decode of slave state and controls";
+    net t_timer_value slave_timer_value;
+
+    /*b Handle the slave side */
+    slave_logic """
+    """: {
+        slave_combs.window_bits = slave_timer_value.value[2;sync_window_lsb];
+        slave_combs.top_value   = slave_timer_value.value & ((-1)<<(sync_window_lsb+2));
+        slave_combs.top_value_matches = 0;
+        if (master_combs.top_value==slave_combs.top_value) {
+            slave_combs.top_value_matches = 1;
+        }
+        slave_state.last_master_quarter_window_passed <= slave_sync_master_quarter_window_passed;
+        slave_state.last_window_bits <= slave_combs.window_bits;
+        slave_state.quarter_window_passed_sr <= slave_state.quarter_window_passed_sr >> 1;
+        if ((slave_combs.window_bits==2b01) &&
+            (slave_state.last_window_bits==2b00)) {
+                slave_state.quarter_window_passed_sr <= 3b100;
+        }
+
+        slave_combs.slave_toggle  = slave_state.quarter_window_passed_sr[0];
+        slave_combs.master_toggle = (slave_state.last_master_quarter_window_passed != slave_sync_master_quarter_window_passed);
+        slave_combs.toggle_diff = slave_state.toggles.early - slave_state.toggles.late;
+        slave_combs.more_early_toggles   = !slave_combs.toggle_diff[toggle_count_width-1];
+        slave_combs.toggles_close_enough = ( (slave_combs.toggle_diff[3;toggle_count_width-3]==0) ||
+                                             (slave_combs.toggle_diff[3;toggle_count_width-3]==-1) );
         
-        if (!timer_state.hold_adder) {
-            timer_state.fractional_adder <= timer_control.fractional_adder;
-            timer_state.integer_adder    <= timer_control.integer_adder;
-            timer_state.hold_adder <= 1;
-        }
-        if (timer_control.advance && !timer_state.advance) {
-            timer_state.fractional_adder <= timer_control.fractional_adder + timer_combs.fractional_half_adder;
-            timer_state.integer_adder    <= timer_control.integer_adder    + timer_combs.integer_half_adder;
-            timer_state.hold_adder       <= 0;
-        } elsif (timer_control.retard && !timer_state.retard) {
-            timer_state.fractional_adder <= timer_combs.fractional_half_adder;
-            timer_state.integer_adder    <= timer_combs.integer_half_adder;
-            timer_state.hold_adder       <= 0;
-        }
-        if (timer_control.advance || timer_state.advance) {
-            timer_state.advance <= timer_control.advance;
-        }
-        if (timer_control.retard || timer_state.retard) {
-            timer_state.retard <= timer_control.retard;
-        }
-        
-        /*b Tick / reset timer */
-        timer_combs.fractional_sum = ( bundle(1b0, timer_state.fraction)    +
-                                       bundle(1b0, timer_state.fractional_adder) +
-                                       (timer_state.fractional_bonus ? 1: 0)
-            );
-        timer_combs.lower_sum      = ( bundle(1b0, timer_state.timer_lower) +
-                                       bundle(25b0, timer_state.integer_adder) +
-                                       (timer_combs.fractional_sum[4]?1:0)
-            );
-        timer_combs.upper_sum      = timer_state.timer_upper;
-        if (timer_combs.lower_sum[32]) {
-            timer_combs.upper_sum      = timer_state.timer_upper + 1;
-        }
-        
-        if (timer_control.enable_counter) {
-            if (timer_control.bonus_subfraction_denom==0) {
-                timer_state.bonus_subfraction_step <= 0;
-                timer_state.fractional_bonus       <= 0;
-            } else {
-                timer_state.bonus_subfraction_step <= timer_state.bonus_subfraction_step + 1;
-                if (timer_state.bonus_subfraction_step>=timer_control.bonus_subfraction_denom) {
-                    timer_state.bonus_subfraction_step <= 0;
+        slave_combs.action = slave_action_none;
+        full_switch (slave_state.fsm_state) {
+        case slave_fsm_idle: {
+            if (slave_combs.slave_toggle) {
+                if (slave_combs.master_toggle) {
+                    slave_combs.action = slave_action_simultaneous_toggle;
+                } else {
+                    slave_combs.action = slave_action_slave_seen_first;
                 }
-                timer_state.fractional_bonus <= 0;
-                if (timer_state.bonus_subfraction_step > timer_control.bonus_subfraction_numer) {
-                    timer_state.fractional_bonus <= 1;
+            } elsif (slave_combs.master_toggle) {
+                slave_combs.action = slave_action_master_seen_first;
+            }
+        }
+        case slave_fsm_slave_toggle_seen: {
+            if (slave_state.count==0) {
+                slave_combs.action = slave_action_unexpected_toggle;
+            }
+            if (slave_combs.master_toggle) {
+                slave_combs.action = slave_action_slave_early;
+            }
+        }
+        case slave_fsm_master_toggle_seen: {
+            if (slave_state.count==0) {
+                slave_combs.action = slave_action_unexpected_toggle;
+            }
+            if (slave_combs.slave_toggle) {
+                slave_combs.action = slave_action_slave_late;
+            }
+        }
+        case slave_fsm_toggle_complete: {
+            if (slave_state.toggles.unexpected!=0) {
+                slave_combs.action = slave_action_not_locked;
+            } elsif (slave_combs.toggles_close_enough) {
+                slave_combs.action = slave_action_locked;
+            } else {
+                slave_combs.action = slave_action_locked_advance;
+                if (slave_combs.more_early_toggles) {
+                    slave_combs.action = slave_action_locked_retard;
                 }
             }
-            timer_state.fraction    <= timer_combs.fractional_sum[4;0];
-            timer_state.timer_lower <= timer_combs.lower_sum[32;0];
-            timer_state.timer_upper <= timer_combs.upper_sum;
+            if (slave_state.toggles.seen != sync_toggle_count) {
+                slave_combs.action = slave_action_idle;
+            }
         }
-        if (timer_control.reset_counter) {
-            timer_state.bonus_subfraction_step <= 0;
-            timer_state.fractional_bonus <= 0;
-            timer_state.fraction <= 0;
-            timer_state.timer_lower <= 0;
-            timer_state.timer_upper <= 0;
+        }
+        full_switch (slave_combs.action) {
+        case slave_action_none: {
+            slave_state.fsm_state <= slave_state.fsm_state;
+        }
+        case slave_action_idle: {
+            slave_state.fsm_state <= slave_fsm_idle;
+        }
+        case slave_action_slave_seen_first: {
+            slave_state.fsm_state <= slave_fsm_slave_toggle_seen;
+            slave_state.count     <= sync_window_size;
+        }
+        case slave_action_master_seen_first: {
+            slave_state.fsm_state <= slave_fsm_master_toggle_seen;
+            slave_state.count     <= sync_window_size;
+        }
+        case slave_action_simultaneous_toggle: {
+            slave_state.fsm_state    <= slave_fsm_toggle_complete;
+            slave_state.toggles.seen  <= slave_state.toggles.seen + 1;
+        }
+        case slave_action_slave_early: {
+            slave_state.fsm_state    <= slave_fsm_toggle_complete;
+            slave_state.toggles.seen  <= slave_state.toggles.seen + 1;
+            slave_state.toggles.early <= slave_state.toggles.early + 1;
+        }
+        case slave_action_slave_late: {
+            slave_state.fsm_state    <= slave_fsm_toggle_complete;
+            slave_state.toggles.seen <= slave_state.toggles.seen + 1;
+            slave_state.toggles.late <= slave_state.toggles.late + 1;
+        }
+        case slave_action_unexpected_toggle: {
+            slave_state.fsm_state    <= slave_fsm_toggle_complete;
+            slave_state.toggles.seen <= slave_state.toggles.seen + 1;
+            slave_state.toggles.unexpected <= slave_state.toggles.unexpected + 1;
+        }
+        case slave_action_not_locked: {
+            slave_state.fsm_state    <= slave_fsm_idle;
+            slave_state.toggles <= {*=0};
+            slave_state.phase_locked <= 0;
+            slave_state.locked <= 0;
+        }
+        case slave_action_locked: {
+            slave_state.fsm_state    <= slave_fsm_idle;
+            slave_state.toggles <= {*=0};
+            slave_state.phase_locked <= 1;
+            slave_state.locked <= slave_combs.top_value_matches;
+            slave_state.request_timing <= timing_op_none;
+        }
+        case slave_action_locked_retard: {
+            slave_state.fsm_state    <= slave_fsm_idle;
+            slave_state.toggles <= {*=0};
+            slave_state.phase_locked <= 1;
+            slave_state.locked <= slave_combs.top_value_matches;
+            slave_state.request_timing <= timing_op_retard;
+        }
+        case slave_action_locked_advance: {
+            slave_state.fsm_state    <= slave_fsm_idle;
+            slave_state.toggles <= {*=0};
+            slave_state.phase_locked <= 1;
+            slave_state.locked <= slave_combs.top_value_matches;
+            slave_state.request_timing <= timing_op_advance;
+        }
         }
 
-        /*b Allow synchronization */
-        if (timer_control.synchronize) {
-            timer_state.timer_lower  <= timer_control.synchronize_value[32; 0];
-            timer_state.timer_upper  <= timer_control.synchronize_value[32;32];
-            timer_state.fraction     <= 0;
+        slave_state.timer_control.reset_counter  <= slave_sync_master_reset_counter;
+        slave_state.timer_control.enable_counter <= slave_sync_master_enable_counter;
+        slave_state.timer_control.lock_to_master <= slave_sync_master_lock_to_master;
+        slave_state.timer_control.advance <= 0;
+        slave_state.timer_control.retard  <= 0;
+        if (slave_state.request_timing != timing_op_none) {
+            slave_state.request_timing <= timing_op_none;
+            if (slave_sync_master_lock_to_master) {
+                slave_state.timer_control.advance <= (slave_state.request_timing==timing_op_advance);
+                slave_state.timer_control.retard  <= (slave_state.request_timing==timing_op_retard);
+            }
         }
+        slave_state.synchronize_request <= slave_sync_master_synchronize_request;
+        slave_state.timer_control.synchronize <= 0;
+        if (slave_sync_master_synchronize_request && !slave_state.synchronize_request) {
+            slave_state.timer_control.synchronize <= 2b11;
+            slave_state.timer_control.synchronize_value <= master_combs.top_value;
+            slave_state.timer_control.synchronize_value[2;sync_window_lsb] <= 2b01;
+        }
+        slave_state.timer_control.block_writes <= slave_timer_control_in.block_writes;
+        slave_state.timer_control.bonus_subfraction_numer <= slave_timer_control_in.bonus_subfraction_numer;
+        slave_state.timer_control.bonus_subfraction_denom <= slave_timer_control_in.bonus_subfraction_denom;
+        slave_state.timer_control.fractional_adder        <= slave_timer_control_in.fractional_adder;
+        slave_state.timer_control.integer_adder           <= slave_timer_control_in.integer_adder;
+
+        /*b Instantiate the timer in the slave clock domain */
+        clock_timer timer(clk <- slave_clk,
+                          reset_n <= slave_reset_n,
+                          timer_control <= slave_state.timer_control,
+                          timer_value   => slave_timer_value );
 
         /*b Drive outputs */
-        timer_value.value = bundle(timer_state.timer_upper, timer_state.timer_lower);
-        timer_value.irq = 0;
+        slave_timer_control_out = slave_state.timer_control;
     }
 
     /*b Done

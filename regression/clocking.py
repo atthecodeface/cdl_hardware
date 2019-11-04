@@ -20,6 +20,16 @@ import structs
 import math
 
 #a Useful functions
+def find_fractions_for(ns):
+    adder_ns = int(ns*16)
+    print "adder (%d,%d"%(adder_ns%16, adder_ns/16)
+    for j in range(255):
+        i = j+1
+        d = int((ns*16-adder_ns)*i)
+        print i, d, "(%d,%d)"%(i-d,i), (25+d/(i+0.))/16, "(%d,%d)"%(i-d-1,i), (25+(d+1)/(i+0.))/16
+        pass
+    pass
+#find_fractions_for(1.6)
 def int_of_bits(bits):
     l = len(bits)
     m = 1<<(l-1)
@@ -245,6 +255,212 @@ class c_clocking_eye_tracking_test_0(c_clocking_eye_tracking_test_base):
         self.finishtest(0,"")
         pass
 
+#c c_clock_timer_test_base
+class c_clock_timer_test_base(simple_tb.base_th):
+    """
+    Find a slightly slower bonus fraction for 1.6ns
+    """
+    master_adder = (1,0)
+    master_bonus = (0,0)
+    slave_adder = (1,9)
+    slave_bonus = (3,9)
+    slave_lock = False
+    #f configure_master
+    def configure_master(self, adder, bonus=(0,0)):
+        self.master_timer_control__bonus_subfraction_denom.drive(bonus[1])
+        self.master_timer_control__bonus_subfraction_numer.drive(bonus[0])
+        self.master_timer_control__fractional_adder.drive(adder[1])
+        self.master_timer_control__integer_adder.drive(adder[0])
+        self.master_timer_control__reset_counter.drive(1)
+        self.master_timer_control__enable_counter.drive(0)
+        pass
+    #f configure_slave
+    def configure_slave(self, adder, bonus=(0,0), lock=False):
+        self.slave_timer_control__bonus_subfraction_denom.drive(bonus[1])
+        self.slave_timer_control__bonus_subfraction_numer.drive(bonus[0])
+        self.slave_timer_control__fractional_adder.drive(adder[1])
+        self.slave_timer_control__integer_adder.drive(adder[0])
+        self.slave_timer_control__reset_counter.drive(1)
+        self.slave_timer_control__enable_counter.drive(0)
+        if lock:
+            self.master_timer_control__lock_to_master.drive(1)
+            pass
+        else:
+            self.master_timer_control__lock_to_master.drive(0)
+            pass
+        pass
+    pass
+#c c_clock_timer_test_master_0
+class c_clock_timer_test_master_0(c_clock_timer_test_base):
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(100)
+        simple_tb.base_th.run_start(self)
+        self.configure_master( adder=self.master_adder )
+        self.bfm_wait(40)
+        self.master_timer_control__reset_counter.drive(0)
+        self.bfm_wait(40)
+        self.master_timer_control__enable_counter.drive(1)
+        self.bfm_wait(1000)
+        master = self.master_timer_value__value.value()
+        if (master<990) or (master>1010):
+            self.failtest(0,"Master clock %d out of range 990 to 1010"%master)
+        self.finishtest(0,"")
+        pass
+    pass
+
+#c c_clock_timer_test_master_sync_0
+class c_clock_timer_test_master_sync_0(c_clock_timer_test_base):
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(100)
+        simple_tb.base_th.run_start(self)
+        self.configure_master( adder=self.master_adder )
+        self.bfm_wait(40)
+        self.master_timer_control__reset_counter.drive(0)
+        self.bfm_wait(40)
+        self.master_timer_control__enable_counter.drive(1)
+        self.bfm_wait(100)
+        self.master_timer_control__synchronize.drive(3)
+        self.master_timer_control__synchronize_value.drive(0x123456789abcdef0)
+        self.bfm_wait(1)
+        self.master_timer_control__synchronize.drive(0)
+        self.bfm_wait(1000)
+        master = self.master_timer_value__value.value() - 0x123456789abcdef0
+        if (master<990) or (master>1010):
+            self.failtest(0,"Master clock %d out of range 990 to 1010"%master)
+        self.finishtest(0,"")
+        pass
+    pass
+
+#c c_clock_timer_test_master_sync_1
+class c_clock_timer_test_master_sync_1(c_clock_timer_test_base):
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(100)
+        simple_tb.base_th.run_start(self)
+        self.configure_master( adder=self.master_adder )
+        self.bfm_wait(40)
+        self.master_timer_control__reset_counter.drive(0)
+        self.bfm_wait(40)
+        self.master_timer_control__enable_counter.drive(1)
+        self.bfm_wait(100)
+        self.master_timer_control__synchronize.drive(1)
+        self.master_timer_control__synchronize_value.drive(0x123456789abcdef0)
+        self.bfm_wait(1)
+        self.master_timer_control__synchronize.drive(0)
+        self.bfm_wait(1000)
+        master = self.master_timer_value__value.value() - 0x9abcdef0
+        if (master<990) or (master>1010):
+            self.failtest(0,"Master clock %d out of range 990 to 1010"%master)
+        self.finishtest(0,"")
+        pass
+    pass
+
+#c c_clock_timer_test_master_sync_2
+class c_clock_timer_test_master_sync_2(c_clock_timer_test_base):
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(100)
+        simple_tb.base_th.run_start(self)
+        self.configure_master( adder=self.master_adder )
+        self.bfm_wait(40)
+        self.master_timer_control__reset_counter.drive(0)
+        self.bfm_wait(40)
+        self.master_timer_control__enable_counter.drive(1)
+        self.bfm_wait(100)
+        self.master_timer_control__synchronize.drive(2)
+        self.master_timer_control__synchronize_value.drive(0x123456789abcdef0)
+        self.bfm_wait(1)
+        self.master_timer_control__synchronize.drive(0)
+        self.bfm_wait(1000)
+        master = self.master_timer_value__value.value() - 0x1234567800000000
+        if (master<1090) or (master>1110):
+            self.failtest(0,"Master clock %d out of range 1090 to 1110"%master)
+        self.finishtest(0,"")
+        pass
+    pass
+
+#c c_clock_timer_test_master_slave_base
+class c_clock_timer_test_master_slave_base(c_clock_timer_test_base):
+    max_diff = 8
+    master_sync = None
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(100)
+        simple_tb.base_th.run_start(self)
+
+        self.configure_master( adder=self.master_adder, bonus=self.master_bonus )
+        self.configure_slave( adder=self.slave_adder, bonus=self.slave_bonus, lock=self.slave_lock )
+        self.bfm_wait(40)
+        self.slave_timer_control__reset_counter.drive(0)
+        self.master_timer_control__reset_counter.drive(0)
+        self.bfm_wait(40)
+        self.slave_timer_control__enable_counter.drive(1)
+        self.master_timer_control__enable_counter.drive(1)
+        if self.master_sync is not None:
+            self.master_timer_control__synchronize.drive(3)
+            self.master_timer_control__synchronize_value.drive(self.master_sync)
+            self.bfm_wait(1)
+            self.master_timer_control__synchronize.drive(0)
+            pass
+        self.bfm_wait(self.run_time-self.global_cycle()/10)
+        master = self.master_timer_value__value.value()
+        slave = self.slave_timer_value__value.value()
+        diff = abs(master-slave)
+        if diff>self.max_diff:
+            self.failtest(0,"Difference in times is more than %d (%d) (%08x to %08x) - should have locked"%
+                          (self.max_diff, diff, master, slave))
+        self.finishtest(0,"")
+        pass
+    pass
+
+#c c_clock_timer_test_master_slave_0
+class c_clock_timer_test_master_slave_0(c_clock_timer_test_master_slave_base):
+    pass
+    
+#c c_clock_timer_test_master_slave_1
+class c_clock_timer_test_master_slave_1(c_clock_timer_test_master_slave_base):
+    # 247 148 (99,247) 1.59994939271 (98,247) 1.60020242915
+    slave_adder = adder=(1,9)
+    slave_bonus=(99,247)
+    slave_lock=True
+    max_diff = 1
+    pass
+
+#c c_clock_timer_test_master_slave_2
+class c_clock_timer_test_master_slave_2(c_clock_timer_test_master_slave_base):
+    # 249 149 (100,249) 1.59989959839 (99,249) 1.60015060241
+    slave_adder = adder=(1,9)
+    slave_bonus=(100,249)
+    slave_lock=True
+    max_diff = 1
+    pass
+
+#c c_clock_timer_test_master_slave_3
+class c_clock_timer_test_master_slave_3(c_clock_timer_test_master_slave_base):
+    # 249 149 (100,249) 1.59989959839 (99,249) 1.60015060241
+    slave_adder = (1,9)
+    slave_bonus = (99,249)
+    slave_lock = True
+    max_diff = 1
+    pass
+
+#c c_clock_timer_test_master_slave_4
+class c_clock_timer_test_master_slave_4(c_clock_timer_test_master_slave_base):
+    # 249 149 (100,249) 1.59989959839 (99,249) 1.60015060241
+    slave_adder = (1,9)
+    slave_bonus = (99,249)
+    slave_lock = True
+    master_sync = 0xdeadbeefcafef00d
+    max_diff = 1
+    pass
+
 #a Hardware classes
 #c clocking_test_hw
 class clocking_test_hw(simple_tb.cdl_test_hw):
@@ -281,6 +497,36 @@ class clocking_test_hw(simple_tb.cdl_test_hw):
         pass
     pass
 
+#c clock_timer_test_hw
+class clock_timer_test_hw(simple_tb.cdl_test_hw):
+    """
+    Simple instantiation of clock_timer testbench
+    """
+    system_clock_half_period = 5
+    loggers = {#"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
+               }
+    timer_control      = pycdl.wirebundle(structs.timer_control)
+    timer_value        = pycdl.wirebundle(structs.timer_value)
+
+    th_forces = { "th.clock":"clk",
+                  "th.outputs":(" ".join(timer_control._name_list("master_timer_control")) + " " +
+                                " ".join(timer_control._name_list("slave_timer_control")) + " " +
+                                " "),
+                  "th.inputs":(" ".join(timer_value._name_list("master_timer_value")) + " " +
+                               " ".join(timer_value._name_list("slave_timer_value")) + " " +
+                               " "),
+                  }
+    module_name = "tb_clock_timer"
+    clocks = { "clk":(0,5,5),
+               "slave_clk":(3,8,8),
+               }
+    #f __init__
+    def __init__(self, test):
+        self.th_forces = self.th_forces.copy()
+        simple_tb.cdl_test_hw.__init__(self,test)
+        pass
+    pass
+
 #a Simulation test classes
 #c clocking_phase_measure
 class clocking_phase_measure(simple_tb.base_test):
@@ -293,6 +539,36 @@ class clocking_phase_measure(simple_tb.base_test):
 class clocking_eye_tracking(simple_tb.base_test):
     def test_simple(self):
         self.do_test_run(clocking_test_hw(c_clocking_eye_tracking_test_0()), num_cycles=400000)
+        pass
+    pass
+#c clock_timer
+class clock_timer(simple_tb.base_test):
+    def test_master_0(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_0()), num_cycles=12000)
+        pass
+    def test_master_sync_0(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_sync_0()), num_cycles=20000)
+        pass
+    def test_master_sync_1(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_sync_1()), num_cycles=20000)
+        pass
+    def test_master_sync_2(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_sync_2()), num_cycles=20000)
+        pass
+    def test_master_slave_0(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_0()), num_cycles=200000)
+        pass
+    def test_master_slave_1(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_1()), num_cycles=5*1000*1000)
+        pass
+    def test_master_slave_2(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_2()), num_cycles=5*1000*1000)
+        pass
+    def test_master_slave_3(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_3()), num_cycles=5*1000*1000)
+        pass
+    def test_master_slave_4(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_4()), num_cycles=5*1000*1000)
         pass
     pass
 
