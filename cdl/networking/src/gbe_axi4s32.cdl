@@ -85,8 +85,6 @@ typedef struct {
     bit data_invalid        "Asserted if AXI4S data is not ready for state machine";
     bit[8] axi4s_data_byte;
     bit[8] axi4s_fcs_byte;
-    bit[32] fcs_xor         "Residue of bottom 4 bits of FCS and data";
-    bit[32] fcs_xor2        "Residue of next 4 bits of FCS and data and bottom 4 bits of fcs_xor";
     bit[32] next_fcs;
     bit shift_data;
     t_fcs_op fcs_op;
@@ -106,14 +104,53 @@ typedef struct {
     bit[4]    ipg;
 } t_tx_state;
 
+/*t t_rx_fsm */
+typedef fsm {
+    rx_fsm_idle         "Waiting for valid data in";
+    rx_fsm_preamble     "Outputting preamble";
+    rx_fsm_data         "Outputting data, calculating FCS";
+    rx_fsm_wait_for_idle "Waiting for idle from GMII";
+} t_rx_fsm;
+
+/*t t_rx_action */
+typedef enum [5] {
+    rx_action_none,
+    rx_action_sop                "Packet data valid, send SOP",
+    rx_action_preamble_end       "Send last byte of preamble",
+    rx_action_data,
+    rx_action_packet_okay,
+    rx_action_packet_error,
+    rx_action_idle,
+    rx_action_overrun,
+    rx_action_non_packet_error,
+} t_rx_action;
+
 /*t t_rx_combs */
 typedef struct {
-    bit a;
+    t_rx_action action;
+    bit[8]  gmii_data;
+    bit     gmii_idle;
+    bit     gmii_valid_data;
+    bit     gmii_valid;
+    bit     axi_cannot_take_data;
+    bit[32] next_fcs;
+    bit fcs_valid;
+    bit store_byte;
+    bit store_status;
+    bit data_ready_for_axi;
+    t_fcs_op fcs_op;
+    bit[16] byte_of_packet_plus_one;
 } t_rx_combs;
 
 /*t t_rx_state */
 typedef struct {
-    t_axi4s32 axi4s          "AXI4S data being consumed";
+    t_axi4s32 axi4s          "AXI4S data being presented";
+    t_rx_fsm  fsm_state;
+    bit[4] byte_valid;
+    bit[32] data_word;
+    bit[32]   fcs;
+    bit[16]    byte_of_packet "Byte of packet";
+    bit[16]    max_mtu        "Largest packet size supported";
 } t_rx_state;
 
 /*a Module
@@ -137,6 +174,18 @@ module gbe_axi4s32( clock tx_aclk   "Transmit clock domain - AXI-4-S and GMII TX
 /*b Documentation */
 """
 A light-weight full-duplex Ethernet MAC supporting GMII.
+
+0x04C11DB7  /2= 2608edb /2= 130476d  /2= 9823b6
+>>> bits_of_n(32,0x04C11DB7)
+[1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0]
+>>> x=bits_of_n(32,0x04C11DB7)
+>>> x.reverse()
+>>> "%x"%(int_of_bits(x))
+0xedb88320 /2= 76dc4190 /2= 3b6e20c8 /2= 1db71064
+>>>
+                    C704DD7B (bit reverse debb20e3)
+7BDD04C7 
+
 """
 /*b Module body */
 {
@@ -241,7 +290,7 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
          */
         tx_combs.consuming_axi4s = 0;
         tx_combs.shift_data      = 0;
-        tx_combs.fcs_op          = 0;
+        tx_combs.fcs_op          = fcs_op_none;
         tx_state.count <= tx_state.count - 1;
         tx_combs.byte_of_packet_plus_one = tx_state.byte_of_packet+1;
         if (tx_state.byte_of_packet==-1) { // Saturate 
@@ -249,7 +298,8 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
         }
 
         tx_combs.axi4s_data_byte = tx_state.axi4s.t.data[8;0];
-        tx_combs.axi4s_fcs_byte  = tx_state.fcs[8;0]; 
+        tx_combs.axi4s_data_byte = tx_state.axi4s.t.data[8;0];
+        tx_combs.axi4s_fcs_byte  = ~tx_state.fcs[8;0]; 
         if (gmii_tx_enable) {
             tx_state.gmii_tx_valid <= 0;
         }
@@ -267,6 +317,7 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
             tx_state.gmii_tx.txd   <= 0x55;
             tx_state.count         <= preamble_length-2; // Since SOP is one, and last preamble byte is different
             tx_state.byte_of_packet <= 0;
+            tx_combs.fcs_op         = fcs_op_init;
         }
         case tx_action_preamble: {
             tx_state.gmii_tx_valid <= 1;
@@ -355,43 +406,15 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
 
     /*b Tx FCS */
     tx_fcs:{
-        full_switch (tx_state.fcs[4;0] ^ tx_combs.axi4s_data_byte[4;0]) {
-        case 4h0: { tx_combs.fcs_xor = 32h4DBDF21C;}
-        case 4h1: { tx_combs.fcs_xor = 32h500AE278; }
-        case 4h2: { tx_combs.fcs_xor = 32h76D3D2D4; }
-        case 4h3: { tx_combs.fcs_xor = 32h6B64C2B0; }
-        case 4h4: { tx_combs.fcs_xor = 32h3B61B38C; }
-        case 4h5: { tx_combs.fcs_xor = 32h26D6A3E8; }
-        case 4h6: { tx_combs.fcs_xor = 32h000F9344; }
-        case 4h7: { tx_combs.fcs_xor = 32h1DB88320; }
-        case 4h8: { tx_combs.fcs_xor = 32hA005713C; }
-        case 4h9: { tx_combs.fcs_xor = 32hBDB26158; }
-        case 4ha: { tx_combs.fcs_xor = 32h9B6B51F4; }
-        case 4hb: { tx_combs.fcs_xor = 32h86DC4190; }
-        case 4hc: { tx_combs.fcs_xor = 32hD6D930AC; }
-        case 4hd: { tx_combs.fcs_xor = 32hCB6E20C8; }
-        case 4he: { tx_combs.fcs_xor = 32hEDB71064; }
-        default:  { tx_combs.fcs_xor = 32hF0000000; }
-        }
-        full_switch (tx_state.fcs[4;4] ^ tx_combs.axi4s_data_byte[4;4] ^ tx_combs.fcs_xor[4;0]) {
-        case 4h0: { tx_combs.fcs_xor2 = 32h4DBDF21C;}
-        case 4h1: { tx_combs.fcs_xor2 = 32h500AE278; }
-        case 4h2: { tx_combs.fcs_xor2 = 32h76D3D2D4; }
-        case 4h3: { tx_combs.fcs_xor2 = 32h6B64C2B0; }
-        case 4h4: { tx_combs.fcs_xor2 = 32h3B61B38C; }
-        case 4h5: { tx_combs.fcs_xor2 = 32h26D6A3E8; }
-        case 4h6: { tx_combs.fcs_xor2 = 32h000F9344; }
-        case 4h7: { tx_combs.fcs_xor2 = 32h1DB88320; }
-        case 4h8: { tx_combs.fcs_xor2 = 32hA005713C; }
-        case 4h9: { tx_combs.fcs_xor2 = 32hBDB26158; }
-        case 4ha: { tx_combs.fcs_xor2 = 32h9B6B51F4; }
-        case 4hb: { tx_combs.fcs_xor2 = 32h86DC4190; }
-        case 4hc: { tx_combs.fcs_xor2 = 32hD6D930AC; }
-        case 4hd: { tx_combs.fcs_xor2 = 32hCB6E20C8; }
-        case 4he: { tx_combs.fcs_xor2 = 32hEDB71064; }
-        default:  { tx_combs.fcs_xor2 = 32hF0000000; }
-        }
-        tx_combs.next_fcs = bundle(8b0, tx_state.fcs[24;8]) ^ bundle(4b0, tx_combs.fcs_xor[28;4]) ^ tx_combs.fcs_xor2;
+        tx_combs.next_fcs = tx_state.fcs >> 8;
+        if (tx_state.fcs[7] ^ tx_combs.axi4s_data_byte[7]) { tx_combs.next_fcs = tx_combs.next_fcs ^ 32hedb88320; }
+        if (tx_state.fcs[6] ^ tx_combs.axi4s_data_byte[6]) { tx_combs.next_fcs = tx_combs.next_fcs ^ 32h76dc4190; }
+        if (tx_state.fcs[5] ^ tx_combs.axi4s_data_byte[5]) { tx_combs.next_fcs = tx_combs.next_fcs ^ 32h3b6e20c8; }
+        if (tx_state.fcs[4] ^ tx_combs.axi4s_data_byte[4]) { tx_combs.next_fcs = tx_combs.next_fcs ^ 32h1db71064; }
+        if (tx_state.fcs[3] ^ tx_combs.axi4s_data_byte[3]) { tx_combs.next_fcs = tx_combs.next_fcs ^ 32h0edb8832; }
+        if (tx_state.fcs[2] ^ tx_combs.axi4s_data_byte[2]) { tx_combs.next_fcs = tx_combs.next_fcs ^ 32h076dc419; }
+        if (tx_state.fcs[1] ^ tx_combs.axi4s_data_byte[1]) { tx_combs.next_fcs = tx_combs.next_fcs ^ 32hee0e612c; }
+        if (tx_state.fcs[0] ^ tx_combs.axi4s_data_byte[0]) { tx_combs.next_fcs = tx_combs.next_fcs ^ 32h77073096; }
 
         full_switch (tx_combs.fcs_op) {
         case fcs_op_init:  { tx_state.fcs <= -1; }
@@ -404,12 +427,165 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
     /*b Rx combs and state */
     comb     t_rx_combs rx_combs;
     clocked clock rx_aclk reset active_low rx_areset_n t_rx_state rx_state = {*=0};
-    /*b Rx */
-    rx:{
-        rx_combs.a = 0;
-        rx_state.axi4s <= {*=0};
+    /*b Rx state machine */
+    rx_fsm : {
+        /*b Decode AXI state for FSM */
+        rx_combs.gmii_data       = gmii_rx.rxd;
+        rx_combs.gmii_idle       = gmii_rx_enable && !gmii_rx.rx_dv && !gmii_rx.rx_er;
+        rx_combs.gmii_valid_data = gmii_rx_enable && gmii_rx.rx_dv && !gmii_rx.rx_er;
+        rx_combs.gmii_valid      = gmii_rx_enable;
+
+        rx_combs.data_ready_for_axi = 0;
+        rx_combs.axi_cannot_take_data = 0;
+        if ((rx_state.byte_of_packet[2;0]==0) && rx_state.byte_valid[0]) {
+            rx_combs.data_ready_for_axi = 1;
+        }
+        if (rx_combs.data_ready_for_axi && rx_state.axi4s.valid) {
+            rx_combs.axi_cannot_take_data = 1;
+        }
+        
+        /*b RX FSM */
+        rx_combs.action = rx_action_none;
+        full_switch (rx_state.fsm_state) {
+        case rx_fsm_idle: {
+            if (rx_combs.gmii_valid_data && (rx_combs.gmii_data==0x55)) {
+                rx_combs.action = rx_action_sop;
+            } elsif (rx_combs.gmii_valid) {
+                rx_combs.action = rx_action_non_packet_error;
+            }
+        }
+        case rx_fsm_preamble: {
+            if (rx_combs.gmii_valid_data && (rx_combs.gmii_data==0x55)) {
+                rx_combs.action = rx_action_sop;
+            } elsif (rx_combs.gmii_valid_data && (rx_combs.gmii_data==0xd5)) {
+                rx_combs.action = rx_action_preamble_end;
+            } elsif (rx_combs.gmii_valid) {
+                rx_combs.action = rx_action_non_packet_error;
+            }
+        }
+        case rx_fsm_data: {
+            if (rx_combs.gmii_valid_data) { // rv_dv and not rv_er
+                rx_combs.action = rx_action_data;
+                if (rx_combs.axi_cannot_take_data) {
+                    rx_combs.action = rx_action_overrun;
+                }
+                if (rx_state.byte_of_packet > rx_state.max_mtu) {
+                    rx_combs.action = rx_action_packet_error;
+                }
+            } elsif (rx_combs.gmii_idle) { // not rx_dv and not rx_er
+                rx_combs.action = rx_action_packet_okay; // done without needing more data
+                if (rx_combs.fcs_valid) {
+                    rx_combs.action = rx_action_packet_error;
+                }
+            } elsif (rx_combs.gmii_valid) { // rx_er
+                rx_combs.action = rx_action_packet_error;
+            }
+        }
+        case rx_fsm_wait_for_idle: {
+            if (rx_combs.gmii_idle) {
+                rx_combs.action = rx_action_idle;
+            }
+        }
+        }
+
+        /*b Decode action to state update and other controls
+         */
+        rx_combs.fcs_op          = fcs_op_none;
+        rx_combs.byte_of_packet_plus_one = rx_state.byte_of_packet+1;
+        rx_combs.store_byte    = 0;
+        rx_combs.store_status  = 0;
+
+        full_switch (rx_combs.action) {
+        case rx_action_none: {
+            rx_state.fsm_state <= rx_state.fsm_state;
+        }
+        case rx_action_sop: {
+            rx_state.fsm_state <= rx_fsm_preamble;
+            rx_state.byte_of_packet <= 0;
+        }
+        case rx_action_preamble_end: {
+            rx_state.fsm_state      <= rx_fsm_data;
+            rx_state.byte_of_packet <= 0;
+            rx_combs.fcs_op          = fcs_op_init;
+        }
+        case rx_action_data: {
+            rx_state.byte_of_packet <= rx_combs.byte_of_packet_plus_one;
+            rx_combs.store_byte    = 1;
+            rx_combs.fcs_op        = fcs_op_calc;
+        }
+        case rx_action_packet_okay: { // Packet completed
+            rx_state.fsm_state   <= rx_fsm_idle;
+            rx_combs.store_status  = 1;
+        }
+        case rx_action_packet_error: { // Packet completed
+            rx_state.fsm_state   <= rx_fsm_wait_for_idle;
+            rx_combs.store_status  = 1;
+        }
+        case rx_action_non_packet_error: { // Packet completed
+            rx_state.fsm_state   <= rx_fsm_wait_for_idle;
+        }
+        case rx_action_idle: { // Packet completed
+            rx_state.fsm_state   <= rx_fsm_idle;
+        }
+        }
+
+        /*b Store data */
+        if (rx_state.axi4s.valid && rx_axi4s_tready) {
+            rx_state.axi4s.valid <= 0;            
+        }
+        if (rx_combs.store_byte && rx_combs.data_ready_for_axi) {
+            rx_state.axi4s.valid  <= 1;
+            rx_state.axi4s.t <= {*=0};
+            rx_state.axi4s.t.data <= rx_state.data_word;
+            rx_state.axi4s.t.strb <= rx_state.byte_valid;
+            rx_state.byte_valid <= 0;
+        }
+        if (rx_combs.store_byte) {
+            full_switch (rx_state.byte_of_packet[2;0]) {
+            case 0: {
+                rx_state.data_word[8; 0] <= rx_combs.gmii_data;
+                rx_state.byte_valid[0]   <= 1;
+            }
+            case 1: {
+                rx_state.data_word[8; 8] <= rx_combs.gmii_data;
+                rx_state.byte_valid[1]   <= 1;
+            }
+            case 2: {
+                rx_state.data_word[8;16] <= rx_combs.gmii_data;
+                rx_state.byte_valid[2]   <= 1;
+            }
+            case 3: {
+                rx_state.data_word[8;24] <= rx_combs.gmii_data;
+                rx_state.byte_valid[3]   <= 1;
+            }
+            }
+        }
+        
+        /*b GMII RX output */
         rx_axi4s = rx_state.axi4s;
+    }        
+
+    /*b Rx FCS */
+    rx_fcs:{
+        rx_combs.next_fcs = rx_state.fcs >> 8;
+        if (rx_state.fcs[7] ^ rx_combs.gmii_data[7]) { rx_combs.next_fcs = rx_combs.next_fcs ^ 32hedb88320; }
+        if (rx_state.fcs[6] ^ rx_combs.gmii_data[6]) { rx_combs.next_fcs = rx_combs.next_fcs ^ 32h76dc4190; }
+        if (rx_state.fcs[5] ^ rx_combs.gmii_data[5]) { rx_combs.next_fcs = rx_combs.next_fcs ^ 32h3b6e20c8; }
+        if (rx_state.fcs[4] ^ rx_combs.gmii_data[4]) { rx_combs.next_fcs = rx_combs.next_fcs ^ 32h1db71064; }
+        if (rx_state.fcs[3] ^ rx_combs.gmii_data[3]) { rx_combs.next_fcs = rx_combs.next_fcs ^ 32h0edb8832; }
+        if (rx_state.fcs[2] ^ rx_combs.gmii_data[2]) { rx_combs.next_fcs = rx_combs.next_fcs ^ 32h076dc419; }
+        if (rx_state.fcs[1] ^ rx_combs.gmii_data[1]) { rx_combs.next_fcs = rx_combs.next_fcs ^ 32hee0e612c; }
+        if (rx_state.fcs[0] ^ rx_combs.gmii_data[0]) { rx_combs.next_fcs = rx_combs.next_fcs ^ 32h77073096; }
+
+        full_switch (rx_combs.fcs_op) {
+        case fcs_op_init:  { rx_state.fcs <= -1; }
+        case fcs_op_calc:  { rx_state.fcs <= rx_combs.next_fcs; }
+        default:           { rx_state.fcs <= rx_state.fcs; }
+        }
+        rx_combs.fcs_valid = (rx_state.fcs==0xdebb20e3); // reverse of 0xC704DD7B 
+        rx_state.max_mtu <= -1;
     }
+
     /*b All done */
 }
 

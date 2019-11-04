@@ -129,6 +129,7 @@ class gbe_test_base(simple_tb.base_th):
 class gbe_test_0(gbe_test_base):
     #f run
     def run(self):
+        # FCS: 7A D5 6B B3
         pkt = [ (0xF0E60A00,0xf,0),
                 (0x1200A305,0xf,0),
                 (0x90785634,0xf,0),
@@ -155,7 +156,7 @@ class gbe_test_0(gbe_test_base):
         self.axi4s.set("id",0)
         self.axi4s.set("dest",0)
         self.axi4s.set("last",0)
-        # FCS: 7A D5 6B B3
+        
         for i in range(2):
             for (d,s,l) in pkt:
                 self.axi4s.set("data",d)

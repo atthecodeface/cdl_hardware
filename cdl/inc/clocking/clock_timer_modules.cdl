@@ -1,0 +1,36 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file   clocking_modules.h
+ * @brief  Modules for various clocking things
+ *
+ * Header file for the clocking modules 
+ *
+ */
+
+/*a Includes */
+include "types/clocking.h"
+
+/*a Modules */
+/*m clock_timer */
+extern module clock_timer( clock clk             "Timer clock",
+              input bit reset_n     "Active low reset",
+              input t_timer_control timer_control "Control of the timer", 
+              output t_timer_value  timer_value
+    )
+{
+    timing to   rising clock clk timer_control;
+    timing from rising clock clk timer_value;
+}
+

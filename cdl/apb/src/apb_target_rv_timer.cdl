@@ -296,6 +296,7 @@ The period should be:
         /*b Drive outputs */
         timer_value.irq = timer_state.comparator_exceeded;
         timer_value.value = bundle(timer_state.timer_upper, timer_state.timer_lower);
+        timer_value.locked = 0;
     }
 
     /*b Done

@@ -1,0 +1,192 @@
+/** @copyright (C) 2016-2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   timer.cdl
+ * @brief  Standardized 64-bit timer with synchronous control
+ *
+ * CDL implementation of a standard 64-bit timer using synchronous control.
+ *
+ */
+/*a Includes
+ */
+include "types/apb.h"
+include "types/timer.h"
+
+/*a Types */
+/*t t_timer_combs
+ *
+ */
+typedef struct {
+    bit[5] fractional_sum    "Result of fractional addition, including fractional_bonus";
+    bit[33] lower_sum        "Result of integer part of timer, lower bits, summing with timer integer add and fractional overflow";
+    bit[32] upper_sum        "Result of upper timer addition - actually an increment based on result of lower_sum carry";
+    bit[4]  fractional_half_adder       "Fractional part of half value of interger/fractional adder";
+    bit[8]  integer_half_adder          "Integer part of half value of interger/fractional adder";
+} t_timer_combs;
+
+/*t t_timer_state
+ *
+ */
+typedef struct {
+    bit[8]  bonus_subfraction_step "Counter in range 0..denom-1; compared with numer to determine fractional_bonus";
+    bit fractional_bonus           "Carry in to timer fractional bonus adder, depending on numer/denom";
+    bit[4]  fraction               "Fraction of timer value, accumulating on each enabled cycle";
+    bit[32] timer_lower            "Lower 32-bits of integer timer value";
+    bit[32] timer_upper            "Upper 32-bits of integer timer value";
+    bit     advance                "Last value of timer_control.advance - used in posedge detection";
+    bit     retard                 "Last value of timer_control.retard - used in posedge detection";
+    bit     hold_adder             "If asserted, hold current adder value";
+    bit[4]  fractional_adder       "Fractional adder to use";
+    bit[8]  integer_adder          "Integer adder to use";
+} t_timer_state;
+
+/*a Module */
+module clock_timer_async( clock master_clk             "Master clock",
+                          input bit master_reset_n     "Active low reset",
+                          clock slave_clk              "Slave clock, asynchronous to master",
+                          input bit slave_reset_n     " Active low reset",
+                          input t_timer_control  master_timer_control     "Timer control in the master domain - synchronize, reset, enable and lock_to_master are used",
+                          input t_timer_value    master_timer_value       "Timer value in the master domain - only 'value' is used",
+                          input t_timer_control   slave_timer_control_in  "Timer control in the slave domain - only adder values are used";
+                          output t_timer_control  slave_timer_control_out "Timer control in the slave domain for other synchronous clock_timers - all valid";
+                          output t_timer_value    slave_timer_value       "Timer value in the slave domain"
+    )
+"""
+Module to take a timer control in one clock domain and synchronize it to another clock domain.
+
+The 'enable', 'reset' and 'lock_to_master' are simply synchronized across.
+The 'synchronize' control requires a small state machine - when this is asserted the master_timer_value
+is monitored and when it crosses from below 1/4 to above 1/4 of a window of N lower bits a control is passed to the
+slave to inform it to synchronize to the upper master_timer_value bits at half the window size.
+
+Both the slave and master monitor the below 3/4 to above 3/4 of a window of N lower bits. Each toggles a signal
+when the boundary is crossed.
+The master signal is synchronized by the slave using two flops - hence it is expected to be two clock ticks later
+than the slave version. Hence the slave version is delayed by two flops also.
+A running count of early, late toggles and unexpected toggles is maintained.
+Early is 'slave seen up to N cycles before master'.
+Late is 'master seen up to N cycles before slave'.
+On time is 'master seen at same time as slave'.
+If the 'lock_to_master' signal is asserted in the slave, and after M windows,
+the slave 'advance' or 'retard' signals may be set; the counts are reset.
+If more than one unexpected toggled occurs then the timer is deemed 'not locked'.
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Timer state */
+    clocked t_timer_state timer_state= {*=0} "State of the timer and comparator";
+    comb    t_timer_combs timer_combs        "Combinatorial decode of timer state and controls";
+
+    /*b Handle the timer and comparator */
+    timer_logic """
+    The @a timer value can be reset or it may count on a tick, or it
+    may just hold its value.
+
+    The timer update logic adds the integer and fractional increments
+    to the timer value, with an optional carry (@a fractional_bonus)
+    in that is generated and registered on the previous cycle. This
+    bonus is one for @a bonus_subfraction_numer out of @a
+    bonus_subfraction_denom.
+
+    """: {
+        /*b Support advance and retard */
+        timer_combs.fractional_half_adder = timer_control.fractional_adder >> 1;
+        timer_combs.fractional_half_adder[3] = timer_control.integer_adder[0];
+        timer_combs.integer_half_adder    = timer_control.integer_adder >> 1;
+        
+        if (!timer_state.hold_adder) {
+            timer_state.fractional_adder <= timer_control.fractional_adder;
+            timer_state.integer_adder    <= timer_control.integer_adder;
+            timer_state.hold_adder <= 1;
+        }
+        if (timer_control.advance && !timer_state.advance) {
+            timer_state.fractional_adder <= timer_control.fractional_adder + timer_combs.fractional_half_adder;
+            timer_state.integer_adder    <= timer_control.integer_adder    + timer_combs.integer_half_adder;
+            timer_state.hold_adder       <= 0;
+        } elsif (timer_control.retard && !timer_state.retard) {
+            timer_state.fractional_adder <= timer_combs.fractional_half_adder;
+            timer_state.integer_adder    <= timer_combs.integer_half_adder;
+            timer_state.hold_adder       <= 0;
+        }
+        if (timer_control.advance || timer_state.advance) {
+            timer_state.advance <= timer_control.advance;
+        }
+        if (timer_control.retard || timer_state.retard) {
+            timer_state.retard <= timer_control.retard;
+        }
+        
+        /*b Tick / reset timer */
+        timer_combs.fractional_sum = ( bundle(1b0, timer_state.fraction)    +
+                                       bundle(1b0, timer_state.fractional_adder) +
+                                       (timer_state.fractional_bonus ? 1: 0)
+            );
+        timer_combs.lower_sum      = ( bundle(1b0, timer_state.timer_lower) +
+                                       bundle(25b0, timer_state.integer_adder) +
+                                       (timer_combs.fractional_sum[4]?1:0)
+            );
+        timer_combs.upper_sum      = timer_state.timer_upper;
+        if (timer_combs.lower_sum[32]) {
+            timer_combs.upper_sum      = timer_state.timer_upper + 1;
+        }
+        
+        if (timer_control.enable_counter) {
+            if (timer_control.bonus_subfraction_denom==0) {
+                timer_state.bonus_subfraction_step <= 0;
+                timer_state.fractional_bonus       <= 0;
+            } else {
+                timer_state.bonus_subfraction_step <= timer_state.bonus_subfraction_step + 1;
+                if (timer_state.bonus_subfraction_step>=timer_control.bonus_subfraction_denom) {
+                    timer_state.bonus_subfraction_step <= 0;
+                }
+                timer_state.fractional_bonus <= 0;
+                if (timer_state.bonus_subfraction_step > timer_control.bonus_subfraction_numer) {
+                    timer_state.fractional_bonus <= 1;
+                }
+            }
+            timer_state.fraction    <= timer_combs.fractional_sum[4;0];
+            timer_state.timer_lower <= timer_combs.lower_sum[32;0];
+            timer_state.timer_upper <= timer_combs.upper_sum;
+        }
+        if (timer_control.reset_counter) {
+            timer_state.bonus_subfraction_step <= 0;
+            timer_state.fractional_bonus <= 0;
+            timer_state.fraction <= 0;
+            timer_state.timer_lower <= 0;
+            timer_state.timer_upper <= 0;
+        }
+
+        /*b Allow synchronization */
+        if (timer_control.synchronize) {
+            timer_state.timer_lower  <= timer_control.synchronize_value[32; 0];
+            timer_state.timer_upper  <= timer_control.synchronize_value[32;32];
+            timer_state.fraction     <= 0;
+        }
+
+        /*b Drive outputs */
+        timer_value.value = bundle(timer_state.timer_upper, timer_state.timer_lower);
+        timer_value.irq = 0;
+    }
+
+    /*b Done
+     */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/

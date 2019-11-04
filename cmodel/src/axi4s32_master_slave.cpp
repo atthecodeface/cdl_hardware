@@ -528,6 +528,21 @@ c_axi4s32_master_slave::clock( void )
         outputs.master_axi4s__t__dest = axi4s.dest;
     }
 
+    /*b Handle slave
+     */
+    if (input_values.slave_axi4s__valid && outputs.slave_axi4s_tready) {
+        t_axi4s axi4s;
+        axi4s.data = input_values.slave_axi4s__t__data;
+        axi4s.strb = input_values.slave_axi4s__t__strb;
+        axi4s.keep = input_values.slave_axi4s__t__keep;
+        axi4s.last = input_values.slave_axi4s__t__last;
+        axi4s.user = input_values.slave_axi4s__t__user;
+        axi4s.id   = input_values.slave_axi4s__t__id  ;
+        axi4s.dest = input_values.slave_axi4s__t__dest ;
+        slave_fifo->enqueue(&axi4s, 0);
+    }
+    outputs.slave_axi4s_tready = !slave_fifo->is_full();
+
     /*b All done
      */
     return error_level_okay;
