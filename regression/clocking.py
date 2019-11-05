@@ -265,6 +265,7 @@ class c_clock_timer_test_base(simple_tb.base_th):
     slave_adder = (1,9)
     slave_bonus = (3,9)
     slave_lock = False
+    lock_window_lsb = 6
     #f configure_master
     def configure_master(self, adder, bonus=(0,0)):
         self.master_timer_control__bonus_subfraction_denom.drive(bonus[1])
@@ -284,6 +285,7 @@ class c_clock_timer_test_base(simple_tb.base_th):
         self.slave_timer_control__enable_counter.drive(0)
         if lock:
             self.master_timer_control__lock_to_master.drive(1)
+            self.master_timer_control__lock_window_lsb.drive({4:0,6:1,8:2,10:3}[self.lock_window_lsb])
             pass
         else:
             self.master_timer_control__lock_to_master.drive(0)
@@ -397,10 +399,10 @@ class c_clock_timer_test_master_slave_base(c_clock_timer_test_base):
 
         self.configure_master( adder=self.master_adder, bonus=self.master_bonus )
         self.configure_slave( adder=self.slave_adder, bonus=self.slave_bonus, lock=self.slave_lock )
-        self.bfm_wait(40)
+        self.bfm_wait(200)
         self.slave_timer_control__reset_counter.drive(0)
         self.master_timer_control__reset_counter.drive(0)
-        self.bfm_wait(40)
+        self.bfm_wait(200) # For a slow clock period
         self.slave_timer_control__enable_counter.drive(1)
         self.master_timer_control__enable_counter.drive(1)
         if self.master_sync is not None:
@@ -413,6 +415,7 @@ class c_clock_timer_test_master_slave_base(c_clock_timer_test_base):
         master = self.master_timer_value__value.value()
         slave = self.slave_timer_value__value.value()
         diff = abs(master-slave)
+        print "Difference in master/slave clocks is %d"%diff
         if diff>self.max_diff:
             self.failtest(0,"Difference in times is more than %d (%d) (%08x to %08x) - should have locked"%
                           (self.max_diff, diff, master, slave))
@@ -427,10 +430,11 @@ class c_clock_timer_test_master_slave_0(c_clock_timer_test_master_slave_base):
 #c c_clock_timer_test_master_slave_1
 class c_clock_timer_test_master_slave_1(c_clock_timer_test_master_slave_base):
     # 247 148 (99,247) 1.59994939271 (98,247) 1.60020242915
-    slave_adder = adder=(1,9)
+    slave_adder=(1,9)
     slave_bonus=(99,247)
     slave_lock=True
-    max_diff = 1
+    lock_window_lsb = 4
+    max_diff = 2  # 600MHz
     pass
 
 #c c_clock_timer_test_master_slave_2
@@ -439,7 +443,8 @@ class c_clock_timer_test_master_slave_2(c_clock_timer_test_master_slave_base):
     slave_adder = adder=(1,9)
     slave_bonus=(100,249)
     slave_lock=True
-    max_diff = 1
+    lock_window_lsb = 4
+    max_diff = 2  # 600MHz
     pass
 
 #c c_clock_timer_test_master_slave_3
@@ -448,7 +453,8 @@ class c_clock_timer_test_master_slave_3(c_clock_timer_test_master_slave_base):
     slave_adder = (1,9)
     slave_bonus = (99,249)
     slave_lock = True
-    max_diff = 1
+    lock_window_lsb = 4
+    max_diff = 2 # 600MHz
     pass
 
 #c c_clock_timer_test_master_slave_4
@@ -458,7 +464,41 @@ class c_clock_timer_test_master_slave_4(c_clock_timer_test_master_slave_base):
     slave_bonus = (99,249)
     slave_lock = True
     master_sync = 0xdeadbeefcafef00d
-    max_diff = 1
+    lock_window_lsb = 4
+    max_diff = 2 # 600MHz
+    pass
+
+#c c_clock_timer_test_master_slave_5
+class c_clock_timer_test_master_slave_5(c_clock_timer_test_master_slave_base):
+    slave_adder = (10,0)
+    slave_bonus = (0,0)
+    slave_lock = True
+    master_sync = 0xdeadbeefcafef00d
+    lock_window_lsb = 6
+    max_diff = 10 # 100MHz
+    pass
+
+#c c_clock_timer_test_master_slave_6
+class c_clock_timer_test_master_slave_6(c_clock_timer_test_master_slave_base):
+    slave_adder = (100,1)
+    slave_bonus = (0,0)
+    slave_lock = True
+    master_sync = 0xdeadbeefcafef00d
+    lock_window_lsb = 8
+    max_diff = 100 # 10MHz
+    # In theory this may not work - as the edge detection is too frequent
+    # And indeed it does not, except that we have oversped the clock by 1/1600
+    # and this helps catch up with the initial delay in synchronization
+    pass
+
+#c c_clock_timer_test_master_slave_7
+class c_clock_timer_test_master_slave_7(c_clock_timer_test_master_slave_base):
+    slave_adder = (100,0)
+    slave_bonus = (0,0)
+    slave_lock = True
+    master_sync = 0xdeadbeefcafef00d
+    lock_window_lsb = 10
+    max_diff = 100 # 10MHz
     pass
 
 #a Hardware classes
@@ -503,7 +543,7 @@ class clock_timer_test_hw(simple_tb.cdl_test_hw):
     Simple instantiation of clock_timer testbench
     """
     system_clock_half_period = 5
-    loggers = {#"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
+    loggers = {"async": {"verbose":0, "filename":"itrace.log", "modules":("dut.ckts "),},
                }
     timer_control      = pycdl.wirebundle(structs.timer_control)
     timer_value        = pycdl.wirebundle(structs.timer_value)
@@ -521,7 +561,11 @@ class clock_timer_test_hw(simple_tb.cdl_test_hw):
                "slave_clk":(3,8,8),
                }
     #f __init__
-    def __init__(self, test):
+    def __init__(self, test, slave_period=None):
+        if slave_period is not None:
+            self.clocks = { "clk":(0,5,5), "slave_clk":(3,slave_period/2,slave_period/2),
+               }
+            pass
         self.th_forces = self.th_forces.copy()
         simple_tb.cdl_test_hw.__init__(self,test)
         pass
@@ -569,6 +613,15 @@ class clock_timer(simple_tb.base_test):
         pass
     def test_master_slave_4(self):
         self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_4()), num_cycles=5*1000*1000)
+        pass
+    def test_master_slave_5(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_5(), slave_period=100), num_cycles=5*1000*1000)
+        pass
+    def test_master_slave_6(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_6(), slave_period=1000), num_cycles=25*1000*1000)
+        pass
+    def test_master_slave_7(self):
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_7(), slave_period=1000), num_cycles=25*1000*1000)
         pass
     pass
 
