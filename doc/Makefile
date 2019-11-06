@@ -1,5 +1,9 @@
 DOCUMENTATION = $(SRC_ROOT)/doc
 DOXYGEN = DOCUMENTATION=$(DOCUMENTATION) SRC_ROOT=$(SRC_ROOT) doxygen 
+SED = sed -i
+ifeq (${BUILD_ARCH},osx)
+SED = sed -i ''
+endif
 CDL_EXTERNAL_REF_SED_SCRIPT = '/\\chapter{Namespace Index}/d;/\\input{namespaces}/d;/\\input{.*cdl}/d;s/\\chapter{File Documentation}/\\chapter{Header Files}/;/\\chapter{Namespace Documentation}/d;/\\input{namespace.*}/d;'
 
 .PHONY:help_doc
@@ -43,7 +47,7 @@ doxygen_python:
 	(cd $(DOCUMENTATION); DOXYGEN_INPUTS=$(SRC_ROOT)/python $(DOXYGEN) $(DOCUMENTATION)/doxyfile.bbc_cdl)
 
 $(DOCUMENTATION)/cdl_internal_latex/refman.pdf: doxygen_cdl
-	(cd $(DOCUMENTATION)/cdl_internal_latex; sed -i '/\\chapter{Namespace Index}/d;/\\input{namespaces}/d' refman.tex ; $(MAKE))
+	(cd $(DOCUMENTATION)/cdl_internal_latex; rm -f tabu.sty ; ln -s ../tabu.sty . ;  $(SED) '/\\chapter{Namespace Index}/d;/\\input{namespaces}/d' refman.tex ; $(MAKE) LATEX_CMD=../pdflatex_wrapper )
 
 cdl_external_pdf: $(DOCUMENTATION)/cdl_external_latex/refman.pdf
 
@@ -52,4 +56,4 @@ remake_cdl_external_pdf:
 	$(MAKE) cdl_external_pdf
 
 $(DOCUMENTATION)/cdl_external_latex/refman.pdf:
-	(cd $(DOCUMENTATION)/cdl_external_latex; sed -i $(CDL_EXTERNAL_REF_SED_SCRIPT) refman.tex ; $(MAKE))
+	(cd $(DOCUMENTATION)/cdl_external_latex; rm -f tabu.sty ; ln -s ../tabu.sty . ; $(SED) $(CDL_EXTERNAL_REF_SED_SCRIPT) refman.tex ; $(MAKE) LATEX_CMD=../pdflatex_wrapper )

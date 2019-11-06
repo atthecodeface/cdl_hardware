@@ -1,0 +1,3 @@
+#!/bin/sh
+(pdflatex $* || true)
+if egrep -s 'Error' refman.log; then echo "Error in running pdflatex on refman - see refman.log" && false; fi
