@@ -1,0 +1,280 @@
+/** @copyright (C) 2016-2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   timer.cdl
+ * @brief  Standardized 64-bit timer with synchronous control
+ *
+ * CDL implementation of a standard 64-bit timer using synchronous control.
+ *
+ */
+/*a Constants */
+constant integer accumulator_width=64-9+1;
+constant integer quotient_width=35;
+constant integer remainder_width=32-9;
+constant integer start_delay = 3;
+
+/*a Includes
+ */
+include "types/apb.h"
+include "types/timer.h"
+
+/*a Types */
+/*t t_track_combs
+ *
+ */
+typedef struct {
+    bit[32] timer_minus_current_second;
+    bit[32] timer_minus_next_second;
+    bit[35] timer_sec_since_epoch;
+    bit[30] timer_nsec_since_epoch;
+    bit[23]  next_second_timer_value    "23 bits from bit 9 - so bottom 32 bits of actual value";
+} t_track_combs;
+
+/*t t_track_state
+ *
+ */
+typedef struct {
+    bit[23]  current_second_timer_value "23 bits from bit 9 - so bottom 32 bits of actual value";
+    bit[23]  next_second_timer_value    "23 bits from bit 9 - so bottom 32 bits of actual value";
+    bit      next_second_valid;
+    t_timer_sec_nsec timer_sec_nsec;
+} t_track_state;
+
+/*t t_divider_action
+ *
+ */
+typedef enum [3] {
+    divider_action_none,
+    divider_action_init,
+    divider_action_step_if_less_than,
+    divider_action_step_if_greater_equal,
+    divider_action_division_done,
+    divider_action_idle
+} t_divider_action;
+
+/*t t_divider_fsm_state
+ *
+ */
+typedef fsm {
+    fsm_state_idle;
+    fsm_state_dividing;
+    fsm_state_completed;
+} t_divider_fsm_state;
+
+/*t t_divider_combs
+ *
+ */
+typedef struct {
+    bit start_divide               "Asserted if divide state machine should restart";
+    t_divider_action action        "Action for divide state machine to perform";
+    bit[accumulator_width] accumulator_minus_billion_shf_n;
+} t_divider_combs;
+
+/*t t_divider_state
+ *
+ */
+typedef struct {
+    bit enabled                          "Asserted unless timer is in reset, not enabled, or is synchronizing";
+    bit ready                            "Deasserted when not enabled, asserted when completing";
+    t_divider_fsm_state fsm_state;
+    bit [start_delay] divide_start_sr    "Delay shift register to let timer value settle after synchronize or reset/enable";
+    bit[accumulator_width] accumulator   "Accumulator containing the value not yet divided out";
+    bit[accumulator_width] billion_shf_n "Billion shifted left by n";
+    bit[quotient_width] quotient         "Quotient that is added to when accumulator exceeds billion_shf_n";
+    bit[quotient_width] one_shf_n        "One-hot containing 1<<n";
+    bit[accumulator_width] init_value_second  "Second boundary of initial value divider started with";
+    bit completed                        "Asserted for one cycle when divider has completed its task";
+} t_divider_state;
+
+/*a Module */
+module clock_timer_as_sec_nsec( clock clk             "Timer clock",
+                                input bit reset_n     "Active low reset",
+                                input t_timer_control timer_control "Control of the timer",
+                                input t_timer_value  timer_value,
+                                output t_timer_sec_nsec timer_sec_nsec
+    )
+"""
+This module has a 'modulo 1billion' state machine, that afterwards
+tracks the incoming timer_value and produces with a cycle of delay
+a sec/nsec version of the timer_value.
+
+As 1 billion = 10**9 (30 bits), the bottom 9 bits are zero
+1 billion is in fact 0x3b9aca00
+
+Therefore a second boundary since epoch will have nine zeros at the bottom
+
+Also, 64 bits of nanoseconds is 35 bits of seconds:
+    '%016x' %((1<<64) / (10**9)) = '000000044b82fa09'
+
+This module generates a sec/nsec pair that keeps track of the incoming timer value.
+
+To track the timer value it knows the current timer value in sec/nsec, and it also
+records the bottom 32 bits of the 'next whole timer value second since epoch'.
+
+If the current timer value minus this 'next whole timer value second since epoch' is >=0 then
+the timer must have ticked on to the next second - so the new nanoseconds is simply this difference,
+and the second is the old second plus one.
+
+If the current timer value minus this 'next whole timer value second since epoch' is <0 then
+the timer must still be in the current second - so the new nanoseconds is the current timer value
+minus the 'current whole timer value second since epoch'.
+
+The 'second since epoch' need only be held as a 32 bit value (31 or 30 may do). But also note that
+the bottom nine bits are all zero.
+
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Track and divider state */
+    clocked t_track_state track_state= {*=0} "State of the tracking logic";
+    comb    t_track_combs track_combs        "Combinatorial decode of tracking logic";
+    clocked t_divider_state divider_state= {*=0} "State of the dividering logic";
+    comb    t_divider_combs divider_combs        "Combinatorial decode of tracking logic";
+
+    /*b Handle tracking */
+    track_logic """
+    """: {
+        track_combs.timer_minus_next_second    = timer_value.value[32;0] - bundle(track_state.next_second_timer_value, 9b0);
+        track_combs.timer_minus_current_second = timer_value.value[32;0] - bundle(track_state.current_second_timer_value, 9b0);
+        track_combs.next_second_timer_value = track_state.next_second_timer_value + 0x1dcd65;
+
+        track_combs.timer_sec_since_epoch  = track_state.timer_sec_nsec.sec;
+        track_combs.timer_nsec_since_epoch = track_combs.timer_minus_current_second[30;0];
+        if (!track_combs.timer_minus_next_second[31]) {
+            track_combs.timer_sec_since_epoch  = track_state.timer_sec_nsec.sec + 1;
+            track_combs.timer_nsec_since_epoch = track_combs.timer_minus_next_second[30;0];
+        }
+
+        if (!track_state.next_second_valid) {
+            track_state.next_second_timer_value    <= track_combs.next_second_timer_value;
+            track_state.next_second_valid <= 1;
+        } else {
+            if (!track_combs.timer_minus_next_second[31]) {
+                track_state.current_second_timer_value <= track_state.next_second_timer_value;
+                track_state.next_second_timer_value    <= track_combs.next_second_timer_value;
+            }
+            track_state.timer_sec_nsec.valid <= 1;
+            track_state.timer_sec_nsec.sec   <= track_combs.timer_sec_since_epoch;
+            track_state.timer_sec_nsec.nsec  <= track_combs.timer_nsec_since_epoch;
+        }
+
+        if (divider_state.completed) {
+            track_state.current_second_timer_value <= divider_state.init_value_second[23;0];
+            track_state.next_second_timer_value    <= divider_state.init_value_second[23;0];
+            track_state.timer_sec_nsec.sec         <= divider_state.quotient;
+            track_state.next_second_valid          <= 0;
+        }
+        if (!divider_state.ready) {
+            track_state.timer_sec_nsec.valid <= 0;
+        }
+        timer_sec_nsec = track_state.timer_sec_nsec;
+    }
+    
+    /*b Divider/remainder */
+    divider_logic """
+    """: {
+        divider_combs.accumulator_minus_billion_shf_n = divider_state.accumulator - divider_state.billion_shf_n;
+        if (timer_control.reset_counter ||
+            !timer_control.enable_counter  ||
+            (timer_control.synchronize!=0) ) {
+            divider_state.enabled <= 0;
+            divider_state.ready <= 0;
+        } else {
+            if (!divider_state.enabled) {
+                divider_state.enabled <= 1;
+                divider_state.divide_start_sr <= 0;
+                divider_state.divide_start_sr[start_delay-1] <= 1;
+            } else {
+                if (divider_state.divide_start_sr != 0) {
+                    divider_state.divide_start_sr <= divider_state.divide_start_sr >> 1;
+                }
+            }
+        }
+        divider_combs.start_divide = divider_state.divide_start_sr[0];
+        divider_combs.action = divider_action_none;
+        full_switch (divider_state.fsm_state) {
+        case fsm_state_idle: {
+            divider_combs.action = divider_action_none;
+        }
+        case fsm_state_dividing: {
+            divider_combs.action = divider_action_step_if_greater_equal;
+            if (divider_combs.accumulator_minus_billion_shf_n[accumulator_width-1]) {
+                divider_combs.action = divider_action_step_if_less_than;
+            }
+            if (divider_state.one_shf_n==0) {
+                divider_combs.action = divider_action_division_done;
+            }
+        }
+        case fsm_state_completed: {
+            divider_combs.action = divider_action_idle;
+        }
+        }
+        if (divider_combs.start_divide) {
+            divider_combs.action = divider_action_init;
+        }
+        
+        full_switch (divider_combs.action) {
+        case divider_action_none: {
+            divider_state.fsm_state      <= divider_state.fsm_state;
+        }
+        case divider_action_init: {
+            divider_state.fsm_state      <= fsm_state_dividing;
+            divider_state.init_value_second <= bundle(1b0, timer_value.value[55;9]);
+            divider_state.accumulator       <= bundle(1b0, timer_value.value[55;9]); // Amount to divide by 5**9
+            divider_state.billion_shf_n     <= 0x1dcd65<<34;
+            divider_state.quotient          <= 0;
+            divider_state.one_shf_n         <= 1<<34; // 34-bit shift register - better than 6-bit decoder?
+        }
+        case divider_action_step_if_less_than: {
+            divider_state.fsm_state      <= fsm_state_dividing;
+            divider_state.accumulator    <= divider_state.accumulator;
+            divider_state.quotient       <= divider_state.quotient;
+            divider_state.billion_shf_n  <= divider_state.billion_shf_n>>1;
+            divider_state.one_shf_n      <= divider_state.one_shf_n>>1;
+        }
+        case divider_action_step_if_greater_equal: {
+            divider_state.fsm_state      <= fsm_state_dividing;
+            divider_state.accumulator    <= divider_combs.accumulator_minus_billion_shf_n;
+            divider_state.quotient       <= divider_state.quotient | divider_state.one_shf_n;
+            divider_state.billion_shf_n  <= divider_state.billion_shf_n>>1;
+            divider_state.one_shf_n      <= divider_state.one_shf_n>>1;
+        }
+        case divider_action_division_done: {
+            divider_state.fsm_state      <= fsm_state_completed;
+            // accumulator holds remainder.
+            // quotient is correct
+            // Need init_value pulled back to previous second boundary
+            divider_state.init_value_second   <= divider_state.init_value_second - divider_state.accumulator;
+            divider_state.completed           <= 1;
+            divider_state.ready               <= 1;
+        }
+        case divider_action_idle: {
+            divider_state.fsm_state      <= fsm_state_idle;
+            divider_state.completed      <= 0;
+        }
+        }
+    }
+
+    /*b Done
+     */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/

@@ -198,6 +198,7 @@ cdl cdl/apb/tb_src  tb_apb_target_i2c  inc:cdl/inc
 
 cdl cdl/clocking/src  clock_timer                   inc:cdl/inc
 cdl cdl/clocking/src  clock_timer_async             inc:cdl/inc
+cdl cdl/clocking/src  clock_timer_as_sec_nsec       inc:cdl/inc
 cdl cdl/clocking/src  clocking_eye_tracking         inc:cdl/inc
 cdl cdl/clocking/src  clocking_phase_measure        inc:cdl/inc
 cdl cdl/clocking/tb_src  tb_clock_timer             inc:cdl/inc

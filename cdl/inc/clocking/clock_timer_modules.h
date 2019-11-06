@@ -50,3 +50,14 @@ extern module clock_timer_async( clock master_clk             "Master clock",
     timing to   rising clock slave_clk slave_timer_control_in;
     timing from rising clock slave_clk slave_timer_control_out, slave_timer_value;
 }
+/*a Module */
+extern module clock_timer_as_sec_nsec( clock clk             "Timer clock",
+                                input bit reset_n     "Active low reset",
+                                input t_timer_control timer_control "Control of the timer",
+                                input t_timer_value  timer_value,
+                                output t_timer_sec_nsec timer_sec_nsec
+    )
+{
+    timing to   rising clock clk timer_control, timer_value;
+    timing from rising clock clk timer_sec_nsec;
+}

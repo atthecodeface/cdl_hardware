@@ -406,6 +406,7 @@ class c_clock_timer_test_master_slave_base(c_clock_timer_test_base):
         self.slave_timer_control__enable_counter.drive(1)
         self.master_timer_control__enable_counter.drive(1)
         if self.master_sync is not None:
+            self.bfm_wait(500)
             self.master_timer_control__synchronize.drive(3)
             self.master_timer_control__synchronize_value.drive(self.master_sync)
             self.bfm_wait(1)
@@ -419,6 +420,26 @@ class c_clock_timer_test_master_slave_base(c_clock_timer_test_base):
         if diff>self.max_diff:
             self.failtest(0,"Difference in times is more than %d (%d) (%08x to %08x) - should have locked"%
                           (self.max_diff, diff, master, slave))
+        master_sec  = self.master_timer_sec_nsec__sec.value()
+        master_nsec = self.master_timer_sec_nsec__nsec.value()
+        master_sec_nsec = master_sec*(10**9)+master_nsec
+        if master_nsec>10**9:
+            self.failtest(0,"Master_nsec should be less than 1000,000,000 (%d)"%
+                          (master_nsec))
+        diff = master - master_sec_nsec
+        if diff>2:
+            self.failtest(0,"Difference in sec/nsec and actual timer is more than 2 (%d) (%08x to %08x)"%
+                          (diff, master, master_sec_nsec))
+        slave_sec  = self.slave_timer_sec_nsec__sec.value()
+        slave_nsec = self.slave_timer_sec_nsec__nsec.value()
+        slave_sec_nsec = slave_sec*(10**9)+slave_nsec
+        if slave_nsec>10**9:
+            self.failtest(0,"Slave_nsec should be less than 1000,000,000 (%d)"%
+                          (slave_nsec))
+        diff = slave - slave_sec_nsec
+        if diff>self.slave_adder[0]+1:
+            self.failtest(0,"Difference in sec/nsec and actual timer is more than %d (%d) (%08x to %08x)"%
+                          (self.slave_adder[0]+1, diff, slave, slave_sec_nsec))
         self.finishtest(0,"")
         pass
     pass
@@ -440,7 +461,7 @@ class c_clock_timer_test_master_slave_1(c_clock_timer_test_master_slave_base):
 #c c_clock_timer_test_master_slave_2
 class c_clock_timer_test_master_slave_2(c_clock_timer_test_master_slave_base):
     # 249 149 (100,249) 1.59989959839 (99,249) 1.60015060241
-    slave_adder = adder=(1,9)
+    slave_adder = (1,9)
     slave_bonus=(100,249)
     slave_lock=True
     lock_window_lsb = 4
@@ -463,7 +484,7 @@ class c_clock_timer_test_master_slave_4(c_clock_timer_test_master_slave_base):
     slave_adder = (1,9)
     slave_bonus = (99,249)
     slave_lock = True
-    master_sync = 0xdeadbeefcafef00d
+    master_sync = ((10**9)*0xfeedbeef) - 1000
     lock_window_lsb = 4
     max_diff = 2 # 600MHz
     pass
@@ -473,7 +494,7 @@ class c_clock_timer_test_master_slave_5(c_clock_timer_test_master_slave_base):
     slave_adder = (10,0)
     slave_bonus = (0,0)
     slave_lock = True
-    master_sync = 0xdeadbeefcafef00d
+    master_sync = ((10**9)*0xfeedbeee) - 1000
     lock_window_lsb = 6
     max_diff = 10 # 100MHz
     pass
@@ -547,6 +568,7 @@ class clock_timer_test_hw(simple_tb.cdl_test_hw):
                }
     timer_control      = pycdl.wirebundle(structs.timer_control)
     timer_value        = pycdl.wirebundle(structs.timer_value)
+    timer_sec_nsec     = pycdl.wirebundle(structs.timer_sec_nsec)
 
     th_forces = { "th.clock":"clk",
                   "th.outputs":(" ".join(timer_control._name_list("master_timer_control")) + " " +
@@ -554,6 +576,8 @@ class clock_timer_test_hw(simple_tb.cdl_test_hw):
                                 " "),
                   "th.inputs":(" ".join(timer_value._name_list("master_timer_value")) + " " +
                                " ".join(timer_value._name_list("slave_timer_value")) + " " +
+                               " ".join(timer_sec_nsec._name_list("master_timer_sec_nsec")) + " " +
+                               " ".join(timer_sec_nsec._name_list("slave_timer_sec_nsec")) + " " +
                                " "),
                   }
     module_name = "tb_clock_timer"
@@ -612,7 +636,7 @@ class clock_timer(simple_tb.base_test):
         self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_3()), num_cycles=5*1000*1000)
         pass
     def test_master_slave_4(self):
-        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_4()), num_cycles=5*1000*1000)
+        self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_4()), num_cycles=1*1000*1000)
         pass
     def test_master_slave_5(self):
         self.do_test_run(clock_timer_test_hw(c_clock_timer_test_master_slave_5(), slave_period=100), num_cycles=5*1000*1000)

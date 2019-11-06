@@ -25,11 +25,13 @@ extern module se_test_harness( clock clk,
                                output t_timer_control   master_timer_control,
                                output t_timer_control   slave_timer_control,
                                input  t_timer_value     master_timer_value,
-                               input  t_timer_value     slave_timer_value
+                               input  t_timer_value     slave_timer_value,
+                               input  t_timer_sec_nsec  master_timer_sec_nsec,
+                               input  t_timer_sec_nsec  slave_timer_sec_nsec
     )
 {
     timing from rising clock clk master_timer_control, slave_timer_control;
-    timing to   rising clock clk master_timer_value, slave_timer_value;
+    timing to   rising clock clk master_timer_value, slave_timer_value, master_timer_sec_nsec, slave_timer_sec_nsec;
 }
 
 /*a Module */
@@ -45,6 +47,8 @@ module tb_clock_timer( clock clk,
     net t_timer_control   slave_timer_control_out;
     net t_timer_value     master_timer_value;
     net t_timer_value     slave_timer_value;
+    net t_timer_sec_nsec  master_timer_sec_nsec;
+    net t_timer_sec_nsec  slave_timer_sec_nsec;
 
     /*b Instantiations */
     instantiations: {
@@ -52,7 +56,9 @@ module tb_clock_timer( clock clk,
                             master_timer_control => master_timer_control,
                             slave_timer_control  => slave_timer_control,
                             master_timer_value   <= master_timer_value,
-                            slave_timer_value    <= slave_timer_value
+                            slave_timer_value    <= slave_timer_value,
+                            master_timer_sec_nsec <= master_timer_sec_nsec,
+                            slave_timer_sec_nsec  <= slave_timer_sec_nsec
             );
         clock_timer ckt( clk <- clk, reset_n <= reset_n,
                          timer_control <= master_timer_control,
@@ -65,6 +71,18 @@ module tb_clock_timer( clock clk,
                                 slave_timer_control_in  <= slave_timer_control,
                                 slave_timer_control_out => slave_timer_control_out,
                                 slave_timer_value    => slave_timer_value
+            );
+        clock_timer_as_sec_nsec ctasn_m( clk <- clk,
+                                 reset_n <= reset_n,
+                                 timer_control <= master_timer_control,
+                                 timer_value   <= master_timer_value,
+                                 timer_sec_nsec => master_timer_sec_nsec
+            );
+        clock_timer_as_sec_nsec ctasn_s( clk <- slave_clk,
+                                 reset_n <= reset_n,
+                                 timer_control <= slave_timer_control_out,
+                                 timer_value   <= slave_timer_value,
+                                 timer_sec_nsec => slave_timer_sec_nsec
             );
     }
 

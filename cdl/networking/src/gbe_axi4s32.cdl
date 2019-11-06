@@ -25,7 +25,6 @@
  *  Optionally (configurable) insert timestamp in to packet
  *  Capture timestamp on end of preamble (more predictable than SOP)
  *  Timer to count continuously
- *  Module to retard / accelerate nanosecond timestamp using divide-by-N
  */
 /*a Includes */
 include "types/timer.h"

@@ -56,6 +56,12 @@ timer_value = {"irq":1,
                "value":64,
 }
 
+#t timer_sec_nsec
+timer_sec_nsec = {"valid":1,
+               "sec":35,
+               "nsec":30,
+}
+
 #a I/O
 #t uart_rx
 uart_rx = {"rxd":1, "rts":1}

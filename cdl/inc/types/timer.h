@@ -67,3 +67,11 @@ typedef struct {
     bit     irq     "Asserted if comparator >= timer value";
     bit     locked  "Asserted if the timer has locked (held low unless in a slave clock domain)";
 } t_timer_value;
+
+/*t t_timer_sec_nsec */
+typedef struct {
+    bit valid        "If deasserted, the data is not currently valid";
+    bit[35] sec      "Qualified by 'valid', seconds since epoch of timer_value";
+    bit[30] nsec     "Qualified by 'valid', nanoseconds since epoch of timer_value";
+} t_timer_sec_nsec;
+
