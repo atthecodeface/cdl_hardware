@@ -116,11 +116,24 @@ class sgmii_test_0(sgmii_test_base):
 #c gbe_test_base
 class gbe_test_base(simple_tb.base_th):
     verbose = False
+    #f run_init
+    def run_init(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(100)
+        simple_tb.base_th.run_start(self)
+        self.rx_timer_control__integer_adder.drive(1)
+        self.rx_timer_control__fractional_adder.drive(0)
+        self.rx_timer_control__bonus_subfraction_denom.drive(0)
+        self.rx_timer_control__bonus_subfraction_numer.drive(0)
+        self.bfm_wait(1)
+        self.rx_timer_control__reset_counter.drive(1)
+        self.bfm_wait(1)
+        self.rx_timer_control__reset_counter.drive(0)
+        self.bfm_wait(1)
+        self.rx_timer_control__enable_counter.drive(1)
     #f run
     def run(self):
-        self.sim_msg = self.sim_message()
-        self.bfm_wait(10)
-        simple_tb.base_th.run_start(self)
+        self.run_init()
         self.bfm_wait(self.run_time-10)
         self.finishtest(0,"")
         pass
@@ -143,12 +156,12 @@ class gbe_test_0(gbe_test_base):
                 (0x01004D89,0xf,0),
                 (0x05040302,0xf,0),
                 (0x09080706,0xf,0),
+                (0x09080706,0xf,0),
                 (0x0D0C0B0A,0xf,0),
                 (0x11100F0E,0xf,0),
                 (0x00001312,0x3,1),
                 ]
-        self.sim_msg = self.sim_message()
-        self.bfm_wait(100)
+        self.run_init()
         self.axi_bfm.axi4s("axi4s")
         self.axi4s.set("strb",0xf)
         self.axi4s.set("keep",0xf)
@@ -213,7 +226,7 @@ class gbe_test_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of tb_sgmii
     """
-    loggers = {#"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
+    loggers = {"gmii_sgmii": {"verbose":0, "filename":"gmii_sgmii.log", "modules":("dut.sgg "),},
                }
     timer_control           = pycdl.wirebundle(structs.timer_control)
     tbi_valid               = pycdl.wirebundle(structs.tbi_valid)
@@ -221,7 +234,7 @@ class gbe_test_hw(simple_tb.cdl_test_hw):
     gmii_rx                 = pycdl.wirebundle(structs.gmii_rx)
 
     th_forces = { "th.clock":"clk",
-                  "th.outputs":(" ".join(timer_control._name_list("tx_timer_control")) + " " +
+                  "th.outputs":(" ".join(timer_control._name_list("rx_timer_control")) + " " +
                                 " ".join(tbi_valid._name_list("tbi_rx")) + " " +
                                 " sgmii_rxd[4]"+
                                 " "),

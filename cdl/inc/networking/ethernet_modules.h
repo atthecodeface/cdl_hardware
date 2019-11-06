@@ -39,13 +39,13 @@ extern module gbe_axi4s32( clock tx_aclk   "Transmit clock domain - AXI-4-S and 
                            input bit        rx_axi4s_tready,
                            input   bit gmii_rx_enable "Clock enable for rx_aclk for GMII",
                            input   t_gmii_rx gmii_rx,
-                           input t_timer_control tx_timer_control "Timer control in TX clock domain"
+                           input t_timer_control rx_timer_control "Timer control in TX clock domain"
     )
 {
     timing to   rising clock tx_aclk tx_axi4s, gmii_tx_enable;
     timing from rising clock tx_aclk tx_axi4s_tready, gmii_tx;
-    timing to   rising clock tx_aclk tx_timer_control;
 
     timing to   rising clock rx_aclk rx_axi4s_tready, gmii_rx, gmii_rx_enable;
     timing from rising clock rx_aclk rx_axi4s;
+    timing to   rising clock rx_aclk rx_timer_control;
 }

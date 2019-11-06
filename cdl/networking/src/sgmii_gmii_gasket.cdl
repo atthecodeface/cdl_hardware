@@ -27,6 +27,15 @@
  * inverse value. It will then complete the measurement, and report the difference in cycles
  *
  */
+/*a To do 
+ *
+ * Autonegotiation
+ *
+ * 10/100 support - replicate data to SGMII, reduce enables to GMII
+ *
+ * Rx sync state machine
+ *
+*/
 /*a Includes */
 include "technology/sync_modules.h"
 include "types/encoding.h"
@@ -35,11 +44,11 @@ include "networking/encoders.h"
 
 /*a Constants
 */
-constant integer symbol_K_k28_5 = (5<<5) | 28;
-constant integer symbol_S_k27_7 = (7<<5) | 27;
-constant integer symbol_V_k30_7 = (7<<5) | 30;
-constant integer symbol_T_k29_7 = (7<<5) | 29;
-constant integer symbol_R_k23_7 = (7<<5) | 23;
+constant integer symbol_K_k28_5 = (5<<5) | 28; // 0xbc (0x0fa or 0x305, toggles disparity)
+constant integer symbol_S_k27_7 = (7<<5) | 27; // 0xfb (0x368 or 0x097)
+constant integer symbol_V_k30_7 = (7<<5) | 30; // 0xfe (0x1e8 or 0x217)
+constant integer symbol_T_k29_7 = (7<<5) | 29; // 0xfd (0x2c8 or 0x137)
+constant integer symbol_R_k23_7 = (7<<5) | 23; // 0xf7 (0x3a8 or 0x257)
 constant integer symbol_d5_6    = (6<<5) | 5;
 constant integer symbol_d16_2   = (2<<5) | 16;
 constant integer symbol_d21_5   = (5<<5) | 21;
@@ -319,16 +328,14 @@ if (request) {
 """
 /*b Module body */
 {
-    /*b Tx side */
+    /*b GMII Tx side */
+    default clock tx_clk;
+    default reset active_low tx_reset_n;
     comb     t_gmii_tx_combs gmii_tx_combs;
-    clocked clock tx_clk reset active_low tx_reset_n t_gmii_tx_state gmii_tx_state = {*=0, wr_one_hot=1};
-    clocked clock tx_clk reset active_low tx_reset_n bit[10][4]      gmii_tx_symbol = {*=0};
-    comb     t_sgmii_tx_combs sgmii_tx_combs;
-    clocked  clock tx_clk_312_5 reset active_low tx_reset_312_5_n t_sgmii_tx_state sgmii_tx_state = {*=0, rd_one_hot=1};
+    clocked  t_gmii_tx_state gmii_tx_state = {*=0, wr_one_hot=1};
+    clocked  bit[10][4]      gmii_tx_symbol = {*=0};
     net t_8b10b_symbol gmii_tx_encoded_symbol;
     net bit[4]         gmii_tx_sync_toggle;
-    net bit[4]         sgmii_tx_sync_toggle;
-    clocked clock tx_clk reset active_low tx_reset_n t_tbi_valid tbi_tx={*=0};
     tx_gasket : {
         /*b TX GMII bus decode */
         gmii_tx_combs.gmii_op = gmii_op_idle;
@@ -487,9 +494,6 @@ if (request) {
         if (gmii_tx_state.gmii_tx_valid && !gmii_tx_combs.will_take_symbol) {
             gmii_tx_enable = 0;
         }
-        /*b TBI output */
-        tbi_tx.valid <= gmii_tx_combs.will_take_symbol && gmii_tx_combs.tx_symbol_valid;
-        tbi_tx.data  <= gmii_tx_encoded_symbol.symbol;
 
         /*b Capture TX GMII bus */
         if (gmii_tx_combs.will_take_symbol) {
@@ -499,7 +503,41 @@ if (request) {
             gmii_tx_state.gmii_tx_valid <= 1;
             gmii_tx_state.gmii_tx       <= gmii_tx;
         }
+    }
+    
+    /*b GMII domain Tx logging */
+    default clock tx_clk;
+    default reset active_low tx_reset_n;
+    tx_gmii_logging:{
+        if (gmii_tx_combs.will_take_symbol && gmii_tx_combs.tx_symbol_valid) {
+            if (gmii_tx_combs.enc_data.is_control) {
+                log("GMII tx control",
+                    "symbol",gmii_tx_combs.enc_data.data,
+                    "disparity",gmii_tx_state.disparity,
+                    "k",(gmii_tx_combs.enc_data.data==symbol_K_k28_5),
+                    "s",(gmii_tx_combs.enc_data.data==symbol_S_k27_7),
+                    "v",(gmii_tx_combs.enc_data.data==symbol_V_k30_7),
+                    "t",(gmii_tx_combs.enc_data.data==symbol_T_k29_7),
+                    "r",(gmii_tx_combs.enc_data.data==symbol_R_k23_7)
+                    );
+            }
+        }
+    }
 
+    /*b TBI Tx side */
+    clocked clock tx_clk reset active_low tx_reset_n t_tbi_valid tbi_tx={*=0};
+    tx_tbi_logic:{
+        /*b TBI output */
+        tbi_tx.valid <= gmii_tx_combs.will_take_symbol && gmii_tx_combs.tx_symbol_valid;
+        tbi_tx.data  <= gmii_tx_encoded_symbol.symbol;
+
+    }
+
+    /*b SGMII Tx side */
+    comb     t_sgmii_tx_combs sgmii_tx_combs;
+    clocked  clock tx_clk_312_5 reset active_low tx_reset_312_5_n t_sgmii_tx_state sgmii_tx_state = {*=0, rd_one_hot=1};
+    net bit[4]         sgmii_tx_sync_toggle;
+    tx_sgmii_logic: {
         /*b Serial state machine decode
          */
         sgmii_tx_combs.action = sgmii_tx_action_idle;
@@ -596,6 +634,8 @@ if (request) {
             sgmii_tx_state.rd_one_hot[0]        <= sgmii_tx_state.rd_one_hot[3];
         }
         sgmii_txd = sgmii_tx_state.data_out[4;8];
+
+        /*b All done */
     }
 
     /*b Rx side state and nets */
@@ -987,6 +1027,25 @@ if (request) {
         
         /*b All done */
     }
+    /*b Rx GMII domain logging */
+    default clock             rx_clk;
+    default reset active_low  rx_reset_n;
+    rx_gmii_logging:{
+        if (gmii_rx_state.serial_data_valid) {
+            if (gmii_rx_decoded_symbol.is_control) {
+                log("GMII rx control",
+                    "symbol",gmii_rx_decoded_symbol.data,
+                    "disparity",gmii_rx_state.disparity,
+                    "k",(gmii_rx_decoded_symbol.data==symbol_K_k28_5),
+                    "s",(gmii_rx_decoded_symbol.data==symbol_S_k27_7),
+                    "v",(gmii_rx_decoded_symbol.data==symbol_V_k30_7),
+                    "t",(gmii_rx_decoded_symbol.data==symbol_T_k29_7),
+                    "r",(gmii_rx_decoded_symbol.data==symbol_R_k23_7)
+                    );
+            }
+        }
+    }
+
     /*b All done */
 }
 

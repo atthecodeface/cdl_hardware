@@ -21,19 +21,31 @@
  *
  */
 /*a To do
- *  Optionally pad short packets
- *  Optionally (configurable) insert timestamp in to packet
- *  Capture timestamp on end of preamble (more predictable than SOP)
- *  Timer to count continuously
+ * Optionally (configurable) insert timestamp in to packet
+ *   This has to be done prior to FCS calculation
+ *   Hence for optimium accuracy the connection between this and the PHY should
+ *   not have a FIFO, but should be just a register. Clock domain crossings should
+ *   be minimalized.
+ * 
+ * Fix Rx error and status reporting which is crap
+ *
+ * Pause frame generation (?), pause frame interpretation (?)
+ *
+ * 10/100 support should already exist - the gmii will clock enable on tx and rx
+ * as required
+ *
  */
 /*a Includes */
 include "types/timer.h"
 include "types/axi.h"
 include "types/ethernet.h"
+include "clocking/clock_timer_modules.h"
 
 /*a Constants
 */
 constant integer preamble_length=8; // 7 of 0x55 one of 0xd5
+constant integer disable_rx_timer=0;
+constant integer disable_padding=0;
 
 /*a Types */
 /*t t_tx_fsm */
@@ -41,6 +53,7 @@ typedef fsm {
     tx_fsm_idle         "Waiting for valid data in";
     tx_fsm_preamble     "Outputting preamble";
     tx_fsm_data         "Outputting data, calculating FCS";
+    tx_fsm_padding      "Outputting padding byte, calculating FCS";
     tx_fsm_fcs          "Outputting FCS";
     tx_fsm_ipg          "Waiting for inter-packet gap";
     tx_fsm_aborting     "Data not valid when required - aborting packet";
@@ -54,7 +67,10 @@ typedef enum [5] {
     tx_action_preamble           "Send preamble",
     tx_action_preamble_end       "Send last byte of preamble",
     tx_action_data               "Send next byte of packet data and update FCS",
-    tx_action_last_data_of_word  "Send last byte of current packet data and update FCS",
+    tx_action_last_data_of_word  "Send last byte of current packet data and update FCS - stays in data though",
+    tx_action_data_pad           "Send last byte of packet data and update FCS and start padding",
+    tx_action_pad                "Send padding byte and update FCS",
+    tx_action_pad_eop            "Send last byte of padding and update FCS",
     tx_action_data_eop           "Send last byte of packet data and update FCS",
     tx_action_fcs                "Send next byte of FCS",
     tx_action_fcs_end            "Send last byte of FCS",
@@ -82,6 +98,7 @@ typedef struct {
     bit can_output_symbol;
     bit last_byte_of_packet "Asserted if AXI4S 'last' and last tx strobe";
     bit data_invalid        "Asserted if AXI4S data is not ready for state machine";
+    bit padding_required    "Asserted if padding is required to minimum ethernet packet size";
     bit[8] axi4s_data_byte;
     bit[8] axi4s_fcs_byte;
     bit[32] next_fcs;
@@ -126,16 +143,19 @@ typedef enum [5] {
 
 /*t t_rx_combs */
 typedef struct {
-    t_rx_action action;
-    bit[8]  gmii_data;
-    bit     gmii_idle;
-    bit     gmii_valid_data;
-    bit     gmii_valid;
-    bit     axi_cannot_take_data;
+    t_timer_value timer_value;
+    t_rx_action   action;
+    bit[8]        gmii_data;
+    bit           gmii_idle;
+    bit           gmii_valid_data;
+    bit           gmii_valid;
+    bit           axi_cannot_take_data;
     bit[32] next_fcs;
     bit fcs_valid;
     bit store_byte;
+    bit store_timestamp;
     bit store_status;
+    bit[32] status_axi_user;
     bit data_ready_for_axi;
     t_fcs_op fcs_op;
     bit[16] byte_of_packet_plus_one;
@@ -145,8 +165,9 @@ typedef struct {
 typedef struct {
     t_axi4s32 axi4s          "AXI4S data being presented";
     t_rx_fsm  fsm_state;
-    bit[4] byte_valid;
-    bit[32] data_word;
+    bit[4]    byte_valid       "Bytes valid in data_word";
+    bit[32]   data_word        "Data from packet being assembled for AXI";
+    bit[32]   user             "User value for next AXI word";
     bit[32]   fcs;
     bit[16]    byte_of_packet "Byte of packet";
     bit[16]    max_mtu        "Largest packet size supported";
@@ -168,22 +189,22 @@ module gbe_axi4s32( clock tx_aclk   "Transmit clock domain - AXI-4-S and GMII TX
                     input bit        rx_axi4s_tready,
                     input   bit gmii_rx_enable "Clock enable for rx_aclk for GMII",
                     input   t_gmii_rx gmii_rx,
-                    input t_timer_control tx_timer_control "Timer control in TX clock domain"
+                    input t_timer_control rx_timer_control "Timer control in RX clock domain - tie all low if no timestamp required"
     )
 /*b Documentation */
 """
 A light-weight full-duplex Ethernet MAC supporting GMII.
 
-0x04C11DB7  /2= 2608edb /2= 130476d  /2= 9823b6
->>> bits_of_n(32,0x04C11DB7)
+For the FCS, note that the CRC-32 specification is (CRC>>1) | (CRC[0]?0x04C11DB7:0)
+
+>>> x = bits_of_n(32,0x04C11DB7)
 [1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0]
->>> x=bits_of_n(32,0x04C11DB7)
->>> x.reverse()
->>> "%x"%(int_of_bits(x))
-0xedb88320 /2= 76dc4190 /2= 3b6e20c8 /2= 1db71064
->>>
-                    C704DD7B (bit reverse debb20e3)
-7BDD04C7 
+>>> x.reverse(); int_of_bits(x)
+0xedb88320 /2= 76dc4190 /2= 3b6e20c8 /2= 1db71064 /2= 0edb8832 /2= 076dc419 (note bit 0 set)
+
+The FCS is initialized to -1 so that the length of the packet is important
+The final FCS transmitted is ~FCS, so that the remainder is expected to be the
+CRC-32 of 0xffffffff = 0xC704DD7B, bit reversed to 0xdebb20e3
 
 """
 /*b Module body */
@@ -220,6 +241,10 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
         tx_combs.last_byte_of_packet = (tx_state.axi4s.t.strb<2) && tx_state.axi4s.t.last;
         tx_state.ipg <= 12;
         tx_combs.can_output_symbol = (!tx_state.gmii_tx_valid) || gmii_tx_enable;
+        tx_combs.padding_required = (tx_state.byte_of_packet<59);
+        if (disable_padding) {
+            tx_combs.padding_required = 0;
+        }
         
         /*b TX FSM */
         tx_combs.action = tx_action_none;
@@ -245,9 +270,20 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
                 }
                 if (tx_combs.last_byte_of_packet) {
                     tx_combs.action = tx_action_data_eop;
+                    if (tx_combs.padding_required) {
+                        tx_combs.action = tx_action_data_pad;
+                    }
                 }
                 if (tx_combs.data_invalid) {
                     tx_combs.action = tx_action_abort_start;
+                }
+            }
+        }
+        case tx_fsm_padding: {
+            if (tx_combs.can_output_symbol) {
+                tx_combs.action = tx_action_pad;
+                if (!tx_combs.padding_required) {
+                    tx_combs.action = tx_action_pad_eop;
                 }
             }
         }
@@ -351,6 +387,29 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
             tx_combs.fcs_op        = fcs_op_calc;
             tx_combs.consuming_axi4s = 1;
         }
+        case tx_action_data_pad: { // Send last byte of packet data and update FCS and start padding
+            tx_state.fsm_state       <= tx_fsm_padding;
+            tx_state.gmii_tx_valid   <= 1;
+            tx_state.gmii_tx.txd     <= tx_combs.axi4s_data_byte;
+            tx_state.byte_of_packet  <= tx_combs.byte_of_packet_plus_one;
+            tx_combs.fcs_op          = fcs_op_calc;
+            tx_combs.consuming_axi4s = 1;
+        }
+        case tx_action_pad: { // Send padding byte and update FCS
+            tx_state.fsm_state       <= tx_fsm_padding;
+            tx_state.gmii_tx_valid   <= 1;
+            tx_state.gmii_tx.txd     <= 0;
+            tx_state.byte_of_packet  <= tx_combs.byte_of_packet_plus_one;
+            tx_combs.fcs_op          = fcs_op_calc;
+        }
+        case tx_action_pad_eop: { // Send last byte of padding (byte 60 of packet) and update FCS
+            tx_state.fsm_state <= tx_fsm_fcs;
+            tx_state.gmii_tx_valid  <= 1;
+            tx_state.gmii_tx.txd    <= 0;
+            tx_state.byte_of_packet <= tx_combs.byte_of_packet_plus_one;
+            tx_state.count          <= 3;
+            tx_combs.fcs_op         = fcs_op_calc;
+        }
         case tx_action_fcs: {
             tx_state.gmii_tx_valid <= 1;
             tx_state.gmii_tx.txd   <= tx_combs.axi4s_fcs_byte;
@@ -423,6 +482,20 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
         }
     }
 
+    /*b Rx timer instantiations */
+    net t_timer_value rx_timer_value;
+    rx_timer: {
+        clock_timer rx_ckt( clk <- rx_aclk,
+                            reset_n <= rx_areset_n,
+                            timer_control <= rx_timer_control,
+                            timer_value   => rx_timer_value
+            );
+        rx_combs.timer_value = rx_timer_value;
+        if (disable_rx_timer) {
+            rx_combs.timer_value = {*=0};
+        }
+    }
+
     /*b Rx combs and state */
     comb     t_rx_combs rx_combs;
     clocked clock rx_aclk reset active_low rx_areset_n t_rx_state rx_state = {*=0};
@@ -449,7 +522,7 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
         case rx_fsm_idle: {
             if (rx_combs.gmii_valid_data && (rx_combs.gmii_data==0x55)) {
                 rx_combs.action = rx_action_sop;
-            } elsif (rx_combs.gmii_valid) {
+            } elsif (rx_combs.gmii_valid && !rx_combs.gmii_idle) {
                 rx_combs.action = rx_action_non_packet_error;
             }
         }
@@ -458,6 +531,9 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
                 rx_combs.action = rx_action_sop;
             } elsif (rx_combs.gmii_valid_data && (rx_combs.gmii_data==0xd5)) {
                 rx_combs.action = rx_action_preamble_end;
+                if (rx_combs.axi_cannot_take_data) {
+                    rx_combs.action = rx_action_overrun;
+                }
             } elsif (rx_combs.gmii_valid) {
                 rx_combs.action = rx_action_non_packet_error;
             }
@@ -473,7 +549,7 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
                 }
             } elsif (rx_combs.gmii_idle) { // not rx_dv and not rx_er
                 rx_combs.action = rx_action_packet_okay; // done without needing more data
-                if (rx_combs.fcs_valid) {
+                if (!rx_combs.fcs_valid) {
                     rx_combs.action = rx_action_packet_error;
                 }
             } elsif (rx_combs.gmii_valid) { // rx_er
@@ -491,8 +567,12 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
          */
         rx_combs.fcs_op          = fcs_op_none;
         rx_combs.byte_of_packet_plus_one = rx_state.byte_of_packet+1;
-        rx_combs.store_byte    = 0;
-        rx_combs.store_status  = 0;
+        rx_combs.store_byte       = 0;
+        rx_combs.store_timestamp  = 0;
+        rx_combs.store_status     = 0;
+        rx_combs.status_axi_user  = 0;
+        rx_combs.status_axi_user[8;0]  = axi4s_user_rx_complete;
+        rx_combs.status_axi_user[16;8] = rx_state.byte_of_packet;
 
         full_switch (rx_combs.action) {
         case rx_action_none: {
@@ -503,9 +583,10 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
             rx_state.byte_of_packet <= 0;
         }
         case rx_action_preamble_end: {
-            rx_state.fsm_state      <= rx_fsm_data;
-            rx_state.byte_of_packet <= 0;
-            rx_combs.fcs_op          = fcs_op_init;
+            rx_state.fsm_state        <= rx_fsm_data;
+            rx_state.byte_of_packet   <= 0;
+            rx_combs.store_timestamp  = 1;
+            rx_combs.fcs_op           = fcs_op_init;
         }
         case rx_action_data: {
             rx_state.byte_of_packet <= rx_combs.byte_of_packet_plus_one;
@@ -516,11 +597,16 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
             rx_state.fsm_state   <= rx_fsm_idle;
             rx_combs.store_status  = 1;
         }
-        case rx_action_packet_error: { // Packet completed
+        case rx_action_packet_error: { // Packet error - too big, bad FCS, rx_er
             rx_state.fsm_state   <= rx_fsm_wait_for_idle;
             rx_combs.store_status  = 1;
+            rx_combs.status_axi_user[8;0]  = axi4s_user_rx_error;
         }
         case rx_action_non_packet_error: { // Packet completed
+            rx_state.fsm_state   <= rx_fsm_wait_for_idle;
+        }
+        case rx_action_overrun: { // Data overrun - cannot store a byte when we need to
+            rx_combs.store_status  = 1;
             rx_state.fsm_state   <= rx_fsm_wait_for_idle;
         }
         case rx_action_idle: { // Packet completed
@@ -532,12 +618,25 @@ A light-weight full-duplex Ethernet MAC supporting GMII.
         if (rx_state.axi4s.valid && rx_axi4s_tready) {
             rx_state.axi4s.valid <= 0;            
         }
-        if (rx_combs.store_byte && rx_combs.data_ready_for_axi) {
+        
+        if ((rx_combs.store_byte && rx_combs.data_ready_for_axi) ||
+            rx_combs.store_status) { // store_status may be asserted for errors even if AXI is already valid
             rx_state.axi4s.valid  <= 1;
             rx_state.axi4s.t <= {*=0};
             rx_state.axi4s.t.data <= rx_state.data_word;
             rx_state.axi4s.t.strb <= rx_state.byte_valid;
+            rx_state.axi4s.t.user[32;0] <= rx_state.user;
+            rx_state.axi4s.t.last <= 0;
+            if (rx_combs.store_status) {
+                rx_state.axi4s.t.user[32;0] <= rx_combs.status_axi_user;
+                rx_state.axi4s.t.last <= 1;
+            }
             rx_state.byte_valid <= 0;
+            rx_state.user       <= 0;
+        }
+        if (rx_combs.store_timestamp && !disable_rx_timer) {
+            rx_state.user[24;8] <= rx_combs.timer_value.value[24;0];
+            rx_state.user[ 8;0] <= axi4s_user_timestamp;
         }
         if (rx_combs.store_byte) {
             full_switch (rx_state.byte_of_packet[2;0]) {

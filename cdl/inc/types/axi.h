@@ -98,6 +98,14 @@ typedef struct {
     bit[4] user;
 } t_axi_read_response;
 
+/*t t_axi4s_user */
+typedef enum[8] {
+    axi4s_user_rx_complete = 8h0, // 16-bit packet length in user[16;8]
+    axi4s_user_timestamp   = 8h1, // 24-bit nsec timestamp in user[24;8]
+    axi4s_user_rx_error    = 8h2, // 16-bit erro reason in user[16;8]
+    axi4s_user_undefined = 8hff
+} t_axi4s_user;
+
 /*t t_axi4s32_content */
 typedef struct {
     bit     last;

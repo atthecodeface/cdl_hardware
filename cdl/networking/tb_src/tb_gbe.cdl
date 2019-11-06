@@ -30,14 +30,14 @@ extern module axi4s32_master_slave( clock aclk,
                                     output t_tbi_valid tbi_rx "Optional TBI instead of SGMII",
                                     input t_axi4s32 slave_axi4s,
                                     output bit      slave_axi4s_tready,
-                                    output t_timer_control tx_timer_control "Timer control for TX clock domain"
+                                    output t_timer_control rx_timer_control "Timer control for TX clock domain"
     )
 {
     timing to   rising clock aclk master_axi4s_tready, tbi_tx, sgmii_txd;
     timing from rising clock aclk master_axi4s;
     timing from rising clock aclk slave_axi4s_tready, tbi_rx;
     timing to   rising clock aclk slave_axi4s;
-    timing from rising clock aclk tx_timer_control;
+    timing from rising clock aclk rx_timer_control;
 }
 
 /*a Module */
@@ -52,7 +52,7 @@ module tb_gbe( clock clk,
 
     net t_axi4s32 slave_axi4s;
     net bit      slave_axi4s_tready;
-    net t_timer_control tx_timer_control;
+    net t_timer_control rx_timer_control;
 
     net t_gmii_tx gmii_tx;
     net bit gmii_tx_enable;
@@ -77,7 +77,7 @@ module tb_gbe( clock clk,
                                  tbi_rx => tbi_rx,
                                  slave_axi4s <= slave_axi4s,
                                  slave_axi4s_tready => slave_axi4s_tready,
-                                 tx_timer_control   => tx_timer_control );
+                                 rx_timer_control   => rx_timer_control );
         gbe_axi4s32 gbe( tx_aclk <- clk,
                      tx_areset_n <= reset_n,
                      tx_axi4s    <= master_axi4s,
@@ -91,7 +91,7 @@ module tb_gbe( clock clk,
                      rx_axi4s_tready <= slave_axi4s_tready,
                      gmii_rx_enable <= gmii_rx_enable,
                      gmii_rx <= gmii_rx,
-                     tx_timer_control  <= tx_timer_control
+                     rx_timer_control  <= rx_timer_control
             );
         sgmii_gmii_gasket sgg(tx_clk <- clk,
                               tx_clk_312_5 <- clk,

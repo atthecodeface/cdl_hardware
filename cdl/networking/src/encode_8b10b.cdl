@@ -201,7 +201,7 @@ Also, note that the inverse 11000001xx is the alternative comma sequence.
         case 3b000: { eb3b4b.symbol = eb3b4b.disparity ? 4b0100 : 4b1011; }
         case 3b001: { eb3b4b.symbol = (eb3b4b.disparity||!eb3b4b.is_control) ? 4b1001 : 4b0110; eb3b4b.toggle_dis = 0;}
         case 3b010: { eb3b4b.symbol = (eb3b4b.disparity||!eb3b4b.is_control) ? 4b0101 : 4b1010; eb3b4b.toggle_dis = 0;}
-        case 3b011: { eb3b4b.symbol = eb3b4b.disparity ? 4b0011 : 4b1100; }
+        case 3b011: { eb3b4b.symbol = eb3b4b.disparity ? 4b0011 : 4b1100; eb3b4b.toggle_dis = 0;}
         case 3b100: { eb3b4b.symbol = eb3b4b.disparity ? 4b0010 : 4b1101; }
         case 3b101: { eb3b4b.symbol = (eb3b4b.disparity||!eb3b4b.is_control) ? 4b1010 : 4b0101; eb3b4b.toggle_dis = 0;}
         case 3b110: { eb3b4b.symbol = (eb3b4b.disparity||!eb3b4b.is_control) ? 4b0110 : 4b1001; eb3b4b.toggle_dis = 0;}
