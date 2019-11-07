@@ -14,6 +14,10 @@
  * @file   apb_master_axi.cdl
  * @brief  AXI target to an APB master interface
  *
+ * APB master driven by an AXI target (32-bit address, 64-bit data)
+ *
+ * Supports aligned 32-bit single length transactions only
+ *
  * The AXI target supports 32-bit aligned 32-bit read/writes with full
  * byte enables only.
  * 
@@ -28,64 +32,82 @@ include "types/apb.h"
 include "types/axi.h"
 
 /*a Types */
+/*t t_axi_wr_fsm */
 typedef fsm
 {
-    axi_wr_idle;
-    axi_wr_get_data;
-    axi_wr_do_apb;
-    axi_wr_wait_apb;
-    axi_wr_wait_ack;
+    axi_wr_idle       {
+        axi_wr_get_data
+            } "Waiting for an AXI write request";
+    axi_wr_get_data   {
+        axi_wr_do_apb
+            } "Waiting for the write data for the write request";
+    axi_wr_do_apb     {
+        axi_wr_wait_apb
+            } "Presenting APB access (when APB is ready)";
+    axi_wr_wait_apb   {
+        axi_wr_wait_ack
+            } "Waiting for APB access to complete";
+    axi_wr_wait_ack   {
+        axi_wr_idle
+            } "Presenting write response to AXI master";
 } t_axi_wr_fsm;
 
+/*t t_axi_wr_state */
 typedef struct
 {
-    t_axi_wr_fsm state;
-    bit     errored;
-    bit[12] id;
-    bit[32] address;
-    bit[32] data;
+    t_axi_wr_fsm state "State of the AXI write state machine";
+    bit     errored    "Asserted if the AXI request did not match the capabilities of the logic";
+    bit[12] id         "@a id field of the AXI write request being handled";
+    bit[32] address    "@a address of the AXI write request being handled";
+    bit[32] data       "@a data from the AXI write data channel for the AXI write request being handled";
 } t_axi_wr_state;
 
+/*t t_axi_rd_fsm */
 typedef fsm
 {
-    axi_rd_idle;
-    axi_rd_do_apb;
-    axi_rd_wait_apb;
-    axi_rd_wait_ack;
+    axi_rd_idle     {
+        axi_rd_do_apb
+            } "Waiting for an AXI read requests";
+    axi_rd_do_apb{
+        axi_rd_wait_apb
+            } "Requesting an APB read transaction";
+    axi_rd_wait_apb{
+        axi_rd_wait_ack
+            } "Waiting for APB read transaction to complete";
+    axi_rd_wait_ack{
+        axi_rd_idle
+            } "Presenting AXI read response";
 } t_axi_rd_fsm;
 
+/*t t_axi_rd_state */
 typedef struct
 {
-    t_axi_rd_fsm state;
-    bit     errored;
-    bit[12] id;
-    bit[32] address;
+    t_axi_rd_fsm state "State of the AXI read state machine";
+    bit     errored    "Asserted if the AXI request did not match the capabilities of the logic";
+    bit[12] id         "@a id field of the AXI read request being handled";
+    bit[32] address    "@a address of the AXI read request being handled";
 } t_axi_rd_state;
 
 /*a Module
  */
 /*m apb_master_axi
  *
- * APB master driven by an AXI target (32-bit address, 64-bit data)
- *
- * Supports aligned 32-bit single length transactions only
- *
  */
-module apb_master_axi( clock aclk,
-                       input bit areset_n,
-                       input t_axi_request ar,
-                       output bit awready,
-                       input t_axi_request aw,
-                       output bit arready,
-                       output bit wready,
-                       input t_axi_write_data w,
-                       input bit bready,
-                       output t_axi_write_response b,
-                       input bit rready,
-                       output t_axi_read_response r,
+module apb_master_axi( clock aclk                    "AXI and APB clock",
+                       input bit areset_n            "AXI and APB reset",
+                       input t_axi_request ar        "AXI read request from master",
+                       output bit arready            "Ready signal for AXI read requests",
+                       input t_axi_request aw        "AXI write request from master",
+                       output bit awready            "Ready signal for AXI write requests",
+                       input t_axi_write_data w      "AXI write data from master",
+                       output bit wready             "Ready signal for write data",
+                       input bit bready              "Ready signal from master for returning write responses",
+                       output t_axi_write_response b "Write response back to master",
+                       input bit rready              "Ready signal from master for returning read data and response",
+                       output t_axi_read_response r  "Read response back to master",
 
-                       output t_apb_request     apb_request,
-                       input t_apb_response     apb_response
+                       output t_apb_request     apb_request    "APB request out",
+                       input t_apb_response     apb_response   "APB response back"
     )
 """
 AXI target mapping to an APB master
@@ -99,9 +121,11 @@ This module is currently very primitive, and does not checking of
 transaction input really.
 """
 {
+    /*b Default clock and reset */
     default clock aclk;
     default reset active_low areset_n;
 
+    /*b Clocked state for the AXI inputs from the master - we can accept input if these are not valid */
     clocked bit awready = 0;
     clocked bit arready = 0;
     clocked bit wready = 0;
@@ -109,8 +133,11 @@ transaction input really.
     clocked t_axi_read_response  r={*=0};
     clocked t_apb_request apb_request={*=0};
 
+    /*b Clocked state for the AXI state machines */
     clocked t_axi_wr_state axi_wr_state={*=0} "State of the AXI write side";
     clocked t_axi_rd_state axi_rd_state={*=0} "State of the AXI read side";
+
+    /*b Clocked state and decode for the APB transaction side */
     clocked bit apb_access_in_progress = 0  "Asserted if an APB access is in progress";
     comb bit apb_access_start_read          "Asserted if an APB read access should start";
     comb bit apb_access_start_write         "Asserted if an APB write access should start";
@@ -142,6 +169,9 @@ transaction input really.
     the APB side to perform an APB read transaction; when that
     completes, the AXI read response can be returned.
 
+    A read request is only presented if the write state machine is
+    idle. Hence @a apb_access_start_write and @a apb_access_start_read
+    can never be asserted simultaneously.
 
     """: {
         arready <= 0;
@@ -149,7 +179,8 @@ transaction input really.
         apb_access_start_read = 0;
         apb_access_start_write = 0;
 
-        /*b AXI writes */
+        /*b AXI write state machine - idle, get data, do_apb, wait_apb, wait_ack
+         */
         full_switch (axi_wr_state.state) {
         case axi_wr_idle: {
             if (aw.valid) {
@@ -199,7 +230,13 @@ transaction input really.
         }
         }
 
-        /*b AXI reads */
+        /*b AXI reads - rd_idle, rd_do_apb, rd_wait_apb, rd_wait_ack
+         *
+         * An APB read is only requested if the AXI write state machine is
+         * in idle. The AXI write state machine will not request and @a apb_access_start_write
+         * in that state, hence @a apb_access_start_read is exclusive with @a apb_access_start_write
+         *
+         */
         full_switch (axi_rd_state.state) {
         case axi_rd_idle: {
             if (ar.valid) {
@@ -213,7 +250,7 @@ transaction input really.
         case axi_rd_do_apb: {
             arready <= 0;
             if (axi_wr_state.state == axi_wr_idle) {
-                apb_access_start_read = 1;
+                apb_access_start_read = 1; // apb_access_start_write will not be asserted
                 axi_rd_state.state <= axi_rd_wait_apb;
             }
         }
@@ -277,4 +314,6 @@ transaction input really.
             }
         }
     }
+
+    /*b All done */
 }

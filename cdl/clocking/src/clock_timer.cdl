@@ -11,7 +11,7 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  *
- * @file   timer.cdl
+ * @file   clock_timer.cdl
  * @brief  Standardized 64-bit timer with synchronous control
  *
  * CDL implementation of a standard 64-bit timer using synchronous control.
@@ -24,24 +24,26 @@ include "types/timer.h"
 
 /*a Types */
 /*t t_timer_combs
+ * 
+ * Combinatorial decodes of the state of the timer
  *
  */
 typedef struct {
-    bit[5] fractional_sum    "Result of fractional addition, including fractional_bonus";
-    bit[33] lower_sum        "Result of integer part of timer, lower bits, summing with timer integer add and fractional overflow";
-    bit[32] upper_sum        "Result of upper timer addition - actually an increment based on result of lower_sum carry";
-    bit[4]  fractional_half_adder       "Fractional part of half value of interger/fractional adder";
-    bit[8]  integer_half_adder          "Integer part of half value of interger/fractional adder";
-    bit[5]  fractional_one_and_half_adder       "1-bit int plus fractional part of 3/2 value of interger/fractional adder";
-    bit[8]  integer_one_and_half_adder          "Integer part of 3/2 value of interger/fractional adder";
+    bit     fractional_bonus                "Carry in to timer fractional bonus adder - inverse of top bit of accumulator";
+    bit[5]  fractional_sum                  "Result of fractional addition, including fractional_bonus";
+    bit[33] lower_sum                       "Result of integer part of timer, lower bits, summing with timer integer add and fractional overflow";
+    bit[32] upper_sum                       "Result of upper timer addition - actually an increment based on result of lower_sum carry";
+    bit[4]  fractional_half_adder           "Fractional part of half value of integer/fractional adder";
+    bit[8]  integer_half_adder              "Integer part of half value of integer/fractional adder";
+    bit[5]  fractional_one_and_half_adder   "1-bit int plus fractional part of 3/2 value of integer/fractional adder";
+    bit[8]  integer_one_and_half_adder      "Integer part of 3/2 value of integer/fractional adder";
 } t_timer_combs;
 
 /*t t_timer_state
  *
  */
 typedef struct {
-    bit[8]  bonus_subfraction_step "Counter in range 0..denom-1; compared with numer to determine fractional_bonus";
-    bit fractional_bonus           "Carry in to timer fractional bonus adder, depending on numer/denom";
+    bit[9]  bonus_subfraction_acc  "Accumulator for the fractional_bonus";
     bit[4]  fraction               "Fraction of timer value, accumulating on each enabled cycle";
     bit[32] timer_lower            "Lower 32-bits of integer timer value";
     bit[32] timer_upper            "Upper 32-bits of integer timer value";
@@ -78,38 +80,51 @@ However, this would actually lead to a timer that would be only 99.61% accurate.
 
 Hence a further subfraction capability is supported; this permits a
 further 1/16th of a nanosecond (or whatever the timer unit is) to be
-added for M out of every N cycles.
+added for (A+1) cycles out of every (A+S+2).
 
 In the case of 600MHz a bonus 1/16th should be added for 2 out of
-every 3 cycles. This is set using a bonus_subfraction_numer of 0 and a
-bonus_subfraction_denom of 2 (meaning for 2 out of every 3 cycles add
+every 3 cycles. This is set using a @a bonus_subfraction_add of 1 and a
+@a bonus_subfraction_sub of 0 (meaning for 2 out of every 3 cycles add
 a further 1/16th).
+
+This operates using a digital differential accumulator; this is a
+9-bit value whose top bit being low indicates that the bonus should be added.
+If the accumulator has the top bit set then the @a bonus_subfraction_add
+value +1 is added to it; if it does not then it has ~@a bonus_subfraction_sub
+added to it.
+
+In the 600MHz case the accumulator will cycle through 0, -1, 1, 0, -1,
+and so on.
 
 Hence every three cycles the timer will have 0x1.b, 0x1.b, 0x1.a
 added to it - hence the timer will have gone up by an integer value of
 5ns, which is correct for 3 600MHz clock cycles.
 
-If the control values are tied off to zero then the extra fractional
+If the @a bonus_subfraction values are tied off to zero then the extra fractional
 logic will be optimized out.
 
 Some example values for 1ns timer values:
 
-Clock  | Period    | Adder (Int/fraction) | Subfraction Numer/Denom
--------|-----------|----------------------|------------------------
-1GHz   |    1ns    |      1 / 0x0         |    0 / 0
-800MHz |  1.25ns   |      1 / 0x4         |    0 / 0
-600MHz |  1.66ns   |      1 / 0xa         |    0 / 2
+Clock    | Period    | Adder (Int/fraction) | Bonus rate | Add / sub
+---------|-----------|----------------------|------------|-----------
+1GHz     |    1ns    |      1 / 0x0         |    0       |   0 / 0
+800MHz   |  1.25ns   |      1 / 0x4         |    0       |   0 / 0
+600MHz   |  1.66ns   |      1 / 0xa         |    1 / 3   |   1 / 0
+156.25Hz |   6.4ns   |      6 / 0x6         |    4 / 10  |   3 / 5
 
-The period should be:
+With a 3/5 bonus the accumulator will cycle through 0, -6, -2, 2, -4, 0, ...
 
-  * subfraction numer/denum=0/x: (Int + fraction/16)
+Hence the clock period should be:
 
-  * subfraction numer/denum=M/N: (Int + (fraction+(N-M)/(N+1))/16) 
+  * bonus add,sub=0,0: (Int + fraction/16)
 
-In addition a synchronous advance/retard option is provided for.
-Each time advance is seen going high (i.e. positive edge of advance)
-then on an addition the timer will increment by ?.
-Each time retard is seen going high the timer will reduces its increment by ?.
+  * bonus add,sub=a,s: (Int + (fraction+(a+1)/(a+s+2))/16) 
+
+In addition a synchronous advance/retard option is provided for.  Each
+time advance is seen going high (i.e. positive edge of advance) then
+on an addition the timer will increment by a bonus half tick value.
+Each time retard is seen going high the timer will reduces its
+increment by a half tick value.
 
 Furthermore, there is a synchronize control. When this is asserted, on the next
 clock edge where the clock is loaded with the 64-bit synchronization value.
@@ -121,10 +136,40 @@ clock edge where the clock is loaded with the 64-bit synchronization value.
     default reset active_low reset_n;
 
     /*b Timer state */
-    clocked t_timer_state timer_state= {*=0} "State of the timer and comparator";
+    clocked t_timer_state timer_state= {*=0} "State of the timer";
     comb    t_timer_combs timer_combs        "Combinatorial decode of timer state and controls";
 
-    /*b Handle the timer and comparator */
+    /*b Bonus fraction logic */
+    bonus_fraction_logic """
+    This logic manages the DDA for the bonus fraction.
+
+    The accumulator adds the @a bonus_subfraction_add value +1 if it is negative, and is subtracts
+    @a bonus_subfraction_sub -1 if the accumulator is positive.
+
+    The fractional bonus of 1/16 nanosecond is added when the accumulator is negative.
+
+    If the bonus fraction configuration is 0, rather than a 1-out-of-2 cycle bonus (which can be
+    achieved using an @a bonus_subfraction_add value of 1 and a @a bonus_subfraction_sub value of 1)
+    the fractional bonus is 0, and the logic will be optimized out if the configuration is tied off.
+    """: {
+        if (timer_control.enable_counter) {
+            if (timer_state.bonus_subfraction_acc[8]){
+                timer_state.bonus_subfraction_acc <= timer_state.bonus_subfraction_acc + bundle(1b0, timer_control.bonus_subfraction_add) + 1;
+            } else {
+                timer_state.bonus_subfraction_acc <= timer_state.bonus_subfraction_acc + bundle(1b1, ~timer_control.bonus_subfraction_sub);
+            }
+        }
+        timer_combs.fractional_bonus = !timer_state.bonus_subfraction_acc[8];
+        if (timer_control.reset_counter) {
+            timer_state.bonus_subfraction_acc <= 0;
+        }
+        if ((timer_control.bonus_subfraction_add==0) && (timer_control.bonus_subfraction_sub==0)) {
+            timer_state.bonus_subfraction_acc <= 0;
+            timer_combs.fractional_bonus       = 0;
+        }        
+    }
+
+    /*b Handle the timer */
     timer_logic """
     The @a timer value can be reset or it may count on a tick, or it
     may just hold its value.
@@ -170,7 +215,7 @@ clock edge where the clock is loaded with the 64-bit synchronization value.
         /*b Tick / reset timer */
         timer_combs.fractional_sum = ( bundle(1b0, timer_state.fraction)    +
                                        bundle(1b0, timer_state.fractional_adder) +
-                                       (timer_state.fractional_bonus ? 1: 0)
+                                       (timer_combs.fractional_bonus ? 1: 0)
             );
         timer_combs.lower_sum      = ( bundle(1b0, timer_state.timer_lower) +
                                        bundle(25b0, timer_state.integer_adder) +
@@ -182,26 +227,11 @@ clock edge where the clock is loaded with the 64-bit synchronization value.
         }
         
         if (timer_control.enable_counter) {
-            if (timer_control.bonus_subfraction_denom==0) {
-                timer_state.bonus_subfraction_step <= 0;
-                timer_state.fractional_bonus       <= 0;
-            } else {
-                timer_state.bonus_subfraction_step <= timer_state.bonus_subfraction_step + 1;
-                if (timer_state.bonus_subfraction_step>=timer_control.bonus_subfraction_denom) {
-                    timer_state.bonus_subfraction_step <= 0;
-                }
-                timer_state.fractional_bonus <= 0;
-                if (timer_state.bonus_subfraction_step > timer_control.bonus_subfraction_numer) {
-                    timer_state.fractional_bonus <= 1;
-                }
-            }
             timer_state.fraction    <= timer_combs.fractional_sum[4;0];
             timer_state.timer_lower <= timer_combs.lower_sum[32;0];
             timer_state.timer_upper <= timer_combs.upper_sum;
         }
         if (timer_control.reset_counter) {
-            timer_state.bonus_subfraction_step <= 0;
-            timer_state.fractional_bonus <= 0;
             timer_state.fraction <= 0;
             timer_state.timer_lower <= 0;
             timer_state.timer_upper <= 0;

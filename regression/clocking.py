@@ -18,7 +18,7 @@ import sys, os, unittest, tempfile
 import simple_tb
 import structs
 import math
-
+from clock_timer import clock_timer_adder_bonus, clock_timer_period
 #a Useful functions
 def find_fractions_for(ns):
     adder_ns = int(ns*16)
@@ -121,6 +121,7 @@ class c_clocking_phase_measure_test_0(c_clocking_phase_measure_test_base):
         self.compare_expected("delay",         35, result["delay"])
         self.bfm_wait(10)
         self.measure_request__valid.drive(1)
+        self.bfm_wait(self.run_time_remaining())
         if failures==0:
             self.passtest(self.global_cycle(),"Ran okay")
             pass
@@ -244,8 +245,9 @@ class c_clocking_eye_tracking_test_0(c_clocking_eye_tracking_test_base):
                 self.feed_data_after_delay()
                 pass
             pass
-        self.bfm_wait(1000)
+        self.bfm_wait(self.run_time_remaining())
         self.eye_track_request__enable.drive(0)
+        self.bfm_wait(1)
         if failures==0:
             self.passtest(self.global_cycle(),"Ran okay")
             pass
@@ -262,27 +264,29 @@ class c_clock_timer_test_base(simple_tb.base_th):
     """
     master_adder = (1,0)
     master_bonus = (0,0)
-    slave_adder = (1,9)
-    slave_bonus = (3,9)
+    (slave_adder, slave_bonus) = clock_timer_adder_bonus(1.6)
     slave_lock = False
     lock_window_lsb = 6
+    hw_clk = "clk"
     #f configure_master
     def configure_master(self, adder, bonus=(0,0)):
-        self.master_timer_control__bonus_subfraction_denom.drive(bonus[1])
-        self.master_timer_control__bonus_subfraction_numer.drive(bonus[0])
+        self.master_timer_control__bonus_subfraction_sub.drive(bonus[1])
+        self.master_timer_control__bonus_subfraction_add.drive(bonus[0])
         self.master_timer_control__fractional_adder.drive(adder[1])
         self.master_timer_control__integer_adder.drive(adder[0])
         self.master_timer_control__reset_counter.drive(1)
         self.master_timer_control__enable_counter.drive(0)
+        print "Master configured for %fns %fMHz"%(clock_timer_period(adder, bonus),1000.0/clock_timer_period(adder, bonus))
         pass
     #f configure_slave
     def configure_slave(self, adder, bonus=(0,0), lock=False):
-        self.slave_timer_control__bonus_subfraction_denom.drive(bonus[1])
-        self.slave_timer_control__bonus_subfraction_numer.drive(bonus[0])
+        self.slave_timer_control__bonus_subfraction_sub.drive(bonus[1])
+        self.slave_timer_control__bonus_subfraction_add.drive(bonus[0])
         self.slave_timer_control__fractional_adder.drive(adder[1])
         self.slave_timer_control__integer_adder.drive(adder[0])
         self.slave_timer_control__reset_counter.drive(1)
         self.slave_timer_control__enable_counter.drive(0)
+        print "Slave configured for %fns %fMHz"%(clock_timer_period(adder, bonus),1000.0/clock_timer_period(adder, bonus))
         if lock:
             self.master_timer_control__lock_to_master.drive(1)
             self.master_timer_control__lock_window_lsb.drive({4:0,6:1,8:2,10:3}[self.lock_window_lsb])
@@ -412,7 +416,7 @@ class c_clock_timer_test_master_slave_base(c_clock_timer_test_base):
             self.bfm_wait(1)
             self.master_timer_control__synchronize.drive(0)
             pass
-        self.bfm_wait(self.run_time-self.global_cycle()/10)
+        self.bfm_wait(self.run_time_remaining())
         master = self.master_timer_value__value.value()
         slave = self.slave_timer_value__value.value()
         diff = abs(master-slave)
@@ -450,9 +454,7 @@ class c_clock_timer_test_master_slave_0(c_clock_timer_test_master_slave_base):
     
 #c c_clock_timer_test_master_slave_1
 class c_clock_timer_test_master_slave_1(c_clock_timer_test_master_slave_base):
-    # 247 148 (99,247) 1.59994939271 (98,247) 1.60020242915
-    slave_adder=(1,9)
-    slave_bonus=(99,247)
+    (slave_adder, slave_bonus) = clock_timer_adder_bonus(1.6002)
     slave_lock=True
     lock_window_lsb = 4
     max_diff = 2  # 600MHz
@@ -460,9 +462,7 @@ class c_clock_timer_test_master_slave_1(c_clock_timer_test_master_slave_base):
 
 #c c_clock_timer_test_master_slave_2
 class c_clock_timer_test_master_slave_2(c_clock_timer_test_master_slave_base):
-    # 249 149 (100,249) 1.59989959839 (99,249) 1.60015060241
-    slave_adder = (1,9)
-    slave_bonus=(100,249)
+    (slave_adder, slave_bonus) = clock_timer_adder_bonus(1.5998)
     slave_lock=True
     lock_window_lsb = 4
     max_diff = 2  # 600MHz
@@ -470,9 +470,7 @@ class c_clock_timer_test_master_slave_2(c_clock_timer_test_master_slave_base):
 
 #c c_clock_timer_test_master_slave_3
 class c_clock_timer_test_master_slave_3(c_clock_timer_test_master_slave_base):
-    # 249 149 (100,249) 1.59989959839 (99,249) 1.60015060241
-    slave_adder = (1,9)
-    slave_bonus = (99,249)
+    (slave_adder, slave_bonus) = clock_timer_adder_bonus(1.599)
     slave_lock = True
     lock_window_lsb = 4
     max_diff = 2 # 600MHz
@@ -480,9 +478,7 @@ class c_clock_timer_test_master_slave_3(c_clock_timer_test_master_slave_base):
 
 #c c_clock_timer_test_master_slave_4
 class c_clock_timer_test_master_slave_4(c_clock_timer_test_master_slave_base):
-    # 249 149 (100,249) 1.59989959839 (99,249) 1.60015060241
-    slave_adder = (1,9)
-    slave_bonus = (99,249)
+    (slave_adder, slave_bonus) = clock_timer_adder_bonus(1.599)
     slave_lock = True
     master_sync = ((10**9)*0xfeedbeef) - 1000
     lock_window_lsb = 4
@@ -491,8 +487,7 @@ class c_clock_timer_test_master_slave_4(c_clock_timer_test_master_slave_base):
 
 #c c_clock_timer_test_master_slave_5
 class c_clock_timer_test_master_slave_5(c_clock_timer_test_master_slave_base):
-    slave_adder = (10,0)
-    slave_bonus = (0,0)
+    (slave_adder, slave_bonus) = clock_timer_adder_bonus(10.0)
     slave_lock = True
     master_sync = ((10**9)*0xfeedbeee) - 1000
     lock_window_lsb = 6
@@ -501,8 +496,7 @@ class c_clock_timer_test_master_slave_5(c_clock_timer_test_master_slave_base):
 
 #c c_clock_timer_test_master_slave_6
 class c_clock_timer_test_master_slave_6(c_clock_timer_test_master_slave_base):
-    slave_adder = (100,1)
-    slave_bonus = (0,0)
+    (slave_adder, slave_bonus) = clock_timer_adder_bonus(100.1)
     slave_lock = True
     master_sync = 0xdeadbeefcafef00d
     lock_window_lsb = 8
@@ -514,8 +508,7 @@ class c_clock_timer_test_master_slave_6(c_clock_timer_test_master_slave_base):
 
 #c c_clock_timer_test_master_slave_7
 class c_clock_timer_test_master_slave_7(c_clock_timer_test_master_slave_base):
-    slave_adder = (100,0)
-    slave_bonus = (0,0)
+    (slave_adder, slave_bonus) = clock_timer_adder_bonus(100.0)
     slave_lock = True
     master_sync = 0xdeadbeefcafef00d
     lock_window_lsb = 10
@@ -564,7 +557,7 @@ class clock_timer_test_hw(simple_tb.cdl_test_hw):
     Simple instantiation of clock_timer testbench
     """
     system_clock_half_period = 5
-    loggers = {"async": {"verbose":0, "filename":"itrace.log", "modules":("dut.ckts "),},
+    loggers = {"async": {"verbose":0, "filename":"ckts.log", "modules":("dut.ckts "),},
                }
     timer_control      = pycdl.wirebundle(structs.timer_control)
     timer_value        = pycdl.wirebundle(structs.timer_value)

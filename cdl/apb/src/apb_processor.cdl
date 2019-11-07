@@ -264,23 +264,34 @@ parameter, APB request, wait, finish.
  
 + Branch
 
-  Four branch types are supported - always, if acc is zero, if acc is
-  nonzero, and if repeat count is nonzero (with the side effect of
-  decrementing the repeat count)
+  Three simple branch types are supported - always, if acc is zero, 
+  and if acc is nonzero. These branch to another position in the ROM.
+
+  These branch types have a 'set link' variant, which sets the
+  increment register to the ROM address plus one
+
+  There is a branch if repeat count is nonzero, with the side effect of
+  decrementing the repeat count
+
+  Lastly there is a 'branch to increment' - or return, which
+  is effectively the opposite of a branch with link - it returns to the
+  next ROM location after a branch with link
 
 + Set parameter    
 
-  Set parameter can set the APB address, accumulator and repeat count
+  Set parameter can set the APB address, accumulator, incrementer and
+  repeat count
  
 + Wait
 
-  Wait uses the accumulator, decrementing it once per cycle, to wait
+  Wait uses the incrementer, decrementing it once per cycle, to wait
   before moving on in the program.
  
 + APB request
 
   APB request can request read, write accumulator, or write using the
   ROM content as data; these can optionally also auto-increment the address
+  by the value in the increment register
  
 + Finish
 
@@ -497,8 +508,10 @@ accepts an APB response back, including @a pready.
             full_switch (processor_combs.opcode_subclass[3;0]) {
             case rom_op_branch:       { processor_combs.take_branch = 1; }
             case rom_op_branch_link:  { processor_combs.take_branch = 1; processor_combs.set_link = 1; }
-            case rom_op_beq:          { processor_combs.take_branch = processor_combs.acc_is_zero;  processor_combs.set_link = 1; }
-            case rom_op_bne:          { processor_combs.take_branch = !processor_combs.acc_is_zero; processor_combs.set_link = 1; }
+            case rom_op_beq:          { processor_combs.take_branch = processor_combs.acc_is_zero;  }
+            case rom_op_beq_link:     { processor_combs.take_branch = processor_combs.acc_is_zero;  processor_combs.set_link = 1; }
+            case rom_op_bne:          { processor_combs.take_branch = !processor_combs.acc_is_zero; }
+            case rom_op_bne_link:     { processor_combs.take_branch = !processor_combs.acc_is_zero; processor_combs.set_link = 1; }
             case rom_op_loop:    {
                 processor_combs.take_branch = !processor_combs.rpt_is_zero;
                 processor_state.repeat_count <= processor_state.repeat_count - 1;

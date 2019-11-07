@@ -14,12 +14,17 @@
  * @file   apb_logging.cdl
  * @brief  Logging module for APB transactions
  *
+ * This simple module provides a logging point for APB transactions, logging both
+ * APB reads and writes separately.
+ *
+ * The module should be instantiated on an APB bus that the user wants
+ * to have logged in CDL simulations
+ *
  */
 /*a Includes
  */
 include "types/apb.h"
 
-/*a Types */
 /*a Module
  */
 module apb_logging( clock clk         "System clock",
@@ -29,6 +34,11 @@ module apb_logging( clock clk         "System clock",
                     input t_apb_response apb_response "APB response"
     )
 """
+This simple module provides a logging point for APB transactions, logging both
+APB reads and writes separately.
+
+The module should be instantiated on an APB bus that the user wants
+to have logged in CDL simulations
 """
 {
     /*b Clock and reset */
@@ -37,6 +47,8 @@ module apb_logging( clock clk         "System clock",
 
     /*b Logging */
     apb_logging """
+    An APB transaction completes when @a psel, @a penable and @a pready are all high.
+    Hence the @a pwdata and @prdata can be logged appropriately depending on @pwrite.
     """ : {
         /*b Logging */
         if (apb_request.psel && apb_request.penable && apb_response.pready) {

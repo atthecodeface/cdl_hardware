@@ -21,6 +21,7 @@ import socket, select
 #a Test classes
 #c base_th
 class base_th(pycdl._thfile):
+    hw_clk = "clk"
     #b class thread(object):
     class thread(threading.Thread):
         name = "<give me a name>"
@@ -129,11 +130,17 @@ class base_th(pycdl._thfile):
             self.failtest(0,"Expected more %ss: %s"%(reason,str(expectation),))
             pass
         pass
+    #f set_hw
+    def set_hw(self, hw):
+        self.hw = hw
+        pass
     #f set_run_time
     def set_run_time(self, num_cycles):
         self.run_time = num_cycles-10
         pass
-
+    #f run_time_remaining
+    def run_time_remaining(self):
+        return self.run_time-self.global_cycle()/(self.hw.clock_periods[self.hw_clk])
     #f exec_run
     def exec_run(self):
         self._th = self
@@ -196,15 +203,18 @@ class cdl_test_hw(pycdl.hw):
     clocks = { "clk":(0,None,None)}
     #f __init__
     def __init__(self, test):
+        test.set_hw(self)
         self.test = test
         self.wave_file = self.__class__.__module__+".vcd"
 
         self.cdl_clocks = {}
+        self.clock_periods = {}
         for clk_pin in self.clocks:
             (delay, low, high) = self.clocks[clk_pin]
             if low  is None: low  = self.system_clock_half_period
             if high is None: high = self.system_clock_half_period
             self.cdl_clocks[clk_pin] = pycdl.clock(delay, low, high)
+            self.clock_periods[clk_pin] = low + high
             pass
 
         reset_n        = pycdl.wire()

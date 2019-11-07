@@ -133,6 +133,7 @@ class c_cdl_file:
     #f parse_init
     def parse_init(self):
         self.comment_start_strings = ["/*", "//", '"""', '"']
+        self.function_start_strings = ["log(", "print(", "assert("]
         self.pending_documentation = ""
         self.uid = 0
         self.parse_states = ["head"]
@@ -151,6 +152,7 @@ class c_cdl_file:
                           "module_body":self.parse_module_body,
                           "code_block":self.parse_code_block,
                           "code_block_brace":self.parse_code_block,
+                          "function":self.parse_function,
                           "signal_declaration":self.parse_signal_declaration,
                           "finish_statement":self.parse_finish_statement,
                           }
@@ -328,7 +330,7 @@ class c_cdl_file:
         self.pending_documentation = ""
         code_block_match = re.match(r'\s*([^ ]*)\s*"""',l)
         if code_block_match:
-            self.pending_documentation="%s **Code block** %s:%s :<br>"%(self.internal[0], self.filename_leaf_root, code_block_match.group(1))
+            self.pending_documentation="%s <br> **Code block** %s:%s :<br>"%(self.internal[0], self.filename_leaf_root, code_block_match.group(1))
             pass
         (nl, nr, which) = self.find_first(l, r, ["clocked", "comb", "net", ":"] + self.comment_start_strings )
         (nl, nr, which, parsed) = self.parse_comment_start_string( nl, nr, which )
@@ -341,10 +343,12 @@ class c_cdl_file:
         return ("", r+l, None)
     #f parse_code_block
     def parse_code_block(self, l, r):
-        (nl, nr, which) = self.find_first(l, r, ["{", "}"] + self.comment_start_strings )
+        (nl, nr, which) = self.find_first(l, r, ["{", "}"] + self.comment_start_strings + self.function_start_strings )
         (nl, nr, which, parsed) = self.parse_comment_start_string( nl, nr, which )
         if parsed: 
             return (nl, nr, which)
+        if which in self.function_start_strings:
+            return (nl, nr, self.parse_states+["function"])
         if which in ["{"]:
             return (nl, nr, self.parse_states+["code_block_brace"])
         if which in ["}"]:
@@ -357,6 +361,12 @@ class c_cdl_file:
                 raise Exception("Mismatch in braces - expected end of code block")
             self.parse_states.pop()
             return (nl, nr + "/** %s */"%(self.internal[1]), None)
+        return ("", r+l, None)
+    #f parse_function
+    def parse_function(self, l, r):
+        (nl, nr, which) = self.find_first(l, r, [";"])
+        if which in [";"]:
+            return (nl, nr, None)
         return ("", r+l, None)
     #f parse_finish_statement
     def parse_finish_statement(self, l, r):
@@ -438,9 +448,9 @@ class c_base_test(unittest.TestCase):
 class c_test_source(c_base_test):
     input_text = r"""
     This is test text"""
-    output_text = r"""/** \addtogroup a **/namespace a {
+    output_text = r"""namespace a {/** @addtogroup a a */ /**@{ */
     This is test text
-}"""
+ /** @} */ }"""
     test0 = c_base_test.base_test
     pass
 
@@ -448,9 +458,9 @@ class c_test_source(c_base_test):
 class c_test_include(c_base_test):
     input_text = r"""
     include "fred.h" """
-    output_text = r"""/** \addtogroup a **/namespace a {
-    }#include "fred.h" 
-namespace a {}"""
+    output_text = r"""namespace a {/** @addtogroup a a */ /**@{ */
+     /** @} */ }#include "fred.h" 
+namespace a {/** @addtogroup a a */ /**@{ */ /** @} */ }"""
     test0 = c_base_test.base_test
     pass
 
@@ -458,9 +468,9 @@ namespace a {}"""
 class c_test_single_comment(c_base_test):
     input_text = r"""
     This is test text // /* """
-    output_text = r"""/** \addtogroup a **/namespace a {
+    output_text = r"""namespace a {/** @addtogroup a a */ /**@{ */
     This is test text // /* 
-}"""
+ /** @} */ }"""
     test0 = c_base_test.base_test
     pass
 
@@ -468,9 +478,9 @@ class c_test_single_comment(c_base_test):
 class c_test_single_comment_with_include(c_base_test):
     input_text = r"""
     This is test text // include "a.h" """
-    output_text = r"""/** \addtogroup a **/namespace a {
+    output_text = r"""namespace a {/** @addtogroup a a */ /**@{ */
     This is test text // include "a.h" 
-}"""
+ /** @} */ }"""
     test0 = c_base_test.base_test
     pass
 
@@ -479,10 +489,10 @@ class c_test_multiline_comment(c_base_test):
     input_text = r"""
     This is test text /*
     */"""
-    output_text = r"""/** \addtogroup a **/namespace a {
+    output_text = r"""namespace a {/** @addtogroup a a */ /**@{ */
     This is test text /*
     */
-}"""
+ /** @} */ }"""
     test0 = c_base_test.base_test
     pass
 
@@ -492,11 +502,11 @@ class c_test_multiline_comment_with_include(c_base_test):
     This is test text /* include "a.h"
     include"b.h"
     */"""
-    output_text = r"""/** \addtogroup a **/namespace a {
+    output_text = r"""namespace a {/** @addtogroup a a */ /**@{ */
     This is test text /* include "a.h"
     include"b.h"
     */
-}"""
+ /** @} */ }"""
     test0 = c_base_test.base_test
     pass
 
@@ -581,7 +591,7 @@ class c_test_fsm_simple(c_base_test):
     jim;
     } fred;"""
     output_text = r"""
-    typedef enum {
+    /** @dotfile dots/a__fsm__fsm1.dot **/typedef enum {
     joe,
     jim,
     } fred;
@@ -598,8 +608,8 @@ class c_test_fsm_transitions(c_base_test):
     jim;
     } fred;"""
     output_text = r"""
-    typedef enum {
-    joe,
+    /** @dotfile dots/a__fsm__fsm1.dot **/typedef enum {
+    joe ,
     jim,
     } fred;
 """
@@ -633,9 +643,9 @@ class c_test_module_signal(c_base_test):
     output_text = r"""
     module fred() {
     net bit joe2 /** @param net:joe2 documentation*/;
-    net bit joe/** @param net:joe */;
-    comb bit joe3/** @param comb:joe3 */;
-    clocked t_banana joe3/** @param clocked:joe3 */={*={fred=0}};
+    net bit joe;
+    comb bit joe3;
+    clocked t_banana joe3={*={fred=0}};
     clocked t_banana joe4={*={fred=0}} /** @param clocked:joe4 And documented*/;
     }
 """
@@ -654,10 +664,10 @@ class c_test_module_code_block(c_base_test):
     }'''
     output_text = r"""
     module fred() {
-    code_block /** @section a__code_block
+    code_block /** <br> **Code block** a:code_block :<br>
     My documented code block
     */ : {
-    }
+    }/**  */
     }
 """
     test0 = c_base_test.base_test
@@ -679,10 +689,10 @@ The module combinatorially takes in a hex value, and drives out 7 LED
 values.
 """{}'''
     output_text = r"""
-module led_seven_segment( input bit[4] hex   /** Hexadecimal to display on 7-segment LED*/,
-                          output bit[7] leds /** 1 for LED on, 0 for LED off, for segments a-g in bits 0-7*/
-    )
-    /*b Documentation */
+module led_seven_segment( input bit[4] hex   /**<[in] Hexadecimal to display on 7-segment LED*/,
+                          output bit[7] leds /**<[out] 1 for LED on, 0 for LED off, for segments a-g in bits 0-7*/
+    
+)    /*b Documentation */
 /** 
 Simple module to map a hex value to the LEDs required to make the
 appropriate symbol in a 7-segment display.
@@ -690,6 +700,104 @@ appropriate symbol in a 7-segment display.
 The module combinatorially takes in a hex value, and drives out 7 LED
 values.
 */{}
+"""
+    test0 = c_base_test.base_test
+    verbose=False
+    pass
+
+#c c_test_module_log
+class c_test_module_log(c_base_test):
+    filename = 'a.h'
+    input_text = r'''
+module led_seven_segment( 
+    )
+"""
+Documentation goes here
+"""{
+    code_blob "Code blob documentation": {
+             if (1) { log("Banana", "fred", fred); }
+    }
+}'''
+    output_text = r"""
+module led_seven_segment( 
+    )
+/** 
+Documentation goes here
+*/{
+    code_blob /** Code blob documentation*/: {
+             if (1) { log("Banana", "fred", fred); }
+    }
+}
+"""
+    test0 = c_base_test.base_test
+    verbose=False
+    pass
+
+#c c_test_module_log2
+class c_test_module_log2(c_base_test):
+    filename = 'a.h'
+    input_text = r'''
+module led_seven_segment( 
+    )
+"""
+Documentation goes here
+"""{
+    /*b Logging */
+    logging """
+    For simulation it is useful to be able to see when the slave timer is advanced or retarded.
+    This is done using simulation logging.
+    """: {
+        if ((slave_state.fsm_state==slave_fsm_toggle_complete) && (slave_state.toggles.seen==sync_toggle_count)) {
+            log("complete",
+                "master",master_timer_value.value,
+                "slave",slave_timer_value.value,
+                "unexpected",slave_state.toggles.unexpected,
+                "early",slave_state.toggles.early,
+                "late",slave_state.toggles.late,
+                "diff",slave_combs.toggle_diff
+                );
+        }
+        if (slave_state.timer_control.advance || slave_state.timer_control.retard) {
+            log("adjust",
+                "master",master_timer_value.value,
+                "advance",slave_state.timer_control.advance,
+                "slave",slave_timer_value.value,
+                "m_minus_s",master_timer_value.value-slave_timer_value.value
+                );
+        }
+    }
+}'''
+    output_text = r"""
+module led_seven_segment( 
+    )
+/** 
+Documentation goes here
+*/{
+    /*b Logging */
+    logging /** <br> **Code block** a:logging :<br>
+    For simulation it is useful to be able to see when the slave timer is advanced or retarded.
+    This is done using simulation logging.
+    */: {
+        if ((slave_state.fsm_state==slave_fsm_toggle_complete) && (slave_state.toggles.seen==sync_toggle_count)) {
+            log("complete",
+                "master",master_timer_value.value,
+                "slave",slave_timer_value.value,
+                "unexpected",slave_state.toggles.unexpected,
+                "early",slave_state.toggles.early,
+                "late",slave_state.toggles.late,
+                "diff",slave_combs.toggle_diff
+                );
+        }
+        if (slave_state.timer_control.advance || slave_state.timer_control.retard) {
+            log("adjust",
+                "master",master_timer_value.value,
+                "advance",slave_state.timer_control.advance,
+                "slave",slave_timer_value.value,
+                "m_minus_s",master_timer_value.value-slave_timer_value.value
+                );
+        }
+    }
+}
 """
     test0 = c_base_test.base_test
     verbose=False
