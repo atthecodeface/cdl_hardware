@@ -19,6 +19,8 @@ import apb_rom
 import simple_tb
 import structs
 import i2c
+import axi_mixin
+import clock_timer
 
 #a Test classes
 #c c_rom_th
@@ -162,21 +164,14 @@ class apb_target_rv_timer_test_base(apb_target_test_base):
     def timer_control(self, mode="enable", mult=1, div=1, lock=False):
         reset = (mode == "reset")
         enable = (mode == "enable")
-        add_per_tick = (16 * mult) / div
-        rem_per_tick = (16 * mult) % div
+        (adder, bonus) = clock_timer.clock_timer_adder_bonus(mult / (div*1.0))
         self.ios.timer_control__reset_counter.drive(reset)
         self.ios.timer_control__enable_counter.drive(enable)
         self.ios.timer_control__block_writes.drive(lock)
-        self.ios.timer_control__integer_adder.drive(add_per_tick/16)
-        self.ios.timer_control__fractional_adder.drive(add_per_tick%16)
-        if rem_per_tick==0:
-            self.ios.timer_control__bonus_subfraction_numer.drive(0)
-            self.ios.timer_control__bonus_subfraction_denom.drive(0)
-            pass
-        else:
-            self.ios.timer_control__bonus_subfraction_numer.drive(div-rem_per_tick-1)
-            self.ios.timer_control__bonus_subfraction_denom.drive(div-1)
-            pass
+        self.ios.timer_control__integer_adder.drive(adder[0])
+        self.ios.timer_control__fractional_adder.drive(adder[1])
+        self.ios.timer_control__bonus_subfraction_add.drive(bonus[0])
+        self.ios.timer_control__bonus_subfraction_sub.drive(bonus[1])
         pass
     #f read_timer
     def read_timer(self):
@@ -234,7 +229,7 @@ class apb_target_rv_timer_test_mult_div(apb_target_rv_timer_test_base):
                   (10,8), # 1ns @ 800MHz
                   (50,1), # 1ns @ 50MHz
     ]
-    ticks_to_wait = 1000
+    ticks_to_wait = 10000
     #f check_mult_div
     def check_mult_div(self, mult, div):
         self.timer_control(mode="reset")
@@ -253,8 +248,8 @@ class apb_target_rv_timer_test_mult_div(apb_target_rv_timer_test_base):
         delta = timer1-timer0
         exp_delta = self.ticks_to_wait * mult / div
         diff = delta - exp_delta
-        print "Delta %d for %d ticks with mult %d and div %d"%(delta, self.ticks_to_wait, mult, div)
-        if (diff<-1) or (diff>1):
+        print "Delta %d for %d ticks (expected %d) with mult %d and div %d"%(delta, self.ticks_to_wait, self.ticks_to_wait*mult/div, mult, div)
+        if (diff<-1-mult/div) or (diff>1+mult/div):
             self.failtest(0,"Expected delta %d got delta %d; diff of %d out of range [-1,1]"%(exp_delta,delta,diff))
             pass
         pass
@@ -375,6 +370,93 @@ class apb_target_i2c_test_one(apb_target_i2c_test_base):
         pass
     pass
 
+#c apb_target_axi4s_test_base
+class apb_target_axi4s_test_base(apb_target_test_base, axi_mixin.axi4s_mixin):
+    pass
+#c apb_target_axi4s_test_one
+class apb_target_axi4s_test_one(apb_target_axi4s_test_base):
+    #f poll_for_packet
+    def poll_for_packet(self, n, delay=10):
+        for i in range(n):
+            status = self.apb_read_no_error(2)
+            if status&0x80000000:
+                return status
+            self.bfm_wait(delay)
+            pass
+        return None
+    #f read_packet
+    def read_packet(self, ptr, status):
+        pkt_data = []
+        for i in range(status&0x3ff):
+            data = self.apb_read_no_error(3)
+            print "data %08x"%data
+            pkt_data.append(data)
+            pass
+        self.apb_write_no_error(4,0) # Commit read
+        return len(pkt_data)
+    #f master_enqueue_packet
+    def master_enqueue_packet(self, pkt, user0=0, user1=0):
+        data = 0
+        user = user0
+        strobe = 0
+        n = 0
+        for p in pkt:
+            data |= p<<(8*n)
+            strobe |= 1<<n
+            n += 1
+            if strobe==0xf:
+                self.axi4s_master_enqueue({"user":user, "data":data, "strb":strobe, "last":0})
+                strobe = 0
+                data = 0
+                user = 0
+                n = 0
+                pass
+            pass
+        self.axi4s_master_enqueue({"user":user1, "data":data, "strb":strobe, "last":1})
+    #f run
+    def run(self):
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(10)
+        self.sim_msg = self.sim_message()
+        self.axi4s_init()
+        self.bfm_wait(10)
+        self.apb_write_no_error(0, 0x13)
+        self.bfm_wait(100)
+
+        pkt_small = range(16)
+        pkt_large = range(64)
+        self.master_enqueue_packet(pkt_small, user0=0xfeedbeef, user1=0xcafef00d)
+        self.master_enqueue_packet(pkt_large, user0=0xfeedbeef, user1=0xcafef00d)
+        self.master_enqueue_packet(pkt_small, user0=0xfeedbeef, user1=0xcafef00d)
+        self.apb_write_no_error(8, 0x1234)
+        self.apb_write_no_error(9, 4)
+        self.apb_write_no_error(11, 0x12345678)
+        self.apb_write_no_error(11, 0x9abcdef0)
+
+        rx_ptr = 0
+        for i in range(10):
+            status = self.poll_for_packet(10, delay=20)
+            if status is None:
+                break
+            print "Packet status %08x"%status
+            rx_ptr += self.read_packet(rx_ptr, status)
+            pass
+        self.master_enqueue_packet(pkt_small, user0=0xfeedbeef, user1=0xcafef00d)
+        self.master_enqueue_packet(pkt_large, user0=0xfeedbeef, user1=0xcafef00d)
+        self.master_enqueue_packet(pkt_small, user0=0xfeedbeef, user1=0xcafef00d)
+        for i in range(10):
+            status = self.poll_for_packet(10, delay=20)
+            if status is None:
+                break
+            print "Packet status %08x"%status
+            rx_ptr += self.read_packet(rx_ptr, status)
+            pass
+       
+        self.bfm_wait(self.run_time_remaining())
+        self.finishtest(0,"")
+        pass
+    pass
+
 #a Hardware classes
 #c apb_processor_hw
 class apb_processor_hw(simple_tb.cdl_test_hw):
@@ -436,6 +518,21 @@ class apb_target_i2c_hw(simple_tb.cdl_test_hw):
     module_name = "tb_apb_target_i2c"
     pass
 
+#c apb_target_axi4s_hw
+class apb_target_axi4s_hw(simple_tb.cdl_test_hw):
+    """
+    Simple instantiation of APB target timer hw
+    """
+    apb_request   = pycdl.wirebundle(structs.apb_request)
+    apb_response  = pycdl.wirebundle(structs.apb_response)
+    th_forces = { "th.inputs":(" ".join(apb_response._name_list("apb_response")) + " " +
+                               ""),
+                  "th.outputs":(" ".join(apb_request._name_list("apb_request")) + " " +
+                               ""),
+                  }
+    module_name = "tb_apb_target_axi4s"
+    pass
+
 #a Simulation test classes
 #c apb_processor - not working at present
 class apb_processor(simple_tb.base_test):
@@ -453,7 +550,7 @@ class apb_target_rv_timer(simple_tb.base_test):
         test = apb_target_rv_timer_test_mult_div()
         hw = apb_target_rv_timer_hw(test=test)
         self.do_test_run(hw,
-                         num_cycles=100*1000)
+                         num_cycles=1000*1000)
         pass
     def test_comparator(self):
         test = apb_target_rv_timer_test_comparator()
@@ -467,6 +564,15 @@ class apb_target_i2c(simple_tb.base_test):
     def test_i2c(self):
         test = apb_target_i2c_test_one()
         hw = apb_target_i2c_hw(test=test)
+        self.do_test_run(hw,
+                         num_cycles=100*1000)
+        pass
+    pass
+#c apb_target_axi4s
+class apb_target_axi4s(simple_tb.base_test):
+    def test_0(self):
+        test = apb_target_axi4s_test_one()
+        hw = apb_target_axi4s_hw(test=test)
         self.do_test_run(hw,
                          num_cycles=100*1000)
         pass

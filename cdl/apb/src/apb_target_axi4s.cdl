@@ -1,0 +1,690 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_target_sram_interface.cdl
+ * @brief  APB bus target to drive an SRAM read/write request
+ *
+ * CDL implementation of a simple APB target to interface to an SRAM
+ * read/write request/response bus.
+ *
+ */
+/*a Includes
+ */
+include "types/apb.h"
+include "types/sram.h"
+include "types/axi.h"
+
+/*a Types */
+/*t t_rx_fsm */
+typedef fsm {
+    rx_fsm_reset  {
+        rx_fsm_init
+            } "Waiting for init";
+    rx_fsm_idle  {
+        rx_fsm_init, rx_fsm_data_in_hand, rx_fsm_wait_for_eop
+            } "Waiting for valid data in or initialization request";
+    rx_fsm_data_in_hand  {
+        rx_fsm_wait_for_data, rx_fsm_packet_complete, rx_fsm_wait_for_eop
+            } "Input buffer has valid data; prepare data write request";
+    rx_fsm_wait_for_data  {
+        rx_fsm_data_in_hand, rx_fsm_wait_for_eop
+            } "Waiting for data from the AXI";
+    rx_fsm_packet_complete  {
+        rx_fsm_write_pkt_status, rx_fsm_wait_for_eop
+            } "Writing *next* packet status to 0";
+    rx_fsm_init  {
+        rx_fsm_write_pkt_status
+            } "Clearing pointers, zero packet status";
+    rx_fsm_write_pkt_status  {
+        rx_fsm_wait_for_sram, rx_fsm_wait_for_eop
+            } "Preparing write request of packet status to the SRAM RX write pointer";
+    rx_fsm_wait_for_sram  {
+        rx_fsm_idle
+            } "Waiting for SRAM to be idle";
+    rx_fsm_wait_for_eop  {
+        rx_fsm_wait_for_sram
+            } "Waiting for EOP from AXI, then wait for SRAM to be idle";
+} t_rx_fsm;
+
+/*t t_rx_action
+ *
+ * The action taken by the RX FSM
+ *
+ */
+typedef enum [5] {
+    rx_action_none               "No change to RX FSM",
+    rx_action_sop                "First AXI data ready",
+    rx_action_wait               "Wait for AXI data",
+    rx_action_new_data           "AXI data ready",
+    rx_action_write_data_wait    "Write AXI data word in hand then wait",
+    rx_action_write_data_last    "Write AXI data word in hand then go to packet complete",
+    rx_action_write_next_status  "Write zero for next packet status word",
+    rx_action_write_pkt_status   "Write packet status and move packet ptr to write pointer and move on write pointer - then wait for SRAM so SRAM is inactive in idle",
+    rx_action_init_state         "Clear pointers and so on, ready for writing first packet status",
+    rx_action_start_init         "Move FSM to init state",
+    rx_action_idle               "Idle the FSM",
+    rx_action_sop_overflow       "Start drop of packet that has not even been started to be received",
+    rx_action_overflow           "Start drop of packet in progress ",
+    rx_action_drop_axi           "Drop AXI data and keep dropping",
+    rx_action_drop_axi_last      "Drop AXI data and then wait for SRAM before idling",
+} t_rx_action;
+
+/*t t_rx_combs */
+typedef struct {
+    bit           sram_available;
+    t_rx_action   action                  "Action for RX FSM to perform";
+    bit[16]       write_ptr_plus_one;
+    bit           fifo_overflow;
+    bit           axi4s_ready            "Asserted if RX AXI buffer is empty and can be filled by AXI";
+    bit           axi_data_valid         "Asserted if RX AXI data is valid";
+    bit           axi_is_last            "Qualify with @a axi_data_valid - asserted if RX AXI data is EOP";
+    bit[4]        axi_bytes_valid        "Qualify with @a axi_data_valid - byte valid strobes for RX AXI data";
+    bit[32]       user                   "User data value taken from RX AXI data";
+    bit[32]       axi_data               "Qualify with @a axi_data_valid - RX AXI data";
+    bit consumes_axi4s                   "If asserted and then the RX AXI data buffer will be consumed";
+    bit start_init;
+    bit apb_rx_from_sram "Asserted if SRAM response for RX has data for rx_data_ptr";
+
+    bit[16] pkt_ptr_diff;
+    bit[16] pkt_words;
+    bit[32] pkt_status;
+} t_rx_combs;
+
+/*t t_rx_state */
+typedef struct {
+    t_axi4s32 axi4s            "AXI4S data being presented";
+    t_rx_fsm  fsm_state        "FSM state";
+    bit[16]   pkt_ptr;
+    bit[16]   write_ptr;
+    bit[16]   read_ptr;
+    bit[16]   buffer_end;
+    bit[32]   pkt_status;
+    bit       init_requested;
+    bit       apb_rx_requested;
+    t_sram_access_req sram_access_req;
+} t_rx_state;
+
+/*t t_tx_fsm */
+typedef fsm {
+    tx_fsm_idle  {
+        tx_fsm_idle
+            } "Waiting for valid data in or initialization request";
+} t_tx_fsm;
+
+/*t t_tx_action
+ *
+ * The action taken by the RX FSM
+ *
+ */
+typedef enum [5] {
+    tx_action_none               "No change to RX FSM",
+} t_tx_action;
+
+/*t t_tx_combs */
+typedef struct {
+    t_tx_action   action                  "Action for TX FSM to perform";
+    bit[16]       read_ptr_plus_one;
+} t_tx_combs;
+
+/*t t_tx_state */
+typedef struct {
+    t_tx_fsm  fsm_state        "FSM state";
+    bit[16]   pkt_ptr;
+    bit[16]   write_ptr;
+    bit[16]   read_ptr;
+    bit[16]   buffer_end;
+    bit[32]   pkt_status;
+    bit       pkt_status_valid;
+    t_sram_access_req sram_access_req;
+} t_tx_state;
+
+/*t t_apb_address
+ *
+ * APB address map, used to decode paddr
+ *
+ */
+typedef enum [4] {
+    apb_address_rx_config      = 0   "Receive configuration",
+    apb_address_rx_data_ptr    = 1   "Receive data pointer",
+    apb_address_rx_data        = 2   "Receive data",
+    apb_address_rx_data_next   = 3   "Receive data and move on",
+    apb_address_rx_commit      = 4   "Mark current receive data pointer as head of read",
+    apb_address_tx_config      = 8   "Transmit configuration",
+    apb_address_tx_data_ptr    = 9   "Transmit data pointer",
+    apb_address_tx_data        = 10  "Transmit data",
+    apb_address_tx_data_next   = 11  "Transmit data and move on",
+} t_apb_address;
+
+/*t t_access
+ *
+ * APB access that is in progress; a decode of psel and paddr
+ *
+ */
+typedef enum [4] {
+    access_none                   "No access being performed",
+    access_write_rx_config        "Write RX config",
+    access_read_rx_config         "Read RX config",
+    access_write_rx_data_ptr      "Write RX data ptr",
+    access_read_rx_data_ptr       "Read RX data ptr",
+    access_read_rx_data           "Read RX data - will delay until data is valid",
+    access_read_rx_data_next      "Read RX data then move on ptr - will delay until data is valid",
+    access_write_rx_commit        "Commit RX data ptr as RX read ptr",
+    access_write_tx_config        "Write TX config",
+    access_read_tx_config         "Read TX config",
+    access_write_tx_data_ptr      "Write TX data ptr",
+    access_read_tx_data_ptr       "Read TX data ptr",
+    access_write_tx_data          "Write TX data - will delay until data can be taken",
+    access_write_tx_data_next     "Write TX data then move on ptr - will delay until data can be taken",
+} t_access;
+
+/*t t_apb_combs */
+typedef struct {
+    bit request_init;
+    bit rx_commit;
+    bit[16]       rx_data_ptr_plus_one;
+    bit[16]       tx_data_ptr_plus_one;
+} t_apb_combs;
+
+/*t t_apb_state */
+typedef struct {
+    t_access access;
+    bit[16] rx_data_ptr;
+    bit     rx_data_valid;
+    bit[32] rx_data;
+    bit[16] tx_data_ptr;
+    t_sram_access_req tx_sram_access_req;
+} t_apb_state;
+
+/*a Module */
+module apb_target_axi4s( clock clk         "System clock",
+                         input bit reset_n "Active low reset",
+
+                         input  t_apb_request  apb_request  "APB request",
+                         output t_apb_response apb_response "APB response",
+
+                         output t_sram_access_req  tx_sram_access_req  "SRAM access request",
+                         input  t_sram_access_resp tx_sram_access_resp "SRAM access response",
+
+                         output t_sram_access_req  rx_sram_access_req  "SRAM access request",
+                         input  t_sram_access_resp rx_sram_access_resp "SRAM access response",
+
+                         input bit        tx_axi4s_tready,
+                         output t_axi4s32 tx_axi4s,
+                         input t_axi4s32  rx_axi4s,
+                         output bit       rx_axi4s_tready
+    )
+"""
+APB target peripheral that provides a simple AXI4S bus master/slave
+for tx and rx
+
+The receive side stores packets and descriptor in an (external) RX SRAM using a circular buffer.
+The buffer is laid out as a contiguous stream of packets where each packet has a 32-bit header
+and then N bytes of packet data in (N+3)/4 SRAM words; packets follow one after another.
+
+A packet header is zero until the packet is ready.
+A packet header has the top bit set when the packet becomes ready; the length in bytes is stored
+in the bottom 16 bits of the packet header.
+
+When a packet is received, its data is added to the circular buffer using an 'uncommitted' write
+pointer that is not permitted to pass the read pointer.
+When the last byte of a packet is received the next word in the buffer is zeroed (this is the
+*next* packet descriptor) and the first word of the packet is updated with the packet status and
+the valid bit set.
+
+When the receive buffer is initialized the read, write and uncommitted write pointers are set to
+the start of the buffer, and the buffer size is set up and the 'words used' are set to one word,
+and the word at the write pointer is zeroed.
+
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+    comb    t_apb_combs  apb_combs;
+    clocked t_apb_state  apb_state = {*=0};
+    comb    t_rx_combs  rx_combs;
+    clocked t_rx_state  rx_state = {*=0, fsm_state=rx_fsm_reset};
+    comb    t_tx_combs  tx_combs;
+    clocked t_tx_state  tx_state = {*=0};
+
+    /*b APB interface */
+    apb_interface_logic """
+    The APB interface is decoded to @a access when @p psel is asserted
+    and @p penable is deasserted - this is the first cycle of an APB
+    access. This permits the access type to be registered, so that the
+    APB @p prdata can be driven from registers, and so that writes
+    will occur correctly when @p penable is asserted.
+
+    The APB read data @p prdata can then be generated based on @a
+    access.
+    """ : {
+        /*b Determine 'next' data pointers */
+        apb_combs.rx_data_ptr_plus_one = apb_state.rx_data_ptr + 1;
+        if ((apb_state.rx_data_ptr + 1) == rx_state.buffer_end) {
+            apb_combs.rx_data_ptr_plus_one = 0;
+        }
+        apb_combs.tx_data_ptr_plus_one = apb_state.tx_data_ptr + 1;
+        if ((apb_state.tx_data_ptr + 1) == tx_state.buffer_end) {
+            apb_combs.tx_data_ptr_plus_one = 0;
+        }
+
+        /*b Handle APB read data - may affect pready */
+        apb_response = {*=0, pready=1};
+        part_switch (apb_state.access) {
+        case access_read_rx_config: {
+            apb_response.prdata = 0;
+        }
+        case access_read_rx_data_ptr: {
+            apb_response.prdata = bundle(16b0, apb_state.rx_data_ptr);
+        }
+        case access_read_rx_data: {
+            apb_response.prdata = apb_state.rx_data;
+            apb_response.pready = apb_state.rx_data_valid;
+            if (apb_state.rx_data_valid) {
+                apb_state.rx_data_valid <= 0;
+            }
+        }
+        case access_read_rx_data_next: {
+            apb_response.prdata = apb_state.rx_data;
+            apb_response.pready = apb_state.rx_data_valid;
+            if (apb_state.rx_data_valid) {
+                apb_state.rx_data_valid <= 0;
+                apb_state.rx_data_ptr <= apb_combs.rx_data_ptr_plus_one;
+            }
+        }
+        }
+
+        /*b Handle APB writes - may affect pready */
+        apb_combs.request_init = 0;
+        apb_combs.rx_commit = 0;
+        part_switch (apb_state.access) {
+        case access_write_rx_config: {
+            apb_combs.request_init = 1;
+            rx_state.buffer_end <= apb_request.pwdata[16;0];
+        }
+        case access_write_rx_data_ptr: {
+            apb_state.rx_data_ptr <= apb_request.pwdata[16;0];
+            apb_state.rx_data_valid <= 0;
+        }
+        case access_write_rx_commit: {
+            apb_combs.rx_commit = 1;
+        }
+        case access_write_tx_data_ptr: {
+            apb_state.tx_data_ptr <= apb_request.pwdata[16;0];
+        }
+        case access_write_tx_data, access_write_tx_data_next: {
+            if (apb_state.tx_sram_access_req.valid) {
+                apb_response.pready = 0;
+            } else {
+                apb_state.tx_sram_access_req <= {*=0};
+                apb_state.tx_sram_access_req.valid <= 1;
+                apb_state.tx_sram_access_req.read_not_write   <= 0;
+                apb_state.tx_sram_access_req.id               <= 0;
+                apb_state.tx_sram_access_req.byte_enable      <= -1;
+                apb_state.tx_sram_access_req.address[16;0]    <= apb_state.tx_data_ptr;
+                apb_state.tx_sram_access_req.write_data[32;0] <= apb_request.pwdata[32;0];
+                if (apb_state.access == access_write_tx_data_next) {
+                    apb_state.tx_data_ptr <= apb_combs.tx_data_ptr_plus_one;
+                }
+            }
+        }
+        }
+        /*b Decode access */
+        apb_state.access <= access_none;
+        part_switch (apb_request.paddr[4;0]) {
+        case apb_address_rx_config: {
+            apb_state.access <= apb_request.pwrite ? access_write_rx_config : access_read_rx_config;
+        }
+        case apb_address_rx_data_ptr: {
+            apb_state.access <= apb_request.pwrite ? access_write_rx_data_ptr : access_read_rx_data_ptr;
+        }
+        case apb_address_rx_data: {
+            apb_state.access <= apb_request.pwrite ? access_none : access_read_rx_data;
+        }
+        case apb_address_rx_data_next: {
+            apb_state.access <= apb_request.pwrite ? access_none : access_read_rx_data_next;
+        }
+        case apb_address_rx_commit: {
+            apb_state.access <= apb_request.pwrite ? access_write_rx_commit : access_none;
+        }
+        case apb_address_tx_config: {
+            apb_state.access <= apb_request.pwrite ? access_write_tx_config : access_read_tx_config;
+        }
+        case apb_address_tx_data_ptr: {
+            apb_state.access <= apb_request.pwrite ? access_write_tx_data_ptr : access_read_tx_data_ptr;
+        }
+        case apb_address_tx_data: {
+            apb_state.access <= apb_request.pwrite ? access_write_tx_data : access_none;
+        }
+        case apb_address_tx_data_next: {
+                    apb_state.access <= apb_request.pwrite ? access_write_tx_data_next : access_none;
+        }
+        }
+        if (!apb_request.psel || (apb_request.penable && apb_response.pready)) {
+            apb_state.access <= access_none;
+        }
+
+        /*b Manage TX SRAM request */
+        if (apb_state.tx_sram_access_req.valid) {
+            if (tx_sram_access_resp.ack) {
+                apb_state.tx_sram_access_req.valid <= 0;
+            }
+        }
+        tx_axi4s = {*=0};
+        
+        /*b Manage RX APB interaction */ 
+        if (rx_combs.apb_rx_from_sram) { // may overwrite a later written RX word
+            apb_state.rx_data <= rx_sram_access_resp.data[32;0];
+            apb_state.rx_data_valid <= 1;
+        }
+        if (rx_state.sram_access_req.valid) {
+            if (!rx_state.sram_access_req.read_not_write &&
+                (rx_state.sram_access_req.address[16;0] == apb_state.rx_data_ptr)) {
+                apb_state.rx_data <= rx_state.sram_access_req.write_data[32;0];
+                apb_state.rx_data_valid <= 1;
+            }
+        }
+
+        /*b All done */
+    }
+
+    /*b Handle Rx AXI bus */
+    rx_axi_bus_logic """
+    Initially the AXI-S receive bus is a single register
+    """: {
+        rx_combs.axi_data_valid = rx_state.axi4s.valid;
+        rx_combs.axi4s_ready = 1;
+        if (rx_state.axi4s.valid) {
+            if (rx_combs.consumes_axi4s) {
+                rx_state.axi4s.valid <= 0;
+            }
+            rx_combs.axi4s_ready = 0;
+        } elsif (rx_axi4s.valid) {
+            rx_state.axi4s <= rx_axi4s;
+        }
+        rx_combs.axi_is_last     = rx_state.axi4s.t.last;
+        rx_combs.axi_bytes_valid = rx_state.axi4s.t.strb;
+        rx_combs.user = rx_state.axi4s.t.user[32;0];
+        rx_combs.axi_data = rx_state.axi4s.t.data;
+        rx_axi4s_tready = rx_combs.axi4s_ready;
+    }
+
+    /*b Handle Rx FSM and its SRAM requests */
+    rx_handling_logic """
+    While an SRAM request is in progress the APB side is ignored; it
+    should be held as busy. Hence an acknowledged valid request can be
+    removed, and a valid SRAM response completes the SRAM request in
+    progress.
+
+    If an SRAM request is not in progress then one may be started,
+    depending on the APB access being presented.
+    """: {
+        /*b Various combs */
+        rx_combs.sram_available = 0;
+        if (!rx_state.sram_access_req.valid || rx_sram_access_resp.ack) {
+            rx_combs.sram_available = 1;
+        }
+        if (rx_sram_access_resp.ack && rx_state.sram_access_req.valid) {
+            rx_state.sram_access_req.valid <= 0;
+        }
+
+        rx_combs.write_ptr_plus_one = rx_state.write_ptr + 1;
+        if ((rx_state.write_ptr + 1) == rx_state.buffer_end) {
+            rx_combs.write_ptr_plus_one = 0;
+        }
+        rx_combs.fifo_overflow = 0;
+        if (rx_combs.write_ptr_plus_one == rx_state.read_ptr) {
+            rx_combs.fifo_overflow = 1;
+        }
+        rx_combs.start_init = rx_state.init_requested;
+
+        rx_combs.pkt_ptr_diff = rx_state.write_ptr - rx_state.pkt_ptr;
+        rx_combs.pkt_words    = rx_combs.pkt_ptr_diff;
+        if (rx_combs.pkt_ptr_diff[15]) {
+            rx_combs.pkt_words = rx_combs.pkt_ptr_diff + rx_state.buffer_end;
+        }
+        rx_combs.pkt_status       = 0;
+        rx_combs.pkt_status[10;0] = rx_combs.pkt_words[10;0];
+        rx_combs.pkt_status[31]   = 1;
+
+        if (apb_combs.rx_commit) {
+            rx_state.read_ptr <= apb_state.rx_data_ptr;
+        }
+
+        /*b Decode FSM state */
+        rx_combs.action = rx_action_none;
+        full_switch (rx_state.fsm_state) {
+        case rx_fsm_reset: { // kicked out by init ONLY
+            rx_combs.action = rx_action_none;
+        }
+        case rx_fsm_idle: {
+            assert( (rx_state.pkt_ptr+1)==rx_state.write_ptr, "In idle the write ptr must point to pkt ptr plus 1");
+            if (rx_combs.axi_data_valid) {
+                rx_combs.action = rx_action_sop;
+                if (rx_combs.fifo_overflow) {
+                    rx_combs.action = rx_action_sop_overflow;
+                }
+            }
+        }
+        case rx_fsm_data_in_hand: {
+            if (rx_combs.sram_available) {
+                rx_combs.action = rx_action_write_data_wait;
+                if (rx_combs.axi_is_last) {
+                    rx_combs.action = rx_action_write_data_last;
+                }
+                if (rx_combs.axi_bytes_valid==0) {
+                    rx_combs.action = rx_action_wait;
+                    if (rx_combs.axi_is_last) {
+                        rx_combs.action = rx_action_write_next_status;
+                    }
+                }
+            }
+            if (rx_combs.fifo_overflow) {
+                rx_combs.action = rx_action_overflow;
+            }
+        }
+        case rx_fsm_wait_for_data: {
+            if (rx_combs.axi_data_valid) {
+                rx_combs.action = rx_action_new_data;
+            }
+            if (rx_combs.fifo_overflow) {
+                rx_combs.action = rx_action_overflow;
+            }
+        }
+        case rx_fsm_packet_complete: {
+            if (rx_combs.sram_available) {
+                rx_combs.action = rx_action_write_next_status;
+            }
+            if (rx_combs.fifo_overflow) {
+                rx_combs.action = rx_action_overflow;
+            }
+        }
+        case rx_fsm_write_pkt_status: {
+            if (rx_combs.sram_available) {
+                rx_combs.action = rx_action_write_pkt_status;
+            }
+            if (rx_combs.fifo_overflow) {
+                rx_combs.action = rx_action_overflow;
+            }
+        }
+        case rx_fsm_wait_for_sram: {
+            if (rx_combs.sram_available) {
+                rx_combs.action = rx_action_idle;
+            }
+        }
+        case rx_fsm_init: {
+            rx_combs.action = rx_action_init_state;
+        }
+        case rx_fsm_wait_for_eop: {
+            if (rx_combs.axi_data_valid) {
+                rx_combs.action = rx_action_drop_axi;
+                if (rx_combs.axi_is_last) {
+                    rx_combs.action = rx_action_drop_axi_last;
+                }
+            }
+        }
+        }
+        if (rx_combs.start_init) {
+            rx_combs.action = rx_action_start_init;
+        }
+
+        /*b Decode action into state update */
+        rx_combs.consumes_axi4s = 0;
+        full_switch (rx_combs.action) {
+        case rx_action_none:{
+            rx_state.fsm_state <= rx_state.fsm_state;
+            if (!apb_state.rx_data_valid && !rx_state.apb_rx_requested) {
+                rx_state.apb_rx_requested <= 1;
+                rx_state.sram_access_req.valid            <= 1;
+                rx_state.sram_access_req.read_not_write   <= 1;
+                rx_state.sram_access_req.address          <= bundle(16b0, apb_state.rx_data_ptr);
+                rx_state.sram_access_req.id               <= 1;
+            }
+        }
+        case rx_action_idle:{
+            rx_state.fsm_state <= rx_fsm_idle;
+        }
+        case rx_action_start_init:{
+            rx_state.fsm_state <= rx_fsm_init;
+            rx_state.init_requested <= 0;
+        }
+        case rx_action_wait:{
+            rx_state.fsm_state <= rx_fsm_wait_for_data;
+        }
+        case rx_action_new_data:{
+            rx_state.fsm_state <= rx_fsm_data_in_hand;
+        }
+        case rx_action_sop:{
+            rx_state.fsm_state <= rx_fsm_data_in_hand;
+            rx_state.sram_access_req.valid            <= 1;
+            rx_state.sram_access_req.read_not_write   <= 0;
+            rx_state.sram_access_req.address          <= bundle(16b0, rx_state.write_ptr);
+            rx_state.sram_access_req.id               <= 0;
+            rx_state.sram_access_req.byte_enable      <= -1;
+            rx_state.sram_access_req.write_data[32;0] <= rx_combs.user;
+            rx_state.write_ptr <= rx_combs.write_ptr_plus_one;
+        }
+        case rx_action_write_data_wait:{
+            rx_state.fsm_state <= rx_fsm_wait_for_data;
+            rx_state.sram_access_req.valid            <= 1;
+            rx_state.sram_access_req.read_not_write   <= 0;
+            rx_state.sram_access_req.address          <= bundle(16b0, rx_state.write_ptr);
+            rx_state.sram_access_req.id               <= 0;
+            rx_state.sram_access_req.byte_enable      <= -1;
+            rx_state.sram_access_req.write_data[32;0] <= rx_combs.axi_data;
+            rx_state.write_ptr <= rx_combs.write_ptr_plus_one;
+            rx_combs.consumes_axi4s = 1;
+        }
+        case rx_action_write_data_last:{
+            rx_state.fsm_state <= rx_fsm_packet_complete;
+            rx_state.sram_access_req.valid            <= 1;
+            rx_state.sram_access_req.read_not_write   <= 0;
+            rx_state.sram_access_req.address          <= bundle(16b0, rx_state.write_ptr);
+            rx_state.sram_access_req.id               <= 0;
+            rx_state.sram_access_req.byte_enable      <= -1;
+            rx_state.sram_access_req.write_data[32;0] <= rx_combs.axi_data;
+            rx_state.write_ptr <= rx_combs.write_ptr_plus_one;
+        }
+        case rx_action_init_state:{
+            rx_state.read_ptr   <= 0;
+            rx_state.write_ptr  <= 0;
+            rx_state.pkt_ptr    <= 0;
+            rx_state.pkt_status <= 0;
+            rx_state.fsm_state <= rx_fsm_write_pkt_status;
+        }
+        case rx_action_write_next_status:{
+            rx_state.fsm_state <= rx_fsm_write_pkt_status;
+            rx_state.sram_access_req.valid            <= 1;
+            rx_state.sram_access_req.read_not_write   <= 0;
+            rx_state.sram_access_req.address          <= bundle(16b0, rx_state.write_ptr);
+            rx_state.sram_access_req.id               <= 0;
+            rx_state.sram_access_req.byte_enable      <= -1;
+            rx_state.sram_access_req.write_data[32;0] <= 0;
+            rx_state.pkt_status       <= rx_combs.pkt_status;
+            rx_combs.consumes_axi4s = 1;
+        }
+        case rx_action_write_pkt_status:{
+            rx_state.fsm_state <= rx_fsm_wait_for_sram;
+            rx_state.sram_access_req.valid            <= 1;
+            rx_state.sram_access_req.read_not_write   <= 0;
+            rx_state.sram_access_req.address          <= bundle(16b0, rx_state.pkt_ptr);
+            rx_state.sram_access_req.id               <= 0;
+            rx_state.sram_access_req.byte_enable      <= -1;
+            rx_state.sram_access_req.write_data[32;0] <= rx_state.pkt_status;
+            rx_state.pkt_ptr <= rx_state.write_ptr;
+            rx_state.write_ptr <= rx_combs.write_ptr_plus_one;
+        }
+        case rx_action_sop_overflow: {
+            rx_state.fsm_state <= rx_fsm_wait_for_eop;
+            rx_state.write_ptr <= rx_state.pkt_ptr; // reset write ptr to point to pkt
+        }
+        case rx_action_overflow: {
+            rx_state.fsm_state <= rx_fsm_wait_for_eop;
+            rx_state.write_ptr <= rx_state.pkt_ptr; // reset write ptr to point to pkt
+        }
+        case rx_action_drop_axi: {
+            rx_state.fsm_state <= rx_fsm_wait_for_eop;
+            rx_combs.consumes_axi4s = 1;
+        }
+        case rx_action_drop_axi_last: {
+            rx_state.fsm_state <= rx_fsm_wait_for_sram;
+            rx_combs.consumes_axi4s = 1;
+            rx_state.write_ptr <= rx_combs.write_ptr_plus_one; // reset write ptr to point just after pkt for first data
+        }
+        }
+        if (apb_combs.request_init) {
+            rx_state.init_requested <= 1;
+        }
+        rx_combs.apb_rx_from_sram = 0;
+        if (rx_sram_access_resp.valid && rx_sram_access_resp.id[0]) {
+            rx_state.apb_rx_requested <= 0;
+            rx_combs.apb_rx_from_sram = 1;
+        }
+        rx_sram_access_req = rx_state.sram_access_req;
+
+        /*b All done */
+    }
+
+    /*b Handle Tx FSM */
+    tx_handling_logic """
+    """: {
+        tx_combs = {*=0};
+        tx_state <= {*=0};
+
+        /*b Decode FSM state */
+        tx_combs.action = rx_action_none;
+        full_switch (tx_state.fsm_state) {
+        case tx_fsm_idle: {
+            tx_combs.action = tx_action_none;
+        }
+        }
+
+        /*b Decode FSM state */
+        full_switch (tx_combs.action) {
+        case tx_action_none:{
+            tx_state.fsm_state <= tx_state.fsm_state;
+        }
+        }
+        tx_sram_access_req = apb_state.tx_sram_access_req;
+    }
+
+    /*b Done
+     */
+}
+
+/*a Editor preferences and notes
+mode: c ***
+c-basic-offset: 4 ***
+c-default-style: (quote ((c-mode . "k&r") (c++-mode . "k&r"))) ***
+outline-regexp: "/\\\*a\\\|[\t ]*\/\\\*[b-z][\t ]" ***
+*/

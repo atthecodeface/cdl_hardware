@@ -1,0 +1,134 @@
+/** Copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_apb_target_axi4s.cdl
+ * @brief Testbench for APB processor (ROM-based APB trasanctions)
+ *
+ * This is a simple testbench for the ROM-based APB transaction processor
+ */
+/*a Includes */
+include "types/sram.h"
+include "types/apb.h"
+include "types/axi.h"
+include "apb/apb_targets.h"
+include "srams.h"
+
+/*a External modules */
+extern module axi4s32_master_slave( clock aclk,
+                                    output t_axi4s32 master_axi4s,
+                                    input bit        master_axi4s_tready,
+                                    input t_axi4s32  slave_axi4s,
+                                    output bit       slave_axi4s_tready,
+
+                                    output t_apb_request  apb_request,
+                                    input t_apb_response  apb_response
+    )
+{
+    timing to   rising clock aclk master_axi4s_tready;
+    timing from rising clock aclk master_axi4s;
+    timing from rising clock aclk slave_axi4s_tready;
+    timing to   rising clock aclk slave_axi4s;
+    timing from rising clock aclk apb_request;
+    timing to   rising clock aclk apb_response;
+}
+
+/*a Module */
+module tb_apb_target_axi4s( clock clk,
+                               input bit reset_n
+)
+{
+
+    /*b Nets */
+    default clock clk;
+    default reset active_low reset_n;
+    net  t_apb_request    apb_request;
+    net t_apb_response  apb_response;
+    net t_axi4s32 rx_axi4s;
+    net bit       rx_axi4s_tready;
+    net t_axi4s32 tx_axi4s;
+    net bit       tx_axi4s_tready;
+
+    net  t_sram_access_req  tx_sram_access_req  "SRAM access request";
+    net  t_sram_access_req  rx_sram_access_req  "SRAM access request";
+    clocked t_sram_access_resp rx_sram_access_resp ={*=0} "SRAM access response";
+    net bit[32] rx_sram_read_data;
+    clocked t_sram_access_req  rx_current_sram_access={*=0}  "SRAM access request";
+    clocked t_sram_access_resp tx_sram_access_resp ={*=0} "SRAM access response";
+    net bit[32] tx_sram_read_data;
+    clocked t_sram_access_req  tx_current_sram_access={*=0}  "SRAM access request";
+    
+    /*b Instantiations */
+    instantiations: {
+        axi4s32_master_slave th( aclk <- clk,
+                                 master_axi4s        => rx_axi4s,
+                                 master_axi4s_tready <= rx_axi4s_tready,
+                                 slave_axi4s         <= tx_axi4s,
+                                 slave_axi4s_tready  => tx_axi4s_tready,
+                                 apb_request => apb_request,
+                                 apb_response <= apb_response);
+
+
+        apb_target_axi4s apb_axi4s( clk <- clk,
+                                    reset_n <= reset_n,
+                                    apb_request  <= apb_request,
+                                    apb_response => apb_response,
+                                    tx_sram_access_req  => tx_sram_access_req,
+                                    tx_sram_access_resp <= tx_sram_access_resp,
+                                    rx_sram_access_req  => rx_sram_access_req,
+                                    rx_sram_access_resp <= rx_sram_access_resp,
+                                    rx_axi4s        <= rx_axi4s,
+                                    rx_axi4s_tready => rx_axi4s_tready,
+                                    tx_axi4s         => tx_axi4s,
+                                    tx_axi4s_tready  <= tx_axi4s_tready );
+        se_sram_srw_16384x32_we8 rx_mem(sram_clock <- clk,
+                                     select         <= rx_sram_access_req.valid && rx_sram_access_resp.ack,
+                                     read_not_write <= rx_sram_access_req.read_not_write,
+                                     write_enable   <= rx_sram_access_req.byte_enable[4;0],
+                                     address        <= rx_sram_access_req.address[14;0],
+                                     write_data     <= rx_sram_access_req.write_data[32;0],
+                                     data_out       => rx_sram_read_data );
+        rx_sram_access_resp <= {*=0};
+        rx_sram_access_resp.ack   <= 1;
+        rx_current_sram_access.valid <= 0;
+        if (rx_sram_access_req.valid && rx_sram_access_resp.ack) {
+            rx_current_sram_access <= rx_sram_access_req;
+        }
+        if (rx_current_sram_access.valid) {
+            rx_sram_access_resp.valid       <= rx_current_sram_access.read_not_write;
+            rx_sram_access_resp.id          <= rx_current_sram_access.id;
+            rx_sram_access_resp.data[32;0]  <= rx_sram_read_data;
+        }
+
+        se_sram_srw_16384x32_we8 tx_mem(sram_clock <- clk,
+                                     select         <= tx_sram_access_req.valid && tx_sram_access_resp.ack,
+                                     read_not_write <= tx_sram_access_req.read_not_write,
+                                     write_enable   <= tx_sram_access_req.byte_enable[4;0],
+                                     address        <= tx_sram_access_req.address[14;0],
+                                     write_data     <= tx_sram_access_req.write_data[32;0],
+                                     data_out       => tx_sram_read_data );
+        tx_sram_access_resp <= {*=0};
+        tx_sram_access_resp.ack   <= 1;
+        tx_current_sram_access.valid <= 0;
+        if (tx_sram_access_req.valid && tx_sram_access_resp.ack) {
+            tx_current_sram_access <= tx_sram_access_req;
+        }
+        if (tx_current_sram_access.valid) {
+            tx_sram_access_resp.valid       <= tx_current_sram_access.read_not_write;
+            tx_sram_access_resp.id          <= tx_current_sram_access.id;
+            tx_sram_access_resp.data[32;0]  <= tx_sram_read_data;
+        }
+    }
+
+    /*b All done */
+}

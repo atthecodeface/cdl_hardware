@@ -50,14 +50,30 @@ constant integer disable_padding=0;
 /*a Types */
 /*t t_tx_fsm */
 typedef fsm {
-    tx_fsm_idle         "Waiting for valid data in";
-    tx_fsm_preamble     "Outputting preamble";
-    tx_fsm_data         "Outputting data, calculating FCS";
-    tx_fsm_padding      "Outputting padding byte, calculating FCS";
-    tx_fsm_fcs          "Outputting FCS";
-    tx_fsm_ipg          "Waiting for inter-packet gap";
-    tx_fsm_aborting     "Data not valid when required - aborting packet";
-    tx_fsm_skipping     "Dropping input data until 'last' asserted";
+    tx_fsm_idle {
+        tx_fsm_preamble
+            } "Waiting for valid data in";
+    tx_fsm_preamble {
+        tx_fsm_data
+            } "Outputting preamble";
+    tx_fsm_data  {
+        tx_fsm_padding, tx_fsm_fcs, tx_fsm_aborting
+            }         "Outputting data, calculating FCS";
+    tx_fsm_padding {
+        tx_fsm_fcs
+            }       "Outputting padding byte, calculating FCS";
+    tx_fsm_fcs {
+        tx_fsm_ipg
+            }           "Outputting FCS";
+    tx_fsm_ipg {
+        tx_fsm_idle
+            }           "Waiting for inter-packet gap";
+    tx_fsm_aborting {
+        tx_fsm_skipping
+            }      "Data not valid when required - aborting packet";
+    tx_fsm_skipping {
+        tx_fsm_idle
+            }      "Dropping input data until 'last' asserted";
 } t_tx_fsm;
 
 /*t t_tx_action */
@@ -85,10 +101,10 @@ typedef enum [5] {
 
 /*t t_fcs_op */
 typedef enum [2] {
-    fcs_op_none,
-    fcs_op_init,
-    fcs_op_calc,
-    fcs_op_shift
+    fcs_op_none    "Do not update the FCS",
+    fcs_op_init    "Initialize the FCS to -1",
+    fcs_op_calc    "Calculate the FCS with the current data byte",
+    fcs_op_shift   "Shift the FCS by one byte"
 } t_fcs_op;
 
 /*t t_tx_combs */
@@ -122,55 +138,67 @@ typedef struct {
 
 /*t t_rx_fsm */
 typedef fsm {
-    rx_fsm_idle         "Waiting for valid data in";
-    rx_fsm_preamble     "Outputting preamble";
-    rx_fsm_data         "Outputting data, calculating FCS";
-    rx_fsm_wait_for_idle "Waiting for idle from GMII";
+    rx_fsm_idle  {
+        rx_fsm_preamble, rx_fsm_wait_for_idle
+            }          "Waiting for valid data in";
+    rx_fsm_preamble  {
+        rx_fsm_data
+            }     "Outputting preamble";
+    rx_fsm_data  {
+        rx_fsm_idle, rx_fsm_wait_for_idle
+            }         "Outputting data, calculating FCS";
+    rx_fsm_wait_for_idle {
+        rx_fsm_idle
+            }  "Waiting for idle from GMII";
 } t_rx_fsm;
 
-/*t t_rx_action */
+/*t t_rx_action
+ *
+ * The action taken by the RX FSM
+ *
+ */
 typedef enum [5] {
-    rx_action_none,
+    rx_action_none               "No change to RX FSM",
     rx_action_sop                "Packet data valid, send SOP",
-    rx_action_preamble_end       "Send last byte of preamble",
-    rx_action_data,
-    rx_action_packet_okay,
-    rx_action_packet_error,
-    rx_action_idle,
-    rx_action_overrun,
-    rx_action_non_packet_error,
+    rx_action_preamble_end       "Last byte of preamble seen (0xd5) so move to @a rx_fsm_data",
+    rx_action_data               "Receive a byte of data",
+    rx_action_packet_okay        "GMII is idle after last byte of data, and FCS correct - complete reception",
+    rx_action_packet_error       "Too large an ethernet packet, error without data, or FCS bad on last packet",
+    rx_action_idle               "Return state machine to idle",
+    rx_action_overrun            "Valid byte received but the buffer was full",
+    rx_action_non_packet_error   "Error indication received while packet was not being received (e.g. carrier error)",
 } t_rx_action;
 
 /*t t_rx_combs */
 typedef struct {
-    t_timer_value timer_value;
-    t_rx_action   action;
-    bit[8]        gmii_data;
-    bit           gmii_idle;
-    bit           gmii_valid_data;
-    bit           gmii_valid;
-    bit           axi_cannot_take_data;
-    bit[32] next_fcs;
-    bit fcs_valid;
-    bit store_byte;
-    bit store_timestamp;
-    bit store_status;
-    bit[32] status_axi_user;
-    bit data_ready_for_axi;
-    t_fcs_op fcs_op;
-    bit[16] byte_of_packet_plus_one;
+    t_timer_value timer_value             "Timer value from clock_timer, or 0 if disabled";
+    t_rx_action   action                  "Action for RX FSM to perform";
+    bit[8]        gmii_data               "GMII receive data for this cycle";
+    bit           gmii_idle               "Asserted if GMII is idle in this cycle";
+    bit           gmii_valid_data         "Asserted if GMII has valid (non-errored) data in this cycle";
+    bit           gmii_valid              "Asserted if GMII has valid (possibly errored) data in this cycle";
+    bit data_ready_for_axi                "Asserted if the buffer contains four bytes of received data";
+    bit           axi_cannot_take_data    "Asserted if the data buffer is full but the AXI output register cannot take it";
+    bit store_byte                        "Asserted if a received data byte is to be stored in the buffer";
+    bit store_timestamp                   "Asserted if the timestampe should be stored in the user data";
+    bit store_status                      "Asserted if the received packet status is ready and the buffer should have the last AXI transaction";
+    bit[32] status_axi_user               "Status to be stored in the buffer";
+    t_fcs_op fcs_op                       "Operation for FCS calculation for this cycle";
+    bit[32] next_fcs                      "FCS value for next cycle";
+    bit fcs_valid                         "Asserted if the FCS value is 0xdebb20e3, i.e. that expected at the end of a packet";
+    bit[16] byte_of_packet_plus_one       "Increment of current byte of packet";
 } t_rx_combs;
 
 /*t t_rx_state */
 typedef struct {
-    t_axi4s32 axi4s          "AXI4S data being presented";
-    t_rx_fsm  fsm_state;
+    t_axi4s32 axi4s            "AXI4S data being presented";
+    t_rx_fsm  fsm_state        "FSM state";
     bit[4]    byte_valid       "Bytes valid in data_word";
     bit[32]   data_word        "Data from packet being assembled for AXI";
     bit[32]   user             "User value for next AXI word";
-    bit[32]   fcs;
-    bit[16]    byte_of_packet "Byte of packet";
-    bit[16]    max_mtu        "Largest packet size supported";
+    bit[32]   fcs              "Current FCS value (before any byte in current cycle";
+    bit[16]   byte_of_packet   "Byte of packet";
+    bit[16]   max_mtu          "Largest packet size supported";
 } t_rx_state;
 
 /*a Module

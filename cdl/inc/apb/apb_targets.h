@@ -237,6 +237,35 @@ extern module apb_target_i2c_master( clock clk         "System clock",
     timing from rising clock clk i2c_out;
 }
 
+/*m apb_target_axi4s */
+extern module apb_target_axi4s( clock clk         "System clock",
+                         input bit reset_n "Active low reset",
+
+                         input  t_apb_request  apb_request  "APB request",
+                         output t_apb_response apb_response "APB response",
+
+                         output t_sram_access_req  tx_sram_access_req  "SRAM access request",
+                         input  t_sram_access_resp tx_sram_access_resp "SRAM access response",
+
+                         output t_sram_access_req  rx_sram_access_req  "SRAM access request",
+                         input  t_sram_access_resp rx_sram_access_resp "SRAM access response",
+
+                         input bit        tx_axi4s_tready,
+                         output t_axi4s32 tx_axi4s,
+                         input t_axi4s32  rx_axi4s,
+                         output bit       rx_axi4s_tready
+    )
+{
+    timing to   rising clock clk tx_axi4s_tready;
+    timing from rising clock clk tx_axi4s;
+    timing from rising clock clk rx_axi4s_tready;
+    timing to   rising clock clk rx_axi4s;
+    timing from rising clock clk apb_response;
+    timing to   rising clock clk apb_request;
+    timing from rising clock clk rx_sram_access_req, tx_sram_access_req;
+    timing to   rising clock clk rx_sram_access_resp, tx_sram_access_resp;
+}
+
 /*a Editor preferences and notes
 mode: c ***
 c-basic-offset: 4 ***

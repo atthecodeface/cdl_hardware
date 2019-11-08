@@ -191,7 +191,7 @@ clock edge where the clock is loaded with the 64-bit synchronization value.
             timer_combs.integer_one_and_half_adder  = timer_combs.integer_half_adder + timer_control.integer_adder + 1;
         }
         
-        if (!timer_state.hold_adder || timer_control.reset_counter) {
+        if (!timer_state.hold_adder || timer_control.reset_counter || timer_control.enable_counter) {
             timer_state.fractional_adder <= timer_control.fractional_adder;
             timer_state.integer_adder    <= timer_control.integer_adder;
             timer_state.hold_adder <= 1;
