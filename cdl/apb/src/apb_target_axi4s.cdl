@@ -468,7 +468,9 @@ and the word at the write pointer is zeroed.
             rx_combs.action = rx_action_none;
         }
         case rx_fsm_idle: {
-            assert( (rx_state.pkt_ptr+1)==rx_state.write_ptr, "In idle the write ptr must point to pkt ptr plus 1");
+            assert( ( ((rx_state.pkt_ptr+1)==rx_state.write_ptr) ||
+                      ((rx_state.pkt_ptr+1-rx_state.buffer_end)==rx_state.write_ptr) ),
+                    "In idle the write ptr must point to pkt ptr plus 1");
             if (rx_combs.axi_data_valid) {
                 rx_combs.action = rx_action_sop;
                 if (rx_combs.fifo_overflow) {

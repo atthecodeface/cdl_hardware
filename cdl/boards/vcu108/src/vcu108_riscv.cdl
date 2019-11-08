@@ -26,6 +26,7 @@ include "types/dprintf.h"
 include "types/sram.h"
 include "types/uart.h"
 include "types/memories.h"
+include "types/ethernet.h"
 include "srams.h"
 include "apb/apb_targets.h"
 include "apb/apb_masters.h"
@@ -34,8 +35,10 @@ include "csr/csr_masters.h"
 include "utils/dprintf_modules.h"
 include "led/led_modules.h"
 include "video/framebuffer_modules.h"
-include "boards/vcu108.h"
+include "networking/ethernet_modules.h"
+include "networking/gmii_modules.h"
 include "cpu/riscv/riscv_modules.h"
+include "boards/vcu108.h"
 
 /*a Constants */
 constant integer num_dprintf_requesters=16;
@@ -60,6 +63,14 @@ module vcu108_riscv( clock clk,
                      input bit video_reset_n,
                      output t_adv7511 vcu108_video,
 
+                     clock     sgmii_tx_clk       "Four-bit transmit serializing data clock (312.5MHz)",
+                     input bit sgmii_tx_reset_n   "Reset deasserting sync to sgmii_tx_clk",
+                     output bit[4] sgmii_txd      "First bit for wire in txd[0]",
+
+                     clock     sgmii_rx_clk       "Four-bit receive serializing data clock (312.5MHz)",
+                     input bit sgmii_rx_reset_n   "Reset deasserting sync to sgmii_rx_clk",
+                     input bit[4] sgmii_rxd       "Oldest bit in rxd[0]",
+
                      clock flash_clk,
                      input t_mem_flash_in flash_in,
                      output t_mem_flash_out flash_out
@@ -80,6 +91,7 @@ module vcu108_riscv( clock clk,
     comb t_apb_request timer_apb_request;
     comb t_apb_request gpio_apb_request;
     comb t_apb_request i2c_apb_request;
+    comb t_apb_request axi4s_apb_request;
     comb t_apb_request uart_apb_request;
     comb t_apb_request dprintf_apb_request;
     comb t_apb_request csr_apb_request;
@@ -91,6 +103,7 @@ module vcu108_riscv( clock clk,
     net t_apb_response  timer_apb_response;
     net t_apb_response  gpio_apb_response;
     net t_apb_response  i2c_apb_response;
+    net t_apb_response  axi4s_apb_response;
     net t_apb_response  uart_apb_response;
     net t_apb_response  dprintf_apb_response;
     net t_apb_response  csr_apb_response;
@@ -277,6 +290,7 @@ module vcu108_riscv( clock clk,
         dprintf_uart_apb_request = apb_request;
         riscv_dbg_apb_request    = apb_request;
         i2c_apb_request          = apb_request;
+        axi4s_apb_request        = apb_request;
 
         timer_apb_request.paddr        = apb_request.paddr >> 2;
         gpio_apb_request.paddr         = apb_request.paddr >> 2;
@@ -287,6 +301,7 @@ module vcu108_riscv( clock clk,
         dprintf_uart_apb_request.paddr = apb_request.paddr >> 2;
         riscv_dbg_apb_request.paddr    = apb_request.paddr >> 2;
         i2c_apb_request.paddr          = apb_request.paddr >> 2;
+        axi4s_apb_request.paddr        = apb_request.paddr >> 2;
 
         timer_apb_request.psel        = apb_request.psel && (apb_request_sel==0);
         gpio_apb_request.psel         = apb_request.psel && (apb_request_sel==1);
@@ -298,6 +313,7 @@ module vcu108_riscv( clock clk,
         dprintf_uart_apb_request.psel = apb_request.psel && (apb_request_sel==10);
         riscv_dbg_apb_request.psel    = apb_request.psel && (apb_request_sel==11);
         i2c_apb_request.psel          = apb_request.psel && (apb_request_sel==12);
+        axi4s_apb_request.psel        = apb_request.psel && (apb_request_sel==13);
         
         csr_apb_request.paddr[16;16]  = bundle(12b0,apb_request.paddr[4;12]);
         csr_apb_request.paddr[16;0]   = bundle( 6b0,apb_request.paddr[10;2]);
@@ -312,6 +328,7 @@ module vcu108_riscv( clock clk,
         if (apb_request_sel==10) { apb_response = dprintf_uart_apb_response; }
         if (apb_request_sel==10) { apb_response = riscv_dbg_apb_response; }
         if (apb_request_sel==12) { apb_response = i2c_apb_response; }
+        if (apb_request_sel==13) { apb_response = axi4s_apb_response; }
     }
 
     /*b Dprintf requesting */
@@ -456,6 +473,19 @@ module vcu108_riscv( clock clk,
                                        i2c_in  <= vcu108_inputs.i2c,
                                        i2c_out => i2c_master );
 
+        apb_target_axi4s apb_axi4s( clk <- clk,
+                                    reset_n <= reset_n,
+                                    apb_request  <= axi4s_apb_request,
+                                    apb_response => axi4s_apb_response,
+                                    tx_sram_access_req  => tx_sram_access_req,
+                                    tx_sram_access_resp <= tx_sram_access_resp,
+                                    rx_sram_access_req  => rx_sram_access_req,
+                                    rx_sram_access_resp <= rx_sram_access_resp,
+                                    rx_axi4s        <= rx_axi4s,
+                                    rx_axi4s_tready => rx_axi4s_tready,
+                                    tx_axi4s         => tx_axi4s,
+                                    tx_axi4s_tready  <= tx_axi4s_tready );
+
         csr_master_apb master( clk <- clk,
                                reset_n <= reset_n,
                                apb_request <= csr_apb_request,
@@ -569,6 +599,103 @@ module vcu108_riscv( clock clk,
 
     }
 
+    /*b Ethernet */
+    net  t_sram_access_req  tx_sram_access_req  "SRAM access request";
+    net  t_sram_access_req  rx_sram_access_req  "SRAM access request";
+    clocked t_sram_access_resp rx_sram_access_resp ={*=0} "SRAM access response";
+    net bit[32] rx_sram_read_data;
+    clocked t_sram_access_req  rx_current_sram_access={*=0}  "SRAM access request";
+    clocked t_sram_access_resp tx_sram_access_resp ={*=0} "SRAM access response";
+    net bit[32] tx_sram_read_data;
+    clocked t_sram_access_req  tx_current_sram_access={*=0}  "SRAM access request";
+    net t_axi4s32 rx_axi4s;
+    net bit       rx_axi4s_tready;
+    net t_axi4s32 tx_axi4s;
+    net bit       tx_axi4s_tready;
+    comb t_tbi_valid tbi_rx;
+    net bit[4] sgmii_txd;
+    net bit gmii_rx_enable;
+    net t_gmii_rx gmii_rx;
+    net t_gmii_tx gmii_tx;
+    net bit gmii_tx_enable;
+    ethernet : {
+        se_sram_srw_16384x32_we8 rx_mem(sram_clock <- clk,
+                                     select         <= rx_sram_access_req.valid && rx_sram_access_resp.ack,
+                                     read_not_write <= rx_sram_access_req.read_not_write,
+                                     write_enable   <= rx_sram_access_req.byte_enable[4;0],
+                                     address        <= rx_sram_access_req.address[14;0],
+                                     write_data     <= rx_sram_access_req.write_data[32;0],
+                                     data_out       => rx_sram_read_data );
+        rx_sram_access_resp <= {*=0};
+        rx_sram_access_resp.ack   <= 1;
+        rx_current_sram_access.valid <= 0;
+        if (rx_sram_access_req.valid && rx_sram_access_resp.ack) {
+            rx_current_sram_access <= rx_sram_access_req;
+        }
+        if (rx_current_sram_access.valid) {
+            rx_sram_access_resp.valid       <= rx_current_sram_access.read_not_write;
+            rx_sram_access_resp.id          <= rx_current_sram_access.id;
+            rx_sram_access_resp.data[32;0]  <= rx_sram_read_data;
+        }
+
+        se_sram_srw_16384x32_we8 tx_mem(sram_clock <- clk,
+                                     select         <= tx_sram_access_req.valid && tx_sram_access_resp.ack,
+                                     read_not_write <= tx_sram_access_req.read_not_write,
+                                     write_enable   <= tx_sram_access_req.byte_enable[4;0],
+                                     address        <= tx_sram_access_req.address[14;0],
+                                     write_data     <= tx_sram_access_req.write_data[32;0],
+                                     data_out       => tx_sram_read_data );
+        tx_sram_access_resp <= {*=0};
+        tx_sram_access_resp.ack   <= 1;
+        tx_current_sram_access.valid <= 0;
+        if (tx_sram_access_req.valid && tx_sram_access_resp.ack) {
+            tx_current_sram_access <= tx_sram_access_req;
+        }
+        if (tx_current_sram_access.valid) {
+            tx_sram_access_resp.valid       <= tx_current_sram_access.read_not_write;
+            tx_sram_access_resp.id          <= tx_current_sram_access.id;
+            tx_sram_access_resp.data[32;0]  <= tx_sram_read_data;
+        }
+
+        gbe_axi4s32 gbe( tx_aclk <- clk,
+                         tx_areset_n <= reset_n,
+                         tx_axi4s    <= tx_axi4s,
+                         tx_axi4s_tready => tx_axi4s_tready,
+                         gmii_tx_enable <= gmii_tx_enable,
+                         gmii_tx        => gmii_tx,
+
+                         rx_aclk     <- clk,
+                         rx_areset_n <= reset_n,
+                         rx_axi4s    => rx_axi4s,
+                         rx_axi4s_tready <= rx_axi4s_tready,
+                         gmii_rx_enable <= gmii_rx_enable,
+                         gmii_rx <= gmii_rx,
+                         rx_timer_control  <= timer_control // rx clock domain
+            );
+
+        sgmii_gmii_gasket sgg(tx_clk       <- clk,
+                              tx_reset_n   <= reset_n,
+                              tx_clk_312_5     <- sgmii_tx_clk,
+                              tx_reset_312_5_n <= sgmii_tx_reset_n,
+
+                              rx_clk       <- clk,
+                              rx_reset_n   <= reset_n,
+                              rx_clk_312_5     <- sgmii_rx_clk,
+                              rx_reset_312_5_n <= sgmii_rx_reset_n,
+                              
+                              gmii_tx <= gmii_tx,
+                              gmii_tx_enable => gmii_tx_enable,
+                              // tbi_tx => tbi_tx,
+                              sgmii_txd => sgmii_txd,
+
+                              sgmii_rxd <= sgmii_rxd,
+                              tbi_rx <= tbi_rx,
+                              gmii_rx => gmii_rx,
+                              gmii_rx_enable => gmii_rx_enable
+            );
+        tbi_rx = {*=0};
+    }
+    
     /*b Stub out unused outputs and all done */
     second_divider : {
         /*b 50MHz stuff */

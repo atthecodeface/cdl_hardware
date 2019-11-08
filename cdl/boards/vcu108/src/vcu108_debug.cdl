@@ -55,6 +55,15 @@ module vcu108_debug( clock clk,
                      input  t_vcu108_inputs vcu108_inputs,
                      output t_vcu108_outputs vcu108_outputs,
 
+                     clock     sgmii_tx_clk     "Four-bit transmit serializing data clock (312.5MHz)",
+                     input bit sgmii_tx_reset_n "Reset deasserting sync to sgmii_tx_clk",
+                     output bit[4] sgmii_txd    "First bit for wire in txd[0]",
+
+                     clock     sgmii_rx_clk     "Four-bit receive serializing data clock (312.5MHz)",
+                     input bit sgmii_rx_reset_n "Reset deasserting sync to sgmii_rx_clk",
+                     input bit[4] sgmii_rxd     "Oldest bit in rxd[0]",
+
+
                      clock video_clk,
                      input bit video_reset_n,
                      output t_adv7511 vcu108_video,
@@ -482,5 +491,6 @@ module vcu108_debug( clock clk,
         if (vcu108_inputs_r.switches[1]) {
             vcu108_outputs.uart_tx= uart_tx;
         }
+        sgmii_txd = {*=0};
     }
 }
