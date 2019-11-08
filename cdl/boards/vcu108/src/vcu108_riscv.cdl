@@ -613,7 +613,7 @@ module vcu108_riscv( clock clk,
     net t_axi4s32 tx_axi4s;
     net bit       tx_axi4s_tready;
     comb t_tbi_valid tbi_rx;
-    net bit[4] sgmii_txd;
+    net bit[4] sgmii_txd_r;
     net bit gmii_rx_enable;
     net t_gmii_rx gmii_rx;
     net t_gmii_tx gmii_tx;
@@ -686,14 +686,15 @@ module vcu108_riscv( clock clk,
                               gmii_tx <= gmii_tx,
                               gmii_tx_enable => gmii_tx_enable,
                               // tbi_tx => tbi_tx,
-                              sgmii_txd => sgmii_txd,
+                              sgmii_txd => sgmii_txd_r,
 
-                              sgmii_rxd <= sgmii_rxd,
+                              sgmii_rxd <= bundle(sgmii_rxd[0],sgmii_rxd[1],sgmii_rxd[2],sgmii_rxd[3]),
                               tbi_rx <= tbi_rx,
                               gmii_rx => gmii_rx,
                               gmii_rx_enable => gmii_rx_enable
             );
         tbi_rx = {*=0};
+        sgmii_txd = bundle(sgmii_txd_r[0], sgmii_txd_r[1], sgmii_txd_r[2], sgmii_txd_r[3]);
     }
     
     /*b Stub out unused outputs and all done */
