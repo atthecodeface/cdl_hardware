@@ -179,6 +179,7 @@ class gbe_test_0(gbe_test_base):
                 pass
             self.bfm_wait(100)
             pass
+            self.sys_cfg.drive(i)
         self.bfm_wait(100)
         failures = 0
         if failures==0:
@@ -237,6 +238,7 @@ class gbe_test_hw(simple_tb.cdl_test_hw):
                   "th.outputs":(" ".join(timer_control._name_list("rx_timer_control")) + " " +
                                 " ".join(tbi_valid._name_list("tbi_rx")) + " " +
                                 " sgmii_rxd[4]"+
+                                " sys_cfg[32]"+
                                 " "),
                   "th.inputs":(" ".join(tbi_valid._name_list("tbi_tx")) + " " +
                                " sgmii_txd[4]"+

@@ -116,9 +116,24 @@ typedef struct {
 
 /*t t_tx_fsm */
 typedef fsm {
+    tx_fsm_reset  {
+        tx_fsm_init
+            } "Post reset - waiting for initialization request";
     tx_fsm_idle  {
+        tx_fsm_sop
+            } "Waiting to poll packet status, for valid data in or initialization request";
+    tx_fsm_sop  {
+        tx_fsm_read_data
+            } "Waiting for TX AXI to have room, to read first user data";
+    tx_fsm_read_data  {
+        tx_fsm_read_data, tx_fsm_eop
+            } "Waiting for TX AXI to have room, to read packet data - possibly the last word thereof";
+    tx_fsm_eop  {
         tx_fsm_idle
-            } "Waiting for valid data in or initialization request";
+            } "Reading packet status for next packet";
+    tx_fsm_init  {
+        tx_fsm_idle
+            } "Resetting pointers ";
 } t_tx_fsm;
 
 /*t t_tx_action
@@ -127,13 +142,34 @@ typedef fsm {
  *
  */
 typedef enum [5] {
-    tx_action_none               "No change to RX FSM",
+    tx_action_none               "No change to TX FSM",
+    tx_action_init_state         "Initialize state in Tx",
+    tx_action_read_pkt_status    "Read pkt status at tx read ptr",
+    tx_action_sop                "Prepare to read packet user data",
+    tx_action_read_first_user    "Read first word, the user data for first AXI output",
+    tx_action_read_data          "Read non-last data word (all bytes will be valid)",
+    tx_action_read_data_last     "Read last data word (? bytes will be valid)",
 } t_tx_action;
+
+/*t t_tx_id
+ */
+typedef enum [4] {
+    tx_id_pkt_status = 0,
+    tx_id_user       = 1,
+    tx_id_data       = 4,
+    tx_id_data_last  = 5,
+} t_tx_id;
 
 /*t t_tx_combs */
 typedef struct {
     t_tx_action   action                  "Action for TX FSM to perform";
     bit[16]       read_ptr_plus_one;
+    bit consume_axi_credit "Asserted if AXI credit is consumed by a TX SRAM read";
+    bit[16]   words_in_packet           "Count of word in packet from pkt_status";
+    bit       axi_in_credit            "Asserted if AXI is in credit";
+    bit       last_word                "Asserted if last word of packet to be read";
+    bit       poll_pkt_status          "Packet status poll required";
+    bit       pkt_ready                "Asserted if packet is ready for tx";
 } t_tx_combs;
 
 /*t t_tx_state */
@@ -145,6 +181,7 @@ typedef struct {
     bit[16]   buffer_end;
     bit[32]   pkt_status;
     bit       pkt_status_valid;
+    bit[16]   words_in_packet           "Count of word in packet";
     t_sram_access_req sram_access_req;
 } t_tx_state;
 
@@ -666,18 +703,103 @@ and the word at the write pointer is zeroed.
         /*b Decode FSM state */
         tx_combs.action = rx_action_none;
         full_switch (tx_state.fsm_state) {
+        case tx_fsm_reset: { // kicked out by init ONLY
+            tx_combs.action = rx_action_none;
+        }
         case tx_fsm_idle: {
             tx_combs.action = tx_action_none;
+            if (tx_combs.poll_pkt_status) {
+                tx_combs.action = tx_action_read_pkt_status;
+            }
+            if (tx_combs.pkt_ready) {
+                tx_combs.action = tx_action_sop;
+            }
+        }
+        case tx_fsm_sop: {
+            if (tx_combs.axi_in_credit) {
+                tx_combs.action = tx_action_read_first_user;
+            }
+        }
+        case tx_fsm_read_data: {
+            if (tx_combs.axi_in_credit) {
+                tx_combs.action = tx_action_read_data;
+                if (tx_combs.last_word) {
+                    tx_combs.action = tx_action_read_data_last;
+                }
+            }
+        }
+        case tx_fsm_eop: {
+            tx_combs.action = tx_action_read_pkt_status;
+        }
+        case tx_fsm_init: {
+            tx_combs.action = tx_action_init_state;
         }
         }
 
         /*b Decode FSM state */
+        tx_combs.consume_axi_credit = 0;
         full_switch (tx_combs.action) {
         case tx_action_none:{
             tx_state.fsm_state <= tx_state.fsm_state;
         }
+        case tx_action_sop:{
+            // Valid pkt_status in state, indicating number of words in tx including pkt_status
+            // This indicates the number of words+1 in the packet
+            // Move read pointer on past the status word to the user word
+            tx_state.fsm_state       <= tx_fsm_sop;
+            tx_state.words_in_packet <= tx_combs.words_in_packet;
+            tx_state.read_ptr        <= tx_combs.read_ptr_plus_one;
+        }
+        case tx_action_read_first_user:{ // Must be in credit - we do not consume one though
+            tx_state.fsm_state       <= tx_fsm_read_data;
+            tx_state.words_in_packet <= tx_state.words_in_packet-1;
+            tx_state.read_ptr        <= tx_combs.read_ptr_plus_one;
+            tx_state.sram_access_req <= {*=0};
+            tx_state.sram_access_req.valid          <= 1;
+            tx_state.sram_access_req.read_not_write <= 1;
+            tx_state.sram_access_req.id             <= tx_id_user;
+            tx_state.sram_access_req.address[16;0]  <= tx_state.read_ptr;
+        }
+        case tx_action_read_data:{ // Must be in credit
+            tx_state.words_in_packet <= tx_state.words_in_packet-1;
+            tx_state.read_ptr        <= tx_combs.read_ptr_plus_one;
+            tx_state.sram_access_req <= {*=0};
+            tx_state.sram_access_req.valid          <= 1;
+            tx_state.sram_access_req.read_not_write <= 1;
+            tx_state.sram_access_req.id             <= tx_id_data;
+            tx_state.sram_access_req.address[16;0]  <= tx_state.read_ptr;
+            tx_combs.consume_axi_credit = 1;
+        }
+        case tx_action_read_data_last:{ // Must be in credit
+            tx_state.fsm_state       <= tx_fsm_eop;
+            tx_state.words_in_packet <= tx_state.words_in_packet-1;
+            tx_state.read_ptr        <= tx_combs.read_ptr_plus_one;
+            tx_state.sram_access_req <= {*=0};
+            tx_state.sram_access_req.valid          <= 1;
+            tx_state.sram_access_req.read_not_write <= 1;
+            tx_state.sram_access_req.id             <= tx_id_data_last;
+            tx_state.sram_access_req.address[16;0]  <= tx_state.read_ptr;
+            tx_combs.consume_axi_credit = 1;
+        }
+        case tx_action_read_pkt_status:{
+            tx_state.fsm_state       <= tx_fsm_idle;
+            tx_state.sram_access_req <= {*=0};
+            tx_state.sram_access_req.valid          <= 1;
+            tx_state.sram_access_req.read_not_write <= 1;
+            tx_state.sram_access_req.id             <= tx_id_pkt_status;
+            tx_state.sram_access_req.address[16;0]  <= tx_state.read_ptr;
+        }
+        case tx_action_init_state:{
+            tx_state.pkt_status_valid <= 0;
+            tx_state.read_ptr         <= 0;
+            tx_state.fsm_state        <= tx_fsm_idle;
+        }
         }
         tx_sram_access_req = apb_state.tx_sram_access_req;
+        if (0 /*writeitn to tx_state.pkt_ptr*/) {
+            tx_state.pkt_status <= 0;
+            tx_state.pkt_status_valid <= 0;
+        }
     }
 
     /*b Done

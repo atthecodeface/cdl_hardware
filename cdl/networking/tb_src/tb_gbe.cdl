@@ -30,7 +30,8 @@ extern module axi4s32_master_slave( clock aclk,
                                     output t_tbi_valid tbi_rx "Optional TBI instead of SGMII",
                                     input t_axi4s32 slave_axi4s,
                                     output bit      slave_axi4s_tready,
-                                    output t_timer_control rx_timer_control "Timer control for TX clock domain"
+                                    output t_timer_control rx_timer_control "Timer control for TX clock domain",
+                                    output bit[32] sys_cfg
     )
 {
     timing to   rising clock aclk master_axi4s_tready, tbi_tx, sgmii_txd;
@@ -38,6 +39,7 @@ extern module axi4s32_master_slave( clock aclk,
     timing from rising clock aclk slave_axi4s_tready, tbi_rx;
     timing to   rising clock aclk slave_axi4s;
     timing from rising clock aclk rx_timer_control;
+    timing from rising clock aclk sys_cfg;
 }
 
 /*a Module */
@@ -63,6 +65,7 @@ module tb_gbe( clock clk,
     net bit gmii_rx_enable;
     net t_gmii_rx gmii_rx;
     comb bit[4] sgmii_rxd;
+    net bit[32] sys_cfg;
 
     clocked clock clk reset active_low reset_n bit[16]         sgmii_stream=0;
 
@@ -77,7 +80,8 @@ module tb_gbe( clock clk,
                                  tbi_rx => tbi_rx,
                                  slave_axi4s <= slave_axi4s,
                                  slave_axi4s_tready => slave_axi4s_tready,
-                                 rx_timer_control   => rx_timer_control );
+                                 rx_timer_control   => rx_timer_control,
+                                 sys_cfg => sys_cfg );
         gbe_axi4s32 gbe( tx_aclk <- clk,
                      tx_areset_n <= reset_n,
                      tx_axi4s    <= master_axi4s,
@@ -114,7 +118,11 @@ module tb_gbe( clock clk,
             );
         sgmii_stream      <= sgmii_stream << 4;
         sgmii_stream[4;0] <= sgmii_txd;
+
         sgmii_rxd = sgmii_stream[4;1];
+        if (sys_cfg[0]) {
+            sgmii_rxd = sgmii_stream[4;0];
+        }
 
         /*b All done */
     }

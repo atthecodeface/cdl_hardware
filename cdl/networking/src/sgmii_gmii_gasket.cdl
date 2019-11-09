@@ -29,7 +29,7 @@
  */
 /*a To do 
  *
- * Autonegotiation
+ * Autonegotiation transmit
  *
  * 10/100 support - replicate data to SGMII, reduce enables to GMII
  *
@@ -209,6 +209,7 @@ typedef struct {
     bit[10] comma_found      "Asserted if a comma is found at starting a bit position";
     bit[10] selected_symbol  "Symbol selected from serial_data";
     bit     seeking_comma    "Asserted if seeking comma sequence";
+    bit     loss_of_sync     "Asserted if synchronization lost and comma sequence must be found again";
     t_8b10b_symbol symbol_to_decode;
     bit symbol_is_K;
     bit symbol_is_S;
@@ -254,7 +255,8 @@ module sgmii_gmii_gasket( clock tx_clk   "Transmit clock domain - must be at lea
                           input bit[4] sgmii_rxd,
                           input t_tbi_valid tbi_rx "Optional TBI instead of SGMII",
                           output bit gmii_rx_enable "With a 2/5 rx_clk to rx_clk_312_5 this will never gap",
-                          output t_gmii_rx gmii_rx
+                          output t_gmii_rx gmii_rx,
+                          output t_sgmii_gasket_status sgmii_gasket_status
     )
 /*b Documentation */
 """
@@ -742,6 +744,7 @@ if (request) {
         /*b Track input symbol boundary
           To allow for bit errors, only look for comma if in 'seek'
          */
+        gmii_rx_combs.loss_of_sync = 0;
         if (gmii_rx_combs.seeking_comma) {
             gmii_rx_state.symbol_one_hot <= 0;
             if (gmii_rx_combs.comma_found!=0) {
@@ -750,6 +753,12 @@ if (request) {
                         gmii_rx_state.symbol_one_hot <= 0;            
                         gmii_rx_state.symbol_one_hot[i] <= 1;            
                     }
+                }
+            }
+        } else {
+            if (gmii_rx_combs.comma_found!=0) { // can only be true if serial data valid
+                if (gmii_rx_combs.comma_found != gmii_rx_state.symbol_one_hot) {
+                    gmii_rx_combs.loss_of_sync = 1;
                 }
             }
         }
@@ -922,7 +931,7 @@ if (request) {
             }
         }
         }
-        if (0 /*complete loss of sync*/) {
+        if (gmii_rx_combs.loss_of_sync) {
             gmii_rx_combs.action = gmii_rx_action_resync;
         }
 
@@ -1027,6 +1036,27 @@ if (request) {
         
         /*b All done */
     }
+    /*b SGMII status */
+    default clock             rx_clk;
+    default reset active_low  rx_reset_n;
+    clocked t_sgmii_gasket_status sgmii_gasket_status={*=0};
+    sgmii_status:{
+        if (gmii_rx_enable) {
+            sgmii_gasket_status.rx_symbols_since_sync <= sgmii_gasket_status.rx_symbols_since_sync+1;
+        }
+        if (gmii_rx_combs.seeking_comma) {
+            sgmii_gasket_status.rx_symbols_since_sync <= 0;
+            if (sgmii_gasket_status.rx_sync) {
+                sgmii_gasket_status.rx_sync <= 0;
+            }
+        } else {
+            if (!sgmii_gasket_status.rx_sync) {
+                sgmii_gasket_status.rx_sync <= 1;
+                sgmii_gasket_status.rx_sync_toggle <= !sgmii_gasket_status.rx_sync_toggle;
+            }
+        }
+    }
+    
     /*b Rx GMII domain logging */
     default clock             rx_clk;
     default reset active_low  rx_reset_n;
@@ -1043,6 +1073,16 @@ if (request) {
                     "r",(gmii_rx_decoded_symbol.data==symbol_R_k23_7)
                     );
             }
+        }
+        if (gmii_rx_combs.loss_of_sync) {
+            log("GMII lost sync",
+                "one_hot",gmii_rx_state.symbol_one_hot,
+                "comma",  gmii_rx_combs.comma_found);
+        }
+        if (gmii_rx_combs.seeking_comma && gmii_rx_combs.comma_found) {
+            log("GMII found sync",
+                "one_hot",gmii_rx_state.symbol_one_hot,
+                "comma",  gmii_rx_combs.comma_found);
         }
     }
 

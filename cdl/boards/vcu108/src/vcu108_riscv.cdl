@@ -179,6 +179,7 @@ module vcu108_riscv( clock clk,
     clocked bit[16] counter=0;
     clocked bit last_second_toggle=0;
     clocked bit divider_reset=0;
+    clocked bit[32][4] per_sec_counters={*=0};
 
     default clock clk_50;
     clocked bit[32] divider=0;
@@ -361,6 +362,13 @@ module vcu108_riscv( clock clk,
                     data_1=bundle(vga_counters[0], 32h20000087),
                     data_2=bundle(vga_counters[1], 32h20000087),
                     data_3=bundle(vga_counters[2], 8hff, 24h0) };
+        }
+        if (divider_reset) {
+            dprintf_req[10] <= {valid=1, address=400,
+                    data_0=bundle(32h44_49_56_3a, 32h_00_00_00_87), // DIV:%08x %08x %08x (cnts0/1/2)
+                    data_1=bundle(per_sec_counters[0], 32h20000087),
+                    data_2=bundle(per_sec_counters[1], 32h20000087),
+                    data_3=bundle(per_sec_counters[2], 8hff, 24h0) };
         }
 
         vcu108_dprintf_ack = 1;
@@ -618,6 +626,7 @@ module vcu108_riscv( clock clk,
     net t_gmii_rx gmii_rx;
     net t_gmii_tx gmii_tx;
     net bit gmii_tx_enable;
+    net t_sgmii_gasket_status sgmii_gasket_status;
     ethernet : {
         se_sram_srw_16384x32_we8 rx_mem(sram_clock <- clk,
                                      select         <= rx_sram_access_req.valid && rx_sram_access_resp.ack,
@@ -691,39 +700,70 @@ module vcu108_riscv( clock clk,
                               sgmii_rxd <= bundle(sgmii_rxd[0],sgmii_rxd[1],sgmii_rxd[2],sgmii_rxd[3]),
                               tbi_rx <= tbi_rx,
                               gmii_rx => gmii_rx,
-                              gmii_rx_enable => gmii_rx_enable
+                              gmii_rx_enable => gmii_rx_enable,
+                              sgmii_gasket_status => sgmii_gasket_status
             );
         tbi_rx = {*=0};
         sgmii_txd = bundle(sgmii_txd_r[0], sgmii_txd_r[1], sgmii_txd_r[2], sgmii_txd_r[3]);
     }
     
-    /*b Stub out unused outputs and all done */
+    /*b Second divider and second_toggle - on clk_50MHz which won't change frequency */
     second_divider : {
         /*b 50MHz stuff */
         divider <= divider+1;
-        divider_reset <= 0;
         if (divider==50*1000*1000) {
             divider <= 0;
             second_toggle <= !second_toggle;
             seconds <= seconds + 1;
         }
+    }
 
+    /*b SGMII RX clock domain debug */
+    default clock sgmii_rx_clk;
+    default reset active_low sgmii_rx_reset_n;
+    clocked bit[32] sgmii_sr = 0;
+    clocked bit[32] sgmii_data = 0;
+    clocked bit[8] sgmii_divider_reset_delay = 0;
+    sgmii_rx_debug : {
+        sgmii_sr       <= sgmii_sr>>4;
+        sgmii_sr[4;28] <= sgmii_rxd;
+
+        if (sgmii_divider_reset_delay[0]) { // Capture data for display a number of clock ticks after reset so it is stable
+            full_switch (vcu108_inputs.switches[2;1]) {
+            case 0: { sgmii_data <= sgmii_sr; }
+            case 1: { sgmii_data <= sgmii_sr; }
+            case 2: { sgmii_data <= sgmii_sr; }
+            case 3: { sgmii_data <= sgmii_sr; }
+            }
+        }
+        sgmii_divider_reset_delay <= sgmii_divider_reset_delay>>1;
+        sgmii_divider_reset_delay[7] <= divider_reset;
+    }
+    
+    /*b Stub out unused outputs and all done */
+    stubs : {
+        if (sgmii_gasket_status.rx_sync) { per_sec_counters[0] <= per_sec_counters[0] + 1; }
+        if (gmii_rx_enable)              { per_sec_counters[1] <= per_sec_counters[1] + 1; }
+        per_sec_counters[2] <= sgmii_data;
+            
         /*b Clock stuff */
         last_second_toggle <= second_toggle;
         divider_reset <= 0;
         if (last_second_toggle!=second_toggle) {
             divider_reset <= 1;
         }
-    }
+        if (divider_reset) {
+            for (i; 4) {
+                per_sec_counters[i] <= 0;
+            }
+        }
 
-    /*b Stub out unused outputs and all done */
-    stubs : {
         vcu108_inputs_r <= vcu108_inputs;        
         full_switch (vcu108_inputs.switches[2;1]) {
         case 0: { if (mux_dprintf_req[0].valid)         { counter <= counter + 1; } }
         case 1: { if (apb_request.psel)                 { counter <= counter + 1; } }
         case 2: { if (apb_processor_request.valid)      { counter <= counter + 1; } }
-        case 3: { if (tt_display_sram_access_req.valid) { counter <= counter + 1; } }
+        case 3: { if (gmii_rx_enable)                   { counter <= counter + 1; } }
         }
 
         gpio_input <= {*=0};

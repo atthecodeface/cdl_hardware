@@ -48,3 +48,9 @@ typedef struct {
     bit valid;
     bit[10] data;
 } t_tbi_valid;
+/*t t_sgmii_gasket_status */
+typedef struct {
+    bit rx_sync;
+    bit rx_sync_toggle;
+    bit[32] rx_symbols_since_sync;
+} t_sgmii_gasket_status;
