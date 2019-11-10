@@ -23,6 +23,7 @@
 include "types/apb.h"
 include "types/sram.h"
 include "types/axi.h"
+include "axi/axi4s_modules.h"
 
 /*a Types */
 /*t t_rx_fsm */
@@ -144,6 +145,7 @@ typedef fsm {
 typedef enum [5] {
     tx_action_none               "No change to TX FSM",
     tx_action_init_state         "Initialize state in Tx",
+    tx_action_poll               "Poll count decrement for Tx status",
     tx_action_read_pkt_status    "Read pkt status at tx read ptr",
     tx_action_sop                "Prepare to read packet user data",
     tx_action_read_first_user    "Read first word, the user data for first AXI output",
@@ -153,35 +155,38 @@ typedef enum [5] {
 
 /*t t_tx_id
  */
-typedef enum [4] {
+typedef enum [3] {
     tx_id_pkt_status = 0,
     tx_id_user       = 1,
-    tx_id_data       = 4,
-    tx_id_data_last  = 5,
+    tx_id_data       = 2,
 } t_tx_id;
 
 /*t t_tx_combs */
 typedef struct {
     t_tx_action   action                  "Action for TX FSM to perform";
     bit[16]       read_ptr_plus_one;
-    bit consume_axi_credit "Asserted if AXI credit is consumed by a TX SRAM read";
-    bit[16]   words_in_packet           "Count of word in packet from pkt_status";
+    bit       consume_axi_credit "Asserted if AXI credit is consumed by a TX SRAM read";
+    bit       provide_axi_credit "Asserted if AXI credit is being increased by output data being taken";
+    bit[14]   words_in_packet           "Count of word in packet from pkt_status";
+    bit[14]   next_poll_count;
+bit[4] last_strobe;
     bit       axi_in_credit            "Asserted if AXI is in credit";
     bit       last_word                "Asserted if last word of packet to be read";
     bit       poll_pkt_status          "Packet status poll required";
     bit       pkt_ready                "Asserted if packet is ready for tx";
+    bit sram_ack_apb "Asserted if an APB SRAM TX request is being taken (tx state not requesting and SRAM is taking";
 } t_tx_combs;
 
 /*t t_tx_state */
 typedef struct {
     t_tx_fsm  fsm_state        "FSM state";
-    bit[16]   pkt_ptr;
-    bit[16]   write_ptr;
     bit[16]   read_ptr;
     bit[16]   buffer_end;
     bit[32]   pkt_status;
     bit       pkt_status_valid;
-    bit[16]   words_in_packet           "Count of word in packet";
+    bit[14]   count                     "Count of word in packet";
+    bit[3]    axi_debt                  "AXI debt - can be up to FIFO size + 1";
+    t_axi4s32 axi4s                     "AXI4S built from SRAM data";
     t_sram_access_req sram_access_req;
 } t_tx_state;
 
@@ -293,6 +298,8 @@ and the word at the write pointer is zeroed.
     clocked t_rx_state  rx_state = {*=0, fsm_state=rx_fsm_reset};
     comb    t_tx_combs  tx_combs;
     clocked t_tx_state  tx_state = {*=0};
+    net     bit         tx_fifo_axi4s_ready "Asserted if TX FIFO can take more data";
+    net     t_axi4s32   tx_axi4s;
 
     /*b APB interface */
     apb_interface_logic """
@@ -356,6 +363,10 @@ and the word at the write pointer is zeroed.
         case access_write_rx_commit: {
             apb_combs.rx_commit = 1;
         }
+        case access_write_tx_config: {
+            apb_combs.request_init = 1;
+            tx_state.buffer_end <= apb_request.pwdata[16;0];
+        }
         case access_write_tx_data_ptr: {
             apb_state.tx_data_ptr <= apb_request.pwdata[16;0];
         }
@@ -413,13 +424,12 @@ and the word at the write pointer is zeroed.
 
         /*b Manage TX SRAM request */
         if (apb_state.tx_sram_access_req.valid) {
-            if (tx_sram_access_resp.ack) {
+            if (tx_combs.sram_ack_apb) {
                 apb_state.tx_sram_access_req.valid <= 0;
             }
         }
-        tx_axi4s = {*=0};
         
-        /*b Manage RX APB interaction */ 
+        /*b Manage RX APB SRAM access response */ 
         if (rx_combs.apb_rx_from_sram) { // may overwrite a later written RX word
             apb_state.rx_data <= rx_sram_access_resp.data[32;0];
             apb_state.rx_data_valid <= 1;
@@ -697,8 +707,42 @@ and the word at the write pointer is zeroed.
     /*b Handle Tx FSM */
     tx_handling_logic """
     """: {
-        tx_combs = {*=0};
-        tx_state <= {*=0};
+        /*b Decodes */
+        if (tx_sram_access_resp.ack && tx_state.sram_access_req.valid) {
+            tx_state.sram_access_req.valid <= 0;
+        }
+        tx_combs.sram_ack_apb = tx_sram_access_resp.ack;
+        if (tx_state.sram_access_req.valid) {
+            tx_combs.sram_ack_apb = 0;
+        }
+
+        tx_combs.read_ptr_plus_one = tx_state.read_ptr + 1;
+        if ((tx_state.read_ptr + 1) == tx_state.buffer_end) {
+            tx_combs.read_ptr_plus_one = 0;
+        }
+        tx_combs.axi_in_credit = 1;
+        if (tx_state.axi_debt>4) {
+            tx_combs.axi_in_credit = 0;
+        }
+        if (tx_state.sram_access_req.valid && !tx_sram_access_resp.ack) {
+            tx_combs.axi_in_credit = 0;
+        }
+        
+        tx_combs.last_strobe     = 0xf;
+        tx_combs.words_in_packet = tx_state.pkt_status[14;2];
+        full_switch (tx_state.pkt_status[2;0]) {
+        case 1:  { tx_combs.words_in_packet = tx_state.pkt_status[14;2]+1; tx_combs.last_strobe = 0x1; }   
+        case 2:  { tx_combs.words_in_packet = tx_state.pkt_status[14;2]+1; tx_combs.last_strobe = 0x3; }   
+        case 3:  { tx_combs.words_in_packet = tx_state.pkt_status[14;2]+1; tx_combs.last_strobe = 0x7; }   
+        default: { tx_combs.words_in_packet = tx_state.pkt_status[14;2]  ; tx_combs.last_strobe = 0xf; }   
+        }
+        tx_combs.last_word = (tx_state.count==0);
+        tx_combs.pkt_ready = tx_state.pkt_status_valid;
+        tx_combs.next_poll_count = tx_state.count - 1;
+        if (tx_state.count==0) {
+            tx_combs.next_poll_count = 10;
+        }
+        tx_combs.poll_pkt_status = (tx_state.count==0);
 
         /*b Decode FSM state */
         tx_combs.action = rx_action_none;
@@ -707,7 +751,7 @@ and the word at the write pointer is zeroed.
             tx_combs.action = rx_action_none;
         }
         case tx_fsm_idle: {
-            tx_combs.action = tx_action_none;
+            tx_combs.action = tx_action_poll;
             if (tx_combs.poll_pkt_status) {
                 tx_combs.action = tx_action_read_pkt_status;
             }
@@ -735,6 +779,9 @@ and the word at the write pointer is zeroed.
             tx_combs.action = tx_action_init_state;
         }
         }
+        if (rx_combs.start_init) {
+            tx_combs.action = tx_action_init_state;
+        }
 
         /*b Decode FSM state */
         tx_combs.consume_axi_credit = 0;
@@ -742,63 +789,117 @@ and the word at the write pointer is zeroed.
         case tx_action_none:{
             tx_state.fsm_state <= tx_state.fsm_state;
         }
+        case tx_action_poll:{
+            tx_state.count <= tx_combs.next_poll_count;
+        }
         case tx_action_sop:{
             // Valid pkt_status in state, indicating number of words in tx including pkt_status
             // This indicates the number of words+1 in the packet
             // Move read pointer on past the status word to the user word
-            tx_state.fsm_state       <= tx_fsm_sop;
-            tx_state.words_in_packet <= tx_combs.words_in_packet;
-            tx_state.read_ptr        <= tx_combs.read_ptr_plus_one;
+            tx_state.fsm_state        <= tx_fsm_sop;
+            tx_state.count            <= tx_combs.words_in_packet;
+            tx_state.read_ptr         <= tx_combs.read_ptr_plus_one;
+            tx_state.pkt_status_valid <= 0;
         }
         case tx_action_read_first_user:{ // Must be in credit - we do not consume one though
             tx_state.fsm_state       <= tx_fsm_read_data;
-            tx_state.words_in_packet <= tx_state.words_in_packet-1;
+            tx_state.count          <= tx_state.count          -1;
             tx_state.read_ptr        <= tx_combs.read_ptr_plus_one;
             tx_state.sram_access_req <= {*=0};
             tx_state.sram_access_req.valid          <= 1;
             tx_state.sram_access_req.read_not_write <= 1;
-            tx_state.sram_access_req.id             <= tx_id_user;
+            tx_state.sram_access_req.id             <= bundle(5b0, tx_id_user);
             tx_state.sram_access_req.address[16;0]  <= tx_state.read_ptr;
         }
         case tx_action_read_data:{ // Must be in credit
-            tx_state.words_in_packet <= tx_state.words_in_packet-1;
+            tx_state.count          <= tx_state.count         -1;
             tx_state.read_ptr        <= tx_combs.read_ptr_plus_one;
             tx_state.sram_access_req <= {*=0};
             tx_state.sram_access_req.valid          <= 1;
             tx_state.sram_access_req.read_not_write <= 1;
-            tx_state.sram_access_req.id             <= tx_id_data;
+            tx_state.sram_access_req.id             <= bundle(4hf, 1b0, tx_id_data); // not last, all bytes valid
             tx_state.sram_access_req.address[16;0]  <= tx_state.read_ptr;
             tx_combs.consume_axi_credit = 1;
         }
         case tx_action_read_data_last:{ // Must be in credit
             tx_state.fsm_state       <= tx_fsm_eop;
-            tx_state.words_in_packet <= tx_state.words_in_packet-1;
+            tx_state.count          <= tx_state.count         -1;
             tx_state.read_ptr        <= tx_combs.read_ptr_plus_one;
             tx_state.sram_access_req <= {*=0};
             tx_state.sram_access_req.valid          <= 1;
             tx_state.sram_access_req.read_not_write <= 1;
-            tx_state.sram_access_req.id             <= tx_id_data_last;
+            tx_state.sram_access_req.id             <= bundle(tx_combs.last_strobe, 1b1, tx_id_data);
             tx_state.sram_access_req.address[16;0]  <= tx_state.read_ptr;
             tx_combs.consume_axi_credit = 1;
         }
         case tx_action_read_pkt_status:{
             tx_state.fsm_state       <= tx_fsm_idle;
+            tx_state.count           <= 20;
             tx_state.sram_access_req <= {*=0};
             tx_state.sram_access_req.valid          <= 1;
             tx_state.sram_access_req.read_not_write <= 1;
-            tx_state.sram_access_req.id             <= tx_id_pkt_status;
+            tx_state.sram_access_req.id             <= bundle(5b0, tx_id_pkt_status);
             tx_state.sram_access_req.address[16;0]  <= tx_state.read_ptr;
         }
         case tx_action_init_state:{
             tx_state.pkt_status_valid <= 0;
             tx_state.read_ptr         <= 0;
             tx_state.fsm_state        <= tx_fsm_idle;
+            tx_state.count            <= 20;
         }
         }
+
+        /*b Handle TX SRAM */
         tx_sram_access_req = apb_state.tx_sram_access_req;
+        if (tx_state.sram_access_req.valid) {
+            tx_sram_access_req         = tx_state.sram_access_req;
+        }
+        
         if (0 /*writeitn to tx_state.pkt_ptr*/) {
             tx_state.pkt_status <= 0;
             tx_state.pkt_status_valid <= 0;
+        }
+        tx_state.axi4s.valid <= 0;
+        if (tx_sram_access_resp.valid) {
+            if (tx_sram_access_resp.id[3;0] == tx_id_pkt_status) {
+                tx_state.pkt_status_valid <= (tx_sram_access_resp.data[32;0]!=0);
+                tx_state.pkt_status       <= tx_sram_access_resp.data[32;0];
+            }
+            if (tx_sram_access_resp.id[3;0] == tx_id_user) {
+                tx_state.axi4s <= {*=0};
+                tx_state.axi4s.t.user[32;0] <= tx_sram_access_resp.data[32;0];
+                tx_state.axi4s.t.strb   <= 0xf;
+                tx_state.axi4s.t.keep   <= 0xf;
+            }
+            if (tx_sram_access_resp.id[3;0] == tx_id_data) {
+                tx_state.axi4s.valid    <= 1;
+                tx_state.axi4s.t.last   <= tx_sram_access_resp.id[3];
+                tx_state.axi4s.t.data   <= tx_sram_access_resp.data[32;0];
+                tx_state.axi4s.t.strb   <= tx_sram_access_resp.id[4;4];
+                tx_state.axi4s.t.keep   <= 0xf;
+            }
+        }
+    }
+
+    /*b TX AXI FIFO, credit and output */
+    tx_axi_fifo: {
+        axi4s32_fifo_4 tx_fifo( clk <- clk,
+                                reset_n <= reset_n,
+                                req_in <= tx_state.axi4s,
+                                ack_in => tx_fifo_axi4s_ready,
+                                req_out => tx_axi4s,
+                                ack_out <= tx_axi4s_tready
+            );
+        tx_combs.provide_axi_credit = 0;
+        if (tx_axi4s.valid && tx_axi4s_tready) {
+            tx_combs.provide_axi_credit = 1;
+        }
+        if (tx_combs.consume_axi_credit != tx_combs.provide_axi_credit) {
+            if (tx_combs.consume_axi_credit) {
+                tx_state.axi_debt <= tx_state.axi_debt + 1;
+            } else {
+                tx_state.axi_debt <= tx_state.axi_debt - 1;
+            }
         }
     }
 

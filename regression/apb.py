@@ -429,9 +429,14 @@ class apb_target_axi4s_test_one(apb_target_axi4s_test_base):
         self.master_enqueue_packet(pkt_large, user0=0xfeedbeef, user1=0xcafef00d)
         self.master_enqueue_packet(pkt_small, user0=0xfeedbeef, user1=0xcafef00d)
         self.apb_write_no_error(8, 0x1234)
-        self.apb_write_no_error(9, 4)
+        self.apb_write_no_error(9, 1)
         self.apb_write_no_error(11, 0x12345678)
-        self.apb_write_no_error(11, 0x9abcdef0)
+        for i in range(7):
+            self.apb_write_no_error(11, i)
+            pass
+        self.apb_write_no_error(11, 0)
+        self.apb_write_no_error(9, 0)
+        self.apb_write_no_error(11, 7*4-1) # Don't count user word
 
         rx_ptr = 0
         for i in range(10):

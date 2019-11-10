@@ -22,7 +22,7 @@
  */
 typedef struct {
     bit     valid;
-    bit[4]  id;
+    bit[8]  id;
     bit     read_not_write;
     bit[8]  byte_enable;
     bit[32] address;
@@ -34,7 +34,7 @@ typedef struct {
 typedef struct {
     bit     ack;
     bit     valid;
-    bit[4]  id;
+    bit[8]  id;
     bit[64] data;
 } t_sram_access_resp;
 

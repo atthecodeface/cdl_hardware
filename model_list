@@ -43,7 +43,6 @@ c_src cmodel/src     fb              inc:cmodel/inc
 c_src cmodel/src     vnc_rfb         inc:cmodel/inc
 #c_src cmodel/src    bbc_display_vnc inc:cmodel/inc
 c_src cmodel/src     bbc_shm         inc:cmodel/inc
-cdl cdl/axi/tb_src tb_axi inc:cdl/inc
 c_model cmodel/src   chk_riscv_ifetch  inc:cmodel/inc
 c_model cmodel/src   chk_riscv_trace  inc:cmodel/inc
 
@@ -175,6 +174,9 @@ cdl cdl/networking/src           gbe_axi4s32            inc:cdl/inc
 cdl cdl/networking/src           sgmii_gmii_gasket      inc:cdl/inc
 cdl cdl/networking/tb_src        tb_sgmii               inc:cdl/inc
 cdl cdl/networking/tb_src        tb_gbe                 inc:cdl/inc
+
+cdl cdl/axi/src axi4s32_fifo_4  inc:cdl/inc inc:cdl/utils/src rmt:gt_generic_valid_req=t_axi4s32 rmn:generic_valid_ack_fifo=axi4s32_fifo_4 dc:fifo_depth=3
+cdl cdl/axi/tb_src tb_axi inc:cdl/inc
 
 cdl cdl/apb/src  apb_logging   inc:cdl/inc
 cdl cdl/apb/src  apb_master_mux   inc:cdl/inc

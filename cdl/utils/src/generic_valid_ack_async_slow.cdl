@@ -69,7 +69,10 @@ module generic_valid_ack_async_slow( clock clk_in                        "Clock 
 """
 Simple valid/ack synchronization using toggle for going between domains.
 
-Suitable for slow transfer such as for dprintf.
+This is suitable for slow transfer of data such as for dprintf; it should not
+be used for a high throughput.
+
+The transfer rate is one data item per three to four clock ticks each of both sides.
 """
 {
     /*b State etc  */
@@ -82,6 +85,19 @@ Suitable for slow transfer such as for dprintf.
 
     /*b Input state */
     input_state """
+    The input data is registered when the input state register is
+    invalid; at this point an @a req_toggle is toggled, and @a
+    data_pending becomes set.
+
+    After 3-4 output clocks (assuming no waiting on the output side)
+    the @a ack_toggle will toggle, and then @a sync_in_ack_toggle will
+    change after a further 1-2 input clock ticks.
+
+    The edge detetion on @a sync_in_ack_toggle causes @a data_pending
+    to become deasserted after 2-3 input clocks from the @a ack_toggle.
+
+    The next data in can then be taken, becoming valid 3-4 input clock cycles
+    after @a ack_toggle.
     """: {
         /*b Manage ack toggle */
         tech_sync_bit ist(clk <- clk_in,
@@ -113,6 +129,16 @@ Suitable for slow transfer such as for dprintf.
         
     /*b Output state */
     output_state """
+    The data toggle from the input side is synchronized to the output clock domain,
+    and when the toggle is detected a pending data register becomes set.
+
+    When the output register is empty and the pending data register is set then the
+    output data register is copied from the input side, and becomes valid. The output
+    side also toggles its @a ack_toggle, which is returned to the input side.
+
+    The delay from the @a req_toggle being seen to the @a ack_toggle being toggled is
+    therefore three to four output clocks.
+    (@a sync_out_req_toggle changes after 1-2, data_pending after 2-3)
     """: {
         /*b Manage request toggle */
         tech_sync_bit ost(clk <- clk_out,
