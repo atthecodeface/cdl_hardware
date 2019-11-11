@@ -343,7 +343,7 @@ and the word at the write pointer is zeroed.
             apb_response.pready = apb_state.rx_data_valid;
             if (apb_state.rx_data_valid) {
                 apb_state.rx_data_valid <= 0;
-                apb_state.rx_data_ptr <= apb_combs.rx_data_ptr_plus_one;
+                apb_state.rx_data_ptr   <= apb_combs.rx_data_ptr_plus_one;
             }
         }
         }
