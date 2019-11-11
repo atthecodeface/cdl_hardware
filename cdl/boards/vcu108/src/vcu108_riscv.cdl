@@ -721,12 +721,12 @@ module vcu108_riscv( clock clk,
     /*b SGMII RX clock domain debug */
     default clock sgmii_rx_clk;
     default reset active_low sgmii_rx_reset_n;
-    clocked bit[32] sgmii_sr = 0;
-    clocked bit[32] sgmii_data = 0;
+    clocked bit[64] sgmii_sr = 0;
+    clocked bit[64] sgmii_data = 0;
     clocked bit[8] sgmii_divider_reset_delay = 0;
     sgmii_rx_debug : {
         sgmii_sr       <= sgmii_sr>>4;
-        sgmii_sr[4;28] <= sgmii_rxd;
+        sgmii_sr[4;60] <= sgmii_rxd;
 
         if (sgmii_divider_reset_delay[0]) { // Capture data for display a number of clock ticks after reset so it is stable
             full_switch (vcu108_inputs.switches[2;1]) {
@@ -742,9 +742,9 @@ module vcu108_riscv( clock clk,
     
     /*b Stub out unused outputs and all done */
     stubs : {
-        if (sgmii_gasket_status.rx_sync) { per_sec_counters[0] <= per_sec_counters[0] + 1; }
-        if (gmii_rx_enable)              { per_sec_counters[1] <= per_sec_counters[1] + 1; }
-        per_sec_counters[2] <= sgmii_data;
+        if (!sgmii_gasket_status.rx_sync) { per_sec_counters[0] <= per_sec_counters[0] + 1; }
+        per_sec_counters[1] <= sgmii_data[32;0];
+        per_sec_counters[2] <= sgmii_data[32;32];
             
         /*b Clock stuff */
         last_second_toggle <= second_toggle;
