@@ -37,7 +37,7 @@ def config_for_value(d, accuracy=0.00005):
     err = get_err(1,d_int)
     if err<accuracy: return d_int
     (add,sub) = find_best_differential(d, max_add=65535, max_subtract=32767, accuracy=accuracy)
-    return (1<<31) | (sub<<16) | add
+    return (1<<31) | (add<<16) | sub
 
 def config_for_frequency(f, clk=100, accuracy=0.005):
     ns_per_clk = 1000. / clk

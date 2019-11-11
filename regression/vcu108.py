@@ -121,7 +121,7 @@ class vcu108_debug_hw(vcu108_generic_hw):
 #c vcu108_riscv_hw
 class vcu108_riscv_hw(vcu108_generic_hw):
     module_name = "tb_vcu108_riscv"
-    apb_rom_mif  = "roms/apb_riscv_start_100_rom.mif"
+    apb_rom_mif  = "roms/apb_riscv_start_129_rom.mif"
     #f __init__
     def __init__(self, test):
         self.memory = dump.c_dump()
@@ -139,8 +139,9 @@ class vcu108_riscv_hw(vcu108_generic_hw):
         self.wave_hierarchies = [named("dut.dut.apb_dprintf_uart"),
                                  named("dut.dut.rv_apb"),
                                  named("dut.dut.apb_dprintf"),
+                                 named("dut.dut.apb_axi4s"),
                                  named("dut.dut.gpio"),
-                                 #named("dut.dut.riscv"),
+                                 named("dut.dut.riscv"),
         ]
         pass
 
@@ -152,9 +153,10 @@ class c_test_one(simple_tb.base_th):
         self.bfm_wait(1)
         self.vcu108_inputs__uart_rx__rxd.drive(1)
         self.bfm_wait(10)
-        for i in range(10000):
+        for i in range(1000000):
             self.bfm_wait(1)
             self.vcu108_inputs__uart_rx__rxd.drive(self.vcu108_outputs__uart_tx__txd.value())
+            self.vcu108_inputs__buttons.drive(0x10 * ((i/200)&1))
             pass
         self.finishtest(0,"")
         pass

@@ -123,6 +123,7 @@ non_bbc_roms:
 	${APB_ROM_COMPILE} --src apb_rom_uart_tx --define clk=300 --mif ${ROM_DIR}/apb_uart_tx_300_rom.mif --mem ${ROM_DIR}/apb_uart_tx_300_rom.mem
 	${APB_ROM_COMPILE} --src apb_rom_uart_tx --define clk=100 --mif ${ROM_DIR}/apb_uart_tx_100_rom.mif --mem ${ROM_DIR}/apb_uart_tx_100_rom.mem
 	${APB_ROM_COMPILE} --src apb_rom_riscv_start --define clk=100 --mif ${ROM_DIR}/apb_riscv_start_100_rom.mif --mem ${ROM_DIR}/apb_riscv_start_100_rom.mem
+	${APB_ROM_COMPILE} --src apb_rom_riscv_start --define clk=129 --mif ${ROM_DIR}/apb_riscv_start_129_rom.mif --mem ${ROM_DIR}/apb_riscv_start_129_rom.mem
 
 .PHONY: roms
 roms: bbc_data
