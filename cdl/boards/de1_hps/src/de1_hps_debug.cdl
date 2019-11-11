@@ -392,7 +392,7 @@ module de1_hps_debug( clock clk,
         }
         if (rv_sram_access_req.valid) {
             dprintf_req[8] <= {valid=1, address=320,
-                    data_0=bundle(40h53_52_4d_3a_83, 4b0,rv_sram_access_req.id,16h_20_80), // SRM:%x %x %08x %08x %x (id read_not_write address data be)
+                    data_0=bundle(40h53_52_4d_3a_83, rv_sram_access_req.id,16h_20_80), // SRM:%x %x %08x %08x %x (id read_not_write address data be)
                     data_1=bundle(7b0,rv_sram_access_req.read_not_write,  56h20000000000087),
                     data_2=bundle(rv_sram_access_req.address,    32h20000087),
                     data_3=bundle(rv_sram_access_req.write_data[32;0], 16h2080, rv_sram_access_req.byte_enable, 8hff) };
