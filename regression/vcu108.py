@@ -84,8 +84,10 @@ class vcu108_generic_hw(simple_tb.cdl_test_hw):
                }
     clocks = { "clk":(0,None,None),
                "clk_50":(0,10,10),
-               "video_clk":(0,None,None),
-               "flash_clk":(0,None,None),
+               "video_clk":(1,7,7),
+               "flash_clk":(3,21,21),
+               "sgmii_tx_clk":(3,4,4),
+               "sgmii_rx_clk":(2,4,4),
                }
     th_forces = {}
     dprintf_req_4  = pycdl.wirebundle(structs.dprintf_req_4)
@@ -138,10 +140,12 @@ class vcu108_riscv_hw(vcu108_generic_hw):
             pass
         self.wave_hierarchies = [named("dut.dut.apb_dprintf_uart"),
                                  named("dut.dut.rv_apb"),
-                                 named("dut.dut.apb_dprintf"),
+                                 #named("dut.dut.apb_dprintf"),
                                  named("dut.dut.apb_axi4s"),
+                                 named("dut.dut.gbe"),
+                                 named("dut.dut.sgg"),
                                  named("dut.dut.gpio"),
-                                 named("dut.dut.riscv"),
+                                 #named("dut.dut.riscv"),
         ]
         pass
 

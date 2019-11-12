@@ -193,6 +193,7 @@ module vcu108_riscv( clock clk,
     net t_gmii_rx gmii_rx;
     net t_gmii_tx gmii_tx;
     net bit gmii_tx_enable;
+    clocked t_sgmii_gasket_control sgmii_gasket_control = {*=0};
     net t_sgmii_gasket_status sgmii_gasket_status;
 
     clocked t_vcu108_inputs vcu108_inputs_r = {*=0};
@@ -695,6 +696,9 @@ module vcu108_riscv( clock clk,
                          rx_timer_control  <= timer_control // rx clock domain
             );
 
+        sgmii_gasket_control.write_config  <= rv_sram_ctrl[3];
+        sgmii_gasket_control.write_address <= rv_sram_ctrl[4;4];
+        sgmii_gasket_control.write_data    <= bundle(8b0,rv_sram_ctrl[24;8]);
         sgmii_gmii_gasket sgg(tx_clk       <- clk,
                               tx_reset_n   <= reset_n,
                               tx_clk_312_5     <- sgmii_tx_clk,
@@ -714,7 +718,8 @@ module vcu108_riscv( clock clk,
                               tbi_rx <= tbi_rx,
                               gmii_rx => gmii_rx,
                               gmii_rx_enable => gmii_rx_enable,
-                              sgmii_gasket_status => sgmii_gasket_status
+                              sgmii_gasket_control <= sgmii_gasket_control,
+                              sgmii_gasket_status  => sgmii_gasket_status
             );
         tbi_rx = {*=0};
         sgmii_txd = bundle(sgmii_txd_r[0], sgmii_txd_r[1], sgmii_txd_r[2], sgmii_txd_r[3]);
@@ -755,7 +760,8 @@ module vcu108_riscv( clock clk,
     
     /*b Stub out unused outputs and all done */
     stubs : {
-        if (!sgmii_gasket_status.rx_sync) { per_sec_counters[0] <= per_sec_counters[0] + 1; }
+        if (!sgmii_gasket_status.rx_sync) { per_sec_counters[0] <= per_sec_counters[0] + 32h10000; }
+        per_sec_counters[0][16;0] <= sgmii_gasket_status.an_config;
         per_sec_counters[1] <= sgmii_data[32;0];
         per_sec_counters[2] <= sgmii_data[32;32];
             
