@@ -53,4 +53,12 @@ typedef struct {
     bit rx_sync;
     bit rx_sync_toggle;
     bit[32] rx_symbols_since_sync;
+    bit[16] an_config "Autonegotiation configuration";
 } t_sgmii_gasket_status;
+
+/*t t_sgmii_gasket_control */
+typedef struct {
+    bit     write_config;
+    bit[4]  write_address;
+    bit[32] write_data;
+} t_sgmii_gasket_control;

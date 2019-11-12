@@ -29,11 +29,11 @@
  */
 /*a To do 
  *
- * Autonegotiation transmit
- *
  * 10/100 support - replicate data to SGMII, reduce enables to GMII
  *
  * Rx sync state machine
+ *
+ * Sync flops for autonegotiation
  *
 */
 /*a Includes */
@@ -44,6 +44,7 @@ include "networking/encoders.h"
 
 /*a Constants
 */
+constant integer disable_autonegotiation=0;
 constant integer symbol_K_k28_5 = (5<<5) | 28; // 0xbc (0x0fa or 0x305, toggles disparity)
 constant integer symbol_S_k27_7 = (7<<5) | 27; // 0xfb (0x368 or 0x097)
 constant integer symbol_V_k30_7 = (7<<5) | 30; // 0xfe (0x1e8 or 0x217)
@@ -71,6 +72,66 @@ typedef fsm {
     sync_fsm_sync_acquired_4  "Just saw a bad code group in acquired_3";
     sync_fsm_sync_acquired_4a "Waiting for three good code groups to go back to acquired_3 - or bad one to hit loss of sync";
 } t_sync_fsm;
+
+/*t t_gmii_an_data_mode */
+typedef enum [2] {
+    gmii_an_data_mode_zero,
+    gmii_an_data_mode_adv_ack,
+    gmii_an_data_mode_adv_no_ack
+} t_gmii_an_data_mode;
+    
+/*t t_gmii_an_mode */
+typedef enum [2] {
+    gmii_an_mode_config,
+    gmii_an_mode_idle,
+    gmii_an_mode_data
+} t_gmii_an_mode;
+    
+/*t t_gmii_an_fsm */
+typedef fsm {
+    gmii_an_fsm_reset                "Reset, autonegotiation not started, counting down";
+    gmii_an_fsm_data                 "Autonegotiation complete";
+    gmii_an_fsm_restart              "Sending 0 AN data for counter cycles";
+    gmii_an_fsm_ability_detect       "Sending valid AN data with ack [14] of 0 until response is valid (three consecutive C1/C2 data values with 15,14;0 the same) and non-zero";
+    gmii_an_fsm_ability_acknowledge  "Sending valid AN data with ack [14] of 1 until response is valid (three consecutive C1/C2 data values with 15,14;0 the same) and ack set";
+    gmii_an_fsm_complete_acknowledge "Sending valid AN data with ack [14] of 1 for correct time period";
+    gmii_an_fsm_idle_wait            "Waiting for link timer (and idle to be received three in a row)";
+} t_gmii_an_fsm;
+
+/*t t_gmii_an_action */
+typedef enum [4] {
+    gmii_an_action_none, // only if no symbol to go out
+    gmii_an_action_count,
+    gmii_an_action_restart,
+    gmii_an_action_ability_detect,
+    gmii_an_action_ability_acknowledge,
+    gmii_an_action_complete_acknowledge,
+    gmii_an_action_idle_wait,
+    gmii_an_action_enter_data
+} t_gmii_an_action;
+
+/*t t_gmii_an_combs */
+typedef struct {
+    t_gmii_an_action action;
+    bit ability_match;
+    bit acknowledge_match;
+    bit counter_expired;
+    bit autonegotiation_disabled;
+    bit[16]       an_data   "Auto negotiation data";
+} t_gmii_an_combs;
+
+/*t t_gmii_an_state */
+typedef struct {
+    t_gmii_an_fsm fsm_state;
+    bit[24]       counter       "10ms-20ms counter (at 1GHz that is 24 bits)";
+    bit[24]       counter_10ms  "Restart value for counter";
+    t_gmii_an_data_mode an_data_mode "Auto negotiation data";
+    bit[16]       adv_ability   "Auto negotiation data";
+    t_gmii_an_mode an_mode      "Transmit / autonegotiation mode - idle, config or data";
+    bit restart_an;
+    bit control_write_toggle;
+    bit last_control_write_toggle;
+} t_gmii_an_state;
 
 /*t t_gmii_tx_fsm */
 typedef fsm {
@@ -131,6 +192,8 @@ typedef struct {
     bit              will_take_symbol  "Asserted if the next symbol slot is empty";
     t_8b10b_enc_data enc_data          "Symbol to transmit from the GMII state machine";
     bit              tx_symbol_valid   "Asserted if the transmit symbol is valid from the GMII state machine";
+    t_gmii_an_mode an_mode     "Transmit / autonegotiation mode - idle, config or data";
+    bit              toggle_cfg_even "Asserted if config should swap between C1/C2";
 } t_gmii_tx_combs;
 
 /*t t_gmii_tx_state */
@@ -239,7 +302,11 @@ typedef struct {
     bit rx_even            "Cleared on entry to fsm_k, toggled on every symbol";
     t_gmii_rx gmii_rx;
     bit       gmii_rx_enable;
-    bit[16] rx_config_data;
+    // for autonegotiation in RX clock domain
+    bit[16] rx_config_data        "Configuration data from the PHY";
+    bit[6]  rx_config_data_match  "Shift register with all bits set if 3 consecutive cfg have produced the same cfg data";
+    bit     rx_ability_match      "Asserted if rx_config_data_match had all bits set";
+    bit     rx_acknowledge_match  "Asserted if rx_config_data_match had all bits set and rx_config_data[14] (ack) is set";
 } t_gmii_rx_state;
 
 /*a Module
@@ -263,7 +330,8 @@ module sgmii_gmii_gasket( clock tx_clk   "Transmit clock domain - must be at lea
                           input t_tbi_valid tbi_rx "Optional TBI instead of SGMII",
                           output bit gmii_rx_enable "With a 2/5 rx_clk to rx_clk_312_5 this will never gap",
                           output t_gmii_rx gmii_rx,
-                          output t_sgmii_gasket_status sgmii_gasket_status
+                          input  t_sgmii_gasket_control sgmii_gasket_control "Control of gasket, on rx_clk",
+                          output t_sgmii_gasket_status  sgmii_gasket_status  "Status from gasket, on rx_clk"
     )
 /*b Documentation */
 """
@@ -337,6 +405,151 @@ if (request) {
 """
 /*b Module body */
 {
+    /*b Autonegotiation (tx clock domain) */
+    default clock tx_clk;
+    default reset active_low tx_reset_n;
+    comb     t_gmii_an_combs gmii_an_combs;
+    clocked  t_gmii_an_state gmii_an_state = {*=0, adv_ability=0x20, counter_10ms=(1<<20)};
+    autonegotiation : {
+        /*b Decode */
+        gmii_an_combs.autonegotiation_disabled = disable_autonegotiation;
+        gmii_an_combs.counter_expired          = (gmii_an_state.counter==0);
+        gmii_an_combs.ability_match            = gmii_rx_state.rx_ability_match;     // probably stable - should use a sync flop
+        gmii_an_combs.acknowledge_match        = gmii_rx_state.rx_acknowledge_match; // probably stable - should use a sync flop
+        if (gmii_rx_state.rx_config_data==0) {
+            gmii_an_combs.ability_match = 0;
+            gmii_an_combs.acknowledge_match = 0;
+        }
+    
+        /*b Autonegotiation FSM */
+        gmii_an_combs.action = gmii_an_action_none;
+        full_switch (gmii_an_state.fsm_state) {
+        case gmii_an_fsm_reset: { // waiting for counter
+            gmii_an_combs.action = gmii_an_action_count;
+            if (gmii_an_combs.counter_expired) {
+                gmii_an_combs.action = gmii_an_action_restart;
+            }
+            if (gmii_an_combs.autonegotiation_disabled) {
+                gmii_an_combs.action = gmii_an_action_enter_data;
+            }
+        }
+        case gmii_an_fsm_restart: { // sending zero AN data
+            gmii_an_combs.action = gmii_an_action_count;
+            if (gmii_an_combs.counter_expired) {
+                gmii_an_combs.action = gmii_an_action_ability_detect;
+            }
+        }
+        case gmii_an_fsm_ability_detect: { // sending valid AN data
+            if (gmii_an_combs.ability_match) {
+                gmii_an_combs.action = gmii_an_action_ability_acknowledge;
+            }
+        }
+        case gmii_an_fsm_ability_acknowledge: { // sending valid AN data
+            if (gmii_an_combs.acknowledge_match) {
+                gmii_an_combs.action = gmii_an_action_complete_acknowledge;
+            }
+            // if responses are not consistent or are 0 then abort back to restart
+        }
+        case gmii_an_fsm_complete_acknowledge: { // waiting for a period
+            gmii_an_combs.action = gmii_an_action_count;
+            if (gmii_an_combs.counter_expired) {
+                gmii_an_combs.action = gmii_an_action_idle_wait;
+            }
+            // if responses is  0 then abort back to restart
+        }
+        case gmii_an_fsm_idle_wait: { // waiting to see idle
+            gmii_an_combs.action = gmii_an_action_count;
+            if (gmii_an_combs.counter_expired) {
+                gmii_an_combs.action = gmii_an_action_enter_data;
+            }
+            // if responses is  0 then abort back to restart
+        }
+        case gmii_an_fsm_data: {
+            gmii_an_combs.action = gmii_an_action_none;
+        }
+        }
+        if (gmii_an_state.restart_an) {
+            gmii_an_combs.action = gmii_an_action_restart;
+        }
+        if (disable_autonegotiation) {
+            gmii_an_state <= gmii_an_state;
+            gmii_an_combs.action = gmii_an_action_none;
+        }
+
+        /*b Autonegotiation action */
+        full_switch (gmii_an_combs.action) {
+        case gmii_an_action_none: {
+            gmii_an_state.fsm_state <= gmii_an_state.fsm_state;
+        }
+        case gmii_an_action_count: {
+            if (gmii_an_state.counter!=0) {
+                gmii_an_state.counter <= gmii_an_state.counter - 1;
+            }
+        }
+        case gmii_an_action_restart: {
+            gmii_an_state.fsm_state      <= gmii_an_fsm_restart;
+            gmii_an_state.restart_an     <= 0;
+            gmii_an_state.an_mode        <= gmii_an_mode_config;
+            gmii_an_state.an_data_mode   <= gmii_an_data_mode_zero;
+            gmii_an_state.counter        <= gmii_an_state.counter_10ms;
+        }
+        case gmii_an_action_ability_detect: {
+            gmii_an_state.fsm_state      <= gmii_an_fsm_ability_detect;
+            gmii_an_state.an_mode        <= gmii_an_mode_config;
+            gmii_an_state.an_data_mode   <= gmii_an_data_mode_adv_no_ack;
+            gmii_an_state.counter        <= gmii_an_state.counter_10ms;
+        }
+        case gmii_an_action_ability_acknowledge: {
+            gmii_an_state.fsm_state   <= gmii_an_fsm_ability_acknowledge;
+            gmii_an_state.an_data_mode   <= gmii_an_data_mode_adv_ack;
+        }
+        case gmii_an_action_complete_acknowledge: {
+            gmii_an_state.fsm_state   <= gmii_an_fsm_complete_acknowledge;
+            gmii_an_state.counter     <= gmii_an_state.counter_10ms;
+        }
+        case gmii_an_action_idle_wait: {
+            gmii_an_state.fsm_state   <= gmii_an_fsm_idle_wait;
+            gmii_an_state.an_mode     <= gmii_an_mode_idle;
+            gmii_an_state.counter     <= gmii_an_state.counter_10ms;
+        }
+        case gmii_an_action_enter_data: {
+            gmii_an_state.fsm_state   <= gmii_an_fsm_data;
+            gmii_an_state.an_mode     <= gmii_an_mode_data;
+
+        }
+        }
+        full_switch (gmii_an_state.an_data_mode) {
+        case gmii_an_data_mode_adv_no_ack: {
+            gmii_an_combs.an_data        = gmii_an_state.adv_ability;
+            gmii_an_combs.an_data[14]    = 0;
+        }
+        case gmii_an_data_mode_adv_ack: {
+            gmii_an_combs.an_data        = gmii_an_state.adv_ability;
+            gmii_an_combs.an_data[14]    = 1;
+        }
+        default: {
+            gmii_an_combs.an_data        = 0;
+        }
+        }
+
+        /*b AN control writes */
+        gmii_an_state.control_write_toggle      <= sgmii_gasket_control_write_toggle;
+        gmii_an_state.last_control_write_toggle <= gmii_an_state.control_write_toggle;
+        if (gmii_an_state.last_control_write_toggle !=  gmii_an_state.control_write_toggle) {
+            if (sgmii_gasket_control.write_address==0) {
+                gmii_an_state.counter_10ms <= sgmii_gasket_control.write_data[24;0];
+            }
+            if (sgmii_gasket_control.write_address==1) {
+                gmii_an_state.adv_ability <= sgmii_gasket_control.write_data[16;0];
+            }
+            if (sgmii_gasket_control.write_address==2) {
+                gmii_an_state.restart_an <= 1;
+            }
+        }
+    
+        /*b All done */
+    }
+
     /*b GMII Tx side */
     default clock tx_clk;
     default reset active_low tx_reset_n;
@@ -347,6 +560,10 @@ if (request) {
     net bit[4]         gmii_tx_sync_toggle;
     tx_gasket : {
         /*b TX GMII bus decode */
+        gmii_tx_combs.an_mode = gmii_an_mode_data;
+        if (!gmii_an_combs.autonegotiation_disabled) {
+            gmii_tx_combs.an_mode = gmii_an_state.an_mode;
+        }
         gmii_tx_combs.gmii_op = gmii_op_idle;
         if (gmii_tx_state.gmii_tx.tx_en) {
             gmii_tx_combs.gmii_op = gmii_op_data;
@@ -368,9 +585,11 @@ if (request) {
         full_switch (gmii_tx_state.fsm_state) {
         case gmii_tx_fsm_idle: { // in first cycle of an I1/I2, tx_even will be low
             gmii_tx_combs.action = gmii_tx_action_k28_5; // Send start of I1 or I2 as appropriate
-            part_switch (gmii_tx_combs.gmii_op) {
-            case gmii_op_data:           { gmii_tx_combs.action = gmii_tx_action_sop_data;    } // Send S then data
-            case gmii_op_transmit_error: { gmii_tx_combs.action = gmii_tx_action_sop_error;   } // Send S then V
+            if (gmii_tx_combs.an_mode == gmii_an_mode_data) {
+                part_switch (gmii_tx_combs.gmii_op) {
+                case gmii_op_data:           { gmii_tx_combs.action = gmii_tx_action_sop_data;    } // Send S then data
+                case gmii_op_transmit_error: { gmii_tx_combs.action = gmii_tx_action_sop_error;   } // Send S then V
+                }
             }
             if (!gmii_tx_state.tx_even) { // If have already output K28.5 of I1/I2 then stay in the state
                 gmii_tx_combs.action = gmii_tx_action_idle; // If in middle of I1/I2, do nothing
@@ -422,6 +641,7 @@ if (request) {
 
         /*b Decode action to state update
          */
+        gmii_tx_combs.toggle_cfg_even = 0;
         gmii_tx_combs.enc_data = {
             disparity  = gmii_tx_state.disparity,
             data       = gmii_tx_state.gmii_tx.txd,
@@ -437,7 +657,7 @@ if (request) {
         }
         case gmii_tx_action_cfg_data: {
             gmii_tx_state.fsm_state <= gmii_tx_fsm_cfg_data;
-            gmii_tx_state.cfg_even <= !gmii_tx_state.cfg_even;
+            gmii_tx_combs.toggle_cfg_even = 1;
             if (gmii_tx_state.cfg_even) { // Note every other 
                 gmii_tx_combs.enc_data.is_control = 0;
                 gmii_tx_combs.enc_data.data       = symbol_d21_5; // D21.5
@@ -448,21 +668,27 @@ if (request) {
         }
         case gmii_tx_action_cfg_data_low: {
             gmii_tx_combs.enc_data.is_control = 0;
-            gmii_tx_combs.enc_data.data       = 0x20; // FD only, no pause
+            gmii_tx_combs.enc_data.data       = gmii_an_combs.an_data[8;0];
         }
         case gmii_tx_action_cfg_data_high: {
             gmii_tx_state.fsm_state <= gmii_tx_fsm_cfg;
             gmii_tx_combs.enc_data.is_control = 0;
-            gmii_tx_combs.enc_data.data       = 0;
+            gmii_tx_combs.enc_data.data       = gmii_an_combs.an_data[8;8];
+            if (gmii_tx_combs.an_mode != gmii_an_mode_config) {
+                gmii_tx_state.fsm_state <= gmii_tx_fsm_idle;
+            }
         }
         case gmii_tx_action_idle: {
-            gmii_tx_state.fsm_state <= gmii_tx_state.fsm_state;
+            gmii_tx_state.fsm_state <= gmii_tx_fsm_idle;
             if (!gmii_tx_state.disparity) { // Note IF disparity is NOW -ve then use D5.6 (i.e. was -ve before K28.5)
                 gmii_tx_combs.enc_data.is_control = 0;
                 gmii_tx_combs.enc_data.data       = symbol_d5_6; // D5.6
             } else {
                 gmii_tx_combs.enc_data.is_control = 0;
                 gmii_tx_combs.enc_data.data       = symbol_d16_2; // D16.2
+            }
+            if (gmii_tx_combs.an_mode == gmii_an_mode_config) {
+                gmii_tx_state.fsm_state <= gmii_tx_fsm_cfg;
             }
         }
         case gmii_tx_action_sop_data: {
@@ -519,6 +745,7 @@ if (request) {
         if (gmii_tx_combs.will_take_symbol && gmii_tx_combs.tx_symbol_valid) {
             gmii_tx_state.valid_toggle <= gmii_tx_state.valid_toggle ^ gmii_tx_state.wr_one_hot;
             gmii_tx_state.tx_even      <= !gmii_tx_state.tx_even;
+            gmii_tx_state.cfg_even <= gmii_tx_state.cfg_even ^ gmii_tx_combs.toggle_cfg_even;
             gmii_tx_state.wr_one_hot   <= gmii_tx_state.wr_one_hot << 1;
             gmii_tx_state.wr_one_hot[0]<= gmii_tx_state.wr_one_hot[3];
             gmii_tx_state.disparity    <= gmii_tx_encoded_symbol.disparity_positive;
@@ -996,7 +1223,7 @@ if (request) {
             gmii_rx_state.rx_even   <= 0;
             gmii_rx_state.disparity <= 1; // After a K28.5 disparity toggles - and it should generally be -ve when comma starts
         }
-        case gmii_rx_action_idle_k: { // from cfg_d, idle_d, false_carrier, extend_carrier
+        case gmii_rx_action_idle_k: { // from cfg_d, idle_d, false_carrier, extend_carrier - may be start of cfg or idle or...
             gmii_rx_state.fsm_state <= gmii_rx_fsm_k;
             gmii_rx_state.gmii_rx.rx_er <= 0;
             gmii_rx_state.gmii_rx.rx_dv <= 0;
@@ -1011,6 +1238,7 @@ if (request) {
             gmii_rx_state.gmii_rx.rx_er <= 0;
             gmii_rx_state.gmii_rx.rx_dv <= 0;
             gmii_rx_state.disparity <= 0; // After idle disparity must be -ve
+            gmii_rx_state.rx_config_data_match <= 0; // clear cfg as we have for sure had idle
         }
         case gmii_rx_action_cfg_a: { // from k
             gmii_rx_state.fsm_state <= gmii_rx_fsm_cfg_b;
@@ -1020,10 +1248,18 @@ if (request) {
         case gmii_rx_action_cfg_data_1: { // from cfg_b
             gmii_rx_state.fsm_state <= gmii_rx_fsm_cfg_c;
             gmii_rx_state.rx_config_data[8;0] <= gmii_rx_decoded_symbol.data;
+            gmii_rx_state.rx_config_data_match <= (gmii_rx_state.rx_config_data_match<<1) | 1;
+            if (gmii_rx_state.rx_config_data[8;0] != gmii_rx_decoded_symbol.data) {
+                gmii_rx_state.rx_config_data_match <= 0;
+            }
         }
         case gmii_rx_action_cfg_data_2: { // from cfg_c
             gmii_rx_state.fsm_state <= gmii_rx_fsm_cfg_d;
             gmii_rx_state.rx_config_data[8;8] <= gmii_rx_decoded_symbol.data;
+            gmii_rx_state.rx_config_data_match <= (gmii_rx_state.rx_config_data_match<<1) | 1;
+            if (gmii_rx_state.rx_config_data[8;8] != gmii_rx_decoded_symbol.data) {
+                gmii_rx_state.rx_config_data_match <= 0;
+            }
         }
         case gmii_rx_action_carrier_detect: { // from extend_carrier and idle_d
             gmii_rx_state.fsm_state <= gmii_rx_fsm_receive;
@@ -1070,6 +1306,14 @@ if (request) {
             gmii_rx_state.gmii_rx.rx_dv <= 0;
         }
         }
+        gmii_rx_state.rx_ability_match      <= (gmii_rx_state.rx_config_data_match==-1);
+        gmii_rx_state.rx_acknowledge_match  <= (gmii_rx_state.rx_config_data_match==-1) && gmii_rx_state.rx_config_data[14];
+        if (disable_autonegotiation) {
+            gmii_rx_state.rx_config_data        <= 0;
+            gmii_rx_state.rx_ability_match      <= 0;
+            gmii_rx_state.rx_acknowledge_match  <= 0;
+        }
+
         gmii_rx_state.gmii_rx.rx_crs <= 0;
         gmii_rx_state.gmii_rx_enable <= gmii_rx_state.serial_data_valid;
         gmii_rx = gmii_rx_state.gmii_rx;
@@ -1077,10 +1321,12 @@ if (request) {
         
         /*b All done */
     }
-    /*b SGMII status */
+    /*b SGMII status and control */
     default clock             rx_clk;
     default reset active_low  rx_reset_n;
-    clocked t_sgmii_gasket_status sgmii_gasket_status={*=0};
+    clocked t_sgmii_gasket_status  sgmii_gasket_status={*=0};
+    clocked t_sgmii_gasket_control sgmii_gasket_control_r={*=0};
+    clocked bit                    sgmii_gasket_control_write_toggle = 0;
     sgmii_status:{
         if (gmii_rx_enable) {
             sgmii_gasket_status.rx_symbols_since_sync <= sgmii_gasket_status.rx_symbols_since_sync+1;
@@ -1096,6 +1342,12 @@ if (request) {
                 sgmii_gasket_status.rx_sync_toggle <= !sgmii_gasket_status.rx_sync_toggle;
             }
         }
+        sgmii_gasket_status.an_config <= gmii_rx_state.rx_config_data;
+
+        if (sgmii_gasket_control.write_config) {
+            sgmii_gasket_control_r <= sgmii_gasket_control;
+            sgmii_gasket_control_write_toggle <= !sgmii_gasket_control_write_toggle;
+        }       
     }
     
     /*b Rx GMII domain logging */

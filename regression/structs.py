@@ -177,3 +177,9 @@ gmii_tx = {"tx_en":1, "tx_er":1, "txd":8}
 
 #t gmii_rx
 gmii_rx = {"rx_dv":1, "rx_er":1, "rxd":8, "rx_crs":1}
+
+#t sgmii_gasket_control
+sgmii_gasket_control = {"write_config":1, "write_address":4, "write_data":32}
+
+#t sgmii_gasket_status
+sgmii_gasket_status = {"rx_sync":1, "rx_sync_toggle":1, "rx_symbols_since_sync":32, "an_config":16}

@@ -41,7 +41,8 @@ extern module sgmii_gmii_gasket( clock tx_clk   "Transmit clock domain - must be
                                  input t_tbi_valid tbi_rx "Optional TBI instead of SGMII",
                                  output bit gmii_rx_enable "With a 2/5 rx_clk to rx_clk_312_5 this will never gap",
                                  output t_gmii_rx gmii_rx,
-                                 output t_sgmii_gasket_status sgmii_gasket_status
+                                 input  t_sgmii_gasket_control sgmii_gasket_control,
+                                 output t_sgmii_gasket_status  sgmii_gasket_status
     )
 {
     timing to   rising clock tx_clk       gmii_tx;
@@ -53,6 +54,7 @@ extern module sgmii_gmii_gasket( clock tx_clk   "Transmit clock domain - must be
     timing from rising clock rx_clk       gmii_rx_enable;
     timing from rising clock rx_clk       gmii_rx;
 
+    timing to   rising clock rx_clk       sgmii_gasket_control;
     timing from rising clock rx_clk       sgmii_gasket_status;
 }
 

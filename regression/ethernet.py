@@ -89,6 +89,31 @@ class sgmii_test_0(sgmii_test_base):
     def run(self):
         self.sim_msg = self.sim_message()
         self.bfm_wait(100)
+        self.bfm_wait(100)
+        self.sgmii_gasket_control__write_config.drive(1)
+        self.sgmii_gasket_control__write_address.drive(0)
+        self.sgmii_gasket_control__write_data.drive(100)
+        self.bfm_wait(1)
+        self.sgmii_gasket_control__write_config.drive(0)
+        self.bfm_wait(10)
+
+        self.sgmii_gasket_control__write_config.drive(1)
+        self.sgmii_gasket_control__write_address.drive(2)
+        self.sgmii_gasket_control__write_data.drive(1)
+        self.bfm_wait(1)
+        self.sgmii_gasket_control__write_config.drive(0)
+        self.bfm_wait(10)
+
+        self.bfm_wait(100)
+
+        self.sgmii_gasket_control__write_config.drive(1)
+        self.sgmii_gasket_control__write_address.drive(1)
+        self.sgmii_gasket_control__write_data.drive(0x20)
+        self.bfm_wait(1)
+        self.sgmii_gasket_control__write_config.drive(0)
+        self.bfm_wait(10)
+
+        self.bfm_wait(1000)
         for i in range(10):
             self.send_packet([0,1,2,3,4,5,6,7])
             self.gmii_bfm_wait(i+1)
@@ -202,14 +227,18 @@ class sgmii_test_hw(simple_tb.cdl_test_hw):
     tbi_valid               = pycdl.wirebundle(structs.tbi_valid)
     gmii_tx                 = pycdl.wirebundle(structs.gmii_tx)
     gmii_rx                 = pycdl.wirebundle(structs.gmii_rx)
+    sgmii_gasket_control    = pycdl.wirebundle(structs.sgmii_gasket_control)
+    sgmii_gasket_status    = pycdl.wirebundle(structs.sgmii_gasket_status)
 
     th_forces = { "th.clock":"clk",
                   "th.outputs":(" ".join(gmii_tx._name_list("gmii_tx")) + " " +
                                 " ".join(tbi_valid._name_list("tbi_rx")) + " " +
+                                " ".join(sgmii_gasket_control._name_list("sgmii_gasket_control")) + " " +
                                 " sgmii_rxd[4]"+
                                 " "),
                   "th.inputs":(" ".join(tbi_valid._name_list("tbi_tx")) + " " +
                                " ".join(gmii_rx._name_list("gmii_rx")) + " " +
+                                " ".join(sgmii_gasket_status._name_list("sgmii_gasket_status")) + " " +
                                " gmii_tx_enable"+
                                " sgmii_txd[4]"+
                                " "),
