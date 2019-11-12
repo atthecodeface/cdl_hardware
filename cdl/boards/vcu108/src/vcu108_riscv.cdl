@@ -175,6 +175,26 @@ module vcu108_riscv( clock clk,
     net t_sram_access_req  rv_sram_access_req;
     net t_sram_access_resp rv_sram_access_resp;
 
+    net  t_sram_access_req  tx_sram_access_req  "SRAM access request";
+    net  t_sram_access_req  rx_sram_access_req  "SRAM access request";
+    clocked t_sram_access_resp rx_sram_access_resp ={*=0} "SRAM access response";
+    net bit[32] rx_sram_read_data;
+    clocked t_sram_access_req  rx_current_sram_access={*=0}  "SRAM access request";
+    clocked t_sram_access_resp tx_sram_access_resp ={*=0} "SRAM access response";
+    net bit[32] tx_sram_read_data;
+    clocked t_sram_access_req  tx_current_sram_access={*=0}  "SRAM access request";
+    net t_axi4s32 rx_axi4s;
+    net bit       rx_axi4s_tready;
+    net t_axi4s32 tx_axi4s;
+    net bit       tx_axi4s_tready;
+    comb t_tbi_valid tbi_rx;
+    net bit[4] sgmii_txd_r;
+    net bit gmii_rx_enable;
+    net t_gmii_rx gmii_rx;
+    net t_gmii_tx gmii_tx;
+    net bit gmii_tx_enable;
+    net t_sgmii_gasket_status sgmii_gasket_status;
+
     clocked t_vcu108_inputs vcu108_inputs_r = {*=0};
     clocked bit[16] counter=0;
     clocked bit last_second_toggle=0;
@@ -620,25 +640,6 @@ module vcu108_riscv( clock clk,
     }
 
     /*b Ethernet */
-    net  t_sram_access_req  tx_sram_access_req  "SRAM access request";
-    net  t_sram_access_req  rx_sram_access_req  "SRAM access request";
-    clocked t_sram_access_resp rx_sram_access_resp ={*=0} "SRAM access response";
-    net bit[32] rx_sram_read_data;
-    clocked t_sram_access_req  rx_current_sram_access={*=0}  "SRAM access request";
-    clocked t_sram_access_resp tx_sram_access_resp ={*=0} "SRAM access response";
-    net bit[32] tx_sram_read_data;
-    clocked t_sram_access_req  tx_current_sram_access={*=0}  "SRAM access request";
-    net t_axi4s32 rx_axi4s;
-    net bit       rx_axi4s_tready;
-    net t_axi4s32 tx_axi4s;
-    net bit       tx_axi4s_tready;
-    comb t_tbi_valid tbi_rx;
-    net bit[4] sgmii_txd_r;
-    net bit gmii_rx_enable;
-    net t_gmii_rx gmii_rx;
-    net t_gmii_tx gmii_tx;
-    net bit gmii_tx_enable;
-    net t_sgmii_gasket_status sgmii_gasket_status;
     ethernet : {
         se_sram_srw_16384x32_we8 rx_mem(sram_clock <- clk,
                                      select         <= rx_sram_access_req.valid && rx_sram_access_resp.ack,
