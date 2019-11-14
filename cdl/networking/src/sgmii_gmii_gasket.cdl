@@ -1343,11 +1343,15 @@ if (request) {
             }
         }
         sgmii_gasket_status.an_config <= gmii_rx_state.rx_config_data;
+        sgmii_gasket_status.an_state       <= 0;
+        sgmii_gasket_status.an_state[3;0]  <= gmii_an_state.fsm_state;
+        sgmii_gasket_status.an_state[6;3]  <= gmii_rx_state.rx_config_data_match;
 
-        if (sgmii_gasket_control.write_config) {
+        if (sgmii_gasket_control.write_config && !sgmii_gasket_control_r.write_config) {
             sgmii_gasket_control_r <= sgmii_gasket_control;
             sgmii_gasket_control_write_toggle <= !sgmii_gasket_control_write_toggle;
-        }       
+        }
+        sgmii_gasket_control_r.write_config <= sgmii_gasket_control.write_config;
     }
     
     /*b Rx GMII domain logging */

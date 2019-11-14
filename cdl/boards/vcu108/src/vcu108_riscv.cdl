@@ -737,14 +737,14 @@ module vcu108_riscv( clock clk,
     }
 
     /*b SGMII RX clock domain debug */
-    default clock sgmii_tx_clk;
-    default reset active_low sgmii_tx_reset_n;
+    default clock sgmii_rx_clk;
+    default reset active_low sgmii_rx_reset_n;
     clocked bit[64] sgmii_sr = 0;
     clocked bit[64] sgmii_data = 0;
     clocked bit[8] sgmii_divider_reset_delay = 0;
     sgmii_rx_debug : {
         sgmii_sr       <= sgmii_sr>>4;
-        sgmii_sr[4;60] <= sgmii_txd;
+        sgmii_sr[4;60] <= sgmii_rxd;
 
         if (sgmii_divider_reset_delay[0]) { // Capture data for display a number of clock ticks after reset so it is stable
             full_switch (vcu108_inputs.switches[2;1]) {
@@ -760,8 +760,9 @@ module vcu108_riscv( clock clk,
     
     /*b Stub out unused outputs and all done */
     stubs : {
-        if (!sgmii_gasket_status.rx_sync) { per_sec_counters[0] <= per_sec_counters[0] + 32h10000; }
-        per_sec_counters[0][16;0] <= sgmii_gasket_status.an_config;
+        if (!sgmii_gasket_status.rx_sync) { per_sec_counters[0] <= per_sec_counters[0] + (32h1<<28); }
+        per_sec_counters[0][16;0]  <= sgmii_gasket_status.an_config;
+        per_sec_counters[0][12;16] <= sgmii_gasket_status.an_state[12;0];
         per_sec_counters[1] <= sgmii_data[32;0];
         per_sec_counters[2] <= sgmii_data[32;32];
             
@@ -815,7 +816,7 @@ module vcu108_riscv( clock clk,
         uart_rx.rxd = vcu108_inputs.uart_rx.rxd;
         vcu108_outputs.uart_tx.txd = dprintf_uart_txd;
         vcu108_outputs.uart_tx.cts = 0;
-        if (vcu108_inputs_r.switches[1]) {
+        if (!vcu108_inputs_r.switches[0]) {
             vcu108_outputs.uart_tx= uart_tx;
         }
     }

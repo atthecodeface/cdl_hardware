@@ -172,6 +172,7 @@ cdl cdl/networking/src           decode_8b10b           inc:cdl/inc
 cdl cdl/networking/src           encode_8b10b           inc:cdl/inc
 cdl cdl/networking/src           gbe_axi4s32            inc:cdl/inc
 cdl cdl/networking/src           sgmii_gmii_gasket      inc:cdl/inc
+cdl cdl/networking/src           sgmii_transceiver      inc:cdl/inc
 cdl cdl/networking/tb_src        tb_sgmii               inc:cdl/inc
 cdl cdl/networking/tb_src        tb_gbe                 inc:cdl/inc
 
