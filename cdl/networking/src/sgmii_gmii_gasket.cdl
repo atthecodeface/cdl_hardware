@@ -307,6 +307,7 @@ typedef struct {
     bit[6]  rx_config_data_match  "Shift register with all bits set if 3 consecutive cfg have produced the same cfg data";
     bit     rx_ability_match      "Asserted if rx_config_data_match had all bits set";
     bit     rx_acknowledge_match  "Asserted if rx_config_data_match had all bits set and rx_config_data[14] (ack) is set";
+bit[8] debug_count;
 } t_gmii_rx_state;
 
 /*a Module
@@ -1235,10 +1236,11 @@ if (request) {
         }
         case gmii_rx_action_idle_d: { // from k
             gmii_rx_state.fsm_state <= gmii_rx_fsm_idle_d;
+            gmii_rx_state.debug_count <= gmii_rx_state.debug_count+1;
             gmii_rx_state.gmii_rx.rx_er <= 0;
             gmii_rx_state.gmii_rx.rx_dv <= 0;
             gmii_rx_state.disparity <= 0; // After idle disparity must be -ve
-            gmii_rx_state.rx_config_data_match <= 0; // clear cfg as we have for sure had idle
+            gmii_rx_state.rx_config_data_match <= 2; // clear cfg as we have for sure had idle
         }
         case gmii_rx_action_cfg_a: { // from k
             gmii_rx_state.fsm_state <= gmii_rx_fsm_cfg_b;
@@ -1346,6 +1348,7 @@ if (request) {
         sgmii_gasket_status.an_state       <= 0;
         sgmii_gasket_status.an_state[3;0]  <= gmii_an_state.fsm_state;
         sgmii_gasket_status.an_state[6;3]  <= gmii_rx_state.rx_config_data_match;
+        sgmii_gasket_status.an_state[8;9]  <= gmii_rx_state.debug_count;
 
         if (sgmii_gasket_control.write_config && !sgmii_gasket_control_r.write_config) {
             sgmii_gasket_control_r <= sgmii_gasket_control;

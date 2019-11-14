@@ -17,6 +17,7 @@
  *
  */
 /*a Includes */
+include "types/ethernet.h"
 include "boards/vcu108.h"
 include "boards/vcu108/vcu108_generic.h"
 
@@ -56,6 +57,8 @@ module tb_vcu108_generic( clock clk,
     default reset active_low reset_n;
     clocked t_mem_flash_in flash_in={*=0};
     net bit[4] sgmii_txd;
+    net     t_sgmii_transceiver_control sgmii_transceiver_control;
+    clocked t_sgmii_transceiver_status  sgmii_transceiver_status ={*=0};
 
     /*b Instantiations */
     instantiations: {
@@ -89,11 +92,14 @@ module tb_vcu108_generic( clock clk,
                              sgmii_rx_clk      <- sgmii_rx_clk,
                              sgmii_rx_reset_n  <= reset_n,
                              sgmii_rxd         <= sgmii_txd,
+                             sgmii_transceiver_control => sgmii_transceiver_control,
+                             sgmii_transceiver_status <= sgmii_transceiver_status,
 
                              flash_clk <- flash_clk,
                              flash_in <= flash_in
 
             );
+        sgmii_transceiver_status <= {*=0};
         flash_in <= {*=0};
 
     }

@@ -1,3 +1,4 @@
+include "types/ethernet.h"
 include "types/dprintf.h"
 include "types/video.h"
 include "types/memories.h"
@@ -22,6 +23,8 @@ module vcu108_generic( clock clk,
                        clock     sgmii_rx_clk     "Four-bit receive serializing data clock (312.5MHz)",
                        input bit sgmii_rx_reset_n "Reset deasserting sync to sgmii_rx_clk",
                        input bit[4] sgmii_rxd     "Oldest bit in rxd[0]",
+                       output  t_sgmii_transceiver_control sgmii_transceiver_control  "Control of transceiver, on sgmii_rx_clk",
+                       input t_sgmii_transceiver_status    sgmii_transceiver_status   "Status from transceiver, on sgmii_rx_clk",
 
                        clock flash_clk,
                        input t_mem_flash_in flash_in,
@@ -40,6 +43,8 @@ module vcu108_generic( clock clk,
     timing to   rising clock sgmii_tx_clk sgmii_tx_reset_n;
     timing from rising clock sgmii_tx_clk sgmii_txd;
     timing to   rising clock sgmii_rx_clk sgmii_rx_reset_n, sgmii_rxd;
+    timing from rising clock sgmii_rx_clk sgmii_transceiver_control;
+    timing to   rising clock sgmii_rx_clk sgmii_transceiver_status;
 
     timing to   rising clock flash_clk flash_in;
     timing from rising clock flash_clk flash_out;
