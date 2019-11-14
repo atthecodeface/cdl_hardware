@@ -1,0 +1,164 @@
+/** @copyright (C) 2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   sgmii_transceiver.cdl
+ * @brief  (Xilinx) SGMII transceiver for verilog only
+ *
+ */
+/*a Includes */
+include "types/io.h"
+include "types/clocking.h"
+include "types/ethernet.h"
+include "clocking/clocking_modules.h"
+include "technology/sync_modules.h"
+include "technology/serdes_modules.h"
+
+/*a Constants
+*/
+
+/*a Types */
+
+/*a Module
+*/
+/*m sgmii_transceiver */
+module sgmii_transceiver( clock tx_clk_serial  "Serial transmit clock (for ddr serial data, half the data bit rate)",
+                          clock tx_clk_312_5   "Four-bit transmit serializing data clock, half the ddr clock rate",
+                          clock rx_clk_serial  "Serial receive clock (for ddr serial data, half the data bit rate)",
+                          clock rx_clk_312_5   "Four-bit receive serializing data clock, half the ddr clock rate",
+                          input bit reset_n  "  Reset asynchronously deasserted",
+
+                          input  bit[4] sgmii_txd "Four-bit wide SGMII data, oldest data in bit 3",
+                          output  t_io_diff sgmii__txd,
+                          
+                          input   t_io_diff sgmii__rxd,
+                          output bit[4] sgmii_rxd "Four-bit wide SGMII data, oldest data in bit 3",
+                          input bit sgmii_rxclk    "Clock (as a data bit) to which sgmii__rxd is frequency locked",
+
+                          input  t_sgmii_transceiver_control transceiver_control  "Control of transceiver, on rx_clk_312_5",
+                          output t_sgmii_transceiver_status  transceiver_status   "Status from transceiver, on rx_clk_312_5"
+    )
+/*b Documentation */
+"""
+This module instantiates technology dependent modules for bit data serialization and deserialization
+
+It also instantiates for the VCU108 board a clock phase length monitor and serial receive data delay
+modules with eye tracker that keep the receive data synchronized given an rx clock that is frequency
+locked to the receive bitstream.
+"""
+/*b Module body */
+{
+    /*b Nets to shadow ports */
+    net t_io_diff sgmii__txd;
+    net bit[4]    sgmii_rxd;
+    
+    /*b Nets for the clock phase measurement and eye tracking */
+    net t_bit_delay_config   delay_config_cpm;
+    net t_bit_delay_config   delay_config_cet;
+    net bit[4] sgmii_rxd_tracker;
+    net bit cdp_delay_out;
+    net bit cdp_delay_out_sync;
+    default clock rx_clk_312_5;
+    default reset active_low reset_n;
+    clocked t_bit_delay_response delay_response_cpm = {op_ack=1, delay_value=0, sync_value=0};
+    clocked t_bit_delay_response delay_response_cet = {op_ack=1, delay_value=0, sync_value=0};
+    clocked t_phase_measure_request measure_request = {valid=1};
+    clocked t_eye_track_request  eye_track_request  = {*=0};
+    net t_phase_measure_response measure_response;
+    net t_eye_track_response eye_track_response;
+    comb bit mr_okay;
+    
+    /*b Serialize / deserialize */
+    serializers : {
+        /*b Serializer for tx */
+        diff_ddr_serializer4 txd( clk      <- tx_clk_serial,
+                                  clk_div2 <- tx_clk_312_5,
+                                  reset_n <= reset_n,
+                                  data <= sgmii_txd,
+                                  pin => sgmii__txd );
+        /*b Deserializer for tx */
+        diff_ddr_deserializer4 rxd( clk      <- rx_clk_serial,
+                                    clk_div2 <- rx_clk_312_5,
+                                    reset_n <= reset_n,
+                                    pin     <= sgmii__rxd,
+                                    data    => sgmii_rxd,
+                                    tracker => sgmii_rxd_tracker,
+                                    delay_config <= delay_config_cet );
+    }
+    
+    /*b Clock phase measurement and eye tracker delay control
+      This is more techonology dependent
+     */
+    clock_phase_and_rx_eye_tracking : {
+        // cascaded_delay_pair used for measuring the delay taps of a single phase of sgmii_rxclk
+        cascaded_delay_pair cdp( clk           <- rx_clk_312_5, // Clock to which the delay controls are related
+                                 reset_n       <= reset_n,
+                                 delay_config  <= delay_config_cpm,
+                                 data_in       <= sgmii_rxclk,
+                                 data_out      => cdp_delay_out
+                           );
+        tech_sync_bit cdp_delay_sync( clk <- rx_clk_312_5,
+                                      reset_n <= reset_n,
+                                      d <= cdp_delay_out,
+                                      q => cdp_delay_out_sync );
+        delay_response_cpm <= {op_ack=1, delay_value=0, sync_value=cdp_delay_out_sync};
+        delay_response_cet <= {op_ack=1, delay_value=0, sync_value=0};
+        clocking_phase_measure cpm( clk              <- rx_clk_312_5,
+                                    reset_n          <= reset_n,
+                                    delay_config     => delay_config_cpm,
+                                    delay_response   <= delay_response_cpm,
+                                    measure_request  <= measure_request,
+                                    measure_response => measure_response );
+
+        clocking_eye_tracking cet( clk                <- rx_clk_312_5,
+                                   data_clk           <- rx_clk_312_5,
+                                   reset_n            <= reset_n,
+                                   data_p_in          <= sgmii_rxd,
+                                   data_n_in          <= sgmii_rxd_tracker,
+                                   delay_config       => delay_config_cet,
+                                   delay_response     <= delay_response_cet,
+                                   eye_track_request  <= eye_track_request,
+                                   eye_track_response => eye_track_response );
+
+    }
+
+    /*b Measure request, eye track request
+     */
+    blah : {
+        mr_okay = 0;
+        if (measure_response.valid) {
+            if (measure_response.delay>16) {
+                mr_okay = 1;
+            }
+        }
+        measure_request.valid <= 1; // Always run the clock phase measurement
+        eye_track_request.seek_enable   <= 1;
+        eye_track_request.track_enable  <= 1;
+        eye_track_request.min_eye_width <= 16;
+
+        // Once we have a valid measurement (or N?) or until someone tells us not to (?), enable
+        if (mr_okay) {
+            eye_track_request.enable        <= 1;
+            eye_track_request.measure       <= 1;
+            eye_track_request.phase_width   <= measure_response.delay;
+        }
+        if (measure_response.ack) {
+            eye_track_request.measure       <= 0;
+        }
+
+        transceiver_status.measure_response   = measure_response;
+        transceiver_status.eye_track_response = eye_track_response;
+    }
+    
+    /*b All done */
+}
+

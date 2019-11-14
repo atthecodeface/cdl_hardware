@@ -17,6 +17,10 @@
  *
  */
 
+/*a Includes */
+include "types/clocking.h"
+
+/*a Types */
 /*t t_gmii_tx */
 typedef struct {
     bit tx_en;
@@ -54,6 +58,7 @@ typedef struct {
     bit rx_sync_toggle;
     bit[32] rx_symbols_since_sync;
     bit[16] an_config "Autonegotiation configuration";
+    bit[32] an_state;
 } t_sgmii_gasket_status;
 
 /*t t_sgmii_gasket_control */
@@ -62,3 +67,14 @@ typedef struct {
     bit[4]  write_address;
     bit[32] write_data;
 } t_sgmii_gasket_control;
+
+/*t t_sgmii_transceiver_status */
+typedef struct {
+    t_phase_measure_response measure_response;
+    t_eye_track_response     eye_track_response;
+} t_sgmii_transceiver_status;
+
+/*t t_sgmii_transceiver_control */
+typedef struct {
+    bit     valid;
+} t_sgmii_transceiver_control;
