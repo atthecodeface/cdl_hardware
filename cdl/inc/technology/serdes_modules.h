@@ -34,6 +34,7 @@ extern module diff_ddr_serializer4( clock clk             "Serial clock (as requ
 /*m diff_ddr_deserializer4 */
 extern module diff_ddr_deserializer4( clock clk              "Serial clock (as required by technology, maybe data/2)",
                                       clock clk_div2         "Clock for 4-bit wide data",
+                                      clock clk_delay        "Clock for delay control",
                                       input bit reset_n      "Active low reset",
                                       input t_io_diff pin    "Pin in",
                                       input t_bit_delay_config   delay_config   "Delay configuration for data",
@@ -43,8 +44,8 @@ extern module diff_ddr_deserializer4( clock clk              "Serial clock (as r
 {
     timing to   rising clock clk pin;
     timing from rising clock clk_div2 data, tracker;
-    timing to   rising clock clk_div2 delay_config;
-    timing from rising clock clk_div2 delay_response;
+    timing to   rising clock clk_delay delay_config;
+    timing from rising clock clk_delay delay_response;
 }
 
 extern module cascaded_delay_pair( clock clk              "Clock to control delay",

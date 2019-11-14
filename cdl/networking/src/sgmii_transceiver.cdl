@@ -86,8 +86,9 @@ locked to the receive bitstream.
                                   data <= sgmii_txd,
                                   pin => sgmii__txd );
         /*b Deserializer for tx */
-        diff_ddr_deserializer4 rxd( clk      <- rx_clk_serial,
-                                    clk_div2 <- rx_clk_312_5,
+        diff_ddr_deserializer4 rxd( clk       <- rx_clk_serial,
+                                    clk_div2  <- rx_clk_312_5,
+                                    clk_delay <- rx_clk_312_5,
                                     reset_n <= reset_n,
                                     pin     <= sgmii__rxd,
                                     data    => sgmii_rxd,
