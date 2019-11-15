@@ -1,0 +1,574 @@
+/** @copyright (C) 2004-2019,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_target_analyzer.cdl
+ * @brief  A generic valid/ack multiplexer to combine buses with valid/ack protocol
+ *
+ * Imported from the Embisi-gip analyzer module
+ *
+ * CDL implementation of a module that takes a pair of input request
+ * types, each of which has an individual @ack response signal, and it
+ * combines them with a round-robin arbiter to a single request out.
+ */
+/*a To add
+ action on pass - store type as well as 'go to state'
+ action on fail - store type as well as 'go to state'
+ invert trigger
+ syncs on trigger enable and reset
+ */
+
+/*a Includes
+ */
+include "srams.h"
+
+/*a Constants
+ */
+constant integer analyzer_signal_width = 32;
+constant integer analyzer_trigger_signal_width = 32;
+constant integer analyzer_trigger_counter_width = 16;
+constant integer analyzer_trigger_depth_log = 2;
+constant integer analyzer_trigger_depth = 4;
+constant integer analyzer_ram_depth_log = 11; // 2048 by 32 for the RAM sounds good
+
+/*a Types */
+/*t t_analyzer_action
+ */
+typedef enum [3]
+{
+    analyzer_action_idle,                           // H Store nothing, and do not touch counter
+    analyzer_action_reset_counter,                  // L Store nothing, and reset counter to 1, stay in current stage
+    analyzer_action_store_signal_and_transition,    // M Store signal value and transition immediately
+    analyzer_action_store_signal_and_reside,        // H Store signal value and transition if counter matches residence time
+    analyzer_action_store_time_and_reside,          // L Store time of occurrence (cycles since trigger_reset went away) and trigger signals, transition if counter matches residence time
+    analyzer_action_store_time_and_transition,      // H Store time of occurrence (cycles since trigger_reset went away) and trigger signals and transition
+    analyzer_action_store_residence_and_transition, // M Store residence time and transition
+    analyzer_action_end,                            // H Store nothing, disable trace
+//    analyzer_action_compress,
+} t_analyzer_action;
+
+/*t t_trigger_store_type
+ */
+typedef enum [2]
+{
+    trigger_store_type_none,
+    trigger_store_type_signal,
+    trigger_store_type_time,
+    trigger_store_type_residence
+} t_trigger_store_type;
+
+/*t t_analyzer_trigger
+ */
+typedef struct
+{
+    bit[analyzer_trigger_signal_width] mask     "Mask for incoming signal bits";
+    bit[analyzer_trigger_signal_width] compare  "Value the masked signal should be to match";
+    bit[analyzer_trigger_counter_width] counter "Number of cycles that the masked signal should match; ==0 means only leave if false";
+    bit[analyzer_trigger_depth_log] if_false    "State to enter if masked value does not match";
+    bit[analyzer_trigger_depth_log] if_true     "State to enter if masked value matched for cycle given by 'counter'";
+    t_analyzer_action action_if_true "Action to take whilst in this state and true";
+    t_analyzer_action action_if_false "Action to take whilst in this state and true";
+} t_analyzer_trigger;
+
+/*a Module
+ */
+module apb_target_analyzer( clock analyzer_clock,
+                 clock output_clock,
+                 clock apb_clock,
+
+                 input bit analyzer_reset,
+
+                 input bit[3] apb_paddr,
+                 input bit apb_penable,
+                 input bit apb_pselect,
+                 input bit[32] apb_pwdata,
+                 input bit apb_prnw,
+                 output bit[32] apb_prdata,
+                 output bit apb_pwait,
+
+                 output bit trace_ready,
+                 output bit trace_done,
+
+                 output bit[32]analyzer_mux_control,
+                 input bit[analyzer_signal_width]internal_signal_in,
+
+                 input bit ext_trigger_reset,
+                 input bit ext_trigger_enable,
+
+                 input bit async_trace_read_enable,
+                 output bit async_trace_valid_out,
+                 output bit[analyzer_signal_width] async_trace_out )
+"""
+There are two operational modes for the analyzer:
+
+1) capture continuously
+2) capture until full
+
+The first runs with a circular buffer; if it ever gets full, then it stays full and drags its read pointer round with its write pointer.
+
+The second runs continuously; if it ever gets full, then the analyzer just stops.
+
+The analyzer should not be reset from the standard system reset, but from a separate reset circuit so that the pointers do not get cleared.
+
+The mask/compare logic is:
+match if... ((input&mask)==(compare&mask)) && ((input&(compare&~mask))!=0)
+i.e. all bits of input which have mask set must batch compare AND
+     at least one bit of input with mask clear and compare set
+
+The trigger is basically a number of identical stages.
+Each stage has a mask/compare value for the trigger input signals, and a residence counter for the stage.
+If the trigger inputs match then the action is performed AND..
+  if the residence time has been met then move to the 'if_true' trigger stage
+If the trigger inputs do not match then the 'if_false' path is followed and the action is NOT performed
+
+So a simple PC or address capture can be set up to trigger on a particular breakpoint
+ (stage 0 wait for the breakpoint, action store, if true stage 1, if false stage 0, residence 1)
+and then store data until the FIFO is full
+ (stage 1 mask 0, value 0, action store, residence 0->forever)
+
+Or you can capture the trace of 512 points after the PC trigger...
+ (stage 0 wait for the breakpoint, action store, if true stage 1, if false stage 0, residence 1)
+and then store 512 points
+ (stage 1 mask 0, value 0, action store, residence 512, if true stage 2)
+and then stop
+ (stage 2 mask 0, value 0, action end, residence 0->forever, if true stage 2)
+
+Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) could become:
+ 'reside here then goto stage n' -> inc counter until residence met then go to stage, 
+ 'goto stage n' -> go to stage n independent of counter (and reset counter)
+ 'pause here' -> don't change counter, perhaps go to stage 'n'
+ 'end' -> end trigger
+"""
+
+{
+    /*b Default clock and reset
+     */
+    default clock analyzer_clock;
+    default reset analyzer_reset;
+
+    /*b Outputs for the async interface
+     */
+    clocked clock output_clock bit async_trace_valid_out = 0;
+    clocked clock output_clock bit[analyzer_signal_width] async_trace_out = 0;
+
+    /*b APB interface
+     */
+    clocked clock apb_clock bit apb_trigger_reset = 0;
+    clocked clock apb_clock bit apb_trigger_enable = 0;
+    clocked clock apb_clock bit[analyzer_trigger_depth_log] apb_trigger_stage = 0;
+    clocked clock apb_clock bit[32] analyzer_mux_control = 0;
+    clocked clock apb_clock bit apb_trace_readback = 0; // asserted if APB should read data from circular buffer
+    clocked clock apb_clock bit[32] apb_trace_data = 0;
+    clocked clock apb_clock bit apb_trace_valid = 0;
+    comb bit apb_read_trace;
+
+    /*b Synchronize and read out of FIFO to APB
+     */
+    clocked clock apb_clock bit apb_valid_sync_0 = 0;
+    clocked clock apb_clock bit apb_valid_sync_1 = 0;
+    clocked clock apb_clock bit apb_last_valid_sync_1 = 0;
+    clocked clock apb_clock bit apb_trace_req = 0;
+
+    /*b Trigger
+     */
+    clocked clock apb_clock t_analyzer_trigger[analyzer_trigger_depth] trigger = { { mask=0, compare=0, counter=0, if_false=0, if_true=0, action_if_false=analyzer_action_idle, action_if_true=analyzer_action_idle } };
+    clocked bit trigger_reset = 0;
+    clocked bit trigger_enable = 0;
+    clocked bit trigger_done = 0;
+    clocked bit trigger_circular = 0;
+    clocked bit[analyzer_trigger_depth_log] trigger_stage = 0;
+    clocked bit[analyzer_trigger_counter_width] trigger_residence = 1;
+    clocked bit[24] trigger_time=0;
+    comb bit[analyzer_trigger_signal_width] trigger_mask;
+    comb bit[analyzer_trigger_signal_width] trigger_compare;
+    comb bit trigger_match;
+    comb t_analyzer_action trigger_action;
+    comb bit trigger_transition;
+    comb bit trigger_hold_counter;
+    comb bit trigger_reset_counter;
+    comb bit trigger_residence_expired;
+    comb bit action_trigger_end;
+    comb t_trigger_store_type trigger_store_type;
+
+    /*b Register incoming data and store in FIFO
+     */
+    clocked bit[analyzer_signal_width] buffered_input = 0;
+    clocked bit[analyzer_ram_depth_log] write_ptr = 0;
+
+    /*b Read out of FIFO
+     */
+    clocked bit[analyzer_ram_depth_log] read_ptr = 0;
+    clocked bit fifo_reading = 0;
+    net bit[analyzer_signal_width] fifo_read_data;
+    clocked bit[analyzer_signal_width] buffered_read_data=0;
+    comb bit fifo_empty;
+    comb bit fifo_full;
+    comb bit fifo_write;
+    comb bit[analyzer_signal_width] fifo_write_data;
+    comb bit fifo_read;
+    comb bit fifo_end_trigger;
+    comb bit fifo_inc_read_ptr;
+    clocked bit int_req_sync_0 = 0;
+    clocked bit int_req_sync_1 = 0;
+    clocked bit valid = 0;
+
+    /*b Synchronize and read out of FIFO to our async read port
+     */
+    clocked clock output_clock bit async_out_valid_sync_0 = 0;
+    clocked clock output_clock bit async_out_valid_sync_1 = 0;
+    clocked clock output_clock bit async_out_last_valid_sync_1 = 0;
+    clocked clock output_clock bit async_trace_req = 0;
+
+    /*b Signal path logic
+     */
+    signal_path "Signal path logic":
+        {
+            buffered_input <= internal_signal_in;
+        }
+
+    /*b Overall control
+     */
+    overall_control "Overall control":
+        {
+            trigger_reset <= ext_trigger_reset || apb_trigger_reset;
+            if (trigger_reset)
+            {
+                trigger_done <= 0;
+                trigger_time <= 0;
+            }
+            if ((!trigger_done) && (ext_trigger_enable || apb_trigger_enable))
+            {
+                trigger_enable <= 1;
+            }
+            if (fifo_end_trigger || action_trigger_end)
+            {
+                trigger_enable <= 0;
+                trigger_done <= 1;
+            }
+            if (trigger_enable)
+            {
+                trigger_time <= trigger_time+1;
+            }
+        }
+
+    /*b Trigger logic
+     */
+    trigger_logic "Trigger logic":
+        {
+            trigger_mask = trigger[trigger_stage].mask;
+            trigger_compare = trigger[trigger_stage].compare;
+            trigger_match = 1;
+            if ((buffered_input[analyzer_trigger_signal_width;0]&trigger_mask)!=(trigger_compare&trigger_mask))
+            {
+                trigger_match = 0;
+            }
+            if ( ((trigger_compare&~trigger_mask)!=0) && ((buffered_input[analyzer_trigger_signal_width;0]&(trigger_compare&~trigger_mask))==0) )
+            {
+                trigger_match = 0;
+            }
+
+            trigger_action = analyzer_action_idle;
+            if (trigger_match)
+            {
+                trigger_action = trigger[trigger_stage].action_if_true;
+            }
+            else
+            {
+                trigger_action = trigger[trigger_stage].action_if_false;
+            }
+            trigger_transition = 0;
+            trigger_hold_counter = 0;
+            trigger_reset_counter = 0;
+            trigger_residence_expired = ( (trigger[trigger_stage].counter==0) || (trigger[trigger_stage].counter==trigger_residence) );
+            trigger_store_type = trigger_store_type_none;
+            action_trigger_end = 0;
+            full_switch (trigger_action)
+                {
+                case analyzer_action_idle: // can be used for if_false with if_true of 'store and reside' to capture 'n', not necessarily successive
+                {
+                    trigger_hold_counter = 1;
+                }
+                case analyzer_action_reset_counter: // can be used for if_false with if_true of 'store and reside' for triggering on 'n' in a row - use with circular buffer
+                {
+                    trigger_reset_counter = 1; // reset counter for 'n' in a row
+                }
+                case analyzer_action_store_signal_and_transition: // can be used for if_false with if_true of 'store and reside' for bailing out of a 'n' in a row
+                {
+                    trigger_transition = 1;
+                    trigger_store_type = trigger_store_type_signal;
+                }
+                case analyzer_action_store_signal_and_reside:
+                {
+                    trigger_transition = (trigger_residence_expired);
+                    trigger_store_type = trigger_store_type_signal;
+                }
+                case analyzer_action_store_time_and_transition:
+                {
+                    trigger_transition = 1;
+                    trigger_store_type = trigger_store_type_time;
+                }
+                case analyzer_action_store_time_and_reside:
+                {
+                    trigger_transition = (trigger_residence_expired);
+                    trigger_store_type = trigger_store_type_time;
+                }
+                case analyzer_action_store_residence_and_transition:
+                {
+                    trigger_transition = 1;
+                    trigger_store_type = trigger_store_type_residence;
+                }
+                case analyzer_action_end:
+                {
+                    action_trigger_end = 1;
+                }
+                }
+            if (trigger_transition)
+            {
+                trigger_reset_counter = 1;
+            }
+            if (trigger_reset_counter)
+            {
+                trigger_residence <= 1;
+            }
+            elsif (trigger_hold_counter)
+            {
+                trigger_residence <= trigger_residence;
+            }
+            else
+            {
+                trigger_residence <= trigger_residence+1;
+            }
+            if (trigger_transition)
+            {
+                if (trigger_match)
+                {
+                    trigger_stage <= trigger[trigger_stage].if_true;
+                }
+                else
+                {
+                    trigger_stage <= trigger[trigger_stage].if_false;
+                }
+            }
+            if (!trigger_enable)
+            {
+                trigger_stage <= 0;
+                trigger_residence <= 1;
+                trigger_store_type = trigger_store_type_none;
+                action_trigger_end = 0;
+            }
+        }
+
+    /*b Store data in our FIFO depending on action, and read it out
+     */
+    store_data "Store data in FIFO and read out":
+        {
+            int_req_sync_0 <= async_trace_req | apb_trace_req;
+            int_req_sync_1 <= int_req_sync_0;
+            if (!int_req_sync_1)
+            {
+                valid <= 0;
+            }
+            if (fifo_reading)
+            {
+                valid <= 1;
+                buffered_read_data <= fifo_read_data;
+            }
+
+            fifo_full = ((write_ptr+1)==read_ptr);
+            fifo_empty = (read_ptr==write_ptr);
+
+            fifo_write=0; // assert if action indicates store, but if not running as a circular buffer and full then ignore the action
+            fifo_read = 0; // assert if read request and not empty
+            fifo_inc_read_ptr = 0; // assert if writing when full and circular buffer, or if reading
+            fifo_end_trigger = 0; // assert if action indicates store and full and not running as a circular buffer
+
+            fifo_write_data = buffered_input;
+            if (trigger_store_type != trigger_store_type_none)
+            {
+                if (fifo_full)
+                {
+                    if (trigger_circular)
+                    {
+                        fifo_write = 1;
+                        fifo_inc_read_ptr = 1;
+                    }
+                    else
+                    {
+                        fifo_write = 0;
+                        fifo_end_trigger = 1;
+                    }
+                }
+                else
+                {
+                    fifo_write = 1;
+                }
+                fifo_write_data = buffered_input;
+                part_switch( trigger_store_type )
+                    {
+                    case trigger_store_type_signal: {fifo_write_data = buffered_input;}
+                    case trigger_store_type_time: {fifo_write_data[24;0] = trigger_time;}
+                    case trigger_store_type_residence: {fifo_write_data[16;0] = trigger_residence;}
+                    }
+            }
+
+            if ( (int_req_sync_1) && (!valid) && (!fifo_reading) && (!fifo_empty) )
+            {
+                fifo_read = 1;
+                fifo_inc_read_ptr = 1;
+            }
+
+            fifo_reading <= 0;
+            if (fifo_read)
+            {
+                fifo_reading <= 1;
+            }
+
+            if (fifo_inc_read_ptr)
+            {
+                read_ptr <= read_ptr+1;
+            }
+            if (fifo_write)
+            {
+                write_ptr <= write_ptr+1;
+            }
+            if (trigger_reset)
+            {
+                write_ptr <= 0;
+                read_ptr <= 0;
+            }
+
+            se_sram_mrw_2_2048x32 trace_sram( sram_clock_0 <- analyzer_clock,
+                                              select_0         <= fifo_write,
+                                              read_not_write_0 <= 0,
+                                              write_data_0     <= fifo_write_data,
+                                              // data_out_0 =>,
+                                              sram_clock_1 <- analyzer_clock,
+                                              select_1         <= fifo_read,
+                                              read_not_write_1 <= 1,
+                                              write_data_1     <= 0,
+                                              data_out_1       => fifo_read_data );
+        }
+
+    /*b Trace readout (async interface)
+     */
+    async_trace_readout "Async trace readout":
+        {
+            async_out_valid_sync_0 <= valid;
+            async_out_valid_sync_1 <= async_out_valid_sync_0;
+            async_out_last_valid_sync_1 <= async_out_valid_sync_1;
+
+            async_trace_valid_out <= 0;
+            async_trace_req <= async_trace_read_enable;
+            if (async_out_valid_sync_1 && !async_out_last_valid_sync_1)
+            {
+                async_trace_out <= buffered_read_data;
+                async_trace_valid_out <= 1; // valid_out is only asserted for one clock tick after we get the valid signal synced
+            }
+            if (async_out_valid_sync_1)
+            {
+                async_trace_req <= 0; // valid is high after each req until we take req away; so we take it away here, and eventually our synced valid will be low, and we can represent
+            }
+        }
+
+    /*b APB write interface
+     */
+    apb_interface "APB interface":
+        {
+            apb_prdata = 0;
+            apb_pwait = 0;
+            if (apb_pselect && !apb_prnw && apb_penable)
+            {
+                part_switch (apb_paddr)
+                    {
+                    case 0:
+                    {
+                        apb_trigger_reset <= apb_pwdata[0];
+                        apb_trigger_enable <= apb_pwdata[1];
+                        apb_trace_readback <= apb_pwdata[2];
+                        trigger_circular <= apb_pwdata[7];
+                        apb_trigger_stage <= apb_pwdata[analyzer_trigger_depth_log;8];
+                    }
+                    case 1:
+                    {
+                        trigger[ apb_trigger_stage ] <= { counter=apb_pwdata[analyzer_trigger_counter_width;0],
+                                                          if_true=apb_pwdata[analyzer_trigger_depth_log;16],
+                                                          action_if_true=apb_pwdata[3;20],
+                                                          if_false=apb_pwdata[analyzer_trigger_depth_log;24],
+                                                          action_if_false=apb_pwdata[3;28] };
+                    }
+                    case 2:
+                    {
+                        trigger[ apb_trigger_stage ].mask <= apb_pwdata[ analyzer_trigger_signal_width; 0];
+                    }
+                    case 3:
+                    {
+                        trigger[ apb_trigger_stage ].compare <= apb_pwdata[ analyzer_trigger_signal_width; 0];
+                    }
+                    case 4:
+                    {
+                        analyzer_mux_control <= apb_pwdata;
+                    }
+                    }
+            }
+            apb_read_trace = 0;
+            if (apb_pselect && apb_prnw)
+            {
+                part_switch (apb_paddr)
+                    {
+                    case 0:
+                    {
+                        apb_prdata[0] = apb_trigger_reset;
+                        apb_prdata[1] = apb_trigger_enable;
+                        apb_prdata[2] = apb_trace_readback;
+                        apb_prdata[3] = apb_trace_valid; // note not stable - need to fix
+                        apb_prdata[4] = trigger_reset;   // note not stable - need to fix
+                        apb_prdata[5] = trigger_enable;  // note not stable - need to fix
+                        apb_prdata[6] = trigger_done;    // note not stable - need to fix
+                        apb_prdata[7] = trigger_circular;
+                        apb_prdata[analyzer_trigger_depth_log;8] = trigger_stage;  // note not stable - need to fix
+                        apb_prdata[analyzer_trigger_counter_width;16] = trigger_residence;  // note not stable - need to fix
+                    }
+                    case 1:
+                    {
+                        apb_prdata = apb_trace_data;
+                        apb_read_trace = apb_penable;
+                    }
+                    }
+            }
+
+            apb_valid_sync_0 <= valid;
+            apb_valid_sync_1 <= apb_valid_sync_0;
+            apb_last_valid_sync_1 <= apb_valid_sync_1;
+
+            apb_trace_req <= apb_trace_readback;
+            if (apb_trace_valid)
+            {
+                apb_trace_req <= 0; // valid is high after each req until we take req away; so we take it away here, and eventually our synced valid will be low, and we can represent
+            }
+
+            if (apb_valid_sync_1 && !apb_last_valid_sync_1)
+            {
+                apb_trace_data <= buffered_read_data;
+                apb_trace_valid <= 1;
+            }
+            if (apb_read_trace || apb_trigger_reset)
+            {
+                apb_trace_valid <= 0;
+            }
+
+            trace_ready = apb_trace_valid;
+            trace_done = trigger_done;
+        }
+
+    /*b Done
+     */
+}

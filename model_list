@@ -195,6 +195,7 @@ cdl cdl/apb/src  apb_target_de1_cl_inputs  inc:cdl/inc
 cdl cdl/apb/src  apb_target_sram_interface   inc:cdl/inc
 cdl cdl/apb/src  apb_target_ps2_host   inc:cdl/inc
 cdl cdl/apb/src  apb_target_axi4s  inc:cdl/inc
+cdl cdl/apb/src  apb_target_analyzer  inc:cdl/inc
 cdl cdl/apb/src  apb_processor  inc:cdl/inc
 cdl cdl/apb/tb_src  tb_apb_processor  inc:cdl/inc
 cdl cdl/apb/tb_src  tb_apb_target_rv_timer  inc:cdl/inc
