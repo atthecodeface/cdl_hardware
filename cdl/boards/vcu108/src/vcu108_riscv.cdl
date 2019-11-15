@@ -93,7 +93,6 @@ module vcu108_riscv( clock clk,
     comb t_apb_request timer_apb_request;
     comb t_apb_request gpio_apb_request;
     comb t_apb_request i2c_apb_request;
-    comb t_apb_request axi4s_apb_request;
     comb t_apb_request uart_apb_request;
     comb t_apb_request dprintf_apb_request;
     comb t_apb_request csr_apb_request;
@@ -101,11 +100,12 @@ module vcu108_riscv( clock clk,
     comb t_apb_request rv_sram_apb_request;
     comb t_apb_request dprintf_uart_apb_request;
     comb t_apb_request riscv_dbg_apb_request;
+    comb t_apb_request axi4s_apb_request;
+    comb t_apb_request anal_apb_request;
 
     net t_apb_response  timer_apb_response;
     net t_apb_response  gpio_apb_response;
     net t_apb_response  i2c_apb_response;
-    net t_apb_response  axi4s_apb_response;
     net t_apb_response  uart_apb_response;
     net t_apb_response  dprintf_apb_response;
     net t_apb_response  csr_apb_response;
@@ -113,6 +113,8 @@ module vcu108_riscv( clock clk,
     net t_apb_response  rv_sram_apb_response;
     net t_apb_response  dprintf_uart_apb_response;
     net t_apb_response  riscv_dbg_apb_response;
+    net t_apb_response  axi4s_apb_response;
+    net t_apb_response  anal_apb_response;
     comb t_apb_response apb_response;
 
     comb t_timer_control timer_control;
@@ -198,6 +200,9 @@ module vcu108_riscv( clock clk,
     clocked t_sgmii_gasket_control sgmii_gasket_control = {*=0};
     net t_sgmii_gasket_status sgmii_gasket_status;
 
+    net bit[32] analyzer_mux_control;
+    clocked bit[32] analyzer_trace = {*=0};
+    
     clocked t_vcu108_inputs vcu108_inputs_r = {*=0};
     clocked bit[16] counter=0;
     clocked bit last_second_toggle=0;
@@ -315,6 +320,7 @@ module vcu108_riscv( clock clk,
         riscv_dbg_apb_request    = apb_request;
         i2c_apb_request          = apb_request;
         axi4s_apb_request        = apb_request;
+        anal_apb_request         = apb_request;
 
         timer_apb_request.paddr        = apb_request.paddr >> 2;
         gpio_apb_request.paddr         = apb_request.paddr >> 2;
@@ -326,6 +332,7 @@ module vcu108_riscv( clock clk,
         riscv_dbg_apb_request.paddr    = apb_request.paddr >> 2;
         i2c_apb_request.paddr          = apb_request.paddr >> 2;
         axi4s_apb_request.paddr        = apb_request.paddr >> 2;
+        anal_apb_request.paddr         = apb_request.paddr >> 2;
 
         timer_apb_request.psel        = apb_request.psel && (apb_request_sel==0);
         gpio_apb_request.psel         = apb_request.psel && (apb_request_sel==1);
@@ -338,21 +345,27 @@ module vcu108_riscv( clock clk,
         riscv_dbg_apb_request.psel    = apb_request.psel && (apb_request_sel==11);
         i2c_apb_request.psel          = apb_request.psel && (apb_request_sel==12);
         axi4s_apb_request.psel        = apb_request.psel && (apb_request_sel==13);
+        anal_apb_request.psel         = apb_request.psel && (apb_request_sel==14);
         
         csr_apb_request.paddr[16;16]  = bundle(12b0,apb_request.paddr[4;12]);
         csr_apb_request.paddr[16;0]   = bundle( 6b0,apb_request.paddr[10;2]);
 
         apb_response = timer_apb_response; // defaulting to gpio is good - it is always ready even if not selected...
-        if (apb_request_sel==1) { apb_response = gpio_apb_response; }
+        apb_response.prdata |= gpio_apb_response.prdata;
+        apb_response.prdata |= uart_apb_response.prdata;
+        apb_response.prdata |= axi4s_apb_response.prdata;
+        apb_response.prdata |= anal_apb_response.prdata;
+        apb_response.pready = apb_response.pready & gpio_apb_response.pready;
+        apb_response.pready = apb_response.pready & uart_apb_response.pready;
+        apb_response.pready = apb_response.pready & axi4s_apb_response.pready;
+        apb_response.pready = apb_response.pready & anal_apb_response.pready;
         if (apb_request_sel==2) { apb_response = dprintf_apb_response; }
         if (apb_request_sel==3) { apb_response = csr_apb_response; }
         if (apb_request_sel==4) { apb_response = rv_sram_apb_response; }
         if (apb_request_sel==7) { apb_response = fb_sram_apb_response; }
-        if (apb_request_sel==9) { apb_response = uart_apb_response; }
         if (apb_request_sel==10) { apb_response = dprintf_uart_apb_response; }
         if (apb_request_sel==10) { apb_response = riscv_dbg_apb_response; }
         if (apb_request_sel==12) { apb_response = i2c_apb_response; }
-        if (apb_request_sel==13) { apb_response = axi4s_apb_response; }
     }
 
     /*b Dprintf requesting */
@@ -529,6 +542,26 @@ module vcu108_riscv( clock clk,
                                     tx_axi4s         => tx_axi4s,
                                     tx_axi4s_tready  <= tx_axi4s_tready );
 
+        apb_target_analyzer apb_analyzer( apb_clock <- clk,
+                                          reset_n <= reset_n,
+                                          apb_request  <= anal_apb_request,
+                                          apb_response => anal_apb_response,
+                                          analyzer_mux_control => analyzer_mux_control,
+
+                                          analyzer_clock <- clk,
+                                          internal_signal_in <= analyzer_trace,
+                             
+                                          // trace_ready,
+                                          // trace_done,
+                                          ext_trigger_reset <= 0,
+                                          ext_trigger_enable <= 0,
+
+                                          async_trace_read_clock <- clk, // unused interface for now
+                                          async_trace_read_enable <= 0
+                                          // async_trace_valid_out,
+                                          // async_trace_out
+            );
+
         csr_master_apb master( clk <- clk,
                                reset_n <= reset_n,
                                apb_request <= csr_apb_request,
@@ -697,6 +730,10 @@ module vcu108_riscv( clock clk,
                          gmii_rx <= gmii_rx,
                          rx_timer_control  <= timer_control // rx clock domain
             );
+        analyzer_trace <= 0;
+        analyzer_trace[0] <= tx_axi4s_tready;
+        analyzer_trace[1] <= tx_axi4s.valid;
+        analyzer_trace[2] <= tx_axi4s.t.last;
 
         sgmii_gasket_control.write_config  <= rv_sram_ctrl[3];
         sgmii_gasket_control.write_address <= rv_sram_ctrl[4;4];

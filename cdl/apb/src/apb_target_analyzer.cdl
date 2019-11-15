@@ -29,6 +29,8 @@
 
 /*a Includes
  */
+include "types/apb.h"
+include "technology/sync_modules.h"
 include "srams.h"
 
 /*a Constants
@@ -79,34 +81,67 @@ typedef struct
     t_analyzer_action action_if_false "Action to take whilst in this state and true";
 } t_analyzer_trigger;
 
+/*t t_apb_address
+ * APB address map, used to decode paddr
+ */
+typedef enum [4] {
+    apb_address_config      = 0,
+    apb_address_trigger     = 1,
+    apb_address_mask        = 2,
+    apb_address_compare     = 3,
+    apb_address_mux_control = 4,
+    apb_address_trace_data  = 8,
+} t_apb_address;
+
+/*t t_access
+ * APB access that is in progress; a decode of psel and paddr
+ */
+typedef enum [3] {
+    access_none                     "No access being performed",
+    access_write_config             "Writing config",
+    access_write_trigger            "Write trigger transition and counter",
+    access_write_mask               "Write trigger mask",
+    access_write_compare            "Write trigger compare",
+    access_write_mux_control        "Write analyzer mux control",
+    access_read_status              "Read status",
+    access_read_trace_data          "Read trace data",
+} t_access;
+
+/*t t_apb_combs */
+typedef struct {
+    bit unused;
+} t_apb_combs;
+
+/*t t_apb_state */
+typedef struct {
+    t_access access;
+    bit last_valid_sync;
+    bit trace_req;
+} t_apb_state;
+
 /*a Module
  */
 module apb_target_analyzer( clock analyzer_clock,
-                 clock output_clock,
-                 clock apb_clock,
+                            clock async_trace_read_clock,
+                            clock apb_clock,
 
-                 input bit analyzer_reset,
+                            input bit reset_n,
 
-                 input bit[3] apb_paddr,
-                 input bit apb_penable,
-                 input bit apb_pselect,
-                 input bit[32] apb_pwdata,
-                 input bit apb_prnw,
-                 output bit[32] apb_prdata,
-                 output bit apb_pwait,
+                            input  t_apb_request  apb_request  "APB request",
+                            output t_apb_response apb_response "APB response",
 
-                 output bit trace_ready,
-                 output bit trace_done,
+                            output bit trace_ready,
+                            output bit trace_done,
 
-                 output bit[32]analyzer_mux_control,
-                 input bit[analyzer_signal_width]internal_signal_in,
+                            output bit[32]analyzer_mux_control,
+                            input bit[analyzer_signal_width]internal_signal_in,
 
-                 input bit ext_trigger_reset,
-                 input bit ext_trigger_enable,
+                            input bit ext_trigger_reset,
+                            input bit ext_trigger_enable,
 
-                 input bit async_trace_read_enable,
-                 output bit async_trace_valid_out,
-                 output bit[analyzer_signal_width] async_trace_out )
+                            input bit async_trace_read_enable,
+                            output bit async_trace_valid_out,
+                            output bit[analyzer_signal_width] async_trace_out )
 """
 There are two operational modes for the analyzer:
 
@@ -153,12 +188,12 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
     /*b Default clock and reset
      */
     default clock analyzer_clock;
-    default reset analyzer_reset;
+    default reset active_low reset_n;
 
-    /*b Outputs for the async interface
+    /*b Outputs for the async trace read interface
      */
-    clocked clock output_clock bit async_trace_valid_out = 0;
-    clocked clock output_clock bit[analyzer_signal_width] async_trace_out = 0;
+    clocked clock async_trace_read_clock bit async_trace_valid_out = 0;
+    clocked clock async_trace_read_clock bit[analyzer_signal_width] async_trace_out = 0;
 
     /*b APB interface
      */
@@ -173,10 +208,9 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
 
     /*b Synchronize and read out of FIFO to APB
      */
-    clocked clock apb_clock bit apb_valid_sync_0 = 0;
-    clocked clock apb_clock bit apb_valid_sync_1 = 0;
-    clocked clock apb_clock bit apb_last_valid_sync_1 = 0;
-    clocked clock apb_clock bit apb_trace_req = 0;
+    net bit apb_valid_sync;
+    //comb    t_apb_combs  apb_combs;
+    clocked clock apb_clock t_apb_state apb_state = {*=0};
 
     /*b Trigger
      */
@@ -223,42 +257,35 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
 
     /*b Synchronize and read out of FIFO to our async read port
      */
-    clocked clock output_clock bit async_out_valid_sync_0 = 0;
-    clocked clock output_clock bit async_out_valid_sync_1 = 0;
-    clocked clock output_clock bit async_out_last_valid_sync_1 = 0;
-    clocked clock output_clock bit async_trace_req = 0;
+    net bit async_out_valid_sync;
+    clocked clock async_trace_read_clock bit async_out_last_valid_sync = 0;
+    clocked clock async_trace_read_clock bit async_trace_req = 0;
 
     /*b Signal path logic
      */
-    signal_path "Signal path logic":
-        {
-            buffered_input <= internal_signal_in;
-        }
+    signal_path "Signal path logic": {
+        buffered_input <= internal_signal_in;
+    }
 
     /*b Overall control
      */
-    overall_control "Overall control":
-        {
-            trigger_reset <= ext_trigger_reset || apb_trigger_reset;
-            if (trigger_reset)
-            {
-                trigger_done <= 0;
-                trigger_time <= 0;
-            }
-            if ((!trigger_done) && (ext_trigger_enable || apb_trigger_enable))
-            {
-                trigger_enable <= 1;
-            }
-            if (fifo_end_trigger || action_trigger_end)
-            {
-                trigger_enable <= 0;
-                trigger_done <= 1;
-            }
-            if (trigger_enable)
-            {
-                trigger_time <= trigger_time+1;
-            }
+    overall_control "Overall control": {
+        trigger_reset <= ext_trigger_reset || apb_trigger_reset;
+        if (trigger_reset) {
+            trigger_done <= 0;
+            trigger_time <= 0;
         }
+        if ((!trigger_done) && (ext_trigger_enable || apb_trigger_enable)) {
+            trigger_enable <= 1;
+        }
+        if (fifo_end_trigger || action_trigger_end) {
+            trigger_enable <= 0;
+            trigger_done <= 1;
+        }
+        if (trigger_enable) {
+            trigger_time <= trigger_time+1;
+        }
+    }
 
     /*b Trigger logic
      */
@@ -371,7 +398,7 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
      */
     store_data "Store data in FIFO and read out":
         {
-            int_req_sync_0 <= async_trace_req | apb_trace_req;
+            int_req_sync_0 <= async_trace_req | apb_state.trace_req;
             int_req_sync_1 <= int_req_sync_0;
             if (!int_req_sync_1)
             {
@@ -449,11 +476,13 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
             se_sram_mrw_2_2048x32 trace_sram( sram_clock_0 <- analyzer_clock,
                                               select_0         <= fifo_write,
                                               read_not_write_0 <= 0,
+                                              address_0        <= write_ptr,
                                               write_data_0     <= fifo_write_data,
                                               // data_out_0 =>,
                                               sram_clock_1 <- analyzer_clock,
                                               select_1         <= fifo_read,
                                               read_not_write_1 <= 1,
+                                              address_1        <= read_ptr,
                                               write_data_1     <= 0,
                                               data_out_1       => fifo_read_data );
         }
@@ -462,112 +491,125 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
      */
     async_trace_readout "Async trace readout":
         {
-            async_out_valid_sync_0 <= valid;
-            async_out_valid_sync_1 <= async_out_valid_sync_0;
-            async_out_last_valid_sync_1 <= async_out_valid_sync_1;
+            tech_sync_bit async_out_valid_sync(clk <- async_trace_read_clock,
+                                           reset_n <= reset_n,
+                                           d <= valid,
+                                           q => async_out_valid_sync );
+            async_out_last_valid_sync <= async_out_valid_sync;
 
             async_trace_valid_out <= 0;
             async_trace_req <= async_trace_read_enable;
-            if (async_out_valid_sync_1 && !async_out_last_valid_sync_1)
+            if (async_out_valid_sync && !async_out_last_valid_sync)
             {
                 async_trace_out <= buffered_read_data;
                 async_trace_valid_out <= 1; // valid_out is only asserted for one clock tick after we get the valid signal synced
             }
-            if (async_out_valid_sync_1)
+            if (async_out_valid_sync)
             {
                 async_trace_req <= 0; // valid is high after each req until we take req away; so we take it away here, and eventually our synced valid will be low, and we can represent
             }
         }
 
-    /*b APB write interface
+    /*b APB interface
      */
-    apb_interface "APB interface":
-        {
-            apb_prdata = 0;
-            apb_pwait = 0;
-            if (apb_pselect && !apb_prnw && apb_penable)
-            {
-                part_switch (apb_paddr)
-                    {
-                    case 0:
-                    {
-                        apb_trigger_reset <= apb_pwdata[0];
-                        apb_trigger_enable <= apb_pwdata[1];
-                        apb_trace_readback <= apb_pwdata[2];
-                        trigger_circular <= apb_pwdata[7];
-                        apb_trigger_stage <= apb_pwdata[analyzer_trigger_depth_log;8];
-                    }
-                    case 1:
-                    {
-                        trigger[ apb_trigger_stage ] <= { counter=apb_pwdata[analyzer_trigger_counter_width;0],
-                                                          if_true=apb_pwdata[analyzer_trigger_depth_log;16],
-                                                          action_if_true=apb_pwdata[3;20],
-                                                          if_false=apb_pwdata[analyzer_trigger_depth_log;24],
-                                                          action_if_false=apb_pwdata[3;28] };
-                    }
-                    case 2:
-                    {
-                        trigger[ apb_trigger_stage ].mask <= apb_pwdata[ analyzer_trigger_signal_width; 0];
-                    }
-                    case 3:
-                    {
-                        trigger[ apb_trigger_stage ].compare <= apb_pwdata[ analyzer_trigger_signal_width; 0];
-                    }
-                    case 4:
-                    {
-                        analyzer_mux_control <= apb_pwdata;
-                    }
-                    }
-            }
-            apb_read_trace = 0;
-            if (apb_pselect && apb_prnw)
-            {
-                part_switch (apb_paddr)
-                    {
-                    case 0:
-                    {
-                        apb_prdata[0] = apb_trigger_reset;
-                        apb_prdata[1] = apb_trigger_enable;
-                        apb_prdata[2] = apb_trace_readback;
-                        apb_prdata[3] = apb_trace_valid; // note not stable - need to fix
-                        apb_prdata[4] = trigger_reset;   // note not stable - need to fix
-                        apb_prdata[5] = trigger_enable;  // note not stable - need to fix
-                        apb_prdata[6] = trigger_done;    // note not stable - need to fix
-                        apb_prdata[7] = trigger_circular;
-                        apb_prdata[analyzer_trigger_depth_log;8] = trigger_stage;  // note not stable - need to fix
-                        apb_prdata[analyzer_trigger_counter_width;16] = trigger_residence;  // note not stable - need to fix
-                    }
-                    case 1:
-                    {
-                        apb_prdata = apb_trace_data;
-                        apb_read_trace = apb_penable;
-                    }
-                    }
-            }
-
-            apb_valid_sync_0 <= valid;
-            apb_valid_sync_1 <= apb_valid_sync_0;
-            apb_last_valid_sync_1 <= apb_valid_sync_1;
-
-            apb_trace_req <= apb_trace_readback;
-            if (apb_trace_valid)
-            {
-                apb_trace_req <= 0; // valid is high after each req until we take req away; so we take it away here, and eventually our synced valid will be low, and we can represent
-            }
-
-            if (apb_valid_sync_1 && !apb_last_valid_sync_1)
-            {
-                apb_trace_data <= buffered_read_data;
-                apb_trace_valid <= 1;
-            }
-            if (apb_read_trace || apb_trigger_reset)
-            {
-                apb_trace_valid <= 0;
-            }
-
-            trace_ready = apb_trace_valid;
-            trace_done = trigger_done;
+    apb_interface "APB interface": {
+        /*b Handle APB read data - may affect pready */
+        apb_read_trace      = 0;
+        apb_response = {*=0, pready=1};
+        part_switch (apb_state.access) {
+        case access_read_status: {
+            apb_response.prdata[0] = apb_trigger_reset;
+            apb_response.prdata[1] = apb_trigger_enable;
+            apb_response.prdata[2] = apb_trace_readback;
+            apb_response.prdata[3] = apb_trace_valid; // note not stable - need to fix
+            apb_response.prdata[4] = trigger_reset;   // note not stable - need to fix
+            apb_response.prdata[5] = trigger_enable;  // note not stable - need to fix
+            apb_response.prdata[6] = trigger_done;    // note not stable - need to fix
+            apb_response.prdata[7] = trigger_circular;
+            apb_response.prdata[analyzer_trigger_depth_log;8] = trigger_stage;  // note not stable - need to fix
+            apb_response.prdata[analyzer_trigger_counter_width;16] = trigger_residence;  // note not stable - need to fix
         }
+        case access_read_trace_data: {
+            apb_response.prdata = apb_trace_data;
+            apb_read_trace      = 1;
+        }
+        }
+
+        /*b Handle APB writes - may affect pready */
+        part_switch (apb_state.access) {
+        case access_write_config: {
+            apb_trigger_reset  <= apb_request.pwdata[0];
+            apb_trigger_enable <= apb_request.pwdata[1];
+            apb_trace_readback <= apb_request.pwdata[2];
+            trigger_circular   <= apb_request.pwdata[7];
+            apb_trigger_stage  <= apb_request.pwdata[analyzer_trigger_depth_log;8];
+        }
+        case access_write_trigger: {
+            trigger[ apb_trigger_stage ] <= { counter=apb_request.pwdata[analyzer_trigger_counter_width;0],
+                    if_true=apb_request.pwdata[analyzer_trigger_depth_log;16],
+                    action_if_true=apb_request.pwdata[3;20],
+                    if_false=apb_request.pwdata[analyzer_trigger_depth_log;24],
+                    action_if_false=apb_request.pwdata[3;28] };
+        }
+        case access_write_mask: {
+            trigger[ apb_trigger_stage ].mask <= apb_request.pwdata[ analyzer_trigger_signal_width; 0];
+        }
+        case access_write_compare: {
+            trigger[ apb_trigger_stage ].compare <= apb_request.pwdata[ analyzer_trigger_signal_width; 0];
+        }
+        case access_write_mux_control: {
+            analyzer_mux_control <= apb_request.pwdata;
+        }            
+        }
+
+        /*b Decode access */
+        apb_state.access <= access_none;
+        part_switch (apb_request.paddr[4;0]) {
+        case apb_address_config: {
+            apb_state.access <= apb_request.pwrite ? access_write_config : access_read_status;
+        }
+        case apb_address_trigger: {
+            apb_state.access <= apb_request.pwrite ? access_write_trigger : access_none;
+        }
+        case apb_address_mask: {
+            apb_state.access <= apb_request.pwrite ? access_write_mask : access_none;
+        }
+        case apb_address_compare: {
+            apb_state.access <= apb_request.pwrite ? access_write_compare : access_none;
+        }
+        case apb_address_mux_control: {
+            apb_state.access <= apb_request.pwrite ? access_write_mux_control : access_none;
+        }
+        case apb_address_trace_data: {
+            apb_state.access <= apb_request.pwrite ? access_none : access_read_trace_data;
+        }
+        }
+        if (!apb_request.psel || (apb_request.penable && apb_response.pready)) {
+            apb_state.access <= access_none;
+        }
+
+        /*b Stuff */
+        tech_sync_bit apb_valid_sync(clk <- apb_clock, reset_n <= reset_n,
+                                     d <= valid,
+                                     q => apb_valid_sync );
+        apb_state.last_valid_sync <= apb_valid_sync;
+
+        apb_state.trace_req <= apb_trace_readback;
+        if (apb_trace_valid) {
+            apb_state.trace_req <= 0; // valid is high after each req until we take req away; so we take it away here, and eventually our synced valid will be low, and we can represent
+        }
+
+        if (apb_valid_sync && !apb_state.last_valid_sync) {
+            apb_trace_data <= buffered_read_data;
+            apb_trace_valid <= 1;
+        }
+        if (apb_read_trace || apb_trigger_reset) {
+            apb_trace_valid <= 0;
+        }
+
+        trace_ready = apb_trace_valid;
+        trace_done = trigger_done;
+    }
 
     /*b Done
      */
