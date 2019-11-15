@@ -364,7 +364,7 @@ module vcu108_riscv( clock clk,
         if (apb_request_sel==4) { apb_response = rv_sram_apb_response; }
         if (apb_request_sel==7) { apb_response = fb_sram_apb_response; }
         if (apb_request_sel==10) { apb_response = dprintf_uart_apb_response; }
-        if (apb_request_sel==10) { apb_response = riscv_dbg_apb_response; }
+        if (apb_request_sel==11) { apb_response = riscv_dbg_apb_response; }
         if (apb_request_sel==12) { apb_response = i2c_apb_response; }
     }
 
