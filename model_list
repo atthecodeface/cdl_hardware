@@ -50,6 +50,10 @@ cdl cdl/technology/src    tech_sync_flop  inc:cdl/inc
 cdl cdl/technology/src    tech_sync_bit  inc:cdl/inc
 
 cdl cdl/utils/src    clock_divider    inc:cdl/inc
+cdl cdl/utils/src async_reduce_4_28_r   inc:cdl/inc inc:cdl/utils/src dc:input_width=4 dc:output_width=28 dc:shift_right=1 rmn:generic_async_reduce=async_reduce_4_28_r
+cdl cdl/utils/src async_reduce_4_28_l   inc:cdl/inc inc:cdl/utils/src dc:input_width=4 dc:output_width=28 dc:shift_right=0 rmn:generic_async_reduce=async_reduce_4_28_l
+cdl cdl/utils/src async_reduce_4_60_r   inc:cdl/inc inc:cdl/utils/src dc:input_width=4 dc:output_width=60 dc:shift_right=1 rmn:generic_async_reduce=async_reduce_4_60_r
+cdl cdl/utils/src async_reduce_4_60_l   inc:cdl/inc inc:cdl/utils/src dc:input_width=4 dc:output_width=60 dc:shift_right=0 rmn:generic_async_reduce=async_reduce_4_60_l
 cdl cdl/utils/src    hysteresis_switch    inc:cdl/inc
 cdl cdl/utils/src    dprintf              inc:cdl/inc
 cdl cdl/utils/tb_src tb_hysteresis_switch inc:cdl/inc

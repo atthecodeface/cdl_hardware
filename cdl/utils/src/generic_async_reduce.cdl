@@ -1,0 +1,105 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   async_reduce.cdl
+ * @brief  Reduce a bus from one clock domain to another
+ *
+ */
+/*a Includes */
+include "technology/sync_modules.h"
+
+/*a Constants */
+constant integer input_width  = 4;
+constant integer output_width = 60;
+constant integer shift_right = 1;
+constant integer cycles = output_width / input_width;
+constant integer counter_size = sizeof(cycles);
+
+/*a Types */
+/*t t_sr */
+typedef bit[output_width] t_sr;
+
+/*t t_data_in_state */
+typedef struct {
+    bit[counter_size] counter;
+    t_sr shift_register;
+    t_sr data_out;
+    bit  data_valid_toggle;
+} t_data_in_state;
+
+/*t t_data_out_state */
+typedef struct {
+    bit  last_valid_toggle;
+    t_sr data_out;
+    bit data_out_valid;
+} t_data_out_state;
+
+/*a Module
+ */
+module generic_async_reduce( clock clk_in "Clock associated with data_in",
+                             clock clk_out "Clock associated with data_out",
+                             input bit reset_n,
+                             input bit valid_in,
+                             input bit[input_width] data_in,
+                             output bit               valid_out,
+                             output bit[output_width] data_out
+    )
+"""
+Take in a bus of @a input_width bits, and use a shift register to
+shift into an output (configurable direction) of @a output_width bits
+Then synchronize to the output clock domain.
+"""
+{
+    /*b Clock in domain */
+    default reset active_low reset_n;
+    default clock clk_in;
+    clocked t_data_in_state data_in_state={*=0};
+    clk_in_domain: {
+        if (shift_right) {
+            data_in_state.shift_register <= data_in_state.shift_register >> input_width;
+            data_in_state.shift_register[input_width;output_width-input_width] <= data_in;
+        } else {
+            data_in_state.shift_register <= data_in_state.shift_register << input_width;
+            data_in_state.shift_register[input_width;0] <= data_in;
+        }
+        data_in_state.counter <= data_in_state.counter-1;
+        if (data_in_state.counter==0) {
+            data_in_state.counter <= cycles-1;
+            data_in_state.data_out <= data_in_state.shift_register;
+            data_in_state.data_valid_toggle <= !data_in_state.data_valid_toggle;
+        }
+        if (!valid_in) {
+            data_in_state <= data_in_state;
+        }
+    }
+
+    /*b Clock out domain */
+    default reset active_low reset_n;
+    default clock clk_out;
+    net bit clk_out_valid_toggle_sync;
+    clocked t_data_out_state data_out_state={*=0};
+    clk_out_domain: {
+        tech_sync_bit clk_out_toggle_sync(clk <- clk_out,
+                                           reset_n <= reset_n,
+                                           d <= data_in_state.data_valid_toggle,
+                                           q => clk_out_valid_toggle_sync );
+        data_out_state.last_valid_toggle <= clk_out_valid_toggle_sync;
+        data_out_state.data_out_valid <= 0;
+        if (data_out_state.last_valid_toggle != clk_out_valid_toggle_sync) {
+            data_out_state.data_out       <= data_in_state.data_out;
+            data_out_state.data_out_valid <= 1;
+        }
+        valid_out = data_out_state.data_out_valid;
+        data_out   = data_out_state.data_out;
+    }
+}

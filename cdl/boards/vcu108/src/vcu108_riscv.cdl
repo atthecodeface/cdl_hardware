@@ -33,12 +33,15 @@ include "apb/apb_masters.h"
 include "csr/csr_targets.h"
 include "csr/csr_masters.h"
 include "utils/dprintf_modules.h"
+include "utils/async_reduce_modules.h"
 include "led/led_modules.h"
 include "video/framebuffer_modules.h"
 include "networking/ethernet_modules.h"
 include "networking/gmii_modules.h"
 include "cpu/riscv/riscv_modules.h"
 include "boards/vcu108.h"
+
+typedef bit[32] t_bit32;
 
 /*a Constants */
 constant integer num_dprintf_requesters=16;
@@ -202,6 +205,7 @@ module vcu108_riscv( clock clk,
 
     net bit[32] analyzer_mux_control;
     clocked bit[32] analyzer_trace = {*=0};
+    clocked t_bit32[8] traces = {*=0};
     
     clocked t_vcu108_inputs vcu108_inputs_r = {*=0};
     clocked bit[16] counter=0;
@@ -730,10 +734,6 @@ module vcu108_riscv( clock clk,
                          gmii_rx <= gmii_rx,
                          rx_timer_control  <= timer_control // rx clock domain
             );
-        analyzer_trace <= 0;
-        analyzer_trace[0] <= tx_axi4s_tready;
-        analyzer_trace[1] <= tx_axi4s.valid;
-        analyzer_trace[2] <= tx_axi4s.t.last;
 
         sgmii_gasket_control.write_config  <= rv_sram_ctrl[3];
         sgmii_gasket_control.write_address <= rv_sram_ctrl[4;4];
@@ -764,6 +764,48 @@ module vcu108_riscv( clock clk,
         sgmii_txd = bundle(sgmii_txd_r[0], sgmii_txd_r[1], sgmii_txd_r[2], sgmii_txd_r[3]);
     }
     
+    /*b Analyzer trace */
+    net bit     trace_sgmii_txd_valid;
+    net bit[28] trace_sgmii_txd;
+    net bit     trace_sgmii_rxd_valid;
+    net bit[28] trace_sgmii_rxd;
+    analyzer_trace : {
+        async_reduce_4_28_r sgmii_rxd_trace_reduce( clk_in <- sgmii_rx_clk,
+                                                    clk_out <- clk,
+                                                    reset_n <= reset_n,
+                                                    valid_in <= 1,
+                                                    data_in <= bundle(sgmii_rxd[0],sgmii_rxd[1],sgmii_rxd[2],sgmii_rxd[3]),
+                                                    valid_out => trace_sgmii_rxd_valid,
+                                                    data_out  => trace_sgmii_rxd );
+        async_reduce_4_28_r sgmii_txd_trace_reduce( clk_in <- sgmii_tx_clk,
+                                                    clk_out <- clk,
+                                                    reset_n <= reset_n,
+                                                    valid_in <= 1,
+                                                    data_in <= bundle(sgmii_txd[0],sgmii_txd[1],sgmii_txd[2],sgmii_txd[3]),
+                                                    valid_out => trace_sgmii_txd_valid,
+                                                    data_out  => trace_sgmii_txd );
+        
+        traces[0] <= bundle( tx_axi4s.t.data[16;0], tx_axi4s.t.user[12;0], 1b0, tx_axi4s.t.last, tx_axi4s.valid, tx_axi4s_tready );
+        traces[1] <= bundle( rx_axi4s.t.data[16;0], rx_axi4s.t.user[12;0], 1b0, rx_axi4s.t.last, rx_axi4s.valid, rx_axi4s_tready );
+        traces[2] <= bundle( 4b0, gmii_tx.txd, 1b0, gmii_tx.tx_er, gmii_tx.tx_en, gmii_tx_enable,
+                             4b0, gmii_rx.rxd, gmii_rx.rx_crs, gmii_rx.rx_er, gmii_rx.rx_dv, gmii_rx_enable );
+        traces[3] <= sgmii_gasket_status.an_state;
+        traces[4] <= bundle( sgmii_gasket_status.rx_symbols_since_sync[24;0], 6b0, sgmii_gasket_status.rx_sync_toggle, sgmii_gasket_status.rx_sync);
+        traces[5] <= bundle( trace_sgmii_txd, 3b0, trace_sgmii_txd_valid);
+        traces[6] <= bundle( trace_sgmii_rxd, 3b0, trace_sgmii_rxd_valid);
+        analyzer_trace <= traces[0];
+        full_switch (analyzer_mux_control) {
+        case 0: { analyzer_trace <= traces[0]; }
+        case 1: { analyzer_trace <= traces[1]; }
+        case 2: { analyzer_trace <= traces[2]; }
+        case 3: { analyzer_trace <= traces[3]; }
+        case 4: { analyzer_trace <= traces[4]; }
+        case 5: { analyzer_trace <= traces[5]; }
+        case 6: { analyzer_trace <= traces[6]; }
+        case 7: { analyzer_trace <= traces[7]; }
+        default: { analyzer_trace <= traces[0]; }
+        }
+    }
     /*b Second divider and second_toggle - on clk_50MHz which won't change frequency */
     second_divider : {
         /*b 50MHz stuff */
