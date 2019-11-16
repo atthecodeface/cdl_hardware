@@ -142,6 +142,8 @@ class vcu108_riscv_hw(vcu108_generic_hw):
                                  named("dut.dut.rv_apb"),
                                  #named("dut.dut.apb_dprintf"),
                                  named("dut.dut.apb_axi4s"),
+                                 named("dut.dut.sgmii_txd_trace_reduce"),
+                                 named("dut.dut.apb_analyzer"),
                                  named("dut.dut.gbe"),
                                  named("dut.dut.sgg"),
                                  named("dut.dut.gpio"),

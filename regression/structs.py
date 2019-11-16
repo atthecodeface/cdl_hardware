@@ -183,3 +183,27 @@ sgmii_gasket_control = {"write_config":1, "write_address":4, "write_data":32}
 
 #t sgmii_gasket_status
 sgmii_gasket_status = {"rx_sync":1, "rx_sync_toggle":1, "rx_symbols_since_sync":32, "an_config":16}
+#t dec_8b10b_data - t_8b10b_dec_data
+dec_8b10b_data = {
+    "valid":1,
+    "data":8,
+    "is_control":1,
+    "is_data":1,
+    "illegal_if_disparity_negative":1,
+    "illegal_if_disparity_positive":1,
+    "toggles_disparity":1,
+}
+
+#t symbol_8b10b - t_8b10b_symbol
+symbol_8b10b = {
+    "disparity_positive":1,
+    "symbol":10,
+}
+
+#t enc_8b10b_data -  t_8b10b_enc_data
+enc_8b10b_data = {
+    "data":8,
+    "is_control":1,
+    "disparity":1,
+}
+

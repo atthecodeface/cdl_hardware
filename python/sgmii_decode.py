@@ -7,38 +7,86 @@ def bits_of_n(nbits, n):
         pass
     return bits
 
-dec_6b5b = {"100111":"D0",
-            "011000":"D0",
-            "100010":"D1",
-            "011101":"D1",
-            "101101":"D2",
-            "010010":"D2",
-            "101010":"D21",
-            "001100":"D24",
-            "110011":"D24",
-            "110000":"K28",
-            "001111":"K28",
+dec_6b5b = {"100111":(0,"-D0+"),
+            "011000":(0,"+D0-"),
+            "100010":(0,"+D1-"),
+            "011101":(0,"-D1+"),
+            "101101":(0,"-D2+"),
+            "010010":(0,"+D2-"),
+            "110001":(0,"D3"),
+            "110101":(0,"-D4+"),
+            "001010":(0,"+D4-"),
+            "101001":(0,"D5"),
+            "011001":(0,"D6"),
+            "111000":(0,"-D7-"),
+            "000111":(0,"+D7+"),
+            "111001":(0,"-D8+"),
+            "000110":(0,"+D8-"),
+            "100101":(0,"D9"),
+            "010101":(0,"D10"),
+            "110100":(0,"D11"),
+            "001101":(0,"D12"),
+            "101100":(0,"D13"),
+            "011100":(0,"D14"),
+            "010111":(0,"-D15+"),
+            "101000":(0,"+D15-"),
+            "100100":(0,"+D16-"),
+            "011011":(0,"-D16+"),
+            "100011":(0,"D17"),
+            "010011":(0,"D18"),
+            "110010":(0,"D19"),
+            "001011":(0,"D20"),
+            "101010":(0,"D21"),
+            "011010":(0,"D22"),
+            "111010":(0,"-D.K23+"),
+            "000101":(0,"+D.K23-"),
+            "001100":(0,"+D24-"),
+            "110011":(0,"-D24+"),
+            "100110":(0,"D25"),
+            "010110":(0,"D26"),
+            "110110":(0,"-D.K27+"),
+            "001001":(0,"+D.K27-"),
+            "001110":(0,"D28"),
+            "101110":(0,"-D.K29+"),
+            "010001":(0,"+D.K29-"),
+            "011110":(0,"-D.K30+"),
+            "100001":(0,"+D.K30-"),
+            "101011":(0,"-D31+"),
+            "010100":(0,"+D31-"),
+            "110000":(1,"+K28-"),
+            "001111":(1,"-K28+"),
              }
-dec_4b3b = {"1011":".0",
-             "0100":".0",
-             "1001":".1",
-             "0101":".2",
-             "1100":".3",
-             "0011":".3",
-             "1101":".4",
-             "0010":".4",
-             "1010":".5",
-             "0110":".6",
-             "0001":".7",
-             "1110":".7",
-             "0111":".A7",
-             "1000":".A7",
+dec_4b3b = {"1011":".-0+",
+            "0100":".+0-",
+            "1001":".1",
+            "0101":".2",
+            "1100":".-3-",
+            "0011":".+3+",
+            "1101":".-4+",
+            "0010":".+4-",
+            "1010":".5",
+            "0110":".6",
+            "0001":".+7-",
+            "1110":".-7+",
+            "0111":".-A7+",
+            "1000":".+A7-",
 }
-dec_4b3b_k = { (0,"1011"):".0",
-             (0,"1010"):".2",
-             (1,"0101"):".2",
-             (0,"0101"):".5",
-             (1,"1010"):".5",
+dec_4b3b_k = { (0,"1011"):".-K0+",
+               (1,"0100"):".+K0-",
+               (0,"0110"):".-K1-",
+               (1,"1001"):".+K1+",
+               (0,"1010"):".-K2-",
+               (1,"0101"):".+K2+",
+               (0,"1100"):".-K3-",
+               (1,"0011"):".+K3+",
+               (0,"1101"):".-K4+",
+               (1,"0010"):".+K4-",
+               (0,"0101"):".-K5-",
+               (1,"1010"):".+K5+",
+               (0,"1001"):".-K6-",
+               (1,"0110"):".+K6+",
+               (1,"0111"):".-K7+",
+               (1,"1000"):".+K7-",
 }
 
 data = """
@@ -83,11 +131,31 @@ VGA:00020454 000109F8 07792C75
 DIV:05FC9801 3B335155 3351AB68
 VGA:00020454 000109F9 07792C75
 DIV:05FC9801 CAE55683 EA497C4C
-
 """
 
-def decode_hex64(serial_hex):
-    bits = bits_of_n(64,serial_hex)
+# rx on Fri
+data = """
+a84d7a8 d7a84d7 84d7a84 7a84d7a 4d7a84d a84d7a8 d7a84d7 7a84d7a 7a84d7a 4d7a84d a84d7a8 d7a84d7 84d7a84 7a84d7a 4d7a84d d7a84d7 d7a84d7 84d7a84 7a84d7a 4d7a84d a84d7a8 d7a84d7 84d7a84 7a84d7a a84d7a8 a84d7a8 d7a84d7 84d7a84 7a84d7a 4d7a84d a84d7a8
+d7a84d7
+7a84d7a
+7a84d7a
+4d7a84d
+a84d7a8
+d7a84d7
+84d7a84
+7a84d7a
+4d7a84d
+d7a84d7
+"""
+
+# tx on Fri
+data = """
+419af411 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 af419af1 3499af41 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 19af4191 19af4191 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 419af411 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 af419af1 7499af41 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 19af4191 19af4191 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 419af411 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 af419af1 7499af41 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 19af4191 19af4191 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 419af411 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 af419af1 7499af41 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 19af4191 19af4191 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 419af411 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 af419af1 7499af41 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 19af4191 19af4191 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 419af411 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 af419af1 7499af41 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 19af4191 19af4191 f419af41 9af419a1 419af411 af419af1 19af4191 f419af41 419af411 419af411 af419af1 19af4191 f419af41 9af419a1 419af411 af419af1 7499af41
+"""
+
+
+def decode_hex(serial_hex, n=64):
+    bits = bits_of_n(n,serial_hex)
     bits_string = "".join([str(x) for x in bits])
     comma = bits_string.find("00000")
     if comma<0: comma = bits_string.find("11111")
@@ -103,8 +171,10 @@ def decode_hex64(serial_hex):
         s += b
         n += 1
         if n==6:
-            if s in dec_6b5b: s=dec_6b5b[s]
-            k28=(s=="K28")
+            k28 = False
+            if s in dec_6b5b:
+                (k28,s)=dec_6b5b[s]
+                pass
             r+=s
             s = ""
             if ones>3:disp=1
@@ -112,8 +182,16 @@ def decode_hex64(serial_hex):
             ones = 0
             pass
         if n==10:
-            if k28: s=dec_4b3b_k[disp,s]
-            elif s in dec_4b3b: s=dec_4b3b[s]
+            if k28:
+                if (disp,s) in dec_4b3b_k:
+                    s=dec_4b3b_k[(disp,s)]
+                    pass
+                pass
+            elif s in dec_4b3b:
+                if s in dec_4b3b:
+                    s=dec_4b3b[s]
+                    pass
+                pass
             r+=s+" "
             s = ""
             if ones>2:disp=1
@@ -122,13 +200,36 @@ def decode_hex64(serial_hex):
             pass
         n = n % 10
         pass
-    print r, bits_string[alignment:]
+    print r
+    print
+    print bits_string[alignment:]
+    print
     pass
+rev_of = {0:0, 1:8, 2:4, 3:12, 4:2, 5:10, 6:6, 7:14,
+          8:1, 9:9, 10:5, 11:13, 12:3, 13:11, 14:7, 15:15}
+for i in range(16):
+    if rev_of[rev_of[i]]!=i:
+        print i
+        die
+def reverse_nybbles(x):
+    i = 0
+    y = 0
+    while (x>>i) != 0:
+        y |= rev_of[(x>>i)&0xf] << i
+        i += 4
+        pass
+    return y
 
 import sys, re
 if len(sys.argv)>1:
-    serial_hex = int(sys.argv[2]+sys.argv[1],16)
-    decode_hex64(serial_hex)
+    serial_hex = 0
+    shf = 0
+    for d in sys.argv[1:]:
+        serial_hex = serial_hex + ((int(d,16)<<shf))
+        shf += 4*len(d)
+        pass
+    serial_hex = reverse_nybbles(serial_hex)
+    decode_hex(serial_hex, n=shf)
     pass
 else:
     m = re.compile(r"DIV:[0-9a-fA-F]* ([0-9a-fA-F]+) ([0-9a-fA-F]+)")
@@ -137,7 +238,7 @@ else:
         k = m.search(l)
         if k is not None:
             serial_hex = int(k.group(2)+k.group(1),16)
-            decode_hex64(serial_hex)
+            decode_hex(serial_hex)
             pass
         pass
     pass

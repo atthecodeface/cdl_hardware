@@ -159,7 +159,7 @@ Also, note that the inverse 11000001xx is the alternative comma sequence.
             /*  04 */ case 5b00100: { eb5b6b.symbol = eb5b6b.disparity ? 6b001010 : 6b110101; }
             /*  05 */ case 5b00101: { eb5b6b.symbol = eb5b6b.disparity ? 6b101001 : 6b101001; eb5b6b.toggle_dis = 0;}
             /*  06 */ case 5b00110: { eb5b6b.symbol = eb5b6b.disparity ? 6b011001 : 6b011001; eb5b6b.toggle_dis = 0;}
-            /*  07 */ case 5b00111: { eb5b6b.symbol = eb5b6b.disparity ? 6b000111 : 6b111000; }
+            /*  07 */ case 5b00111: { eb5b6b.symbol = eb5b6b.disparity ? 6b000111 : 6b111000; eb5b6b.toggle_dis = 0;}
             /*  08 */ case 5b01000: { eb5b6b.symbol = eb5b6b.disparity ? 6b000110 : 6b111001; }
             /*  09 */ case 5b01001: { eb5b6b.symbol = eb5b6b.disparity ? 6b100101 : 6b100101; eb5b6b.toggle_dis = 0;}
             /*  10 */ case 5b01010: { eb5b6b.symbol = eb5b6b.disparity ? 6b010101 : 6b010101; eb5b6b.toggle_dis = 0;}
@@ -205,9 +205,10 @@ Also, note that the inverse 11000001xx is the alternative comma sequence.
         case 3b100: { eb3b4b.symbol = eb3b4b.disparity ? 4b0010 : 4b1101; }
         case 3b101: { eb3b4b.symbol = (eb3b4b.disparity||!eb3b4b.is_control) ? 4b1010 : 4b0101; eb3b4b.toggle_dis = 0;}
         case 3b110: { eb3b4b.symbol = (eb3b4b.disparity||!eb3b4b.is_control) ? 4b0110 : 4b1001; eb3b4b.toggle_dis = 0;}
-        case 3b111: { eb3b4b.symbol = eb3b4b.disparity ? 4b1110 : 4b0001; }
+        case 3b111: { eb3b4b.symbol = eb3b4b.disparity ? 4b0001 : 4b1110 ; }
         }
         if (eb3b4b.use_alt) {
+            eb3b4b.toggle_dis = 1;
              eb3b4b.symbol = eb3b4b.disparity ? 4b1000 : 4b0111;            
         }
 

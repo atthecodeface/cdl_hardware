@@ -50,6 +50,34 @@ module async_reduce_4_28_l( clock          clk_in "Clock associated with data_in
     timing from rising clock clk_out data_out, valid_out;
 }
 
+/*m async_reduce2_4_28_r */
+extern
+module async_reduce2_4_28_r( clock          clk_in "Clock associated with data_in",
+                            clock          clk_out "Clock associated with data_out",
+                            input bit      reset_n,
+                            input bit      valid_in,
+                            input bit[4]   data_in,
+                            output bit     valid_out,
+                            output bit[28] data_out )
+{
+    timing to   rising clock clk_in  data_in, valid_in;
+    timing from rising clock clk_out data_out, valid_out;
+}
+
+/*m async_reduce2_4_28_l */
+extern
+module async_reduce2_4_28_l( clock          clk_in "Clock associated with data_in",
+                            clock          clk_out "Clock associated with data_out",
+                            input bit      reset_n,
+                            input bit      valid_in,
+                            input bit[4]   data_in,
+                            output bit     valid_out,
+                            output bit[28] data_out )
+{
+    timing to   rising clock clk_in  data_in, valid_in;
+    timing from rising clock clk_out data_out, valid_out;
+}
+
 /*m async_reduce_4_60_r */
 extern
 module async_reduce_4_60_r( clock          clk_in "Clock associated with data_in",

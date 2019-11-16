@@ -17,7 +17,7 @@ import pycdl
 import sys, os, unittest, tempfile
 import simple_tb
 import structs
-import math
+import encdec_8b10b
 
 #a Useful functions
 def int_of_bits(bits):
@@ -48,6 +48,75 @@ riscv_regression_dir      = "../riscv_tests_built/isa/"
 riscv_atcf_regression_dir = "../riscv-atcf-tests/build/dump/"
 
 #a Test classes
+#c eth_8b10b_test_base
+class eth_8b10b_test_base(simple_tb.base_th):
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(10)
+        simple_tb.base_th.run_start(self)
+        self.bfm_wait(self.run_time-10)
+        self.finishtest(0,"")
+        pass
+
+#c eth_8b10b_test_encode
+class eth_8b10b_test_encode(eth_8b10b_test_base):
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(100)
+        simple_tb.base_th.run_start(self)
+        for e in encdec_8b10b.encodings_8b10b:
+            self.enc_data__data.drive(e.data)
+            self.enc_data__is_control.drive(e.is_control)
+            self.enc_data__disparity.drive(e.disparity_in)
+            self.bfm_wait(2)
+            dut_disparity_out = self.enc_symbol__disparity_positive.value()
+            dut_encoding      = self.enc_symbol__symbol.value()
+            self.compare_expected("Encoding of symbol %s"%(str(e)),e.encoding,dut_encoding)
+            self.compare_expected("Disparity out of symbol %s"%(str(e)),e.disparity_out,dut_disparity_out)
+            pass
+        self.bfm_wait(self.run_time_remaining())
+        self.finishtest(0,"")
+        pass
+
+#c eth_8b10b_test_decode_0
+class eth_8b10b_test_decode_0(eth_8b10b_test_base):
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(100)
+        simple_tb.base_th.run_start(self)
+        for e in encdec_8b10b.encodings_8b10b:
+            self.enc_data__data.drive(e.data)
+            self.enc_data__is_control.drive(e.is_control)
+            self.enc_data__disparity.drive(e.disparity_in)
+            self.bfm_wait(2)
+            dut_disparity_out = self.enc_symbol__disparity_positive.value()
+            dut_encoding      = self.enc_symbol__symbol.value()
+            self.dec_symbol__disparity_positive.drive(e.disparity_in)
+            self.dec_symbol__symbol.drive(dut_encoding)
+            self.bfm_wait(2)
+            dut_valid = self.dec_data__valid.value()
+            dut_data = self.dec_data__data.value()
+            dut_is_control = self.dec_data__is_control.value()
+            dut_is_data = self.dec_data__is_data.value()
+            dut_illegal_if_dp0 = self.dec_data__illegal_if_disparity_negative.value()
+            dut_illegal_if_dp1 = self.dec_data__illegal_if_disparity_positive.value()
+            dut_toggles_disparity = self.dec_data__toggles_disparity.value()
+            dut_disparity_out = dut_toggles_disparity ^ e.disparity_in
+            self.compare_expected("Decoding of symbol %s valid"%(str(e)),1,dut_valid)
+            self.compare_expected("Data of symbol %s"%(str(e)),e.data,dut_data)
+            self.compare_expected("Is control of symbol %s"%(str(e)),e.is_control,dut_is_control)
+            self.compare_expected("Is data of symbol %s"%(str(e)),1^e.is_control,dut_is_data)
+            self.compare_expected("Disparity out of symbol %s"%(str(e)),e.disparity_out,dut_disparity_out)
+            pass
+        self.bfm_wait(self.run_time_remaining())
+        self.enc_data__data.drive(0)
+        self.bfm_wait(1)
+        self.finishtest(0,"")
+        pass
+
 #c sgmii_test_base
 class sgmii_test_base(simple_tb.base_th):
     verbose = False
@@ -217,6 +286,30 @@ class gbe_test_0(gbe_test_base):
         pass
 
 #a Hardware classes
+#c eth_8b10b_test_hw
+class eth_8b10b_test_hw(simple_tb.cdl_test_hw):
+    """
+    Simple instantiation of tb_8b10b
+    """
+    dec_8b10b_data = pycdl.wirebundle(structs.dec_8b10b_data)
+    symbol_8b10b   = pycdl.wirebundle(structs.symbol_8b10b)
+    enc_8b10b_data = pycdl.wirebundle(structs.enc_8b10b_data)
+    th_forces = { "th.clock":"clk",
+                  "th.outputs":(" ".join(symbol_8b10b._name_list("dec_symbol")) + " " +
+                                " ".join(enc_8b10b_data._name_list("enc_data")) + " " +
+                                " "),
+                  "th.inputs":(" ".join(dec_8b10b_data._name_list("dec_data")) + " " +
+                               " ".join(symbol_8b10b._name_list("enc_symbol")) + " " +
+                               " "),
+                  }
+    module_name = "tb_8b10b"
+    #f __init__
+    def __init__(self, test):
+        self.th_forces = self.th_forces.copy()
+        simple_tb.cdl_test_hw.__init__(self,test)
+        pass
+    pass
+
 #c sgmii_test_hw
 class sgmii_test_hw(simple_tb.cdl_test_hw):
     """
@@ -228,7 +321,7 @@ class sgmii_test_hw(simple_tb.cdl_test_hw):
     gmii_tx                 = pycdl.wirebundle(structs.gmii_tx)
     gmii_rx                 = pycdl.wirebundle(structs.gmii_rx)
     sgmii_gasket_control    = pycdl.wirebundle(structs.sgmii_gasket_control)
-    sgmii_gasket_status    = pycdl.wirebundle(structs.sgmii_gasket_status)
+    sgmii_gasket_status     = pycdl.wirebundle(structs.sgmii_gasket_status)
 
     th_forces = { "th.clock":"clk",
                   "th.outputs":(" ".join(gmii_tx._name_list("gmii_tx")) + " " +
@@ -262,14 +355,18 @@ class gbe_test_hw(simple_tb.cdl_test_hw):
     tbi_valid               = pycdl.wirebundle(structs.tbi_valid)
     gmii_tx                 = pycdl.wirebundle(structs.gmii_tx)
     gmii_rx                 = pycdl.wirebundle(structs.gmii_rx)
+    sgmii_gasket_control    = pycdl.wirebundle(structs.sgmii_gasket_control)
+    sgmii_gasket_status     = pycdl.wirebundle(structs.sgmii_gasket_status)
 
     th_forces = { "th.clock":"clk",
                   "th.outputs":(" ".join(timer_control._name_list("rx_timer_control")) + " " +
                                 " ".join(tbi_valid._name_list("tbi_rx")) + " " +
+                                " ".join(sgmii_gasket_control._name_list("sgmii_gasket_control")) + " " +
                                 " sgmii_rxd[4]"+
                                 " sys_cfg[32]"+
                                 " "),
                   "th.inputs":(" ".join(tbi_valid._name_list("tbi_tx")) + " " +
+                                " ".join(sgmii_gasket_status._name_list("sgmii_gasket_status")) + " " +
                                " sgmii_txd[4]"+
                                " "),
                   }
@@ -282,6 +379,15 @@ class gbe_test_hw(simple_tb.cdl_test_hw):
     pass
 
 #a Simulation test classes
+#c eth_8b10b
+class eth_8b10b(simple_tb.base_test):
+    def test_encode(self):
+        self.do_test_run(eth_8b10b_test_hw(eth_8b10b_test_encode()), num_cycles=10000)
+        pass
+    def test_decode_0(self):
+        self.do_test_run(eth_8b10b_test_hw(eth_8b10b_test_decode_0()), num_cycles=10000)
+        pass
+    pass
 #c sgmii
 class sgmii(simple_tb.base_test):
     def test_simple(self):

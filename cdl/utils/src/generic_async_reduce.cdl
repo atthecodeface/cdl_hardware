@@ -20,14 +20,16 @@ include "technology/sync_modules.h"
 
 /*a Constants */
 constant integer input_width  = 4;
+constant integer double_sr    = 0;
 constant integer output_width = 60;
+constant integer shift_register_width = (double_sr+1)*output_width;
 constant integer shift_right = 1;
 constant integer cycles = output_width / input_width;
 constant integer counter_size = sizeof(cycles);
 
 /*a Types */
 /*t t_sr */
-typedef bit[output_width] t_sr;
+typedef bit[shift_register_width] t_sr;
 
 /*t t_data_in_state */
 typedef struct {
@@ -39,9 +41,9 @@ typedef struct {
 
 /*t t_data_out_state */
 typedef struct {
-    bit  last_valid_toggle;
-    t_sr data_out;
-    bit data_out_valid;
+    bit    last_valid_toggle;
+    t_sr   data_out;
+    bit[2] data_out_valid   "One bit for each half of the shift register - if not doubled, then always 0 or 3";
 } t_data_out_state;
 
 /*a Module
@@ -58,6 +60,28 @@ module generic_async_reduce( clock clk_in "Clock associated with data_in",
 Take in a bus of @a input_width bits, and use a shift register to
 shift into an output (configurable direction) of @a output_width bits
 Then synchronize to the output clock domain.
+
+If @a shift_right then the data is shifted right as it comes in - older data is at the right
+Else older data is at the left
+
+The shift register can be configured to be twice the width of the output data, with a single
+synchronization used for that double width.
+
+The synchronization between clk_in and clk_out is a tech synchronizer of a toggle.
+Assuming clk_in rises at time 0 generating a toggle, the first flop of the synchronizer
+occurs on clk_out at up to a whole clk_out period later; the second flop of the synchronizer
+occurs up to two clk_out periods later; the data is captured on the next edge (when sync != last
+toggle) - i.e. three clk_out periods later.
+
+Hence the design works if clk_out period*3 is less than clk_in period * shift_register_width/input_width.
+
+A shift register which is double the size of the output_width can meet this too.
+
+This permits a 4-bit input at 312.5MHz (3.2ns period) to transfer to a 125MHz domain (8ns period)
+(clk_out/clk_in periods of 2.5) with a shift register width of >30 bits.
+Using a double shift register of 56 bits yields two consecutive output cycles every 14 input clocks,
+or 44.8ns; hence two out of every 5.6 cycles.
+
 """
 {
     /*b Clock in domain */
@@ -67,7 +91,7 @@ Then synchronize to the output clock domain.
     clk_in_domain: {
         if (shift_right) {
             data_in_state.shift_register <= data_in_state.shift_register >> input_width;
-            data_in_state.shift_register[input_width;output_width-input_width] <= data_in;
+            data_in_state.shift_register[input_width;shift_register_width-input_width] <= data_in;
         } else {
             data_in_state.shift_register <= data_in_state.shift_register << input_width;
             data_in_state.shift_register[input_width;0] <= data_in;
@@ -95,11 +119,19 @@ Then synchronize to the output clock domain.
                                            q => clk_out_valid_toggle_sync );
         data_out_state.last_valid_toggle <= clk_out_valid_toggle_sync;
         data_out_state.data_out_valid <= 0;
+        if (double_sr && data_out_state.data_out_valid[0]) {
+            data_out_state.data_out_valid <= data_out_state.data_out_valid>>1;
+            data_out_state.data_out       <= data_out_state.data_out>>output_width;
+        }
         if (data_out_state.last_valid_toggle != clk_out_valid_toggle_sync) {
             data_out_state.data_out       <= data_in_state.data_out;
-            data_out_state.data_out_valid <= 1;
+            data_out_state.data_out_valid <= 3;
+            if (double_sr && !shift_right) {
+                data_out_state.data_out[output_width;output_width] <= data_in_state.data_out[output_width;0];
+                data_out_state.data_out[output_width;           0] <= data_in_state.data_out[output_width;output_width];
+            }
         }
-        valid_out = data_out_state.data_out_valid;
-        data_out   = data_out_state.data_out;
+        valid_out = data_out_state.data_out_valid[0];
+        data_out[output_width;0]  = data_out_state.data_out[output_width;0];
     }
 }

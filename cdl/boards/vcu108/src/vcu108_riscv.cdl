@@ -770,14 +770,14 @@ module vcu108_riscv( clock clk,
     net bit     trace_sgmii_rxd_valid;
     net bit[28] trace_sgmii_rxd;
     analyzer_trace : {
-        async_reduce_4_28_r sgmii_rxd_trace_reduce( clk_in <- sgmii_rx_clk,
+        async_reduce2_4_28_r sgmii_rxd_trace_reduce( clk_in <- sgmii_rx_clk,
                                                     clk_out <- clk,
                                                     reset_n <= reset_n,
                                                     valid_in <= 1,
                                                     data_in <= bundle(sgmii_rxd[0],sgmii_rxd[1],sgmii_rxd[2],sgmii_rxd[3]),
                                                     valid_out => trace_sgmii_rxd_valid,
                                                     data_out  => trace_sgmii_rxd );
-        async_reduce_4_28_r sgmii_txd_trace_reduce( clk_in <- sgmii_tx_clk,
+        async_reduce2_4_28_r sgmii_txd_trace_reduce( clk_in <- sgmii_tx_clk,
                                                     clk_out <- clk,
                                                     reset_n <= reset_n,
                                                     valid_in <= 1,

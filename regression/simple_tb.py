@@ -109,7 +109,7 @@ class base_th(pycdl._thfile):
     #f compare_expected
     def compare_expected(self, reason, expectation, actual):
         if actual!=expectation:
-            self.failtest(0,"Mismatch in %s (%d/%d)"%(reason,actual,expectation))
+            self.failtest(self.global_cycle(),"Mismatch in %s act/exp (%d/%d)"%(reason,actual,expectation))
             pass
         pass
     #f compare_expected_list

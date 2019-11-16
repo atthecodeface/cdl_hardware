@@ -12,7 +12,7 @@
  *   limitations under the License.
  *
  * @file   tb_gbe.cdl
- * @brief  Testbench for sgmii_gmii_gasket
+ * @brief  Testbench for gigabit ethernet with sgmii_gmii_gasket
  *
  */
 /*a Includes */
@@ -31,6 +31,9 @@ extern module axi4s32_master_slave( clock aclk,
                                     input t_axi4s32 slave_axi4s,
                                     output bit      slave_axi4s_tready,
                                     output t_timer_control rx_timer_control "Timer control for TX clock domain",
+                                    output  t_sgmii_gasket_control sgmii_gasket_control "Control of gasket, on rx_clk",
+                                    input t_sgmii_gasket_status  sgmii_gasket_status  "Status from gasket, on rx_clk",
+                               
                                     output bit[32] sys_cfg
     )
 {
@@ -66,6 +69,8 @@ module tb_gbe( clock clk,
     net t_gmii_rx gmii_rx;
     comb bit[4] sgmii_rxd;
     net bit[32] sys_cfg;
+    net  t_sgmii_gasket_control sgmii_gasket_control "Control of gasket, on rx_clk";
+    net t_sgmii_gasket_status   sgmii_gasket_status  "Status from gasket, on rx_clk";
 
     clocked clock clk reset active_low reset_n bit[16]         sgmii_stream=0;
 
@@ -81,6 +86,10 @@ module tb_gbe( clock clk,
                                  slave_axi4s <= slave_axi4s,
                                  slave_axi4s_tready => slave_axi4s_tready,
                                  rx_timer_control   => rx_timer_control,
+
+                                 sgmii_gasket_control => sgmii_gasket_control,
+                                 sgmii_gasket_status  <= sgmii_gasket_status,
+                                 
                                  sys_cfg => sys_cfg );
         gbe_axi4s32 gbe( tx_aclk <- clk,
                      tx_areset_n <= reset_n,
@@ -114,7 +123,10 @@ module tb_gbe( clock clk,
                               sgmii_rxd <= sgmii_rxd,
                               tbi_rx <= tbi_rx,
                               gmii_rx => gmii_rx,
-                              gmii_rx_enable => gmii_rx_enable
+                              gmii_rx_enable => gmii_rx_enable,
+
+                              sgmii_gasket_control <= sgmii_gasket_control,
+                              sgmii_gasket_status  => sgmii_gasket_status
             );
         sgmii_stream      <= sgmii_stream << 4;
         sgmii_stream[4;0] <= sgmii_txd;

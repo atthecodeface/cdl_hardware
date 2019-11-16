@@ -87,6 +87,7 @@ which is separately decoded.
     decode : {
         /*b Decode 5B6B symbol */
         // Default is neither data nor control
+        // control, data, value, disparity (10=doesnt change)
         dec_5b6b = bundle( 2b00,
                            symbol.symbol[5], symbol.symbol[6], symbol.symbol[7], symbol.symbol[8], symbol.symbol[9],
                            2b00 );
@@ -94,48 +95,48 @@ which is separately decoded.
             // Data symbols
         case 6b000101: {dec_5b6b = bundle( 2b11, 5d23 , 2b00 ); }
         case 6b000110: {dec_5b6b = bundle( 2b01, 5d8  , 2b00 ); }
-        case 6b000111: {dec_5b6b = bundle( 2b01, 5d7  , 2b00 ); }
+        case 6b000111: {dec_5b6b = bundle( 2b01, 5d7  , 2b10 ); } // no disparity change BUT should be +ve
         case 6b001001: {dec_5b6b = bundle( 2b11, 5d27 , 2b00 ); }
         case 6b001010: {dec_5b6b = bundle( 2b01, 5d4  , 2b00 ); }
-        case 6b001011: {dec_5b6b = bundle( 2b01, 5d20 , 2b10 ); }
+        case 6b001011: {dec_5b6b = bundle( 2b01, 5d20 , 2b10 ); } // no disparity change
         case 6b001100: {dec_5b6b = bundle( 2b01, 5d24 , 2b00 ); }
-        case 6b001101: {dec_5b6b = bundle( 2b01, 5d12 , 2b10 ); }
-        case 6b001110: {dec_5b6b = bundle( 2b01, 5d28 , 2b10 ); }
+        case 6b001101: {dec_5b6b = bundle( 2b01, 5d12 , 2b10 ); } // no disparity change
+        case 6b001110: {dec_5b6b = bundle( 2b01, 5d28 , 2b10 ); } // no disparity change
         case 6b010001: {dec_5b6b = bundle( 2b11, 5d29 , 2b00 ); }
         case 6b010010: {dec_5b6b = bundle( 2b01, 5d2  , 2b00 ); }
-        case 6b010011: {dec_5b6b = bundle( 2b01, 5d18 , 2b10 ); }
+        case 6b010011: {dec_5b6b = bundle( 2b01, 5d18 , 2b10 ); } // no disparity change
         case 6b010100: {dec_5b6b = bundle( 2b01, 5d31 , 2b00 ); }
         case 6b010101: {dec_5b6b = bundle( 2b01, 5d10 , 2b10 ); }
-        case 6b010110: {dec_5b6b = bundle( 2b01, 5d26 , 2b10 ); }
+        case 6b010110: {dec_5b6b = bundle( 2b01, 5d26 , 2b10 ); } // no disparity change
         case 6b010111: {dec_5b6b = bundle( 2b01, 5d15 , 2b01 ); }
         case 6b011000: {dec_5b6b = bundle( 2b01, 5d0  , 2b00 ); }
-        case 6b011001: {dec_5b6b = bundle( 2b01, 5d6  , 2b10 ); }
-        case 6b011010: {dec_5b6b = bundle( 2b01, 5d22 , 2b10 ); }
+        case 6b011001: {dec_5b6b = bundle( 2b01, 5d6  , 2b10 ); } // no disparity change
+        case 6b011010: {dec_5b6b = bundle( 2b01, 5d22 , 2b10 ); } // no disparity change
         case 6b011011: {dec_5b6b = bundle( 2b01, 5d16 , 2b01 ); }
-        case 6b011100: {dec_5b6b = bundle( 2b01, 5d14 , 2b10 ); }
+        case 6b011100: {dec_5b6b = bundle( 2b01, 5d14 , 2b10 ); } // no disparity change
         case 6b011101: {dec_5b6b = bundle( 2b01, 5d1  , 2b01 ); }
         case 6b011110: {dec_5b6b = bundle( 2b11, 5d30 , 2b01 ); }
         case 6b100001: {dec_5b6b = bundle( 2b11, 5d30 , 2b00 ); }
         case 6b100010: {dec_5b6b = bundle( 2b01, 5d1  , 2b00 ); }
-        case 6b100011: {dec_5b6b = bundle( 2b01, 5d17 , 2b10 ); }
+        case 6b100011: {dec_5b6b = bundle( 2b01, 5d17 , 2b10 ); } // no disparity change
         case 6b100100: {dec_5b6b = bundle( 2b01, 5d16 , 2b00 ); }
-        case 6b100101: {dec_5b6b = bundle( 2b01, 5d9  , 2b10 ); }
-        case 6b100110: {dec_5b6b = bundle( 2b01, 5d25 , 2b10 ); }
+        case 6b100101: {dec_5b6b = bundle( 2b01, 5d9  , 2b10 ); } // no disparity change
+        case 6b100110: {dec_5b6b = bundle( 2b01, 5d25 , 2b10 ); } // no disparity change
         case 6b100111: {dec_5b6b = bundle( 2b01, 5d0  , 2b01 ); }
         case 6b101000: {dec_5b6b = bundle( 2b01, 5d15 , 2b00 ); }
-        case 6b101001: {dec_5b6b = bundle( 2b01, 5d5  , 2b10 ); }
-        case 6b101010: {dec_5b6b = bundle( 2b01, 5d21 , 2b10 ); }
+        case 6b101001: {dec_5b6b = bundle( 2b01, 5d5  , 2b10 ); } // no disparity change
+        case 6b101010: {dec_5b6b = bundle( 2b01, 5d21 , 2b10 ); } // no disparity change
         case 6b101011: {dec_5b6b = bundle( 2b01, 5d31 , 2b01 ); }
-        case 6b101100: {dec_5b6b = bundle( 2b01, 5d13 , 2b10 ); }
+        case 6b101100: {dec_5b6b = bundle( 2b01, 5d13 , 2b10 ); } // no disparity change
         case 6b101101: {dec_5b6b = bundle( 2b01, 5d2  , 2b01 ); }
         case 6b101110: {dec_5b6b = bundle( 2b11, 5d29 , 2b01 ); }
-        case 6b110001: {dec_5b6b = bundle( 2b01, 5d3  , 2b10 ); }
-        case 6b110010: {dec_5b6b = bundle( 2b01, 5d19 , 2b10 ); }
+        case 6b110001: {dec_5b6b = bundle( 2b01, 5d3  , 2b10 ); } // no disparity change
+        case 6b110010: {dec_5b6b = bundle( 2b01, 5d19 , 2b10 ); } // no disparity change
         case 6b110011: {dec_5b6b = bundle( 2b01, 5d24 , 2b01 ); }
-        case 6b110100: {dec_5b6b = bundle( 2b01, 5d11 , 2b10 ); }
+        case 6b110100: {dec_5b6b = bundle( 2b01, 5d11 , 2b10 ); } // no disparity change
         case 6b110101: {dec_5b6b = bundle( 2b01, 5d4  , 2b01 ); }
         case 6b110110: {dec_5b6b = bundle( 2b11, 5d27 , 2b01 ); }
-        case 6b111000: {dec_5b6b = bundle( 2b01, 5d7  , 2b01 ); }
+        case 6b111000: {dec_5b6b = bundle( 2b01, 5d7  , 2b10 ); } // no disparity change BUT should be +ve
         case 6b111001: {dec_5b6b = bundle( 2b01, 5d8  , 2b01 ); }
         case 6b111010: {dec_5b6b = bundle( 2b11, 5d23 , 2b01 ); }
 
@@ -158,7 +159,7 @@ which is separately decoded.
             // Data symbols (if not a control)
         case 4b0001: {dec_3b4b = bundle( 3b010, 3d7, 2b00);}
         case 4b0010: {dec_3b4b = bundle( 3b010, 3d4, 2b00);}
-        case 4b0011: {dec_3b4b = bundle( 3b010, 3d3, 2b10);}
+        case 4b0011: {dec_3b4b = bundle( 3b010, 3d3, 2b10);} // no disparity change
         case 4b0100: {dec_3b4b = bundle( 3b010, 3d0, 2b00);}
         case 4b0101: {dec_3b4b = bundle( 3b110, 3d2, 2b10);} // invert data if control and disparity in -ve
         case 4b0110: {dec_3b4b = bundle( 3b110, 3d6, 2b10);} // invert data if control and disparity in -ve
@@ -167,7 +168,7 @@ which is separately decoded.
         case 4b1001: {dec_3b4b = bundle( 3b110, 3d1, 2b10);} // invert data if control and disparity in -ve
         case 4b1010: {dec_3b4b = bundle( 3b110, 3d5, 2b10);} // invert data if control and disparity in -ve
         case 4b1011: {dec_3b4b = bundle( 3b010, 3d0, 2b01);}
-        case 4b1100: {dec_3b4b = bundle( 3b010, 3d3, 2b10);}
+        case 4b1100: {dec_3b4b = bundle( 3b010, 3d3, 2b10);} // no disparity change
         case 4b1101: {dec_3b4b = bundle( 3b010, 3d4, 2b01);}
         case 4b1110: {dec_3b4b = bundle( 3b010, 3d7, 2b01);}
         }

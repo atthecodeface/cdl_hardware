@@ -50,6 +50,8 @@ cdl cdl/technology/src    tech_sync_flop  inc:cdl/inc
 cdl cdl/technology/src    tech_sync_bit  inc:cdl/inc
 
 cdl cdl/utils/src    clock_divider    inc:cdl/inc
+cdl cdl/utils/src async_reduce2_4_28_r   inc:cdl/inc inc:cdl/utils/src dc:input_width=4 dc:output_width=28 dc:shift_right=1 dc:double_sr=1 rmn:generic_async_reduce=async_reduce2_4_28_r
+cdl cdl/utils/src async_reduce2_4_28_l   inc:cdl/inc inc:cdl/utils/src dc:input_width=4 dc:output_width=28 dc:shift_right=0 dc:double_sr=1 rmn:generic_async_reduce=async_reduce2_4_28_l
 cdl cdl/utils/src async_reduce_4_28_r   inc:cdl/inc inc:cdl/utils/src dc:input_width=4 dc:output_width=28 dc:shift_right=1 rmn:generic_async_reduce=async_reduce_4_28_r
 cdl cdl/utils/src async_reduce_4_28_l   inc:cdl/inc inc:cdl/utils/src dc:input_width=4 dc:output_width=28 dc:shift_right=0 rmn:generic_async_reduce=async_reduce_4_28_l
 cdl cdl/utils/src async_reduce_4_60_r   inc:cdl/inc inc:cdl/utils/src dc:input_width=4 dc:output_width=60 dc:shift_right=1 rmn:generic_async_reduce=async_reduce_4_60_r
@@ -177,6 +179,7 @@ cdl cdl/networking/src           encode_8b10b           inc:cdl/inc
 cdl cdl/networking/src           gbe_axi4s32            inc:cdl/inc
 cdl cdl/networking/src           sgmii_gmii_gasket      inc:cdl/inc
 cdl cdl/networking/src           sgmii_transceiver      inc:cdl/inc
+cdl cdl/networking/tb_src        tb_8b10b               inc:cdl/inc
 cdl cdl/networking/tb_src        tb_sgmii               inc:cdl/inc
 cdl cdl/networking/tb_src        tb_gbe                 inc:cdl/inc
 

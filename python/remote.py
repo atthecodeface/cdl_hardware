@@ -61,6 +61,11 @@ class remote_operations:
         self.apbw(14,0,6) # enable and allow apb trace readback
         pass
     
+    #f anal_mux_control
+    def anal_mux_control(self, mux):
+        self.apbw(14,4,mux)
+        pass
+    
     #f anal_capture_mask_compare
     def anal_capture_mask_compare(self, mask, compare):
         self.apbw(14,0,1) # config trigger reset, not circular, not enable, apb not reading trace
@@ -197,6 +202,7 @@ class remote(cmd.Cmd):
         "anal_status": ("",   ""),
         "anal_read_trace": ("",   ""),
         "anal_read_fifo": ("i",   ""),
+        "anal_mux_control": ("i",   ""),
         "axi4s_reset": ("",   ""),
         "axi4s_send_pkt": ("",   ""),
     }
