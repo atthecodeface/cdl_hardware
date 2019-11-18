@@ -76,12 +76,24 @@ module generic_valid_ack_sram_fifo( clock clk                            "Clock 
                                     input bit ack_out                     "Acknowledge from downstream"
     )
 """
-Very simple generic register FIFO for a valid/ack system
+A deep valid/ack FIFO using a synchronous dual-port SRAM and read/write pointers.
+The module can keep up with a data in per cycle and a data out per cycle.
 
-If the output will be empty then the input data is stored in the output register
-If not empty then the input data is stored in register[write_ptr];
+The SRAM has a read-to-data delay of a cycle, and so two output registers
+must be kept; these are denoted @a req_out and @a pending_req_out.
 
-If not empty and output register will be empty move register[read_ptr] to output register
+If both are valid then the SRAM *must not* be reading (not should it start a read)
+as there is nowhere for the data to go.
+
+If only one is valid then the SRAM *can* be reading *or* can start a read.
+
+If neither is valid then an SRAM read can certainly start.
+
+There is a single data register on input to capture the @a req_in.
+This *must* be transfered if valid to the SRAM or one of the output registers,
+unless the SRAM buffer is full.
+
+This permits an @a ack_in unless the @a req_in is valid and the SRAM buffer is full.
 """
 {
     /*b State etc  */
@@ -93,7 +105,7 @@ If not empty and output register will be empty move register[read_ptr] to output
     comb t_fifo_combs fifo_combs                 "Combinatorial decode of acks and requests";
     clocked gt_generic_valid_req[fifo_depth] fifo_data={{*=0,valid=1}}   "Fifo data";
 
-    /*b Control logic */
+    /*b Control logic for input/output registers */
     control_logic """
     Determine whether and where input data will go to
 
@@ -197,6 +209,12 @@ If not empty and output register will be empty move register[read_ptr] to output
         case req_out_src_sram:    { fifo_state.pending_req_out <= sram_read_req; }
         case req_out_src_req_in:  { fifo_state.pending_req_out <= fifo_state.req_in; }
         }
+        if (fifo_combs.can_take_request) {
+            fifo_state.req_in.valid <= 0;
+            if (req_in.valid) {
+                fifo_state.req_in <= req_in;
+            }
+        }
 
         /*b Handle ack in */
         ack_in = fifo_combs.can_take_request;
@@ -208,6 +226,12 @@ If not empty and output register will be empty move register[read_ptr] to output
     net bit[32] read_data;
     fifo_logic """
     """: {
+        /*b Determine FIFO writing */
+        fifo_combs.push = fifo_state.req_in.valid && !fifo_state.buffer_is_full;
+        if (fifo_combs.req_in_dest != req_in_dest_sram) {
+            fifo_combs.push = 0;
+        }
+        
         /*b Get +1 for FIFO pointers */
         fifo_combs.write_ptr_plus_1 = fifo_state.write_ptr+1;
         if (fifo_state.write_ptr == fifo_depth-1) {

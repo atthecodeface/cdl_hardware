@@ -24,7 +24,7 @@ constant integer double_sr    = 0;
 constant integer output_width = 60;
 constant integer shift_register_width = (double_sr+1)*output_width;
 constant integer shift_right = 1;
-constant integer cycles = output_width / input_width;
+constant integer cycles = shift_register_width / input_width;
 constant integer counter_size = sizeof(cycles);
 
 /*a Types */
