@@ -127,8 +127,9 @@ or 44.8ns; hence two out of every 5.6 cycles.
             data_out_state.data_out       <= data_in_state.data_out;
             data_out_state.data_out_valid <= 3;
             if (double_sr && !shift_right) {
-                data_out_state.data_out[output_width;output_width] <= data_in_state.data_out[output_width;0];
-                data_out_state.data_out[output_width;           0] <= data_in_state.data_out[output_width;output_width];
+                for (i; 1+double_sr) { // swap halves if double and shift left
+                    data_out_state.data_out[output_width;output_width*i] <= data_in_state.data_out[output_width;(double_sr-i)*output_width];
+                }
             }
         }
         valid_out = data_out_state.data_out_valid[0];

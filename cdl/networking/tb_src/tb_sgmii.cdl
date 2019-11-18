@@ -116,10 +116,7 @@ module tb_sgmii( clock clk,
             tbi_tx_symbol_valid <= 1;
         }
         if (tbi_tx_symbol_valid) {
-            tbi_tx_symbol.disparity_positive <= tbi_tx_symbol.disparity_positive ^ dec_data.toggles_disparity;
-            if (tbi_tx_symbol.disparity_positive && dec_data.illegal_if_disparity_positive) {
-                tbi_tx_symbol.disparity_positive <= 0;
-            }
+            tbi_tx_symbol.disparity_positive <= dec_data.disparity_positive;
         }
         decode_8b10b decoder(  symbol  <= tbi_tx_symbol,
                                dec_data => dec_data

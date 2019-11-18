@@ -189,9 +189,7 @@ dec_8b10b_data = {
     "data":8,
     "is_control":1,
     "is_data":1,
-    "illegal_if_disparity_negative":1,
-    "illegal_if_disparity_positive":1,
-    "toggles_disparity":1,
+    "disparity_positive":1,
 }
 
 #t symbol_8b10b - t_8b10b_symbol

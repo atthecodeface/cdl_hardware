@@ -26,9 +26,7 @@ typedef struct {
     bit[8] data                            "Data decoded from symbol";
     bit    is_control                      "Asserted if a control symbol";
     bit    is_data                         "Asserted if a data symbol";
-    bit    illegal_if_disparity_negative   "Asserted if the symbol requires positive disparity";
-    bit    illegal_if_disparity_positive   "Asserted if the symbol requires negative disparity";
-    bit    toggles_disparity               "Asserted if the symbol toggles disparity";
+    bit    disparity_positive              "Asserted if disparoirty after the symbol is positive";
 } t_8b10b_dec_data;
 
 /*t t_8b10b_symbol

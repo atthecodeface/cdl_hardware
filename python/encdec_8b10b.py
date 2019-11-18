@@ -192,6 +192,8 @@ def enc_pair_str(ep):
     (e6b5b, e4b3b) = ep
     return "%s%s"%(str(e6b5b),str(e4b3b))
 
+           
+        
 #a Toplevel
 control_symbols = [a+32*b for (a,b) in (23,7),(27,7),(29,7),(30,7), (28,0),(28,1),(28,2),(28,3),(28,4),(28,5),(28,6),(28,7)]
 data_symbols = range(256)
@@ -207,5 +209,12 @@ for d in data_symbols:
 if __name__ == '__main__':
     for e in encodings_8b10b:
         print str(e)
+        pass
+    for i in range(1024):
+        for d in range(2):
+            e = find_encoding(encodings_8b10b, {"encoding":i, "disparity_in":d})
+            print i,d,str(e)
+            pass
+        pass
     pass
 

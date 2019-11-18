@@ -38,15 +38,17 @@ constant integer eye_data_count_running   = ((1<<qwidth)/8)-5;
 constant integer delay_width = 9;
 
 /*a Types */
-/*t t_disparity - encoded with bit[1] = does not change it
-     disparity of 00 illegal if disparity in -ve
-     disparity of 01 illegal if disparity in +ve
-     disparity out = disparity in ^ !disparity[1]
+/*t t_disparity
+  Some codes are only valid for disparity in +ve,
+  some only for disparity in -ve
+  Usually if they are valid only if disparity in +ve then
+  they would toggle the disparity to -ve, but D.07 does
+  not, for example 
 */
-typedef enum[2] {
-    disparity_negative = 2b00,                    
-    disparity_positive = 2b01,                    
-    disparity_zero     = 2b10
+typedef enum[3] {
+    disparity_requires_positive = 3b001,
+    disparity_requires_negative = 3b010,
+    disparity_toggles           = 3b100
 } t_disparity;
 
 /*t t_data_6b
@@ -55,17 +57,23 @@ typedef struct {
     bit         can_be_control  "Asserted for encodings of 23, 27, 29, 30 and 28";
     bit         can_be_data     "Asserted if symbol is valid data (but may be control if 23/27/29/30)";
     bit[5]      data            "Decoded data value";
-    t_disparity disparity       "Disparity of symbol";
+    bit         uses_alt7_if_p;
+    bit         uses_alt7_if_n;
+    bit         toggles_disparity;
+    bit         requires_negative;
+    bit         requires_positive;
 } t_data_6b;
 
 /*t t_data_4b
 */
 typedef struct {
-    bit         valid     "Asserted if a valid 3B4B symbol";
-    bit         is_alt    "Asserted if is alt-7";
-    bit invert_if_control_and_disparity_minus;
-    bit[3]      data      "Decoded data value";
-    t_disparity disparity "Disparity of symbol";
+    bit         valid_data        "Asserted if a valid data 3B4B symbol";
+    bit         valid_control     "Asserted if a valid control 3B4B symbol";
+    bit         is_alt            "Asserted if is alt-7";
+    bit         is_primary        "Asserted if is primary-7";
+    bit         invert_if_control;
+    bit[3]      data              "Decoded data value";
+    bit         disparity_out     "Disparity of symbol";
 } t_data_4b;
 
 /*a Module
@@ -78,8 +86,8 @@ This module decodes an 8B10B symbol, splitting it in to two components, each of
 which is separately decoded.
 """
 {
-    comb bit[9] dec_5b6b;
-    comb bit[8] dec_3b4b;
+    comb bit[12] dec_5b6b;
+    comb bit[9]  dec_3b4b;
     comb t_data_6b data_6b;
     comb t_data_4b data_4b;
 
@@ -87,132 +95,144 @@ which is separately decoded.
     decode : {
         /*b Decode 5B6B symbol */
         // Default is neither data nor control
-        // control, data, value, disparity (10=doesnt change)
-        dec_5b6b = bundle( 2b00,
+        // is_control, is_data, uses_alt7, value, disparity
+        // special cases are when disparity in is -ve and D17.7, D18.7, D20.7
+        // special cases are when disparity in is +ve and D11.7, D13.7, D14.7
+        dec_5b6b = bundle( 2b00, 2b00,
                            symbol.symbol[5], symbol.symbol[6], symbol.symbol[7], symbol.symbol[8], symbol.symbol[9],
-                           2b00 );
+                           3b011 ); // requires negative and positive makes it illegal
         part_switch (symbol.symbol[6;4]) {
             // Data symbols
-        case 6b000101: {dec_5b6b = bundle( 2b11, 5d23 , 2b00 ); }
-        case 6b000110: {dec_5b6b = bundle( 2b01, 5d8  , 2b00 ); }
-        case 6b000111: {dec_5b6b = bundle( 2b01, 5d7  , 2b10 ); } // no disparity change BUT should be +ve
-        case 6b001001: {dec_5b6b = bundle( 2b11, 5d27 , 2b00 ); }
-        case 6b001010: {dec_5b6b = bundle( 2b01, 5d4  , 2b00 ); }
-        case 6b001011: {dec_5b6b = bundle( 2b01, 5d20 , 2b10 ); } // no disparity change
-        case 6b001100: {dec_5b6b = bundle( 2b01, 5d24 , 2b00 ); }
-        case 6b001101: {dec_5b6b = bundle( 2b01, 5d12 , 2b10 ); } // no disparity change
-        case 6b001110: {dec_5b6b = bundle( 2b01, 5d28 , 2b10 ); } // no disparity change
-        case 6b010001: {dec_5b6b = bundle( 2b11, 5d29 , 2b00 ); }
-        case 6b010010: {dec_5b6b = bundle( 2b01, 5d2  , 2b00 ); }
-        case 6b010011: {dec_5b6b = bundle( 2b01, 5d18 , 2b10 ); } // no disparity change
-        case 6b010100: {dec_5b6b = bundle( 2b01, 5d31 , 2b00 ); }
-        case 6b010101: {dec_5b6b = bundle( 2b01, 5d10 , 2b10 ); }
-        case 6b010110: {dec_5b6b = bundle( 2b01, 5d26 , 2b10 ); } // no disparity change
-        case 6b010111: {dec_5b6b = bundle( 2b01, 5d15 , 2b01 ); }
-        case 6b011000: {dec_5b6b = bundle( 2b01, 5d0  , 2b00 ); }
-        case 6b011001: {dec_5b6b = bundle( 2b01, 5d6  , 2b10 ); } // no disparity change
-        case 6b011010: {dec_5b6b = bundle( 2b01, 5d22 , 2b10 ); } // no disparity change
-        case 6b011011: {dec_5b6b = bundle( 2b01, 5d16 , 2b01 ); }
-        case 6b011100: {dec_5b6b = bundle( 2b01, 5d14 , 2b10 ); } // no disparity change
-        case 6b011101: {dec_5b6b = bundle( 2b01, 5d1  , 2b01 ); }
-        case 6b011110: {dec_5b6b = bundle( 2b11, 5d30 , 2b01 ); }
-        case 6b100001: {dec_5b6b = bundle( 2b11, 5d30 , 2b00 ); }
-        case 6b100010: {dec_5b6b = bundle( 2b01, 5d1  , 2b00 ); }
-        case 6b100011: {dec_5b6b = bundle( 2b01, 5d17 , 2b10 ); } // no disparity change
-        case 6b100100: {dec_5b6b = bundle( 2b01, 5d16 , 2b00 ); }
-        case 6b100101: {dec_5b6b = bundle( 2b01, 5d9  , 2b10 ); } // no disparity change
-        case 6b100110: {dec_5b6b = bundle( 2b01, 5d25 , 2b10 ); } // no disparity change
-        case 6b100111: {dec_5b6b = bundle( 2b01, 5d0  , 2b01 ); }
-        case 6b101000: {dec_5b6b = bundle( 2b01, 5d15 , 2b00 ); }
-        case 6b101001: {dec_5b6b = bundle( 2b01, 5d5  , 2b10 ); } // no disparity change
-        case 6b101010: {dec_5b6b = bundle( 2b01, 5d21 , 2b10 ); } // no disparity change
-        case 6b101011: {dec_5b6b = bundle( 2b01, 5d31 , 2b01 ); }
-        case 6b101100: {dec_5b6b = bundle( 2b01, 5d13 , 2b10 ); } // no disparity change
-        case 6b101101: {dec_5b6b = bundle( 2b01, 5d2  , 2b01 ); }
-        case 6b101110: {dec_5b6b = bundle( 2b11, 5d29 , 2b01 ); }
-        case 6b110001: {dec_5b6b = bundle( 2b01, 5d3  , 2b10 ); } // no disparity change
-        case 6b110010: {dec_5b6b = bundle( 2b01, 5d19 , 2b10 ); } // no disparity change
-        case 6b110011: {dec_5b6b = bundle( 2b01, 5d24 , 2b01 ); }
-        case 6b110100: {dec_5b6b = bundle( 2b01, 5d11 , 2b10 ); } // no disparity change
-        case 6b110101: {dec_5b6b = bundle( 2b01, 5d4  , 2b01 ); }
-        case 6b110110: {dec_5b6b = bundle( 2b11, 5d27 , 2b01 ); }
-        case 6b111000: {dec_5b6b = bundle( 2b01, 5d7  , 2b10 ); } // no disparity change BUT should be +ve
-        case 6b111001: {dec_5b6b = bundle( 2b01, 5d8  , 2b01 ); }
-        case 6b111010: {dec_5b6b = bundle( 2b11, 5d23 , 2b01 ); }
+        case 6b000101: {dec_5b6b = bundle( 2b11, 2b00, 5d23 , 3b101 ); }
+        case 6b000110: {dec_5b6b = bundle( 2b01, 2b00, 5d8  , 3b101 ); }
+        case 6b000111: {dec_5b6b = bundle( 2b01, 2b00, 5d7  , 3b001 ); } // no disparity change BUT must be +ve
+        case 6b001001: {dec_5b6b = bundle( 2b11, 2b00, 5d27 , 3b101 ); }
+        case 6b001010: {dec_5b6b = bundle( 2b01, 2b00, 5d4  , 3b101 ); }
+        case 6b001011: {dec_5b6b = bundle( 2b01, 2b01, 5d20 , 3b000 ); } // no disparity change
+        case 6b001100: {dec_5b6b = bundle( 2b01, 2b00, 5d24 , 3b101 ); }
+        case 6b001101: {dec_5b6b = bundle( 2b01, 2b00, 5d12 , 3b000 ); } // no disparity change
+        case 6b001110: {dec_5b6b = bundle( 2b01, 2b00, 5d28 , 3b000 ); } // no disparity change
+        case 6b010001: {dec_5b6b = bundle( 2b11, 2b00, 5d29 , 3b101 ); }
+        case 6b010010: {dec_5b6b = bundle( 2b01, 2b00, 5d2  , 3b101 ); }
+        case 6b010011: {dec_5b6b = bundle( 2b01, 2b01, 5d18 , 3b000 ); } // no disparity change
+        case 6b010100: {dec_5b6b = bundle( 2b01, 2b00, 5d31 , 3b101 ); }
+        case 6b010101: {dec_5b6b = bundle( 2b01, 2b00, 5d10 , 3b000 ); } // no disparity change
+        case 6b010110: {dec_5b6b = bundle( 2b01, 2b00, 5d26 , 3b000 ); } // no disparity change
+        case 6b010111: {dec_5b6b = bundle( 2b01, 2b00, 5d15 , 3b110 ); }
+        case 6b011000: {dec_5b6b = bundle( 2b01, 2b00, 5d0  , 3b101 ); }
+        case 6b011001: {dec_5b6b = bundle( 2b01, 2b00, 5d6  , 3b000 ); } // no disparity change
+        case 6b011010: {dec_5b6b = bundle( 2b01, 2b00, 5d22 , 3b000 ); } // no disparity change
+        case 6b011011: {dec_5b6b = bundle( 2b01, 2b00, 5d16 , 3b110 ); }
+        case 6b011100: {dec_5b6b = bundle( 2b01, 2b10, 5d14 , 3b000 ); } // no disparity change
+        case 6b011101: {dec_5b6b = bundle( 2b01, 2b00, 5d1  , 3b110 ); }
+        case 6b011110: {dec_5b6b = bundle( 2b11, 2b00, 5d30 , 3b110 ); }
+        case 6b100001: {dec_5b6b = bundle( 2b11, 2b00, 5d30 , 3b101 ); }
+        case 6b100010: {dec_5b6b = bundle( 2b01, 2b00, 5d1  , 3b101 ); }
+        case 6b100011: {dec_5b6b = bundle( 2b01, 2b01, 5d17 , 3b000 ); } // no disparity change
+        case 6b100100: {dec_5b6b = bundle( 2b01, 2b00, 5d16 , 3b101 ); }
+        case 6b100101: {dec_5b6b = bundle( 2b01, 2b00, 5d9  , 3b000 ); } // no disparity change
+        case 6b100110: {dec_5b6b = bundle( 2b01, 2b00, 5d25 , 3b000 ); } // no disparity change
+        case 6b100111: {dec_5b6b = bundle( 2b01, 2b00, 5d0  , 3b110 ); }
+        case 6b101000: {dec_5b6b = bundle( 2b01, 2b00, 5d15 , 3b101 ); }
+        case 6b101001: {dec_5b6b = bundle( 2b01, 2b00, 5d5  , 3b000 ); } // no disparity change
+        case 6b101010: {dec_5b6b = bundle( 2b01, 2b00, 5d21 , 3b000 ); } // no disparity change
+        case 6b101011: {dec_5b6b = bundle( 2b01, 2b00, 5d31 , 3b110 ); }
+        case 6b101100: {dec_5b6b = bundle( 2b01, 2b10, 5d13 , 3b000 ); } // no disparity change
+        case 6b101101: {dec_5b6b = bundle( 2b01, 2b00, 5d2  , 3b110 ); }
+        case 6b101110: {dec_5b6b = bundle( 2b11, 2b00, 5d29 , 3b110 ); }
+        case 6b110001: {dec_5b6b = bundle( 2b01, 2b00, 5d3  , 3b000 ); } // no disparity change
+        case 6b110010: {dec_5b6b = bundle( 2b01, 2b00, 5d19 , 3b000 ); } // no disparity change
+        case 6b110011: {dec_5b6b = bundle( 2b01, 2b00, 5d24 , 3b110 ); }
+        case 6b110100: {dec_5b6b = bundle( 2b01, 2b10, 5d11 , 3b000 ); } // no disparity change
+        case 6b110101: {dec_5b6b = bundle( 2b01, 2b00, 5d4  , 3b110 ); }
+        case 6b110110: {dec_5b6b = bundle( 2b11, 2b00, 5d27 , 3b110 ); }
+        case 6b111000: {dec_5b6b = bundle( 2b01, 2b00, 5d7  , 3b010 ); } // no disparity change BUT must be -ve
+        case 6b111001: {dec_5b6b = bundle( 2b01, 2b00, 5d8  , 3b110 ); }
+        case 6b111010: {dec_5b6b = bundle( 2b11, 2b00, 5d23 , 3b110 ); }
 
-        case 6b001111 : {dec_5b6b = bundle( 2b10, 5d28, 2b01 ); }
-        case 6b110000 : {dec_5b6b = bundle( 2b10, 5d28, 2b00 ); }
+        case 6b001111 : {dec_5b6b = bundle( 2b10, 2b00, 5d28, 3b110 ); }
+        case 6b110000 : {dec_5b6b = bundle( 2b10, 2b00, 5d28, 3b101 ); }
         }
-        data_6b.can_be_control   = dec_5b6b[8];
-        data_6b.can_be_data    = dec_5b6b[7];
-        data_6b.data           = dec_5b6b[5;2];
-        data_6b.disparity      = dec_5b6b[2;0];
+        data_6b.can_be_control    = dec_5b6b[11];
+        data_6b.can_be_data       = dec_5b6b[10];
+        data_6b.uses_alt7_if_p    = dec_5b6b[9];
+        data_6b.uses_alt7_if_n    = dec_5b6b[8];
+        data_6b.data              = dec_5b6b[5;3];
+        data_6b.toggles_disparity = dec_5b6b[2];
+        data_6b.requires_negative = dec_5b6b[1];
+        data_6b.requires_positive = dec_5b6b[0];
     
         /*b Decode 3B4B symbol */
         // Default is neither data nor control
-        dec_3b4b = bundle( 1b0, // invert if control and disparity in -ve
-                           1b0, // valid
+        dec_3b4b = bundle( 1b0, // invert if control
+                           1b0, // valid control
+                           1b0, // valid data
                            1b0, // is alt
-                           symbol.symbol[1], symbol.symbol[2], symbol.symbol[3],
-                           2b00 );
-        part_switch (symbol.symbol[4;0]) {
-            // Data symbols (if not a control)
-        case 4b0001: {dec_3b4b = bundle( 3b010, 3d7, 2b00);}
-        case 4b0010: {dec_3b4b = bundle( 3b010, 3d4, 2b00);}
-        case 4b0011: {dec_3b4b = bundle( 3b010, 3d3, 2b10);} // no disparity change
-        case 4b0100: {dec_3b4b = bundle( 3b010, 3d0, 2b00);}
-        case 4b0101: {dec_3b4b = bundle( 3b110, 3d2, 2b10);} // invert data if control and disparity in -ve
-        case 4b0110: {dec_3b4b = bundle( 3b110, 3d6, 2b10);} // invert data if control and disparity in -ve
-        case 4b0111: {dec_3b4b = bundle( 3b011, 3d7, 2b01);}
-        case 4b1000: {dec_3b4b = bundle( 3b011, 3d7, 2b00);}
-        case 4b1001: {dec_3b4b = bundle( 3b110, 3d1, 2b10);} // invert data if control and disparity in -ve
-        case 4b1010: {dec_3b4b = bundle( 3b110, 3d5, 2b10);} // invert data if control and disparity in -ve
-        case 4b1011: {dec_3b4b = bundle( 3b010, 3d0, 2b01);}
-        case 4b1100: {dec_3b4b = bundle( 3b010, 3d3, 2b10);} // no disparity change
-        case 4b1101: {dec_3b4b = bundle( 3b010, 3d4, 2b01);}
-        case 4b1110: {dec_3b4b = bundle( 3b010, 3d7, 2b01);}
+                           1b0, // is primary
+                           1b0, // disparity out
+                           symbol.symbol[1], symbol.symbol[2], symbol.symbol[3]
+                            );
+        part_switch (bundle(data_6b.toggles_disparity^symbol.disparity_positive, symbol.symbol[4;0])) {
+        case 5b00101: {dec_3b4b = bundle( 5b11100, 1b0, 3d2);} // D.2 or K.5
+        case 5b00110: {dec_3b4b = bundle( 5b11100, 1b0, 3d6);} // D.6 or K.1
+        case 5b00111: {dec_3b4b = bundle( 5b01110, 1b1, 3d7);} // A/K.7
+        case 5b01001: {dec_3b4b = bundle( 5b11100, 1b0, 3d1);} // D.1 or K.6
+        case 5b01010: {dec_3b4b = bundle( 5b11100, 1b0, 3d5);} // D.5 or K.2
+        case 5b01011: {dec_3b4b = bundle( 5b01100, 1b1, 3d0);} // D/K.0
+        case 5b01100: {dec_3b4b = bundle( 5b01100, 1b0, 3d3);} // D/K.3
+        case 5b01101: {dec_3b4b = bundle( 5b01100, 1b1, 3d4);} // D/K.4
+        case 5b01110: {dec_3b4b = bundle( 5b00101, 1b1, 3d7);} // D.7
+        case 5b10001: {dec_3b4b = bundle( 5b00101, 1b0, 3d7);} // D.7
+        case 5b10010: {dec_3b4b = bundle( 5b01100, 1b0, 3d4);} // D/K.4
+        case 5b10011: {dec_3b4b = bundle( 5b01100, 1b1, 3d3);} // D/K.3
+        case 5b10100: {dec_3b4b = bundle( 5b01100, 1b0, 3d0);} // D/K.0
+        case 5b10101: {dec_3b4b = bundle( 5b01100, 1b1, 3d2);} // D/K.2
+        case 5b10110: {dec_3b4b = bundle( 5b01100, 1b1, 3d6);} // D/K.6
+        case 5b11000: {dec_3b4b = bundle( 5b01110, 1b0, 3d7);} // A/K.7
+        case 5b11001: {dec_3b4b = bundle( 5b01100, 1b1, 3d1);} // D/K.1
+        case 5b11010: {dec_3b4b = bundle( 5b01100, 1b1, 3d5);} // D/K.5
         }
-        data_4b.invert_if_control_and_disparity_minus = dec_3b4b[7];
-        data_4b.valid          = dec_3b4b[6];
-        data_4b.is_alt         = dec_3b4b[5];
-        data_4b.data           = dec_3b4b[3;2];
-        data_4b.disparity      = dec_3b4b[2;0];
+        data_4b.invert_if_control  = dec_3b4b[8];
+        data_4b.valid_control      = dec_3b4b[7];
+        data_4b.valid_data         = dec_3b4b[6];
+        data_4b.is_alt             = dec_3b4b[5];
+        data_4b.is_primary         = dec_3b4b[4];
+        data_4b.disparity_out      = dec_3b4b[3];
+        data_4b.data               = dec_3b4b[3;0];
 
         /*b Decode 8B10B */
-        dec_data.valid = (data_6b.can_be_data || data_6b.can_be_control) | data_4b.valid;
-        dec_data.data  = bundle(data_4b.data, data_6b.data);
-        // note that data of 1,2,5,6 should be ^7 if control AND disparity in is negative
-        if ((data_6b.can_be_control && !data_6b.can_be_data) &&
-            (symbol.disparity_positive ^ data_6b.disparity[1]) &&
-            (data_4b.invert_if_control_and_disparity_minus)
-            ) { // only for K.28 really
-            dec_data.data  = bundle(~data_4b.data, data_6b.data);
-        }
-
-        // control of 28 is allowed with any 3B4B data - and it is marked as can_be_control only
-        // control of 23,27,29,30 are allowed only with 3B4B data of alt 7 - these are marked as can_be_control/data
-        dec_data.is_control = 0;
-        dec_data.is_data  = data_6b.can_be_data;
-        if (data_6b.can_be_control) {
-            if (!data_6b.can_be_data || data_4b.is_alt) {
-                dec_data.is_control = 1;
+        dec_data.is_control = data_6b.can_be_control;
+        dec_data.is_data    = data_6b.can_be_data;
+        if (data_4b.is_alt) { // makes 6b5b that can be both data and control a control
+            if (data_6b.can_be_control) {
                 dec_data.is_data    = 0;
             }
-        }
-    
-        dec_data.toggles_disparity = (data_4b.disparity[1] != data_6b.disparity[1]);
-        dec_data.illegal_if_disparity_negative = 0;
-        dec_data.illegal_if_disparity_positive = 0;
-        if (data_6b.disparity == disparity_negative) {
-            dec_data.illegal_if_disparity_negative = 1;
-        } elsif (data_6b.disparity == disparity_positive) {
-            dec_data.illegal_if_disparity_positive = 1;
-        } else {
-            if (data_4b.disparity == disparity_negative) {
-                dec_data.illegal_if_disparity_negative = 1;
-            } elsif (data_4b.disparity == disparity_positive) {
-                dec_data.illegal_if_disparity_positive = 1;
+        } else { // makes 6b5b that can be both data and control a data
+            if (data_6b.can_be_data) {
+                dec_data.is_control    = 0;
             }
+        }
+
+        dec_data.data  = bundle(data_4b.data, data_6b.data);
+        // note that data of 1,2,5,6 should be ^7 if control AND disparity in is negative
+        if (dec_data.is_control && data_4b.invert_if_control) {
+            dec_data.data  = bundle(~data_4b.data, data_6b.data);
+        }
+        dec_data.disparity_positive = data_4b.disparity_out;
+
+        dec_data.valid = ( (dec_data.is_control && data_4b.valid_control) ||
+                           (dec_data.is_data    && data_4b.valid_data) );
+        if (data_6b.requires_positive && !symbol.disparity_positive) { dec_data.valid = 0; }
+        if (data_6b.requires_negative &&  symbol.disparity_positive) { dec_data.valid = 0; }
+        if (data_4b.is_alt) {
+            if (data_6b.uses_alt7_if_n &&  symbol.disparity_positive) { dec_data.valid=0; }
+            if (data_6b.uses_alt7_if_p && !symbol.disparity_positive) { dec_data.valid=0; }
+            if (!data_6b.can_be_control && !data_6b.uses_alt7_if_n && !data_6b.uses_alt7_if_p) { dec_data.valid=0; }
+        }
+        if (data_4b.is_primary) {
+            if (data_6b.uses_alt7_if_n && !symbol.disparity_positive) { dec_data.valid=0; }
+            if (data_6b.uses_alt7_if_p &&  symbol.disparity_positive) { dec_data.valid=0; }
+            //if (!data_6b.can_be_control && !data_6b.uses_alt7_if_n && !data_6b.uses_alt7_if_p) { dec_data.valid=0; }
         }
 
         /*b All done */

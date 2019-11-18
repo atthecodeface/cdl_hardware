@@ -1207,7 +1207,7 @@ if (request) {
         /*b Decode action */
         if (gmii_rx_state.serial_data_valid) {
             gmii_rx_state.rx_even   <= !gmii_rx_state.rx_even;
-            gmii_rx_state.disparity <= gmii_rx_state.disparity ^ gmii_rx_decoded_symbol.toggles_disparity;
+            gmii_rx_state.disparity <= gmii_rx_decoded_symbol.disparity_positive;
         }
 
         full_switch (gmii_rx_combs.action) {

@@ -101,15 +101,48 @@ class eth_8b10b_test_decode_0(eth_8b10b_test_base):
             dut_data = self.dec_data__data.value()
             dut_is_control = self.dec_data__is_control.value()
             dut_is_data = self.dec_data__is_data.value()
-            dut_illegal_if_dp0 = self.dec_data__illegal_if_disparity_negative.value()
-            dut_illegal_if_dp1 = self.dec_data__illegal_if_disparity_positive.value()
-            dut_toggles_disparity = self.dec_data__toggles_disparity.value()
-            dut_disparity_out = dut_toggles_disparity ^ e.disparity_in
+            dut_disparity_out = self.dec_data__disparity_positive.value()
             self.compare_expected("Decoding of symbol %s valid"%(str(e)),1,dut_valid)
             self.compare_expected("Data of symbol %s"%(str(e)),e.data,dut_data)
             self.compare_expected("Is control of symbol %s"%(str(e)),e.is_control,dut_is_control)
             self.compare_expected("Is data of symbol %s"%(str(e)),1^e.is_control,dut_is_data)
             self.compare_expected("Disparity out of symbol %s"%(str(e)),e.disparity_out,dut_disparity_out)
+            pass
+        self.bfm_wait(self.run_time_remaining())
+        self.enc_data__data.drive(0)
+        self.bfm_wait(1)
+        self.finishtest(0,"")
+        pass
+
+#c eth_8b10b_test_decode_1
+class eth_8b10b_test_decode_1(eth_8b10b_test_base):
+    #f run
+    def run(self):
+        self.sim_msg = self.sim_message()
+        self.bfm_wait(100)
+        simple_tb.base_th.run_start(self)
+        for symbol in range(1024):
+            for disp in range(2):
+                e = encdec_8b10b.find_encoding(encdec_8b10b.encodings_8b10b, {"encoding":symbol, "disparity_in":disp})
+                self.dec_symbol__disparity_positive.drive(disp)
+                self.dec_symbol__symbol.drive(symbol)
+                self.bfm_wait(2)
+                dut_valid = self.dec_data__valid.value()
+                dut_data = self.dec_data__data.value()
+                dut_is_control = self.dec_data__is_control.value()
+                dut_is_data = self.dec_data__is_data.value()
+                dut_disparity_out = self.dec_data__disparity_positive.value()
+                if e is None:
+                    self.compare_expected("Decoding of code %03d should be invalid"%(symbol),0,dut_valid)
+                    pass
+                else:
+                    self.compare_expected("Decoding of code %s valid"%(str(e)),1,dut_valid)
+                    self.compare_expected("Data of symbol %s"%(str(e)),e.data,dut_data)
+                    self.compare_expected("Is control of symbol %s"%(str(e)),e.is_control,dut_is_control)
+                    self.compare_expected("Is data of symbol %s"%(str(e)),1^e.is_control,dut_is_data)
+                    self.compare_expected("Disparity out of symbol %s"%(str(e)),e.disparity_out,dut_disparity_out)
+                    pass
+                pass
             pass
         self.bfm_wait(self.run_time_remaining())
         self.enc_data__data.drive(0)
@@ -386,6 +419,9 @@ class eth_8b10b(simple_tb.base_test):
         pass
     def test_decode_0(self):
         self.do_test_run(eth_8b10b_test_hw(eth_8b10b_test_decode_0()), num_cycles=10000)
+        pass
+    def test_decode_1(self):
+        self.do_test_run(eth_8b10b_test_hw(eth_8b10b_test_decode_1()), num_cycles=20*1000)
         pass
     pass
 #c sgmii
