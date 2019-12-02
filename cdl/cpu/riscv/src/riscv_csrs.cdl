@@ -22,12 +22,6 @@
 include "cpu/riscv/riscv_internal_types.h"
 include "cpu/riscv/riscv_config.h"
 
-/*a Constants that can be overridden */
-constant integer mimpid = 0;
-constant integer misa = 0;
-constant integer mvendorid = 0;
-constant integer mhartid = 0;
-
 /*a Types */
 /*t t_csr_write */
 typedef struct {
@@ -285,10 +279,11 @@ The following CSRs should therefore be supplied for user mode interrupts: ustatu
         case riscv_csr_select_instret_l : { csr_data.read_data = csrs.instret[32; 0]; }
         case riscv_csr_select_instret_h : { csr_data.read_data = csrs.instret[32;32]; }
 
-        case riscv_csr_machine_impid    : { csr_data.read_data = mimpid;      }
-        case riscv_csr_machine_hartid   : { csr_data.read_data = mhartid; }
-        case riscv_csr_machine_isa      : { csr_data.read_data = misa; }
-        case riscv_csr_machine_vendorid : { csr_data.read_data = mvendorid; }
+        case riscv_csr_machine_isa      : { csr_data.read_data = misa      | csr_access.custom.misa;       }
+        case riscv_csr_machine_vendorid : { csr_data.read_data = mvendorid | csr_access.custom.mvendorid;  }
+        case riscv_csr_machine_archid   : { csr_data.read_data = marchid   | csr_access.custom.marchid;  }
+        case riscv_csr_machine_impid    : { csr_data.read_data = mimpid    | csr_access.custom.mimpid;     }
+        case riscv_csr_machine_hartid   : { csr_data.read_data = mhartid   | csr_access.custom.mhartid;    }
 
         case riscv_csr_user_status     : { csr_data.read_data = csr_combs.ustatus; }
         case riscv_csr_user_scratch    : { csr_data.read_data = csrs.uscratch; }

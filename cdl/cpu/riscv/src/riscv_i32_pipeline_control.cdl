@@ -101,6 +101,7 @@ typedef struct {
 typedef struct {
     bit attention;
     bit response;
+    bit[6] mask;
 } t_debug_drive;
 
 /*t t_debug_control
@@ -460,7 +461,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
                     } else {
                         ifetch_state.state <= ifetch_fsm_restarting;
                     }
-                    ifetch_state.mode <= pipeline_state.interrupt_to_mode;
+                    ifetch_state.mode <= pipeline_control.trap.to_mode;
                     ifetch_state.pc <= bundle(csrs.mtvec.base, 2b0);
                 }
             }
@@ -498,7 +499,8 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
     """ : {
 
         debug_state.drive <= {*=0};
-        if ((debug_mst.mask & rv_select) == debug_mst.select) {
+        debug_state.drive.mask <= debug_mst.mask;
+        if ((debug_mst.mask & rv_select) == (debug_mst.mask & debug_mst.select)) {
             debug_state.drive.attention <= 1;
         }
         if (debug_mst.valid && (rv_select==debug_mst.select)) {
@@ -509,6 +511,7 @@ In debug mode PC=0xfffffffc returns the debug_state.data0 instruction and PC=0 r
         }
 
         debug_tgt = {*=0};
+        debug_tgt.mask = debug_state.drive.mask;
         if (debug_state.drive.attention) {
             debug_tgt.attention = debug_state.control.attention;
         }

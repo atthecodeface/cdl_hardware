@@ -645,7 +645,7 @@ This is by taking dmactive low.
         debug_mst.valid  <= 0;
         debug_mst.data <= 0;
         debug_mst.select <= 0;
-        debug_mst.mask <= -1;
+        debug_mst.mask <= 0; // Drive attention from all harts
         debug_combs.mst_initiating_transfer = 0;
         debug_combs.mst_initiating_execute = 0;
         if (debug_state.must_set_requests) {

@@ -19,6 +19,7 @@
 /*a Includes
  */
 include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_config.h"
 
 /*a Constants
  */
@@ -306,7 +307,7 @@ typedef enum[8] {
 
 /*t t_riscv_trap_cause
  */
-typedef enum[4] {
+typedef enum[5] {
     riscv_trap_cause_instruction_misaligned = 0,
     riscv_trap_cause_instruction_fault      = 1,
     riscv_trap_cause_illegal_instruction    = 2,
@@ -318,7 +319,7 @@ typedef enum[4] {
     riscv_trap_cause_uecall                 = 8,
     riscv_trap_cause_secall                 = 9,
     riscv_trap_cause_mecall                 = 11,
-    riscv_trap_cause_interrupt              = 15,
+    riscv_trap_cause_interrupt              = 16,
     riscv_trap_cause_ret_mret               = 0,
     riscv_trap_cause_ret_sret               = 1,
     riscv_trap_cause_ret_uret               = 2,
@@ -433,10 +434,11 @@ typedef enum[12] {
     riscv_csr_select_instret_l= 12h014,
     riscv_csr_select_instret_h= 12h015,
 
-    riscv_csr_machine_impid   = 12h020,
-    riscv_csr_machine_hartid  = 12h021,
-    riscv_csr_machine_isa     = 12h022,
-    riscv_csr_machine_vendorid= 12h023,
+    riscv_csr_machine_isa     = 12h020,
+    riscv_csr_machine_vendorid= 12h021,
+    riscv_csr_machine_archid  = 12h022,
+    riscv_csr_machine_impid   = 12h023,
+    riscv_csr_machine_hartid  = 12h024,
 
     riscv_csr_user_status     = 12h040,
     riscv_csr_user_scratch    = 12h041,
@@ -482,6 +484,7 @@ typedef struct {
     t_riscv_mode            mode "Used for decode and to determine legality";
     bit                     access_cancelled;
     t_riscv_csr_access_type access;
+    t_riscv_csr_access_custom custom;
     bit[12]                 address "For internal use before select generation";
     t_riscv_csr_select      select;
     t_riscv_word            write_data     "Write data for the CSR access, later in the cycle than @csr_access possibly";
@@ -739,6 +742,7 @@ typedef struct {
     t_riscv_word            alu_rs2     "Early in cycle (after some muxes)";
     bit                     alu_flush_pipeline "Late in cycle: If asserted, flush everything prior to alu; will only be asserted during a cycle if first cycle if ALU instruction - or if alu_cannot_start";
     bit                     alu_cannot_start "Late in cycle: If asserted, alu_idecode may be valid but rs1/rs2 are not; once deasserted it remains deasserted until a new ALU instruction starts";
+    bit                     alu_data_not_ready   "Early in cycle (independent of coprocessors): If asserted, alu_idecode may be valid but rs1/rs2 are not; once deasserted it remains deasserted until a new ALU instruction starts";
     bit                     alu_cannot_complete "Late in cycle: If asserted, alu cannot complete because it is still working on its operation";
 } t_riscv_i32_coproc_controls;
 

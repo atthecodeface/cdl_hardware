@@ -176,6 +176,26 @@ extern module riscv_i32_trace_decompression( input bit[64] compressed_nybbles "N
 }
 
 /*a CSR modules */
+/*m riscv_csrs - generic, may not be built  */
+extern
+module riscv_csrs( clock clk                                   "RISC-V clock",
+                   clock riscv_clk                             "Clk gated by riscv_clk_enable - provide for single clock gate outside the module",
+                   input bit reset_n                           "Active low reset",
+                   input bit riscv_clk_enable,
+                   input t_riscv_irqs       irqs               "Interrupts in to the CPU",
+                   input t_riscv_csr_access csr_access         "RISC-V CSR access, combinatorially decoded",
+                   output t_riscv_csr_data csr_data            "CSR response (including take interrupt and read data), from the current @a csr_access",
+                   input t_riscv_csr_controls csr_controls     "Control signals to update the CSRs",
+                   output t_riscv_csrs        csrs            "CSR values"
+    )
+{
+    timing to   rising clock clk riscv_clk_enable;
+    timing to   rising clock riscv_clk csr_access, csr_controls, irqs;
+    timing from rising clock riscv_clk csr_data, csrs;
+    timing comb input csr_access;
+    timing comb output csr_data;
+}
+
 /*m riscv_csrs_machine_only  */
 extern
 module riscv_csrs_machine_only( clock clk                                   "RISC-V clock",

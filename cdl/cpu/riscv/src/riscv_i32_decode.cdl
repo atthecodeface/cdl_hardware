@@ -404,6 +404,9 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
                 idecode_inst.illegal = 0;
                 idecode_inst.op = riscv_op_custom_0;
                 idecode_inst.subop = bundle(1b0,combs.funct3);
+                idecode_inst.rs1_valid = 1;
+                if (rv_cfg_i32_custom0_as_load==1)  {idecode_inst.rs2_valid = 1;}
+                if (rv_cfg_i32_custom0_as_store==1) {idecode_inst.rd_written = 1;}
             }
         }
         case riscv_opc_custom_1: {
@@ -411,20 +414,29 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
                 idecode_inst.illegal = 0;
                 idecode_inst.op = riscv_op_custom_1;
                 idecode_inst.subop = bundle(1b0,combs.funct3);
+                idecode_inst.rs1_valid = 1;
+                if (rv_cfg_i32_custom1_as_load==1)  {idecode_inst.rs2_valid = 1;}
+                if (rv_cfg_i32_custom1_as_store==1) {idecode_inst.rd_written = 1;}
             }
         }
         case riscv_opc_custom_2: {
-            if (rv_cfg_i32_custom0_enable==1) {
+            if (rv_cfg_i32_custom2_enable==1) {
                 idecode_inst.illegal = 0;
                 idecode_inst.op = riscv_op_custom_2;
                 idecode_inst.subop = bundle(1b0,combs.funct3);
+                idecode_inst.rs1_valid = 1;
+                if (rv_cfg_i32_custom2_as_load==1)  {idecode_inst.rs2_valid = 1;}
+                if (rv_cfg_i32_custom2_as_store==1) {idecode_inst.rd_written = 1;}
             }
         }
         case riscv_opc_custom_3: {
-            if (rv_cfg_i32_custom0_enable==1) {
+            if (rv_cfg_i32_custom3_enable==1) {
                 idecode_inst.illegal = 0;
                 idecode_inst.op = riscv_op_custom_3;
                 idecode_inst.subop = bundle(1b0,combs.funct3);
+                idecode_inst.rs1_valid = 1;
+                if (rv_cfg_i32_custom3_as_load==1)  {idecode_inst.rs2_valid = 1;}
+                if (rv_cfg_i32_custom3_as_store==1) {idecode_inst.rd_written = 1;}
             }
         }
         }
@@ -470,6 +482,7 @@ Atomic instructions are 7b0101111 in bottom 7 bits - top 6 bits are the atomic t
         idecode_debug.subop = riscv_subop_or; // alu_result = rs1 | rs2_or_imm
         idecode_debug.csr_access.access  = riscv_csr_access_none;
         idecode_debug.csr_access.address = instruction.debug.data[12;0];
+        idecode_debug.csr_access.select  = csr_decode.csr_select;
         if (instruction.debug.data[12]) { // GPR access
             full_switch (instruction.debug.debug_op) {
             case rv_inst_debug_op_read_reg: {

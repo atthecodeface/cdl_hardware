@@ -234,6 +234,7 @@ typedef struct {
     t_riscv_word data       "Data from a completed transaction; 0 otherwise";
 
     bit attention           "Asserted by a PDM if it has unacknowledged halt, breakpoint hit, resumption";
+    bit[6] mask             "Mask received by PDM that matches the acknowledge - all PDMs will drive the same value";
 } t_riscv_debug_tgt;
 
 /*t t_riscv_pipeline_debug_control

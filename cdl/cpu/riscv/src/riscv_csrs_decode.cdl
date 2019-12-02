@@ -74,6 +74,7 @@ This module performs combinatorial decode of CSR accesses.
         case CSR_ADDR_MIMPID    : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_impid; }
         case CSR_ADDR_MHARTID   : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_hartid; }
         case CSR_ADDR_MISA      : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_isa; }
+        case CSR_ADDR_MARCHID   : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_archid; }
         case CSR_ADDR_MVENDORID : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_vendorid; }
 
         case CSR_ADDR_MSTATUS   : { csr_decode.illegal_access=0; csr_decode.csr_select = riscv_csr_machine_status; }

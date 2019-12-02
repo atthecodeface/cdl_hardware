@@ -177,7 +177,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
             pipeline_control.flush.fetch     = 0;
         }
 
-        csr_access.access_cancelled =  pipeline_control.flush.exec;
+        csr_access.access_cancelled =  pipeline_control.flush.exec | pipeline_control.exec.blocked;
     }
 
     /*b CSR controls */
@@ -200,6 +200,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
         coproc_controls.dec_to_alu_blocked  = pipeline_control.decode.blocked;
         coproc_controls.alu_rs1             = pipeline_response.exec.rs1;
         coproc_controls.alu_rs2             = pipeline_response.exec.rs2;
+        coproc_controls.alu_data_not_ready  = pipeline_response.exec.cannot_start;
         coproc_controls.alu_flush_pipeline  = pipeline_control.flush.decode; // pipeline_fetch_data.dec_flush_pipeline;
         coproc_controls.alu_cannot_start    = control_flow_combs.exec_cannot_start;
         coproc_controls.alu_cannot_complete = control_flow_combs.exec_cannot_complete;
