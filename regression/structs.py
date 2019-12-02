@@ -33,6 +33,14 @@ apb_rom_request = {
     "address":16,
 }
 
+#a CSR
+csr_request  = {"valid":1, "read_not_write":1, "select":16, "address":16, "data":32}
+csr_response = {"acknowledge":1, "read_data_valid":1, "read_data_error":1, "read_data":32}
+
+#a SRAM
+sram_access_req  = {"valid":1, "id":8, "read_not_write":1, "byte_enable":8, "address":32, "write_data":64}
+sram_access_resp = {"valid":1, "id":8, "ack":1, "data":64}
+
 #a Timer
 #t timer_control
 timer_control = {"reset_counter":1,

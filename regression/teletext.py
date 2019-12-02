@@ -16,6 +16,7 @@
 import pycdl
 import sys, os, unittest
 import simple_tb
+import structs
 
 #a Teletext test pages
 #c teletext_page
@@ -527,13 +528,13 @@ class framebuffer_teletext_hw(simple_tb.cdl_test_hw):
     """
     Simple instantiation of teletext framebuffer module
     """
+    csr_request = pycdl.wirebundle(structs.csr_request)
+    csr_response = pycdl.wirebundle(structs.csr_response)
+    sram_access_req = pycdl.wirebundle(structs.sram_access_req)
     th_forces = { "fb.character_rom.filename":"roms/teletext.mif",
                   "fb.display.filename":"a.mif",
                   "th.clock":"clk",
-                  "th.inputs":("csr_response__read_data[32] "+
-                               "csr_response__read_data_valid "+
-                               "csr_response__read_data_error "+
-                               "csr_response__acknowledge "+
+                  "th.inputs":(" ".join(csr_response._name_list("csr_response")) + " " +
                                "video_bus__blue[8] "+
                                "video_bus__green[8] "+
                                "video_bus__red[8] "+
@@ -543,17 +544,8 @@ class framebuffer_teletext_hw(simple_tb.cdl_test_hw):
                                "video_bus__hs "+
                                "video_bus__vs "+
                                "" ),
-                  "th.outputs":("csr_request__data[32] "+
-                               "csr_request__address[16] "+
-                               "csr_request__select[16] "+
-                               "csr_request__read_not_write "+
-                               "csr_request__valid "+
-                               "display_sram_write__address[32] "+
-                               "display_sram_write__write_data[64] "+
-                               "display_sram_write__valid "+
-                               "display_sram_write__read_not_write "+
-                               "display_sram_write__byte_enable[8] "+
-                               "display_sram_write__id[4] "+
+                  "th.outputs":(" ".join(csr_request._name_list("csr_request")) + " " +
+                                " ".join(sram_access_req._name_list("display_sram_write")) + " " +
                                 ""),
                   }
 

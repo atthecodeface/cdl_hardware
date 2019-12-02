@@ -495,6 +495,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
         coproc_response = {*=0};
         riscv_config_pipe      <= riscv_config;
         riscv_config_pipe.i32m <= 0;
+        riscv_config_pipe.mem_abort_late <= 0;
         riscv_i32_pipeline_control pc(clk <- clk,
                                       riscv_clk <- riscv_clk,
                                       reset_n          <= proc_reset_n,

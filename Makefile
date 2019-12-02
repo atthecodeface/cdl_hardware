@@ -70,7 +70,12 @@ shm_vnc: ${SHM_VNC_OBJS}
 	${Q}${LINKASBIN} shm_vnc $(SHM_VNC_OBJS) ${LOCAL_LINKLIBS}
 
 #a Test targets
+
+ifeq ($(OS),Darwin)
+SCRIPT ?= script regression.script
+else
 SCRIPT ?= script -ef
+endif
 RP     ?= ${SCRIPT}
 REGRESS_ALL = ${RP} ./regress_all
 

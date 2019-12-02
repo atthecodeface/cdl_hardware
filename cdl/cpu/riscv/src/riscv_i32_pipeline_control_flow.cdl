@@ -73,7 +73,7 @@ module riscv_i32_pipeline_control_flow( input  t_riscv_pipeline_state        pip
                 control_flow_combs.mem_cannot_start    = 1;
             }
         }
-        if (rv_cfg_memory_abort_disable || !rv_cfg_memory_late_abort_enable) {
+        if (rv_cfg_memory_abort_disable || !rv_cfg_memory_late_abort_enable || !riscv_config.mem_abort_late) {
             control_flow_combs.mem_cannot_start    = 0;
         }
 

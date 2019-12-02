@@ -8,3 +8,7 @@ mepc and dpc etc should have bit [0] zeroed always (?)
 
 mepc and dpc etc should have bit[1] ignored if i32c is configured but
 disabled
+
+deleg for user N mode
+
+trace pack should be better with PCs - probably misses interrupt restarts and the like
