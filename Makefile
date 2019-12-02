@@ -70,7 +70,8 @@ shm_vnc: ${SHM_VNC_OBJS}
 	${Q}${LINKASBIN} shm_vnc $(SHM_VNC_OBJS) ${LOCAL_LINKLIBS}
 
 #a Test targets
-RP = 
+SCRIPT ?= script -ef
+RP     ?= ${SCRIPT}
 REGRESS_ALL = ${RP} ./regress_all
 
 .PHONY: regression
