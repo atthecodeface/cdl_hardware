@@ -126,7 +126,7 @@ typedef struct {
     bit[32] next_fcs;
     bit shift_data;
     t_fcs_op fcs_op;
-    bit[7] byte_of_packet_plus_one;
+    bit[16] byte_of_packet_plus_one;
     t_packet_stat packet_stat  "Packet stat for packet as it is transmitted";
 } t_tx_combs;
 
@@ -139,7 +139,7 @@ typedef struct {
     bit[32]   fcs;
     bit       gmii_tx_valid  "If low, then all GMII TX outputs are low - else to values in gmii_tx";
     t_gmii_tx gmii_tx        "GMII TX data out (if gmii_tx_valid)";
-    bit[7]    byte_of_packet "Byte of packet";
+    bit[16]   byte_of_packet "Byte of packet";
     bit[4]    ipg;
     t_packet_stat packet_stat  "Packet stat for packet as it is transmitted";
 } t_tx_state;
@@ -518,6 +518,7 @@ CRC-32 of 0xffffffff = 0xC704DD7B, bit reversed to 0xdebb20e3
         if (tx_combs.packet_stat.valid) {
             tx_state.packet_stat <= tx_combs.packet_stat;
         }
+        tx_packet_stat = tx_state.packet_stat;
 
         /*b All done */
     }        

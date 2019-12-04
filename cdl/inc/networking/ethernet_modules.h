@@ -23,6 +23,7 @@
 include "types/ethernet.h"
 include "types/axi.h"
 include "types/timer.h"
+include "types/networking.h"
 
 /*a Modules */
 /*m gbe_axi4s32 */

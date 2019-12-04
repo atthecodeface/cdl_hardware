@@ -114,7 +114,7 @@ module tb_gbe( clock clk,
                          gmii_tx_enable <= gmii_tx_enable,
                          gmii_tx        => gmii_tx,
                          tx_packet_stat => tx_packet_stat,
-                         tx_packet_stat_ack <= tx_packet_stat_ack
+                         tx_packet_stat_ack <= tx_packet_stat_ack,
 
                          rx_aclk <- clk,
                          rx_areset_n <= reset_n,
@@ -123,8 +123,7 @@ module tb_gbe( clock clk,
                          gmii_rx_enable <= gmii_rx_enable,
                          gmii_rx <= gmii_rx,
                          rx_packet_stat => rx_packet_stat,
-                         rx_packet_stat => rx_packet_stat,
-                         rx_packet_stat_ack <= rx_packet_stat_ack
+                         rx_packet_stat_ack <= rx_packet_stat_ack,
 
                          rx_timer_control  <= rx_timer_control
             );
