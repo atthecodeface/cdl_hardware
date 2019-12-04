@@ -32,6 +32,8 @@ extern module gbe_axi4s32( clock tx_aclk   "Transmit clock domain - AXI-4-S and 
                            output bit      tx_axi4s_tready,
                            input   bit gmii_tx_enable "Clock enable for tx_aclk for GMII",
                            output  t_gmii_tx gmii_tx,
+                           output t_packet_stat tx_packet_stat "Packet statistic when packet completes tx",
+                           input  bit           tx_packet_stat_ack "Ack for packet statistic",
 
                            clock rx_aclk    "Receive clock domain - AXI-4-S and GMII RX clock",
                            input bit rx_areset_n,
@@ -39,13 +41,20 @@ extern module gbe_axi4s32( clock tx_aclk   "Transmit clock domain - AXI-4-S and 
                            input bit        rx_axi4s_tready,
                            input   bit gmii_rx_enable "Clock enable for rx_aclk for GMII",
                            input   t_gmii_rx gmii_rx,
+                           output t_packet_stat rx_packet_stat "Packet statistic when packet completes rx",
+                           input  bit           rx_packet_stat_ack "Ack for packet statistic",
+                           
                            input t_timer_control rx_timer_control "Timer control in TX clock domain"
     )
 {
     timing to   rising clock tx_aclk tx_axi4s, gmii_tx_enable;
     timing from rising clock tx_aclk tx_axi4s_tready, gmii_tx;
+    timing from rising clock tx_aclk tx_packet_stat;
+    timing to   rising clock tx_aclk tx_packet_stat_ack;
 
     timing to   rising clock rx_aclk rx_axi4s_tready, gmii_rx, gmii_rx_enable;
     timing from rising clock rx_aclk rx_axi4s;
+    timing from rising clock rx_aclk rx_packet_stat;
+    timing to   rising clock rx_aclk rx_packet_stat_ack;
     timing to   rising clock rx_aclk rx_timer_control;
 }

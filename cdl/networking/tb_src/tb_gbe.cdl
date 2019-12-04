@@ -30,6 +30,12 @@ extern module axi4s32_master_slave( clock aclk,
                                     output t_tbi_valid tbi_rx "Optional TBI instead of SGMII",
                                     input t_axi4s32 slave_axi4s,
                                     output bit      slave_axi4s_tready,
+
+                                    input t_packet_stat tx_packet_stat "Packet statistic when packet completes tx",
+                                    input t_packet_stat rx_packet_stat "Packet statistic when packet completes rx",
+                                    output  bit         tx_packet_stat_ack "Ack for packet statistic",
+                                    output  bit         rx_packet_stat_ack "Ack for packet statistic",
+                                    
                                     output t_timer_control rx_timer_control "Timer control for TX clock domain",
                                     output  t_sgmii_gasket_control sgmii_gasket_control "Control of gasket, on rx_clk",
                                     input t_sgmii_gasket_status  sgmii_gasket_status  "Status from gasket, on rx_clk",
@@ -72,6 +78,11 @@ module tb_gbe( clock clk,
     net  t_sgmii_gasket_control sgmii_gasket_control "Control of gasket, on rx_clk";
     net t_sgmii_gasket_status   sgmii_gasket_status  "Status from gasket, on rx_clk";
 
+    net t_packet_stat tx_packet_stat "Packet statistic when packet completes tx";
+    net t_packet_stat rx_packet_stat "Packet statistic when packet completes rx";
+    net bit           tx_packet_stat_ack "Ack for packet statistic";
+    net bit           rx_packet_stat_ack "Ack for packet statistic";
+
     clocked clock clk reset active_low reset_n bit[16]         sgmii_stream=0;
 
     /*b Instantiations */
@@ -87,24 +98,35 @@ module tb_gbe( clock clk,
                                  slave_axi4s_tready => slave_axi4s_tready,
                                  rx_timer_control   => rx_timer_control,
 
+                                 tx_packet_stat <= tx_packet_stat,
+                                 rx_packet_stat <= rx_packet_stat,
+                                 tx_packet_stat_ack => tx_packet_stat_ack,
+                                 rx_packet_stat_ack => rx_packet_stat_ack,
+                                 
                                  sgmii_gasket_control => sgmii_gasket_control,
                                  sgmii_gasket_status  <= sgmii_gasket_status,
                                  
                                  sys_cfg => sys_cfg );
         gbe_axi4s32 gbe( tx_aclk <- clk,
-                     tx_areset_n <= reset_n,
-                     tx_axi4s    <= master_axi4s,
-                     tx_axi4s_tready => master_axi4s_tready,
-                     gmii_tx_enable <= gmii_tx_enable,
-                     gmii_tx        => gmii_tx,
+                         tx_areset_n <= reset_n,
+                         tx_axi4s    <= master_axi4s,
+                         tx_axi4s_tready => master_axi4s_tready,
+                         gmii_tx_enable <= gmii_tx_enable,
+                         gmii_tx        => gmii_tx,
+                         tx_packet_stat => tx_packet_stat,
+                         tx_packet_stat_ack <= tx_packet_stat_ack
 
-                     rx_aclk <- clk,
-                     rx_areset_n <= reset_n,
-                     rx_axi4s => slave_axi4s,
-                     rx_axi4s_tready <= slave_axi4s_tready,
-                     gmii_rx_enable <= gmii_rx_enable,
-                     gmii_rx <= gmii_rx,
-                     rx_timer_control  <= rx_timer_control
+                         rx_aclk <- clk,
+                         rx_areset_n <= reset_n,
+                         rx_axi4s => slave_axi4s,
+                         rx_axi4s_tready <= slave_axi4s_tready,
+                         gmii_rx_enable <= gmii_rx_enable,
+                         gmii_rx <= gmii_rx,
+                         rx_packet_stat => rx_packet_stat,
+                         rx_packet_stat => rx_packet_stat,
+                         rx_packet_stat_ack <= rx_packet_stat_ack
+
+                         rx_timer_control  <= rx_timer_control
             );
         sgmii_gmii_gasket sgg(tx_clk <- clk,
                               tx_clk_312_5 <- clk,

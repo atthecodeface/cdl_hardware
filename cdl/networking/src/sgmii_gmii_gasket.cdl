@@ -31,9 +31,7 @@
  *
  * 10/100 support - replicate data to SGMII, reduce enables to GMII
  *
- * Rx sync state machine
- *
- * Sync flops for autonegotiation
+ * Proper Rx sync state machine
  *
 */
 /*a Includes */
@@ -44,7 +42,8 @@ include "networking/encoders.h"
 
 /*a Constants
 */
-constant integer disable_autonegotiation=0;
+constant integer sgmii_gasket_disable_autonegotiation=0;
+constant integer sgmii_gasket_force_enable=0;
 constant integer symbol_K_k28_5 = (5<<5) | 28; // 0xbc (0x0fa or 0x305, toggles disparity)
 constant integer symbol_S_k27_7 = (7<<5) | 27; // 0xfb (0x368 or 0x097)
 constant integer symbol_V_k30_7 = (7<<5) | 30; // 0xfe (0x1e8 or 0x217)
@@ -113,23 +112,25 @@ typedef enum [4] {
 /*t t_gmii_an_combs */
 typedef struct {
     t_gmii_an_action action;
-    bit ability_match;
-    bit acknowledge_match;
-    bit counter_expired;
-    bit autonegotiation_disabled;
-    bit[16]       an_data   "Auto negotiation data";
+    bit              ability_match;
+    bit              acknowledge_match;
+    bit              counter_expired;
+    bit              autonegotiation_disabled;
+    bit              interface_enabled;
+    bit[16]          an_data   "Auto negotiation data";
 } t_gmii_an_combs;
 
 /*t t_gmii_an_state */
 typedef struct {
     t_gmii_an_fsm fsm_state;
-    bit[24]       counter       "10ms-20ms counter (at 1GHz that is 24 bits)";
-    bit[24]       counter_10ms  "Restart value for counter";
-    t_gmii_an_data_mode an_data_mode "Auto negotiation data";
-    bit[16]       adv_ability   "Auto negotiation data";
-    t_gmii_an_mode an_mode      "Transmit / autonegotiation mode - idle, config or data";
+    bit[24]       counter             "10ms-20ms counter (at 1GHz that is 24 bits)";
+    bit[24]       counter_10ms        "Restart value for counter";
+    t_gmii_an_data_mode an_data_mode  "Auto negotiation data";
+    bit[16]       adv_ability         "Auto negotiation data";
+    bit           enable_interface    "Assert to enable the interface";
+    bit           an_disable          "If asserted autonegotiation is disabled";
+    t_gmii_an_mode an_mode            "Transmit / autonegotiation mode - idle, config or data";
     bit restart_an;
-    bit control_write_toggle;
     bit last_control_write_toggle;
 } t_gmii_an_state;
 
@@ -323,13 +324,13 @@ module sgmii_gmii_gasket( clock tx_clk   "Transmit clock domain - must be at lea
                           input bit rx_reset_312_5_n,
 
                           input t_gmii_tx gmii_tx,
-                          output bit gmii_tx_enable "With a 2/5 tx_clk to tx_clk_312_5 this will never gap",
+                          output bit gmii_tx_enable "With a 2/5 tx_clk (i.e. at 125MHz) to tx_clk_312_5 this will never gap",
                           output t_tbi_valid tbi_tx "Optional TBI instead of SGMII",
                           output bit[4] sgmii_txd,
 
                           input bit[4] sgmii_rxd,
                           input t_tbi_valid tbi_rx "Optional TBI instead of SGMII",
-                          output bit gmii_rx_enable "With a 2/5 rx_clk to rx_clk_312_5 this will never gap",
+                          output bit gmii_rx_enable "With a 2/5 rx_clk (i.e. at 125MHz) to rx_clk_312_5 this will never gap",
                           output t_gmii_rx gmii_rx,
                           input  t_sgmii_gasket_control sgmii_gasket_control "Control of gasket, on rx_clk",
                           output t_sgmii_gasket_status  sgmii_gasket_status  "Status from gasket, on rx_clk"
@@ -411,9 +412,18 @@ if (request) {
     default reset active_low tx_reset_n;
     comb     t_gmii_an_combs gmii_an_combs;
     clocked  t_gmii_an_state gmii_an_state = {*=0, adv_ability=0x20, counter_10ms=(1<<20)};
+    net      bit             gmii_an_sync_control_write_toggle;
     autonegotiation : {
         /*b Decode */
-        gmii_an_combs.autonegotiation_disabled = disable_autonegotiation;
+        gmii_an_combs.interface_enabled        = sgmii_gasket_force_enable;
+        if (gmii_an_state.enable_interface) {
+            gmii_an_combs.interface_enabled = 1;
+        }
+        gmii_an_combs.autonegotiation_disabled = sgmii_gasket_disable_autonegotiation;
+        if (gmii_an_state.an_disable) {
+            gmii_an_combs.autonegotiation_disabled = 1;
+        }
+        
         gmii_an_combs.counter_expired          = (gmii_an_state.counter==0);
         gmii_an_combs.ability_match            = gmii_rx_state.rx_ability_match;     // probably stable - should use a sync flop
         gmii_an_combs.acknowledge_match        = gmii_rx_state.rx_acknowledge_match; // probably stable - should use a sync flop
@@ -472,7 +482,7 @@ if (request) {
         if (gmii_an_state.restart_an) {
             gmii_an_combs.action = gmii_an_action_restart;
         }
-        if (disable_autonegotiation) {
+        if (sgmii_gasket_disable_autonegotiation) {
             gmii_an_state <= gmii_an_state;
             gmii_an_combs.action = gmii_an_action_none;
         }
@@ -534,17 +544,21 @@ if (request) {
         }
 
         /*b AN control writes */
-        gmii_an_state.control_write_toggle      <= sgmii_gasket_control_write_toggle;
-        gmii_an_state.last_control_write_toggle <= gmii_an_state.control_write_toggle;
-        if (gmii_an_state.last_control_write_toggle !=  gmii_an_state.control_write_toggle) {
+        tech_sync_bit gmii_an_sync_control(clk <- tx_clk, reset_n <= tx_reset_n,
+                                           d <= sgmii_gasket_control_write_toggle,
+                                           q => gmii_an_sync_control_write_toggle );
+        gmii_an_state.last_control_write_toggle <= gmii_an_sync_control_write_toggle;
+        if (gmii_an_state.last_control_write_toggle != gmii_an_sync_control_write_toggle) {
             if (sgmii_gasket_control.write_address==0) {
-                gmii_an_state.counter_10ms <= sgmii_gasket_control.write_data[24;0];
+                gmii_an_state.enable_interface <= sgmii_gasket_control.write_data[0];
+                gmii_an_state.an_disable       <= sgmii_gasket_control.write_data[1];
+                gmii_an_state.restart_an       <= sgmii_gasket_control.write_data[2];
             }
             if (sgmii_gasket_control.write_address==1) {
                 gmii_an_state.adv_ability <= sgmii_gasket_control.write_data[16;0];
             }
             if (sgmii_gasket_control.write_address==2) {
-                gmii_an_state.restart_an <= 1;
+                gmii_an_state.counter_10ms <= sgmii_gasket_control.write_data[24;0];
             }
         }
     
@@ -579,6 +593,9 @@ if (request) {
             // case 0x1f: {gmii_tx_combs.gmii_op = gmii_op_carrier_extend_error;}
             // case 0x9c: {gmii_tx_combs.gmii_op = gmii_op_sequence;}
             }
+        }
+        if (!gmii_an_combs.interface_enabled) {
+            gmii_tx_combs.gmii_op = gmii_op_idle;
         }
 
         /*b TX GMII interface and FSM */
@@ -1203,6 +1220,9 @@ if (request) {
         if (gmii_rx_combs.loss_of_sync) {
             gmii_rx_combs.action = gmii_rx_action_resync;
         }
+        if (!gmii_an_combs.interface_enabled) {
+            gmii_rx_combs.action = gmii_rx_action_resync;
+        }
 
         /*b Decode action */
         if (gmii_rx_state.serial_data_valid) {
@@ -1310,7 +1330,7 @@ if (request) {
         }
         gmii_rx_state.rx_ability_match      <= (gmii_rx_state.rx_config_data_match==-1);
         gmii_rx_state.rx_acknowledge_match  <= (gmii_rx_state.rx_config_data_match==-1) && gmii_rx_state.rx_config_data[14];
-        if (disable_autonegotiation) {
+        if (sgmii_gasket_disable_autonegotiation) {
             gmii_rx_state.rx_config_data        <= 0;
             gmii_rx_state.rx_ability_match      <= 0;
             gmii_rx_state.rx_acknowledge_match  <= 0;
@@ -1345,7 +1365,7 @@ if (request) {
             }
         }
         sgmii_gasket_status.an_config <= gmii_rx_state.rx_config_data;
-        sgmii_gasket_status.an_state       <= 0;
+        sgmii_gasket_status.an_config <= gmii_rx_state.rx_config_data;
         sgmii_gasket_status.an_state[3;0]  <= gmii_an_state.fsm_state;
         sgmii_gasket_status.an_state[6;3]  <= gmii_rx_state.rx_config_data_match;
         sgmii_gasket_status.an_state[8;9]  <= gmii_rx_state.debug_count;

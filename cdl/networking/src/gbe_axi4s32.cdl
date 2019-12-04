@@ -34,11 +34,17 @@
  * 10/100 support should already exist - the gmii will clock enable on tx and rx
  * as required
  *
+ * 2.5GbE should be supported if the GMII clocks run fast enough (>312.5MHz)
+ *
+ * Set packet_stat
+ * Ack for packet_stat
+ *
  */
 /*a Includes */
 include "types/timer.h"
 include "types/axi.h"
 include "types/ethernet.h"
+include "types/networking.h"
 include "clocking/clock_timer_modules.h"
 
 /*a Constants
@@ -121,6 +127,7 @@ typedef struct {
     bit shift_data;
     t_fcs_op fcs_op;
     bit[7] byte_of_packet_plus_one;
+    t_packet_stat packet_stat  "Packet stat for packet as it is transmitted";
 } t_tx_combs;
 
 /*t t_tx_state */
@@ -134,6 +141,7 @@ typedef struct {
     t_gmii_tx gmii_tx        "GMII TX data out (if gmii_tx_valid)";
     bit[7]    byte_of_packet "Byte of packet";
     bit[4]    ipg;
+    t_packet_stat packet_stat  "Packet stat for packet as it is transmitted";
 } t_tx_state;
 
 /*t t_rx_fsm */
@@ -187,12 +195,14 @@ typedef struct {
     bit[32] next_fcs                      "FCS value for next cycle";
     bit fcs_valid                         "Asserted if the FCS value is 0xdebb20e3, i.e. that expected at the end of a packet";
     bit[16] byte_of_packet_plus_one       "Increment of current byte of packet";
+    t_packet_stat packet_stat  "Packet stat for packet as it is transmitted";
 } t_rx_combs;
 
 /*t t_rx_state */
 typedef struct {
     t_axi4s32 axi4s            "AXI4S data being presented";
     t_rx_fsm  fsm_state        "FSM state";
+    t_packet_stat packet_stat  "Packet stat for packet as it is received";
     bit[4]    byte_valid       "Bytes valid in data_word";
     bit[32]   data_word        "Data from packet being assembled for AXI";
     bit[32]   user             "User value for next AXI word";
@@ -204,19 +214,24 @@ typedef struct {
 /*a Module
 */
 /*m gbe_axi4s32 */
-module gbe_axi4s32( clock tx_aclk   "Transmit clock domain - AXI-4-S and GMII TX clock",
-                    input bit tx_areset_n,
-                    input t_axi4s32 tx_axi4s,
-                    output bit      tx_axi4s_tready,
-                    input   bit gmii_tx_enable "Clock enable for tx_aclk for GMII",
-                    output  t_gmii_tx gmii_tx,
+module gbe_axi4s32( clock  tx_aclk   "Transmit clock domain - AXI-4-S and GMII TX clock",
+                    input  bit        tx_areset_n,
+                    input  t_axi4s32  tx_axi4s        "AXI-4-S bus for transmit data",
+                    output bit        tx_axi4s_tready "Tready signal to ack transmit AXI-4-S bus",
+                    input  bit        gmii_tx_enable  "Clock enable for tx_aclk for GMII",
+                    output t_gmii_tx  gmii_tx         "GMII Tx bus (valid only when gmii_tx_enable is asserted)",
+                    output t_packet_stat tx_packet_stat     "Packet statistic when packet completes tx",
+                    input  bit           tx_packet_stat_ack "Ack for packet statistic",
 
                     clock rx_aclk    "Receive clock domain - AXI-4-S and GMII RX clock",
                     input bit rx_areset_n,
                     output t_axi4s32 rx_axi4s,
-                    input bit        rx_axi4s_tready,
-                    input   bit gmii_rx_enable "Clock enable for rx_aclk for GMII",
-                    input   t_gmii_rx gmii_rx,
+                    input  bit        rx_axi4s_tready,
+                    input  bit gmii_rx_enable "Clock enable for rx_aclk for GMII",
+                    input  t_gmii_rx gmii_rx,
+                    output t_packet_stat rx_packet_stat "Packet statistic when packet completes rx",
+                    input  bit           rx_packet_stat_ack "Ack for packet statistic",
+                    
                     input t_timer_control rx_timer_control "Timer control in RX clock domain - tie all low if no timestamp required"
     )
 /*b Documentation */
@@ -366,6 +381,9 @@ CRC-32 of 0xffffffff = 0xC704DD7B, bit reversed to 0xdebb20e3
         if (gmii_tx_enable) {
             tx_state.gmii_tx_valid <= 0;
         }
+
+        tx_combs.packet_stat = {*=0};
+        tx_combs.packet_stat.byte_count = tx_state.byte_of_packet;
         
         full_switch (tx_combs.action) {
         case tx_action_none: {
@@ -448,6 +466,8 @@ CRC-32 of 0xffffffff = 0xC704DD7B, bit reversed to 0xdebb20e3
             tx_state.gmii_tx_valid <= 1;
             tx_state.gmii_tx.txd   <= tx_combs.axi4s_fcs_byte;
             tx_state.count         <= tx_state.ipg;
+            tx_combs.packet_stat.valid = 1;
+            tx_combs.packet_stat.stat_type = packet_stat_type_okay;
         }
         case tx_action_ipg: {
             tx_state.fsm_state     <= tx_fsm_ipg;
@@ -462,6 +482,8 @@ CRC-32 of 0xffffffff = 0xC704DD7B, bit reversed to 0xdebb20e3
             tx_state.count         <= 3;
             tx_state.gmii_tx_valid <= 1;
             tx_state.gmii_tx.txd   <= ~tx_combs.axi4s_fcs_byte;
+            tx_combs.packet_stat.valid = 1;
+            tx_combs.packet_stat.stat_type = packet_stat_type_underrun;
         }
         case tx_action_abort: {
             tx_state.gmii_tx_valid <= 1;
@@ -488,6 +510,16 @@ CRC-32 of 0xffffffff = 0xC704DD7B, bit reversed to 0xdebb20e3
         if (tx_state.gmii_tx_valid) {
             gmii_tx = tx_state.gmii_tx;
         }
+
+        /*b TX packet stat */
+        if (tx_state.packet_stat.valid && tx_packet_stat_ack) {
+            tx_state.packet_stat.valid <= 0;
+        }
+        if (tx_combs.packet_stat.valid) {
+            tx_state.packet_stat <= tx_combs.packet_stat;
+        }
+
+        /*b All done */
     }        
 
     /*b Tx FCS */
@@ -602,6 +634,9 @@ CRC-32 of 0xffffffff = 0xC704DD7B, bit reversed to 0xdebb20e3
         rx_combs.status_axi_user[8;0]  = axi4s_user_rx_complete;
         rx_combs.status_axi_user[16;8] = rx_state.byte_of_packet;
 
+        rx_combs.packet_stat = {*=0};
+        rx_combs.packet_stat.byte_count = rx_state.byte_of_packet;
+        
         full_switch (rx_combs.action) {
         case rx_action_none: {
             rx_state.fsm_state <= rx_state.fsm_state;
@@ -624,11 +659,15 @@ CRC-32 of 0xffffffff = 0xC704DD7B, bit reversed to 0xdebb20e3
         case rx_action_packet_okay: { // Packet completed
             rx_state.fsm_state   <= rx_fsm_idle;
             rx_combs.store_status  = 1;
+            rx_combs.packet_stat.valid = 1;
+            rx_combs.packet_stat.stat_type = packet_stat_type_okay;
         }
         case rx_action_packet_error: { // Packet error - too big, bad FCS, rx_er
             rx_state.fsm_state   <= rx_fsm_wait_for_idle;
             rx_combs.store_status  = 1;
             rx_combs.status_axi_user[8;0]  = axi4s_user_rx_error;
+            rx_combs.packet_stat.valid = 1;
+            rx_combs.packet_stat.stat_type = packet_stat_type_data_error; // should separate out overrun?
         }
         case rx_action_non_packet_error: { // Packet completed
             rx_state.fsm_state   <= rx_fsm_wait_for_idle;
@@ -689,6 +728,16 @@ CRC-32 of 0xffffffff = 0xC704DD7B, bit reversed to 0xdebb20e3
         
         /*b GMII RX output */
         rx_axi4s = rx_state.axi4s;
+
+        /*b RX packet stat */
+        if (rx_state.packet_stat.valid && rx_packet_stat_ack) {
+            rx_state.packet_stat.valid <= 0;
+        }
+        if (rx_combs.packet_stat.valid) {
+            rx_state.packet_stat <= rx_combs.packet_stat;
+        }
+        
+        rx_packet_stat = rx_state.packet_stat;
     }        
 
     /*b Rx FCS */

@@ -226,10 +226,16 @@ This permits an @a ack_in unless the @a req_in is valid and the SRAM buffer is f
     net bit[32] read_data;
     fifo_logic """
     """: {
-        /*b Determine FIFO writing */
+        /*b Determine FIFO pushing */
         fifo_combs.push = fifo_state.req_in.valid && !fifo_state.buffer_is_full;
         if (fifo_combs.req_in_dest != req_in_dest_sram) {
             fifo_combs.push = 0;
+        }
+        
+        /*b Determine FIFO popping */
+        fifo_combs.pop = fifo_combs.sram_can_read;
+        if (!fifo_state.buffer_is_not_empty) {
+            fifo_combs.pop = 0;
         }
         
         /*b Get +1 for FIFO pointers */
@@ -253,23 +259,32 @@ This permits an @a ack_in unless the @a req_in is valid and the SRAM buffer is f
         }
         
         /*b Handle push of FIFO */
-        if (fifo_combs.pop_to_req_out) {
+        if (fifo_combs.pop) {
             fifo_state.read_ptr            <= fifo_combs.read_ptr_plus_1;
             fifo_state.buffer_is_not_empty <= !fifo_combs.pop_empties;
             fifo_state.buffer_is_full      <= 0;
         }
-        if (fifo_combs.push_req_in) { // Cannot happen if buffer is full
-            fifo_data[fifo_state.write_ptr] <= req_in;
+        if (fifo_combs.push) {
             fifo_state.write_ptr            <= fifo_combs.write_ptr_plus_1;
             fifo_state.buffer_is_full       <= fifo_combs.push_fills;
             fifo_state.buffer_is_not_empty  <= 1;
-            if (fifo_combs.pop_to_req_out) {
+            if (fifo_combs.pop) {
                 fifo_state.buffer_is_full <= 0;
             }
         }
-        fifo_combs.fifo_data_out = fifo_data[fifo_state.read_ptr];
 
-            memory_s_dp_2048_x_32 fifo_sram( sram_clock <- int_clock,
+        generic_valid_ack_dpsram fifo_sram( sram_clock_0      <- clk,
+                                            select_0          <= fifo_combs.push,
+                                            read_not_write_0  <= 0,
+                                            address_0         <= write_ptr,
+                                              write_data_0     <= fifo_write_data,
+                                              // data_out_0 =>,
+                                              sram_clock_1 <- analyzer_clock,
+                                              select_1         <= fifo_read,
+                                              read_not_write_1 <= 1,
+                                              address_1        <= read_ptr,
+                                              write_data_1     <= 0,
+                                              data_out_1       => fifo_read_data );
                                              sram_read <= read_sram,
                                              sram_read_address <= read_ptr,
                                              sram_write <= write_sram,

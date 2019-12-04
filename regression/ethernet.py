@@ -388,6 +388,7 @@ class gbe_test_hw(simple_tb.cdl_test_hw):
     tbi_valid               = pycdl.wirebundle(structs.tbi_valid)
     gmii_tx                 = pycdl.wirebundle(structs.gmii_tx)
     gmii_rx                 = pycdl.wirebundle(structs.gmii_rx)
+    packet_stat             = pycdl.wirebundle(structs.packet_stat)
     sgmii_gasket_control    = pycdl.wirebundle(structs.sgmii_gasket_control)
     sgmii_gasket_status     = pycdl.wirebundle(structs.sgmii_gasket_status)
 
@@ -395,11 +396,14 @@ class gbe_test_hw(simple_tb.cdl_test_hw):
                   "th.outputs":(" ".join(timer_control._name_list("rx_timer_control")) + " " +
                                 " ".join(tbi_valid._name_list("tbi_rx")) + " " +
                                 " ".join(sgmii_gasket_control._name_list("sgmii_gasket_control")) + " " +
+                                " tx_packet_stat_ack rx_packet_stat_ack"+
                                 " sgmii_rxd[4]"+
                                 " sys_cfg[32]"+
                                 " "),
                   "th.inputs":(" ".join(tbi_valid._name_list("tbi_tx")) + " " +
                                 " ".join(sgmii_gasket_status._name_list("sgmii_gasket_status")) + " " +
+                                " ".join(packet_stat._name_list("tx_packet_stat")) + " " +
+                                " ".join(packet_stat._name_list("rx_packet_stat")) + " " +
                                " sgmii_txd[4]"+
                                " "),
                   }

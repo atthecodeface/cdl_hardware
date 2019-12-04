@@ -176,6 +176,10 @@ adv7511 = {"spdif":1,
 #t mem_flash_in
 #t mem_flash_out
 
+#a Network
+packet_stat_type = {"okay":0, "short":1, "long":2, "data_error":3, "carrier":4}
+packet_stat = {"valid":1, "stat_type":3, "byte_count":16, "is_broadcast":1, "is_multicast":1}
+
 #a Ethernet
 #t tbi_valid
 tbi_valid = {"valid":1, "data":10}
