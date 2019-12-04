@@ -5,6 +5,88 @@ import readline
 import cmd
 import traceback
 
+#a AXI4s class
+class packet:
+    def __init__(self):
+        self.data = []
+        pass
+    def add_word(self, d):
+        for i in range(4):
+            self.data.append((d>>(8*i))&0xff)
+            pass
+        pass
+    def __str__(self):
+        r = ""
+        if len(self.data)==0: return "<empty packet>"
+        for d in self.data: r+="%02x "%d
+        return r
+class axi4s:
+    def __init__(self, r, sram_size):
+        self.r = r
+        self.tx_ptr = 0
+        self.rx_ptr = 0
+        self.next_rx_ptr = 0
+        self.sram_size = 4095
+        pass
+    def write_rx_config(self, d):   self.r.apbw(13,0,d)
+    def set_rx_ptr(self, d):        self.r.apbw(13,1,d)
+    def read_rx_data(self):         return self.r.apbr(13,2)
+    def read_rx_data_inc(self):     return self.r.apbr(13,3)
+    def commit_rx_ptr(self):        self.r.apbw(13,4,0)
+    def write_tx_config(self, d):   self.r.apbw(13,8,d)
+    def set_tx_ptr(self, d):        self.r.apbw(13,9,d)
+    def write_tx_data(self, d):     self.r.apbw(13,10,d)
+    def write_tx_data_inc(self, d): self.r.apbw(13,11,d)
+    def reset(self):
+        self.tx_ptr = 0
+        self.rx_ptr = 0
+        self.next_rx_ptr = 0
+        self.set_rx_ptr(0)
+        self.set_tx_ptr(0)
+        self.write_tx_data(0)
+        self.write_rx_config(self.sram_size)
+        self.write_tx_config(self.sram_size)
+        pass
+    def send_packet(self, byte_size):
+        word_size = (byte_size+3)/4
+        self.set_tx_ptr(self.tx_ptr)
+        self.write_tx_data_inc(0) # Status
+        self.write_tx_data_inc(0) # User word
+        for i in range(word_size):
+            self.write_tx_data_inc(i)
+            pass
+        self.write_tx_data_inc(0) # Next packet status
+        self.set_tx_ptr(self.tx_ptr)
+        self.write_tx_data(byte_size)
+        self.tx_ptr = (self.tx_ptr + 2 + word_size) % self.sram_size
+        pass
+    def rx_poll(self):
+        self.set_rx_ptr(self.rx_ptr)
+        rx_status = self.read_rx_data()
+        return (((rx_status>>31)&1)==1)
+    def rx_start_packet(self):
+        self.set_rx_ptr(self.rx_ptr)
+        rx_status = self.read_rx_data()
+        word_size = rx_status & 0x3ff
+        self.next_rx_ptr = (self.rx_ptr + word_size) % self.sram_size
+        return word_size
+    def rx_end_packet(self):
+        self.set_rx_ptr(self.next_rx_ptr)
+        self.rx_ptr = self.next_rx_ptr
+        self.commit_rx_ptr()
+        pass
+    def rx_read_packet(self):
+        pkt = packet()
+        w = self.rx_start_packet()
+        print "Start of packet length %d ptr %d"%(w, self.rx_ptr)
+        if w==0: return pkt
+        self.read_rx_data_inc()        
+        for i in range(w-1):
+            pkt.add_word(self.read_rx_data_inc())
+            pass
+        self.rx_end_packet()
+        return pkt
+            
 #a Useful operations class
 class remote_operations:
     apb_sel = {"rv_sram":4,
@@ -15,6 +97,7 @@ class remote_operations:
         self.rv_ctrl = 0
         self.verbose = True
         self.disconnect()
+        self.axi4s = axi4s(self, 2047)
         pass
 
     #f connect
@@ -100,19 +183,37 @@ class remote_operations:
     
     #f axi4s_reset
     def axi4s_reset(self):
-        self.apbw(13,0,2047)
-        self.apbw(13,9,0)
-        self.apbw(13,10,0)
-        self.apbw(13,8,2047)
+        self.axi4s.reset()
         pass
     
     #f axi4s_send_pkt
     def axi4s_send_pkt(self):
-        self.apbw(13,9,18)
-        self.apbw(13,10,0)
-        self.apbw(13,9,0)
-        self.apbw(13,10,64)
+        self.axi4s.send_packet(64)
         pass
+    
+    #f axi4s_rx_poll
+    def axi4s_rx_poll(self):
+        return self.axi4s.rx_poll()
+    
+    #f axi4s_rx_start_packet
+    def axi4s_rx_start_packet(self):
+        return self.axi4s.rx_start_packet()
+    
+    #f axi4s_rx_data
+    def axi4s_rx_data(self):
+        return self.apbr(13,3)
+    
+    #f axi4s_rx_end_packet
+    def axi4s_rx_end_packet(self):
+        return self.axi4s.rx_end_packet()
+    
+    #f axi4s_rx_packet
+    def axi4s_rx_packet(self):
+        return self.axi4s.rx_read_packet()
+    
+    #f axi4s_rx_ptr
+    def axi4s_rx_ptr(self, p):
+        return self.apbw(13,1,p)
     
     #f sram_read
     def sram_read(self, select, base, n):
@@ -203,8 +304,14 @@ class remote(cmd.Cmd):
         "anal_read_trace": ("",   ""),
         "anal_read_fifo": ("i",   ""),
         "anal_mux_control": ("i",   ""),
-        "axi4s_reset": ("",   ""),
-        "axi4s_send_pkt": ("",   ""),
+        "axi4s_reset":      ("",   ""),
+        "axi4s_send_pkt":   ("i",  "Send a packet of N bytes long"),
+        "axi4s_rx_poll":    ("",   "Poll for rx packet (returns True or False)"),
+        "axi4s_rx_start_packet":    ("",   "Get number of words in packet and start rx"),
+        "axi4s_rx_data":    ("",   "Read the next Rx RAM data"),
+        "axi4s_rx_end_packet":    ("",   "End rx packet"),
+        "axi4s_rx_packet":    ("",   "Read rx packet"),
+        "axi4s_rx_ptr":     ("i",  "Set the Rx RAM ptr"),
     }
     #f __init__
     def __init__(self, *args, **kwargs):
@@ -227,24 +334,34 @@ class remote(cmd.Cmd):
         pass
     #f cmd
     def cmd(self, types, remote_fn_name, arg):
+        result = None
         try:
             fn = getattr(self.remote,remote_fn_name)
             if types=="iii":
                 (a,b,c) = tuple([int(x,0) for x in arg.split()])
-                fn(a,b,c)
+                result = fn(a,b,c)
             elif types=="ii":
                 (a,b) = tuple([int(x,0) for x in arg.split()])
-                fn(a,b)
+                result = fn(a,b)
             elif types=="i":
                 (a,) = tuple([int(x,0) for x in arg.split()])
-                fn(a)
+                result = fn(a)
             elif types=="":
-                fn()
+                result = fn()
             else:
                 raise Exception("Unknown cmd types '%s'"%types)
         except Exception as e:
             print "Failed: %s"%(e)
             traceback.print_exc()
+            pass
+        if result is not None:
+            if type(result)==int:
+                print "0x%08x = %d"%(result, result)
+                pass
+            else:
+                print(str(result))
+                pass
+            pass
         pass
     #f do_connect
     def do_connect(self, arg):
