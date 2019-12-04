@@ -1,0 +1,4 @@
+#undef HAVE_NOWAY_H
+#undef HAVE_PNG_H
+#undef HAVE_STDIO_H
+#undef HAVE_STDLIB_H
