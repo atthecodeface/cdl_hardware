@@ -2,7 +2,7 @@ import serial
 class server:
     #f get_apb_fns
     def get_apb_fns(self):
-        return (self.apbr, self.apbw)
+        return (self.apbr, self.apbw, self.prod)
     
     #f __init__
     def __init__(self, device, baud):
@@ -20,6 +20,7 @@ class server:
     def add_expectation(self, e):
         self.expectations.append(e)
         pass
+
     #f read_serial
     def read_serial(self, min_data=None):
         while self.serial.in_waiting>0:
@@ -58,6 +59,21 @@ class server:
                 else:
                     raise(Exception("Read data not what expected '%s'"%self.read_buffer))
                 pass
+            elif self.read_buffer[0]=='p':
+                self.read_buffer = self.read_buffer[1:]
+                self.responses.append(('P', False, 0))
+                pass
+            elif self.read_buffer[0]=='P':
+                self.read_buffer = self.read_buffer[1:]
+                self.read_serial(min_data=8)
+                if len(self.read_buffer)>=8:
+                    data = int(self.read_buffer[0:8],16)
+                    self.responses.append(('P', True, data))
+                    self.read_buffer = self.read_buffer[8:]
+                    pass
+                else:
+                    raise(Exception("Read data not what expected '%s'"%self.read_buffer))
+                pass
             else:
                 raise(Exception("Unexpected data in serial buffer '%s'"%self.read_buffer))
             pass
@@ -86,6 +102,15 @@ class server:
                     raise Exception("Read failed")
                 self.read_data.append(r[2])
                 pass
+            elif e=='P':
+                r = self.responses.pop(0)
+                if r[0]!='P':
+                    raise Exception("Prod expectation got '%s' response not a read response"%(str(r)))
+                    pass
+                if not r[1]:
+                    raise Exception("Prod failed")
+                self.read_data.append(r[2])
+                pass
             else:
                 raise Exception("Bad expectation %s"%(e))
             pass
@@ -101,6 +126,15 @@ class server:
     def apbr(self, address):
         self.serial.write("R%x\n"%((address&0xffffffff)))
         self.add_expectation("R")
+        self.wait_expectations()
+        if len(self.read_data)==1:
+            return self.read_data.pop()
+        self.read_data = []
+        return None
+    #f prod
+    def prod(self, value):
+        self.serial.write("P%x\n"%((value&0xffffffff)))
+        self.add_expectation("P")
         self.wait_expectations()
         if len(self.read_data)==1:
             return self.read_data.pop()
