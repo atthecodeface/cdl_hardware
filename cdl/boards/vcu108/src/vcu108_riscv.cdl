@@ -19,6 +19,7 @@
 
 /*a Includes
  */
+include "subsystem/subsys_minimal.h"
 include "types/video.h"
 include "types/apb.h"
 include "types/csr.h"
@@ -44,7 +45,7 @@ include "boards/vcu108.h"
 typedef bit[32] t_bit32;
 
 /*a Constants */
-constant integer num_dprintf_requesters=16;
+constant integer num_dprintf_requesters=4;
 
 /*a Module
  */
@@ -87,90 +88,26 @@ module vcu108_riscv( clock clk,
 
     /*b Nets */
     net  t_apb_request riscv_apb_request;
-    net  t_apb_request proc_apb_request;
-    net t_apb_response proc_apb_response;
     net t_apb_response riscv_apb_response;
-    net  t_apb_request apb_request;
 
-    comb bit[4]        apb_request_sel;
-    comb t_apb_request timer_apb_request;
-    comb t_apb_request gpio_apb_request;
-    comb t_apb_request i2c_apb_request;
-    comb t_apb_request uart_apb_request;
-    comb t_apb_request dprintf_apb_request;
-    comb t_apb_request csr_apb_request;
-    comb t_apb_request fb_sram_apb_request;
     comb t_apb_request rv_sram_apb_request;
-    comb t_apb_request dprintf_uart_apb_request;
     comb t_apb_request riscv_dbg_apb_request;
-    comb t_apb_request axi4s_apb_request;
-    comb t_apb_request anal_apb_request;
 
-    net t_apb_response  timer_apb_response;
-    net t_apb_response  gpio_apb_response;
-    net t_apb_response  i2c_apb_response;
-    net t_apb_response  uart_apb_response;
-    net t_apb_response  dprintf_apb_response;
-    net t_apb_response  csr_apb_response;
-    net t_apb_response  fb_sram_apb_response;
     net t_apb_response  rv_sram_apb_response;
-    net t_apb_response  dprintf_uart_apb_response;
     net t_apb_response  riscv_dbg_apb_response;
-    net t_apb_response  axi4s_apb_response;
-    net t_apb_response  anal_apb_response;
-    comb t_apb_response apb_response;
 
-    comb t_timer_control timer_control;
-    net  t_timer_value timer_value;
-    net bit[16] gpio_output;
-    net bit[16] gpio_output_enable;
-    clocked bit[16]  gpio_input=0;
-    net bit     gpio_input_event;
+    net t_timer_control timer_control;
     net bit[32] rv_sram_ctrl;
-    net bit[32] fb_sram_ctrl;
-
-    net  t_dprintf_req_4 apb_dprintf_req "Dprintf request from APB target";
-    comb bit          apb_dprintf_ack "Ack for dprintf request from APB target";
 
     net bit[num_dprintf_requesters]                 dprintf_ack;
     clocked t_dprintf_req_4[num_dprintf_requesters] dprintf_req={*=0};
     net bit[num_dprintf_requesters-1]               mux_dprintf_ack "Ack for dprintf request after multiplexing";
     net t_dprintf_req_4[num_dprintf_requesters-1]   mux_dprintf_req "Dprintf request after multiplexing";
 
-    net  bit                                        fifo_dprintf_ack_fb   "Ack for dprintf request after multiplexing";
-    net  bit                                        fifo_dprintf_ack_uart "Ack for dprintf request after multiplexing";
-    comb t_dprintf_req_4                            fifo_dprintf_req_fb   "Dprintf request after multiplexing";
-    comb t_dprintf_req_4                            fifo_dprintf_req_uart "Dprintf request after multiplexing";
-
-    comb bit                                        fifo_dprintf_ack "Ack for dprintf request after multiplexing";
+    net bit                                         fifo_dprintf_ack "Ack for dprintf request after multiplexing";
     net t_dprintf_req_4                             fifo_dprintf_req "Dprintf request after multiplexing";
-    net t_dprintf_byte dprintf_byte;
 
-    net t_csr_request   csr_request;
-    comb t_csr_response csr_response;
-    clocked t_csr_response csr_response_r = {*=0};
-    net t_csr_response tt_debug_framebuffer_csr_response;
-    net t_csr_response tt_vga_framebuffer_csr_response;
-    net t_csr_response timeout_csr_response;
-    comb t_sram_access_req tt_display_sram_access_req;
-    net t_video_bus vga_video_bus;
-    net t_video_bus debug_video_bus;
-    comb t_video_bus selected_video_bus;
-
-    clocked t_apb_processor_request  apb_processor_request={*=0};
-    clocked bit apb_processor_completed = 0;
-    net t_apb_processor_response  apb_processor_response;
-    net t_apb_rom_request         apb_rom_request;
-    net bit[40]                   apb_rom_data;
-
-    net t_sram_access_req  fb_sram_access_req;
-    comb t_sram_access_resp fb_sram_access_resp;
-
-    comb t_uart_rx_data  uart_rx;
-    net   t_uart_tx_data uart_tx;
-    net   t_uart_status  uart_status;
-
-    net t_i2c i2c_master;
+    net t_video_bus video_bus;
 
     net  t_riscv_debug_mst   riscv_debug_mst;
     net t_riscv_debug_tgt    riscv_debug_tgt;
@@ -182,14 +119,6 @@ module vcu108_riscv( clock clk,
     net t_sram_access_req  rv_sram_access_req;
     net t_sram_access_resp rv_sram_access_resp;
 
-    net  t_sram_access_req  tx_sram_access_req  "SRAM access request";
-    net  t_sram_access_req  rx_sram_access_req  "SRAM access request";
-    clocked t_sram_access_resp rx_sram_access_resp ={*=0} "SRAM access response";
-    net bit[32] rx_sram_read_data;
-    clocked t_sram_access_req  rx_current_sram_access={*=0}  "SRAM access request";
-    clocked t_sram_access_resp tx_sram_access_resp ={*=0} "SRAM access response";
-    net bit[32] tx_sram_read_data;
-    clocked t_sram_access_req  tx_current_sram_access={*=0}  "SRAM access request";
     net t_axi4s32 rx_axi4s;
     net bit       rx_axi4s_tready;
     net t_axi4s32 tx_axi4s;
@@ -202,8 +131,9 @@ module vcu108_riscv( clock clk,
     net bit gmii_tx_enable;
     clocked t_sgmii_gasket_control sgmii_gasket_control = {*=0};
     net t_sgmii_gasket_status sgmii_gasket_status;
+    clocked bit eth_reset_n = 0;
 
-    net bit[32] analyzer_mux_control;
+    clocked bit[32] analyzer_mux_control=0;
     clocked bit[32] analyzer_trace = {*=0};
     clocked t_bit32[8] traces = {*=0};
     
@@ -228,17 +158,53 @@ module vcu108_riscv( clock clk,
     default reset active_low reset_n;
     clocked t_mem_flash_out flash_out={*=0};
 
+    /*b Subsystem */
+    net t_csr_request   csr_request;
+    net t_csr_response  csr_response;
+    comb  t_subsys_inputs   subsys_inputs;
+    net t_subsys_outputs  subsys_outputs;
+    subsystem_instance : {
+        subsys_inputs = {*=0};
+        subsys_inputs.i2c = vcu108_inputs.i2c;
+        subsys_inputs.uart_rx = vcu108_inputs.uart_rx;
+        analyzer_mux_control <= 0;
+        vcu108_outputs.i2c     = subsys_outputs.i2c;
+        vcu108_outputs.uart_tx = subsys_outputs.uart_tx;
+        subsys_minimal subsys( clk <- clk,
+                               reset_n <= reset_n,
+
+                               master_apb_request <= riscv_apb_request,
+                               master_apb_response => riscv_apb_response,
+
+                               master_dprintf_req <= fifo_dprintf_req,
+                               master_dprintf_ack => fifo_dprintf_ack,
+
+                               master_csr_request  => csr_request,
+                               master_csr_response <= csr_response,
+
+                               subsys_inputs <= subsys_inputs,
+                               subsys_outputs => subsys_outputs,
+
+                               video_clk     <- video_clk,
+                               video_reset_n <= video_reset_n,
+                               
+                               video_bus => video_bus,
+                               tx_axi4s_tready <= tx_axi4s_tready,
+                               tx_axi4s => tx_axi4s,
+                               rx_axi4s <= rx_axi4s,
+                               rx_axi4s_tready => rx_axi4s_tready,
+                               timer_control => timer_control,
+                               analyzer_trace <= analyzer_trace
+            );
+    }
+    
     /*b RISC-V */
     riscv_instance: {
         riscv_config = {*=0};
         riscv_config.e32   = 0;
         riscv_config.i32c  = 1;
         irqs = {*=0};
-        irqs.mtip = timer_value.irq;
-        timer_control = {*=0};
-        timer_control.enable_counter = 1;
-        timer_control.integer_adder = 20; // 50MHz
-
+        // irqs.mtip = timer_value.irq;
         riscv_i32_minimal riscv( clk <- clk,
                                  proc_reset_n <= reset_n & rv_sram_ctrl[0],
                                  reset_n <= reset_n,
@@ -271,107 +237,6 @@ module vcu108_riscv( clock clk,
                                   debug_tgt <= riscv_debug_tgt );
     }
 
-    /*b AXI to APB master, APB processor */
-    apb_master_instances: {
-        apb_processor_request.address <= 0;
-        apb_processor_request.valid   <= !apb_processor_completed;
-        if (apb_processor_response.acknowledge) {
-            apb_processor_request.valid   <= 0;
-            apb_processor_completed <= 1;
-        }
-
-        apb_processor apbp( clk <- clk,
-                            reset_n <= reset_n,
-
-                            apb_processor_request <= apb_processor_request,
-                            apb_processor_response => apb_processor_response,
-                            apb_request   => proc_apb_request,
-                            apb_response  <= proc_apb_response,
-                            rom_request   => apb_rom_request,
-                            rom_data      <= apb_rom_data );
-
-        se_sram_srw_256x40 apb_rom(sram_clock <- clk,
-                                   select <= apb_rom_request.enable,
-                                   address <= apb_rom_request.address[8;0],
-                                   read_not_write <= 1,
-                                   write_data <= 0,
-                                   data_out => apb_rom_data );
-
-    }
-
-    /*b APB master multiplexing and decode */
-    apb_multiplexing_decode: {
-        apb_master_mux apb_mux_rp( clk <- clk,
-                               reset_n <= reset_n,
-                               apb_request_0 <= riscv_apb_request,
-                               apb_request_1 <= proc_apb_request,
-
-                               apb_response_0 => riscv_apb_response,
-                               apb_response_1 => proc_apb_response,
-
-                               apb_request =>  apb_request,
-                               apb_response <= apb_response );
-
-        apb_request_sel = apb_request.paddr[4;16]; // 1MB of address space, top 4 bits as select
-        timer_apb_request        = apb_request;
-        gpio_apb_request         = apb_request;
-        dprintf_apb_request      = apb_request;
-        csr_apb_request          = apb_request;
-        uart_apb_request         = apb_request;
-        rv_sram_apb_request      = apb_request;
-        fb_sram_apb_request      = apb_request;
-        dprintf_uart_apb_request = apb_request;
-        riscv_dbg_apb_request    = apb_request;
-        i2c_apb_request          = apb_request;
-        axi4s_apb_request        = apb_request;
-        anal_apb_request         = apb_request;
-
-        timer_apb_request.paddr        = apb_request.paddr >> 2;
-        gpio_apb_request.paddr         = apb_request.paddr >> 2;
-        dprintf_apb_request.paddr      = apb_request.paddr >> 2;
-        uart_apb_request.paddr         = apb_request.paddr >> 2;
-        rv_sram_apb_request.paddr      = apb_request.paddr >> 2;
-        fb_sram_apb_request.paddr      = apb_request.paddr >> 2;
-        dprintf_uart_apb_request.paddr = apb_request.paddr >> 2;
-        riscv_dbg_apb_request.paddr    = apb_request.paddr >> 2;
-        i2c_apb_request.paddr          = apb_request.paddr >> 2;
-        axi4s_apb_request.paddr        = apb_request.paddr >> 2;
-        anal_apb_request.paddr         = apb_request.paddr >> 2;
-
-        timer_apb_request.psel        = apb_request.psel && (apb_request_sel==0);
-        gpio_apb_request.psel         = apb_request.psel && (apb_request_sel==1);
-        dprintf_apb_request.psel      = apb_request.psel && (apb_request_sel==2);
-        csr_apb_request.psel          = apb_request.psel && (apb_request_sel==3);
-        rv_sram_apb_request.psel      = apb_request.psel && (apb_request_sel==4);
-        fb_sram_apb_request.psel      = apb_request.psel && (apb_request_sel==7);
-        uart_apb_request.psel         = apb_request.psel && (apb_request_sel==9);
-        dprintf_uart_apb_request.psel = apb_request.psel && (apb_request_sel==10);
-        riscv_dbg_apb_request.psel    = apb_request.psel && (apb_request_sel==11);
-        i2c_apb_request.psel          = apb_request.psel && (apb_request_sel==12);
-        axi4s_apb_request.psel        = apb_request.psel && (apb_request_sel==13);
-        anal_apb_request.psel         = apb_request.psel && (apb_request_sel==14);
-        
-        csr_apb_request.paddr[16;16]  = bundle(12b0,apb_request.paddr[4;12]);
-        csr_apb_request.paddr[16;0]   = bundle( 6b0,apb_request.paddr[10;2]);
-
-        apb_response = timer_apb_response; // defaulting to gpio is good - it is always ready even if not selected...
-        apb_response.prdata |= gpio_apb_response.prdata;
-        apb_response.prdata |= uart_apb_response.prdata;
-        apb_response.prdata |= axi4s_apb_response.prdata;
-        apb_response.prdata |= anal_apb_response.prdata;
-        apb_response.pready = apb_response.pready & gpio_apb_response.pready;
-        apb_response.pready = apb_response.pready & uart_apb_response.pready;
-        apb_response.pready = apb_response.pready & axi4s_apb_response.pready;
-        apb_response.pready = apb_response.pready & anal_apb_response.pready;
-        if (apb_request_sel==2) { apb_response = dprintf_apb_response; }
-        if (apb_request_sel==3) { apb_response = csr_apb_response; }
-        if (apb_request_sel==4) { apb_response = rv_sram_apb_response; }
-        if (apb_request_sel==7) { apb_response = fb_sram_apb_response; }
-        if (apb_request_sel==10) { apb_response = dprintf_uart_apb_response; }
-        if (apb_request_sel==11) { apb_response = riscv_dbg_apb_response; }
-        if (apb_request_sel==12) { apb_response = i2c_apb_response; }
-    }
-
     /*b Dprintf requesting */
     dprintf_requesting : {
         for (i; num_dprintf_requesters) {
@@ -379,44 +244,15 @@ module vcu108_riscv( clock clk,
                 dprintf_req[i].valid <= 0;
             }
         }
-        dprintf_req[0]  <= apb_dprintf_req;
-        apb_dprintf_ack = !dprintf_req[0].valid;
-
-        if (rx_sram_access_req.valid && rx_sram_access_resp.ack) {
-            dprintf_req[2] <= {valid=1, address=160,
-                    data_0=bundle(40h52_58_53_3a_81, rx_sram_access_req.id,16h_20_80), // RXS:%x %x %08x %08x %x (id read_not_write address data be)
-                    data_1=bundle(7b0,rx_sram_access_req.read_not_write,  56h20000000000087),
-                    data_2=bundle(rx_sram_access_req.address,    32h20000087),
-                    data_3=bundle(rx_sram_access_req.write_data[32;0], 16h2080, rx_sram_access_req.byte_enable, 8hff) };
-        }
-        if (rx_sram_access_resp.valid) {
-            dprintf_req[3] <= {valid=1, address=200,
-                    data_0=bundle(40h52_58_53_3a_81, rx_sram_access_resp.id,16h_20_87), // RXS:%x %x %08x %08x %x (id read_data)
-                    data_1=bundle(rx_sram_access_resp.data[32;0], 8hff, 24h0) };
-        }
-        if (apb_request.psel && apb_request.penable && apb_response.pready) {
-            dprintf_req[6] <= {valid=1, address=240,
-                    data_0=bundle(40h41_50_42_3a_80, 7b0,apb_request.pwrite, 16h_20_87), // APB:%x %08x %08x %08x (pwrite paddr pwdata prdata)
-                    data_1=bundle(apb_request.paddr, 32h20000087),
-                    data_2=bundle(apb_request.pwdata, 32h20000087),
-                    data_3=bundle(apb_response.prdata,    8hff, 24h0) };
-        }
-        if (csr_request.valid && csr_response.acknowledge) {
-            dprintf_req[7] <= {valid=1, address=280,
-                    data_0=bundle(40h43_53_52_3a_80, 7b0,csr_request.read_not_write, 16h_20_83), // CSR:%x %04x %04x %08x (read_not_write select address data)
-                    data_1=bundle(csr_request.select,  48h200000000083),
-                    data_2=bundle(csr_request.address, 48h200000000087),
-                    data_3=bundle(csr_request.data,    8hff, 24h0) };
-        }
         if (divider_reset) {
-            dprintf_req[11] <= {valid=1, address=440,
+            dprintf_req[1] <= {valid=1, address=440,
                     data_0=bundle(32h56_47_41_3a, 32h_00_00_00_87), // VGA:%08x %08x %08x (cnts0/1/2)
                     data_1=bundle(vga_counters[0], 32h20000087),
                     data_2=bundle(vga_counters[1], 32h20000087),
                     data_3=bundle(vga_counters[2], 8hff, 24h0) };
         }
         if (divider_reset) {
-            dprintf_req[10] <= {valid=1, address=400,
+            dprintf_req[0] <= {valid=1, address=400,
                     data_0=bundle(32h44_49_56_3a, 32h_00_00_00_87), // DIV:%08x %08x %08x (cnts0/1/2)
                     data_1=bundle(per_sec_counters[0], 32h20000087),
                     data_2=bundle(per_sec_counters[1], 32h20000087),
@@ -424,19 +260,19 @@ module vcu108_riscv( clock clk,
         }
 
         vcu108_dprintf_ack = 1;
-        if (dprintf_req[12].valid) {
+        if (dprintf_req[2].valid) {
             vcu108_dprintf_ack = 0;
-            if (dprintf_ack[12]) {
-                dprintf_req[12].valid <= 0;
+            if (dprintf_ack[2]) {
+                dprintf_req[2].valid <= 0;
             }
         } else {
             if (vcu108_dprintf_req.valid) {
-                dprintf_req[12] <= vcu108_dprintf_req;
+                dprintf_req[2] <= vcu108_dprintf_req;
             }
         }
 
         for (i; num_dprintf_requesters) {
-            if (fb_sram_ctrl[i]) {
+            if (rv_sram_ctrl[24+i]) {
                 dprintf_req[i].valid <= 0;
             }
         }
@@ -477,7 +313,29 @@ module vcu108_riscv( clock clk,
     }
 
     /*b APB targets */
+    comb bit[4] apb_request_sel;
+    net  t_apb_request apb_request;
+    comb t_apb_response apb_response;
     apb_target_instances: {
+        csr_target_apb csr2apb(clk <- clk, reset_n <= reset_n,
+                               csr_request  <= csr_request,
+                               csr_response => csr_response,
+                               apb_request  => apb_request, // top at address 0; address[16;0] from csr_request address
+                               apb_response <= apb_response,
+                               csr_select   <= 16h8 // csr_select field must match this
+            );
+
+        apb_request_sel = apb_request.paddr[4;10]; // in subsys_minimal 16kW
+        rv_sram_apb_request           = apb_request;
+        rv_sram_apb_request.psel      = apb_request.psel && (apb_request_sel==0);
+
+        riscv_dbg_apb_request         = apb_request;
+        riscv_dbg_apb_request.psel    = apb_request.psel && (apb_request_sel==1);
+        
+        apb_response = {*=0, pready=1};
+        if (apb_request_sel==0) { apb_response = rv_sram_apb_response; }
+        if (apb_request_sel==1) { apb_response = riscv_dbg_apb_response; }
+
         apb_target_sram_interface rv_sram_if( clk <- clk,
                                            reset_n <= reset_n,
                                            apb_request  <= rv_sram_apb_request,
@@ -486,187 +344,26 @@ module vcu108_riscv( clock clk,
                                            sram_access_req => rv_sram_access_req,
                                            sram_access_resp <= rv_sram_access_resp );
 
-        apb_target_sram_interface fb_sram_if( clk <- clk,
-                                           reset_n <= reset_n,
-                                           apb_request  <= fb_sram_apb_request,
-                                           apb_response => fb_sram_apb_response,
-                                           sram_ctrl    => fb_sram_ctrl,
-                                           sram_access_req => fb_sram_access_req,
-                                           sram_access_resp <= fb_sram_access_resp );
-
-        apb_target_dprintf apb_dprintf( clk <- clk,
-                                    reset_n <= reset_n,
-                                    apb_request  <= dprintf_apb_request,
-                                    apb_response => dprintf_apb_response,
-                                    dprintf_req => apb_dprintf_req,
-                                    dprintf_ack <= apb_dprintf_ack );
-
-        apb_target_rv_timer timer( clk <- clk,
-                                   reset_n <= reset_n,
-                                   timer_control <= timer_control,
-                                   apb_request  <= timer_apb_request,
-                                   apb_response => timer_apb_response,
-                                   timer_value => timer_value );
-
-        apb_target_gpio gpio( clk <- clk,
-                              reset_n <= reset_n,
-                              apb_request  <= gpio_apb_request,
-                              apb_response => gpio_apb_response,
-                              gpio_input <= gpio_input,
-                              gpio_output => gpio_output,
-                              gpio_output_enable => gpio_output_enable,
-                              gpio_input_event => gpio_input_event
-            );
-        apb_target_uart_minimal uart( clk <- clk,
-                                      reset_n <= reset_n,
-                                      apb_request  <= uart_apb_request,
-                                      apb_response => uart_apb_response,
-                                      uart_rx <= uart_rx,
-                                      uart_tx => uart_tx,
-                                      status => uart_status
-            );
-
-        apb_target_i2c_master i2c( clk <- clk,
-                                       reset_n <= reset_n,
-                                       apb_request  <= i2c_apb_request,
-                                       apb_response => i2c_apb_response,
-                                       i2c_in  <= vcu108_inputs.i2c,
-                                       i2c_out => i2c_master );
-
-        apb_target_axi4s apb_axi4s( clk <- clk,
-                                    reset_n <= reset_n,
-                                    apb_request  <= axi4s_apb_request,
-                                    apb_response => axi4s_apb_response,
-                                    tx_sram_access_req  => tx_sram_access_req,
-                                    tx_sram_access_resp <= tx_sram_access_resp,
-                                    rx_sram_access_req  => rx_sram_access_req,
-                                    rx_sram_access_resp <= rx_sram_access_resp,
-                                    rx_axi4s        <= rx_axi4s,
-                                    rx_axi4s_tready => rx_axi4s_tready,
-                                    tx_axi4s         => tx_axi4s,
-                                    tx_axi4s_tready  <= tx_axi4s_tready );
-
-        apb_target_analyzer apb_analyzer( apb_clock <- clk,
-                                          reset_n <= reset_n,
-                                          apb_request  <= anal_apb_request,
-                                          apb_response => anal_apb_response,
-                                          analyzer_mux_control => analyzer_mux_control,
-
-                                          analyzer_clock <- clk,
-                                          internal_signal_in <= analyzer_trace,
-                             
-                                          // trace_ready,
-                                          // trace_done,
-                                          ext_trigger_reset <= 0,
-                                          ext_trigger_enable <= 0,
-
-                                          async_trace_read_clock <- clk, // unused interface for now
-                                          async_trace_read_enable <= 0
-                                          // async_trace_valid_out,
-                                          // async_trace_out
-            );
-
-        csr_master_apb master( clk <- clk,
-                               reset_n <= reset_n,
-                               apb_request <= csr_apb_request,
-                               apb_response => csr_apb_response,
-                               csr_request => csr_request,
-                               csr_response <= csr_response_r );
-
     }
 
     /*b Dprintf/framebuffer */
-    net bit dprintf_uart_txd;
     dprintf_framebuffer_instances: {
-        fifo_dprintf_req_fb    = fifo_dprintf_req;
-        fifo_dprintf_req_uart  = fifo_dprintf_req;
-        fifo_dprintf_ack       = fifo_dprintf_ack_fb;
 
-        if (vcu108_inputs_r.switches[0]) {
-            fifo_dprintf_ack       = fifo_dprintf_ack_uart;
-            fifo_dprintf_req_fb.valid  = 0;
-        } else {
-            fifo_dprintf_ack       = fifo_dprintf_ack_fb;
-            fifo_dprintf_req_uart.valid  = 0;
-        }
-        apb_target_dprintf_uart apb_dprintf_uart( clk <- clk,
-                                              reset_n <= reset_n,
-                                              apb_request  <= dprintf_uart_apb_request,
-                                              apb_response => dprintf_uart_apb_response,
-                                              dprintf_req <= fifo_dprintf_req_uart,
-                                              dprintf_ack => fifo_dprintf_ack_uart,
-                                              uart_txd => dprintf_uart_txd );
-
-        dprintf dprintf( clk <- clk,
-                         reset_n <= reset_n,
-                         dprintf_req <= fifo_dprintf_req_fb,
-                         dprintf_ack => fifo_dprintf_ack_fb,
-                         byte_blocked <= 0,
-                         dprintf_byte => dprintf_byte
-            );
-
-        tt_display_sram_access_req = {*=0,
-                                      valid = dprintf_byte.valid,
-                                      address = bundle(16b0, dprintf_byte.address),
-                                      write_data = bundle(56b0, dprintf_byte.data) };
-
-        fb_sram_access_resp = {*=0};
-        fb_sram_access_resp.ack   = fb_sram_access_req.valid;
-        fb_sram_access_resp.valid = fb_sram_access_req.valid;
-        fb_sram_access_resp.id    = fb_sram_access_req.id;
-
-        framebuffer_teletext ftb_debug( csr_clk <- clk,
-                                        sram_clk <- clk,
-                                        video_clk <- video_clk,
-                                        reset_n <= reset_n,
-                                        video_bus => debug_video_bus,
-                                        display_sram_write <= tt_display_sram_access_req,
-                                        csr_select_in <= 16h2, // uses 2 selects
-                                        csr_request <= csr_request,
-                                        csr_response => tt_debug_framebuffer_csr_response
-            );
-
-        framebuffer_teletext ftb_vga( csr_clk <- clk,
-                                      sram_clk <- clk,
-                                      video_clk <- video_clk,
-                                      reset_n <= reset_n,
-                                      video_bus => vga_video_bus,
-                                      display_sram_write <= fb_sram_access_req,
-                                      csr_select_in <= 16h4, // uses 2 selects
-                                      csr_request <= csr_request,
-                                      csr_response => tt_vga_framebuffer_csr_response
-            );
-
-        csr_target_timeout csr_timeout(clk <- clk,
-                                       reset_n <= reset_n,
-                                       csr_request <= csr_request,
-                                       csr_response => timeout_csr_response,
-                                       csr_timeout <= 16h100 );
-
-        csr_response  = tt_vga_framebuffer_csr_response;
-        csr_response |= tt_debug_framebuffer_csr_response;
-        csr_response |= timeout_csr_response;
-        csr_response_r <= csr_response;
-
-        selected_video_bus = vga_video_bus;
-        if (vcu108_inputs.switches[3]) {
-            selected_video_bus = debug_video_bus;
-        }
-        vcu108_video.hsync    <= selected_video_bus.hs;
-        vcu108_video.vsync    <= selected_video_bus.vs;
-        vcu108_video.de       <= selected_video_bus.display_enable;
-        vcu108_video.data[8;0]   <= selected_video_bus.red  [8;0];
-        vcu108_video.data[8;8]   <= selected_video_bus.green[8;0];
+        vcu108_video.hsync    <= video_bus.hs;
+        vcu108_video.vsync    <= video_bus.vs;
+        vcu108_video.de       <= video_bus.display_enable;
+        vcu108_video.data[8;0]   <= video_bus.red  [8;0];
+        vcu108_video.data[8;8]   <= video_bus.green[8;0];
         vcu108_video.spdif <= 0;
-        //  hdmi.blue    <= bundle(selected_video_bus.blue [8;0],2b0);
+        //  hdmi.blue    <= bundle(video_bus.blue [8;0],2b0);
 
-        if (selected_video_bus.vsync) {
+        if (video_bus.vsync) {
             vga_counters[0] <= vga_counters[0]+1;
         }
-        if (selected_video_bus.hsync) {
+        if (video_bus.hsync) {
             vga_counters[1] <= vga_counters[1]+1;
         }
-        if (selected_video_bus.display_enable) {
+        if (video_bus.display_enable) {
             vga_counters[2] <= vga_counters[2]+1;
         }
         vga_seconds_sr <= bundle(seconds[0], vga_seconds_sr[3;1]);
@@ -680,45 +377,9 @@ module vcu108_riscv( clock clk,
     }
 
     /*b Ethernet */
+    net t_packet_stat tx_packet_stat;
+    net t_packet_stat rx_packet_stat;
     ethernet : {
-        se_sram_srw_16384x32_we8 rx_mem(sram_clock <- clk,
-                                     select         <= rx_sram_access_req.valid && rx_sram_access_resp.ack,
-                                     read_not_write <= rx_sram_access_req.read_not_write,
-                                     write_enable   <= rx_sram_access_req.byte_enable[4;0],
-                                     address        <= rx_sram_access_req.address[14;0],
-                                     write_data     <= rx_sram_access_req.write_data[32;0],
-                                     data_out       => rx_sram_read_data );
-        rx_sram_access_resp <= {*=0};
-        rx_sram_access_resp.ack   <= 1;
-        rx_current_sram_access.valid <= 0;
-        if (rx_sram_access_req.valid && rx_sram_access_resp.ack) {
-            rx_current_sram_access <= rx_sram_access_req;
-        }
-        if (rx_current_sram_access.valid) {
-            rx_sram_access_resp.valid       <= rx_current_sram_access.read_not_write;
-            rx_sram_access_resp.id          <= rx_current_sram_access.id;
-            rx_sram_access_resp.data[32;0]  <= rx_sram_read_data;
-        }
-
-        se_sram_srw_16384x32_we8 tx_mem(sram_clock <- clk,
-                                     select         <= tx_sram_access_req.valid && tx_sram_access_resp.ack,
-                                     read_not_write <= tx_sram_access_req.read_not_write,
-                                     write_enable   <= tx_sram_access_req.byte_enable[4;0],
-                                     address        <= tx_sram_access_req.address[14;0],
-                                     write_data     <= tx_sram_access_req.write_data[32;0],
-                                     data_out       => tx_sram_read_data );
-        tx_sram_access_resp <= {*=0};
-        tx_sram_access_resp.ack   <= 1;
-        tx_current_sram_access.valid <= 0;
-        if (tx_sram_access_req.valid && tx_sram_access_resp.ack) {
-            tx_current_sram_access <= tx_sram_access_req;
-        }
-        if (tx_current_sram_access.valid) {
-            tx_sram_access_resp.valid       <= tx_current_sram_access.read_not_write;
-            tx_sram_access_resp.id          <= tx_current_sram_access.id;
-            tx_sram_access_resp.data[32;0]  <= tx_sram_read_data;
-        }
-
         gbe_axi4s32 gbe( tx_aclk <- clk,
                          tx_areset_n <= reset_n,
                          tx_axi4s    <= tx_axi4s,
@@ -726,12 +387,19 @@ module vcu108_riscv( clock clk,
                          gmii_tx_enable <= gmii_tx_enable,
                          gmii_tx        => gmii_tx,
 
+                         tx_packet_stat      => tx_packet_stat,
+                         tx_packet_stat_ack  <= 1,
+
                          rx_aclk     <- clk,
                          rx_areset_n <= reset_n,
                          rx_axi4s    => rx_axi4s,
                          rx_axi4s_tready <= rx_axi4s_tready,
                          gmii_rx_enable <= gmii_rx_enable,
                          gmii_rx <= gmii_rx,
+
+                         rx_packet_stat      => rx_packet_stat,
+                         rx_packet_stat_ack  <= 1,
+                         
                          rx_timer_control  <= timer_control // rx clock domain
             );
 
@@ -863,22 +531,10 @@ module vcu108_riscv( clock clk,
         full_switch (vcu108_inputs.switches[2;1]) {
         case 0: { if (mux_dprintf_req[0].valid)         { counter <= counter + 1; } }
         case 1: { if (apb_request.psel)                 { counter <= counter + 1; } }
-        case 2: { if (apb_processor_request.valid)      { counter <= counter + 1; } }
         case 3: { if (gmii_rx_enable)                   { counter <= counter + 1; } }
         }
 
-        gpio_input <= {*=0};
-        gpio_input[5;4] <= vcu108_inputs.buttons;
-
-        gpio_input[0] <= vcu108_inputs.i2c.scl;
-        gpio_input[1] <= vcu108_inputs.i2c.sda;
-        vcu108_outputs.i2c = {*=1};
-        if (gpio_output_enable[0] && !gpio_output[0]) {vcu108_outputs.i2c.scl = 0;}
-        if (gpio_output_enable[1] && !gpio_output[1]) {vcu108_outputs.i2c.sda = 0;}
-        if (!i2c_master.scl) {vcu108_outputs.i2c.scl = 0;}
-        if (!i2c_master.sda) {vcu108_outputs.i2c.sda = 0;}
-
-        vcu108_outputs.i2c_reset_mux_n = gpio_output_enable[2] ? gpio_output[2] : 1;
+        vcu108_outputs.i2c_reset_mux_n = subsys_outputs.gpio_output_enable[2] ? subsys_outputs.gpio_output[2] : 1;
 
         flash_out <= {*=0}; // wp, reset not used
         flash_out.we_n <= 1;
@@ -888,18 +544,11 @@ module vcu108_riscv( clock clk,
         flash_out.data_enable <= 0;
         
         vcu108_outputs.mdio = { mdc=1, mdio=1, mdio_enable=0 };
-        vcu108_outputs.eth_reset_n = reset_n;
+        eth_reset_n <= 1; // async reset to 0
+        vcu108_outputs.eth_reset_n = eth_reset_n;
         
         vcu108_outputs.leds = counter[8;0];
-        vcu108_outputs.leds[7] = uart_tx.txd;
 
-        uart_rx = {*=0};
-        uart_rx.rxd = vcu108_inputs.uart_rx.rxd;
-        vcu108_outputs.uart_tx.txd = dprintf_uart_txd;
-        vcu108_outputs.uart_tx.cts = 0;
-        if (!vcu108_inputs_r.switches[0]) {
-            vcu108_outputs.uart_tx= uart_tx;
-        }
         sgmii_transceiver_control  = {*=0};
     }
 }

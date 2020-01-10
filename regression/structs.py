@@ -194,7 +194,7 @@ gmii_rx = {"rx_dv":1, "rx_er":1, "rxd":8, "rx_crs":1}
 sgmii_gasket_control = {"write_config":1, "write_address":4, "write_data":32}
 
 #t sgmii_gasket_status
-sgmii_gasket_status = {"rx_sync":1, "rx_sync_toggle":1, "rx_symbols_since_sync":32, "an_config":16}
+sgmii_gasket_status = {"rx_sync":1, "rx_sync_toggle":1, "rx_symbols_since_sync":32, "an_config":16, "an_state":32}
 #t dec_8b10b_data - t_8b10b_dec_data
 dec_8b10b_data = {
     "valid":1,

@@ -230,6 +230,8 @@ cdl cdl/csrs/src csr_target_apb      inc:cdl/inc
 cdl cdl/csrs/src csr_target_timeout  inc:cdl/inc
 cdl cdl/csrs/tb_src tb_csrs          inc:cdl/inc
 
+cdl cdl/subsystem/src              subsys_minimal  inc:cdl/inc
+
 cdl cdl/boards/de1_cl/src          picoriscv_de1_cl  inc:cdl/inc
 
 cdl cdl/boards/de1_cl/src          bbc_micro_de1_cl_bbc  inc:cdl/inc

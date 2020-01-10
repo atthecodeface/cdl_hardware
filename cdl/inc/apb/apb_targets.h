@@ -57,11 +57,12 @@ module apb_target_rv_timer( clock clk             "System clock",
                             input  t_apb_request  apb_request  "APB request",
                             output t_apb_response apb_response "APB response",
 
-                            output t_timer_value  timer_value
+                            output t_timer_value  timer_value,
+                            output t_timer_control timer_control_out "Control from the timer, if configured"
     )
 {
     timing to   rising clock clk apb_request, timer_control;
-    timing from rising clock clk apb_response, timer_value;
+    timing from rising clock clk apb_response, timer_value, timer_control_out;
 }
 
 /*m apb_target_gpio */
