@@ -60,6 +60,26 @@ class axi4s:
         self.write_tx_data(byte_size)
         self.tx_ptr = (self.tx_ptr + 2 + word_size) % self.sram_size
         pass
+    def send_packet_data(self, data):
+        byte_size = len(data)
+        word_size = (byte_size+3)/4
+        self.set_tx_ptr(self.tx_ptr)
+        self.write_tx_data_inc(0) # Status
+        self.write_tx_data_inc(0) # User word
+        for i in range(word_size):
+            d = 0
+            for j in range(4):
+                db = 0
+                if i*4+j < byte_size: db = data[i*4+j]
+                d = d | (db << (8*j))
+                pass
+            self.write_tx_data_inc(d)
+            pass
+        self.write_tx_data_inc(0) # Next packet status
+        self.set_tx_ptr(self.tx_ptr)
+        self.write_tx_data(byte_size)
+        self.tx_ptr = (self.tx_ptr + 2 + word_size) % self.sram_size
+        pass
     def rx_poll(self):
         self.set_rx_ptr(self.rx_ptr)
         rx_status = self.read_rx_data()
@@ -102,13 +122,13 @@ class remote_operations:
 
     #f connect
     def connect(self, server):
-        self.s_apbr, self.s_apbw = server.get_apb_fns()
+        self.s_apbr, self.s_apbw, self.s_prod = server.get_apb_fns()
         self.server = server
         pass
 
     #f disconnect
     def disconnect(self):
-        self.s_apbr, self.s_apbw = None, None
+        self.s_apbr, self.s_apbw, self.s_prod = None, None, None
         self.server = None
         pass
 
@@ -123,6 +143,12 @@ class remote_operations:
         if self.s_apbr is not None:
             return self.s_apbr( address = (1<<20) | (select<<16) | (reg<<2) )
         raise Exception("No APBR method - is a server connected?")
+
+    #f prod
+    def prod(self, data):
+        if self.s_prod is not None:
+            return self.s_prod(data)
+        raise Exception("No PROD method - is a server connected?")
 
     #f sgmii_an
     def sgmii_an(self, adv):
@@ -187,8 +213,21 @@ class remote_operations:
         pass
     
     #f axi4s_send_pkt
-    def axi4s_send_pkt(self):
-        self.axi4s.send_packet(64)
+    def axi4s_send_pkt(self, n):
+        self.axi4s.send_packet(n)
+        pass
+    
+    #f axi4s_send_arp_response
+    def axi4s_send_arp_response(self):
+        pkt = [ 0x44, 0xa8, 0x42, 0x29, 0x88, 0xef,
+                0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
+                0x08, 0x06,
+                0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x02, # 0x00, 0x01 for request
+                0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
+                0x01, 0x01, 0x01, 0x02,
+                0x44, 0xa8, 0x42, 0x29, 0x88, 0xef,
+                0x01, 0x01, 0x01, 0x01 ]
+        self.axi4s.send_packet_data( pkt )
         pass
     
     #f axi4s_rx_poll
@@ -297,6 +336,7 @@ class remote(cmd.Cmd):
     cmd_list = {
         "apbw":     ("iii", "Do an APB write"),
         "apbr":     ("ii",  "Do an APB read"),
+        "prod":     ("i",   "Do a prod"),
         "sgmii_an": ("i",   "Invoke SGMII autonegotiation"),
         "anal_trigger_always": ("",   ""),
         "anal_capture_mask_compare": ("ii",   ""),
@@ -306,6 +346,7 @@ class remote(cmd.Cmd):
         "anal_mux_control": ("i",   ""),
         "axi4s_reset":      ("",   ""),
         "axi4s_send_pkt":   ("i",  "Send a packet of N bytes long"),
+        "axi4s_send_arp_response":   ("",   "Send ARP reply"),
         "axi4s_rx_poll":    ("",   "Poll for rx packet (returns True or False)"),
         "axi4s_rx_start_packet":    ("",   "Get number of words in packet and start rx"),
         "axi4s_rx_data":    ("",   "Read the next Rx RAM data"),
