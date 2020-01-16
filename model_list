@@ -122,11 +122,13 @@ cdl cdl/cpu/riscv/src    riscv_i32c_pipeline3 inc:cdl/inc
 # These modules are i/e32[c] capable - they tie in the pipelines and no coprocessors, so they cannot support m
 cdl cdl/cpu/riscv/src    riscv_i32_minimal_apb   inc:cdl/inc
 cdl cdl/cpu/riscv/src    riscv_i32_minimal   inc:cdl/inc
+cdl cdl/cpu/riscv/src    riscv_i32_minimal3  inc:cdl/inc
 cdl cdl/cpu/riscv/tb_src tb_riscv_i32_minimal           inc:cdl/inc  inc:cdl/cpu/riscv/tb_src dc:rv_cfg_i32c_force_disable=1
 cdl cdl/cpu/riscv/tb_src tb_riscv_i32c_minimal          inc:cdl/inc  inc:cdl/cpu/riscv/tb_src dc:rv_cfg_i32c_force_disable=0 rmn:tb_riscv_i32_minimal=tb_riscv_i32c_minimal
 cdl cdl/cpu/riscv/tb_src tb_riscv_i32c_pipeline3        inc:cdl/inc
 cdl cdl/cpu/riscv/tb_src tb_riscv_i32mc_pipeline3       inc:cdl/inc
 cdl cdl/cpu/riscv/tb_src tb_riscv_i32mc_system          inc:cdl/inc
+cdl cdl/cpu/riscv/tb_src tb_riscv_i32mc_minimal3        inc:cdl/inc
 
 #cdl cdl/cpu/clarvi/src    clarvi        inc:cdl/inc
 #cdl cdl/cpu/clarvi/src    clarvi_csrs    inc:cdl/inc

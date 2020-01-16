@@ -23,7 +23,7 @@ include "utils/jtag_modules.h"
 include "cpu/riscv/riscv.h"
 include "cpu/riscv/riscv_internal_types.h"
 
-/*a Implementations */
+/*a Implementations of CPUs with memories */
 /*m riscv_i32_minimal
 
  riscv_config should be HARDWIRED (not off registers) to force logic to be
@@ -60,6 +60,44 @@ module riscv_i32_minimal( clock clk,
     timing comb input riscv_config;
     timing comb input data_access_resp;
     timing comb output trace;
+}
+
+/*m riscv_i32_minimal3
+
+ riscv_config should be HARDWIRED (not off registers) to force logic to be
+ discarded at synthesis
+
+ alternatively submodules may be built with appropriate force's set to
+ force discard of logic.
+*/
+extern
+module riscv_i32_minimal3( clock clk,
+                           input bit reset_n,
+                           input bit proc_reset_n,
+                           input t_riscv_irqs             irqs               "Interrupts in to the CPU",
+                           output t_apb_request           apb_request,
+                           input  t_apb_response          apb_response,
+                           input t_sram_access_req        sram_access_req,
+                           output t_sram_access_resp      sram_access_resp,
+                           input  t_riscv_debug_mst       debug_mst,
+                           output t_riscv_debug_tgt       debug_tgt,
+                           input  t_riscv_config          riscv_config,
+                           output t_riscv_i32_trace       trace
+)
+{
+    timing from rising clock clk apb_request;
+    timing to   rising clock clk apb_response;
+    timing to   rising clock clk sram_access_req;
+    timing from rising clock clk sram_access_resp;
+    timing to   rising clock clk riscv_config;
+    timing to   rising clock clk debug_mst;
+    timing from rising clock clk debug_tgt;
+    timing to   rising clock clk irqs;
+    timing from rising clock clk trace;
+    timing comb input riscv_config;
+    timing comb input apb_response;
+    timing comb output trace;
+    timing comb output debug_tgt;
 }
 
 /*a Interfaces */

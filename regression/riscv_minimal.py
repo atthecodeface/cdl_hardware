@@ -684,13 +684,14 @@ class riscv_i32mc_system_test_hw(riscv_base_hw):
               "clk":(0,1,1),
               }
     module_name = "tb_riscv_i32mc_system"
+    module_name = "tb_riscv_i32mc_minimal3"
     #f __init__
     def __init__(self, test):
         self.num_cycles = test.num_cycles
         self.options    = test.options
         self.th_forces = self.th_forces.copy()
         mif_filename = test.get_image()
-        self.th_forces["mem.filename"] = mif_filename
+        self.th_forces["rv.mem.filename"] = mif_filename
         self.add_th_forces_for_checkers(test, "")
         riscv_base_hw.__init__(self,test)
         pass
@@ -803,7 +804,7 @@ class riscv_i32mc_pipeline3(riscv_base):
 class riscv_i32mc_system(riscv_base):
     supports = ["compressed", "muldiv", "jtag", "rv_timer"]
     hw = riscv_i32mc_system_test_hw
-    test_memory = "mem"
+    test_memory = "rv.mem"
     cycles_scale = 0.5
     needs_jtag_startup = True
     default_test_classes = {"":c_riscv_minimal_test_dump,
