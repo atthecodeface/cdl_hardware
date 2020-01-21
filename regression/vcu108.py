@@ -130,6 +130,8 @@ class vcu108_riscv_hw(vcu108_generic_hw):
         self.mif = get_mif_of_file(self.memory, test.mif_filename )
         self.th_forces = self.th_forces.copy()
         self.th_forces["dut.riscv.mem.filename"] = self.mif.name
+        self.th_forces["dut.subsys.apb_rom.filename"] = self.apb_rom_mif
+        self.th_forces["dut.subsys.apb_rom.verbose"] = -1
         vcu108_generic_hw.__init__(self,test)
         class named:
             def __init__(self, name):
@@ -150,6 +152,11 @@ class vcu108_riscv_hw(vcu108_generic_hw):
                                  #named("dut.dut.riscv"),
         ]
         pass
+
+#c vcu108_riscv_3_hw
+class vcu108_riscv_3_hw(vcu108_riscv_hw):
+    module_name = "tb_vcu108_riscv_3"
+    pass
 
 #c c_test_one
 class c_test_one(simple_tb.base_th):
@@ -177,6 +184,14 @@ class vcu108_debug_regression(simple_tb.base_test):
 
 #c vcu108_riscv_regression
 class vcu108_riscv_regression(simple_tb.base_test):
+    def xtest_uart_loopback(self):
+        test = c_test_one()
+        hw = vcu108_riscv_hw(test)
+        self.do_test_run(hw, 400*1000)
+    pass
+
+#c vcu108_riscv_3_regression
+class vcu108_riscv_3_regression(simple_tb.base_test):
     def test_uart_loopback(self):
         test = c_test_one()
         hw = vcu108_riscv_hw(test)

@@ -108,7 +108,7 @@ chain.
     clocked t_csr_request   csr_request={*=0}                       "CSR request out to CSR chain";
     comb t_apb_action       apb_action                              "Decode of APB state and request to determine next action";
     clocked t_apb_state     apb_state={*=0, fsm_state=apb_fsm_idle} "State of the APB interface";
-    clocked t_apb_response  apb_response={*=0}                      "APB response back to the master, generated from CSR response";
+    clocked t_apb_response  apb_response={*=0, pready=1}            "APB response back to the master, generated from CSR response";
     clocked bit csr_request_in_progress = 0                         "Asserted if a CSR request is in progress";
 
     /*b APB target interface logic */

@@ -254,8 +254,10 @@ cdl cdl/boards/de2/src/            picorisc_de2 inc:cdl/inc
 
 cdl cdl/boards/vcu108/src        vcu108_debug     inc:cdl/inc
 cdl cdl/boards/vcu108/src        vcu108_riscv     inc:cdl/inc
+cdl cdl/boards/vcu108/src        vcu108_riscv_3   inc:cdl/inc
 cdl cdl/boards/vcu108/tb_src  tb_vcu108_debug  inc:cdl/boards/vcu108/tb_src inc:cdl/inc rit:tb_vcu108_generic.vcu108_generic=vcu108_debug rmn:tb_vcu108_generic=tb_vcu108_debug
 cdl cdl/boards/vcu108/tb_src  tb_vcu108_riscv  inc:cdl/boards/vcu108/tb_src inc:cdl/inc rit:tb_vcu108_generic.vcu108_generic=vcu108_riscv rmn:tb_vcu108_generic=tb_vcu108_riscv
+cdl cdl/boards/vcu108/tb_src  tb_vcu108_riscv_3  inc:cdl/boards/vcu108/tb_src inc:cdl/inc rit:tb_vcu108_generic.vcu108_generic=vcu108_riscv_3 rmn:tb_vcu108_generic=tb_vcu108_riscv_3
 
 #a Editor preferences and notes
 # Local Variables: ***
