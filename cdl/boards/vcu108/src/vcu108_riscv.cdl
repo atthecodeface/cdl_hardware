@@ -167,6 +167,7 @@ module vcu108_riscv( clock clk,
         subsys_inputs = {*=0};
         subsys_inputs.i2c = vcu108_inputs.i2c;
         subsys_inputs.uart_rx = vcu108_inputs.uart_rx;
+        subsys_inputs.switches[4;0] = vcu108_inputs.switches;
         analyzer_mux_control <= 0;
         vcu108_outputs.i2c     = subsys_outputs.i2c;
         vcu108_outputs.uart_tx = subsys_outputs.uart_tx;
