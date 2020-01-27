@@ -381,12 +381,28 @@ module subsys_minimal( clock clk,
                                   req => mux_dprintf_req[i],
                                   ack <= mux_dprintf_ack[i] );
         }
-        dprintf_4_fifo_4 dpf( clk <- clk, reset_n <= reset_n,
+        dprintf_4_fifo_512 dpf( clk <- clk, reset_n <= reset_n,
                             req_in <= mux_dprintf_req[0],
                             ack_in => mux_dprintf_ack[0],
                             req_out => fifo_dprintf_req,
                             ack_out <= fifo_dprintf_ack );
 
+        if (mux_dprintf_req[0].valid && mux_dprintf_ack[0]) {
+            log("dprintf fifo push",
+                "address", mux_dprintf_req[0].address,
+                "data_0", mux_dprintf_req[0].data_0,
+                "data_1", mux_dprintf_req[0].data_1,
+                "data_2", mux_dprintf_req[0].data_2,
+                "data_3", mux_dprintf_req[0].data_3);
+        }
+        if (fifo_dprintf_req.valid && fifo_dprintf_ack) {
+            log("dprintf fifo pop",
+                "address", fifo_dprintf_req.address,
+                "data_0", fifo_dprintf_req.data_0,
+                "data_1", fifo_dprintf_req.data_1,
+                "data_2", fifo_dprintf_req.data_2,
+                "data_3", fifo_dprintf_req.data_3);
+        }
     }
 
     /*b APB targets */

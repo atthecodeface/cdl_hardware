@@ -204,7 +204,7 @@ module vcu108_riscv_3( clock clk,
         riscv_config.i32c  = 1;
         irqs = {*=0};
         // irqs.mtip = timer_value.irq;
-        riscv_i32_minimal3 rv(clk     <- clk,
+        riscv_i32_minimal3 riscv(clk     <- clk,
                                  proc_reset_n <= reset_n & rv_sram_ctrl[0],
                                  reset_n <= reset_n,
                                  irqs         <= irqs,
