@@ -70,6 +70,32 @@ extern module se_sram_srw_256x40( clock sram_clock,
     timing from rising clock sram_clock   data_out;
 }
 
+/*m se_sram_srw_512x32 */
+extern module se_sram_srw_512x32( clock sram_clock,
+                                   input bit select,
+                                   input bit[9] address,
+                                   input bit read_not_write,
+                                   input bit write_enable,
+                                   input bit[32] write_data,
+                                   output bit[32] data_out )
+{
+    timing to   rising clock sram_clock   select, address, read_not_write, write_data, write_enable;
+    timing from rising clock sram_clock   data_out;
+}
+
+/*m se_sram_srw_512x64 */
+extern module se_sram_srw_512x64( clock sram_clock,
+                                   input bit select,
+                                   input bit[9] address,
+                                   input bit read_not_write,
+                                   input bit write_enable,
+                                   input bit[64] write_data,
+                                   output bit[64] data_out )
+{
+    timing to   rising clock sram_clock   select, address, read_not_write, write_data, write_enable;
+    timing from rising clock sram_clock   data_out;
+}
+
 /*m se_sram_srw_16384x8 */
 extern module se_sram_srw_16384x8( clock sram_clock,
                                    input bit select,
@@ -208,6 +234,48 @@ extern module se_sram_mrw_2_2048x32( clock sram_clock_0,
                                       input bit read_not_write_1,
                                       input bit[32] write_data_1,
                                       output bit[32] data_out_1)
+{
+    timing to   rising clock sram_clock_0   select_0, address_0, read_not_write_0, write_data_0;
+    timing from rising clock sram_clock_0   data_out_0;
+    timing to   rising clock sram_clock_1   select_1, address_1, read_not_write_1, write_data_1;
+    timing from rising clock sram_clock_1   data_out_1;
+}
+
+/*m se_sram_mrw_2_512x32 */
+extern module se_sram_mrw_2_512x32( clock sram_clock_0,
+                                      input bit select_0,
+                                      input bit[9] address_0,
+                                      input bit read_not_write_0,
+                                      input bit[32] write_data_0,
+                                      output bit[32] data_out_0,
+
+                                      clock sram_clock_1,
+                                      input bit select_1,
+                                      input bit[9] address_1,
+                                      input bit read_not_write_1,
+                                      input bit[32] write_data_1,
+                                      output bit[32] data_out_1)
+{
+    timing to   rising clock sram_clock_0   select_0, address_0, read_not_write_0, write_data_0;
+    timing from rising clock sram_clock_0   data_out_0;
+    timing to   rising clock sram_clock_1   select_1, address_1, read_not_write_1, write_data_1;
+    timing from rising clock sram_clock_1   data_out_1;
+}
+
+/*m se_sram_mrw_2_512x64 */
+extern module se_sram_mrw_2_512x64( clock sram_clock_0,
+                                      input bit select_0,
+                                      input bit[9] address_0,
+                                      input bit read_not_write_0,
+                                      input bit[64] write_data_0,
+                                      output bit[64] data_out_0,
+
+                                      clock sram_clock_1,
+                                      input bit select_1,
+                                      input bit[9] address_1,
+                                      input bit read_not_write_1,
+                                      input bit[64] write_data_1,
+                                      output bit[64] data_out_1)
 {
     timing to   rising clock sram_clock_0   select_0, address_0, read_not_write_0, write_data_0;
     timing from rising clock sram_clock_0   data_out_0;

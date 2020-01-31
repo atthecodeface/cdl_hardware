@@ -1,0 +1,295 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   tb_riscv_minimal.cdl
+ * @brief  Testbench for minimal RISC-V
+ *
+ */
+
+/*a Includes
+ */
+include "srams.h"
+include "types/apb.h"
+include "apb/apb_targets.h"
+include "cpu/riscv/riscv.h"
+include "cpu/riscv/riscv_modules.h"
+include "cpu/riscv/riscv_pipeline.h"
+include "cpu/riscv/riscv_submodules.h"
+include "cpu/riscv/chk_riscv.h"
+
+/*a Types */
+/*t t_drop_data */
+typedef enum[2] {
+    drop_data_none,
+    drop_data_16,
+    drop_data_32,
+    drop_data_all
+} t_drop_data;
+
+/*t t_sram_request */
+typedef struct {
+    bit     valid;
+    bit     read_not_write;
+    bit[32] address;
+    bit[4]  byte_enable;
+    bit[32] write_data;
+} t_sram_request;
+
+/*t t_inst_combs */
+typedef struct {
+    bit[64] data_before_drop;
+    bit[64] data_after_drop;
+    bit[4] half_words_valid;
+    bit[4] half_words_will_be_valid;
+    t_sram_request sram_request;
+    bit request_initial_half;
+    t_drop_data drop_data;
+} t_inst_combs;
+
+/*t t_inst_state */
+typedef struct {
+    bit[4]  half_words_valid_before_reading;
+    bit     sram_reading;
+    bit     initial_half;
+    bit[32] address;
+    bit[64] data;
+} t_inst_state;
+
+/*t t_data_combs */
+typedef struct {
+    t_sram_request sram_request;
+    bit apb_request_valid;
+} t_data_combs;
+
+/*t t_data_state */
+typedef struct {
+    t_riscv_mem_access_req dmem_access_in_progress;
+    t_apb_request apb;
+} t_data_state;
+
+/*t t_arbiter_combs */
+typedef struct {
+    t_sram_request sram_request;
+    bit grant_to_inst;
+    bit grant_to_data;
+} t_arbiter_combs;
+
+/*a External modules */
+extern module se_test_harness( clock clk, output t_jtag jtag, output bit tck_enable, input bit tdo )
+{
+    timing from rising clock clk jtag, tck_enable;
+    timing to rising clock clk tdo;
+}
+
+/*a Module
+ */
+module tb_riscv_i32mc_minimal3( clock jtag_tck,
+                                clock clk,
+                                input bit reset_n
+)
+"""
+Replacement for tb_riscv_i32mc_system
+
+There is now a module riscv_i32_minimal3 that includes the pipeline, multiplier,
+and SRAM with arbitration logic.
+
+This module contains additionally APB targets, JTAG, and trace.
+"""
+{
+    /*b Default clock and reset
+     */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Configuration and tie-offs
+     */
+    clocked t_riscv_config  riscv_config={*=0, i32c=1, i32m=1, i32m_fuse=1, coproc_disable=0, debug_enable=1} ;
+    clocked t_riscv_irqs    irqs= {*=0};
+    clocked t_timer_control timer_control = {*=0};
+
+    /*b Nets
+     */
+    net t_jtag jtag;
+    net bit tdo;
+    net bit[5]ir;
+    net t_jtag_action dr_action;
+    net bit[50]dr_in;
+    net bit[50]dr_tdi_mask;
+    net bit[50]dr_out;
+    net bit tck_enable;
+    comb bit tck_enable_fix;
+    gated_clock clock jtag_tck active_high tck_enable_fix jtag_tck_gated;
+
+    net   t_apb_request  dm_apb_request  "APB request for debug";
+    net   t_apb_response dm_apb_response "APB response for debug";
+    net   t_riscv_debug_mst debug_mst;
+    net   t_riscv_debug_tgt debug_tgt;
+
+    /*b State and comb
+     */
+    net     t_apb_request   rv_apb_request;
+    comb    t_apb_response  rv_apb_response;
+    comb    t_apb_request   timer_apb_request;
+    net     t_apb_response  timer_apb_response;
+    net     t_timer_value   timer_value;
+
+    net t_riscv_i32_trace trace;
+    comb t_riscv_packed_trace_control trace_control;
+    net t_riscv_i32_packed_trace packed_trace;
+    net t_riscv_i32_compressed_trace compressed_trace;
+    net t_riscv_i32_decompressed_trace decompressed_trace;
+    net bit[5] nybbles_consumed;
+    clocked t_sram_access_req sram_access_req={*=0};
+    net t_sram_access_resp sram_access_resp;
+
+    /*b Configuration
+     */
+    configuration """
+    Tie-offs are best done as clocked signals, with the reset value and the assigned values being equal.
+    In synthesis the flops will be optimized out as tied-low or tied-high.
+    """ : {
+        riscv_config <= {*=0};
+        riscv_config.i32c <= 1;
+        riscv_config.e32  <= 0;
+        riscv_config.i32m <= 1;
+        riscv_config.i32m_fuse <= 1;
+        riscv_config.coproc_disable <= 0;
+        riscv_config.debug_enable <= 1;
+
+        timer_control <= {*=0};
+        timer_control.enable_counter   <= 1;
+        timer_control.fractional_adder <= 2;
+        timer_control.integer_adder    <= 0;
+        irqs <= {*=0};
+        irqs.mtip <= timer_value.irq;
+        sram_access_req <= {*=0};
+    }
+
+    /*b RISC-V and SRAMs etc */
+    riscv_and_sram: {
+        /*b RISC-V */
+        riscv_i32_minimal3 rv(clk     <- clk,
+                                 reset_n <= reset_n,
+                                 proc_reset_n <= reset_n,
+                                 irqs         <= irqs,
+                                 sram_access_req  <= sram_access_req,
+                                 sram_access_resp => sram_access_resp,
+                                 apb_request      => rv_apb_request,
+                                 apb_response     <= rv_apb_response,
+
+                                 debug_mst        <= debug_mst,
+                                 debug_tgt        => debug_tgt,
+                                 riscv_config     <= riscv_config,
+                                 trace            => trace
+            );
+    }
+
+    /*b RV APB targets */
+    rv_apb_targets : {
+        timer_apb_request       = rv_apb_request;
+        timer_apb_request.psel  = rv_apb_request.psel && (rv_apb_request.paddr[4;12]==0);
+        timer_apb_request.paddr = rv_apb_request.paddr >> 2;
+
+        apb_target_rv_timer tim( clk <- clk,
+                                 reset_n <= reset_n,
+                                 timer_control  <= timer_control,
+
+                                 apb_request  <= timer_apb_request,
+                                 apb_response => timer_apb_response,
+                                 timer_value => timer_value );
+        rv_apb_response = timer_apb_response;
+    }
+
+    /*b Instantiate debug
+     */
+    debug_instances: {
+        tck_enable_fix = tck_enable;
+        jtag_tap tap( jtag_tck <- jtag_tck_gated,
+                      reset_n <= reset_n,
+                      jtag <= jtag,
+                      tdo => tdo,
+
+                      ir => ir,
+                      dr_action => dr_action,
+                      dr_in => dr_in,
+                      dr_tdi_mask <= dr_tdi_mask,
+                      dr_out <= dr_out );
+
+        riscv_jtag_apb_dm dm_apb( jtag_tck <- jtag_tck_gated,
+                      reset_n <= reset_n,
+
+                      ir <= ir,
+                      dr_action <= dr_action,
+                      dr_in <= dr_in,
+                      dr_tdi_mask => dr_tdi_mask,
+                      dr_out => dr_out,
+
+                      apb_clock <- clk,
+                      apb_request  => dm_apb_request,
+                      apb_response <= dm_apb_response );
+
+        riscv_i32_debug dm( clk <- clk,
+                            reset_n <= reset_n,
+
+                            apb_request  <= dm_apb_request,
+                            apb_response => dm_apb_response,
+
+                            debug_mst  => debug_mst,
+                            debug_tgt <= debug_tgt
+            );
+    }
+
+    /*b Test harness
+     */
+    test_harness_inst: {
+        se_test_harness th(clk <- jtag_tck, jtag=>jtag, tck_enable=>tck_enable, tdo<=tdo);
+    }
+
+    /*b Trace logic and modules
+     */
+    riscv_trace: {
+        trace_control = {enable=1,
+                         enable_control=1,
+                         enable_pc=1, // priority over rfd?
+                         enable_rfd=0,
+                         enable_breakpoint=1,
+                         valid = 1};
+        riscv_i32_trace trace(clk <- clk,
+                              reset_n <= reset_n,
+                              riscv_clk_enable <= 1,
+                              trace <= trace );
+        riscv_i32_trace_pack trace_pack(clk <- clk,
+                                        reset_n <= reset_n,
+                                        trace_control <= trace_control,
+                                        trace <= trace,
+                                        packed_trace => packed_trace );
+        riscv_i32_trace_compression trace_compression(packed_trace<=packed_trace,
+                                                      compressed_trace => compressed_trace );
+        riscv_i32_trace_decompression trace_decompression( compressed_nybbles <= compressed_trace.data,
+                                                           decompressed_trace => decompressed_trace,
+                                                           nybbles_consumed => nybbles_consumed );
+    }
+
+    /*b Checkers - for matching trace etc
+     */
+    checkers: {
+        chk_riscv_trace checker_trace( clk <- clk,
+                                       trace <= trace
+                                         //error_detected =>,
+                                         //cycle => ,
+            );
+    }
+
+    /*b All done
+     */
+}

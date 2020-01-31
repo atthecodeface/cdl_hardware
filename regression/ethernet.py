@@ -215,9 +215,21 @@ class sgmii_test_0(sgmii_test_base):
         self.sgmii_gasket_control__write_config.drive(0)
         self.bfm_wait(10)
 
+        """
+        Start of packet length 18 ptr 254
+        01 00 00 00 ff ff ff ff ff ff 44 a8 42 29 88 ef 08 06 00 01 08 00 06 04 00 01 44 a8 42 29 88 ef 01 01 01 01 00 00 00 00 00 00 01 01 01 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 3f f7 82 00 00 00 00
+        """
+        pkt = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+               0x44, 0xa8, 0x42, 0x29, 0x88, 0xef,
+               0x08, 0x06,
+               0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01,     0x44, 0xa8, 0x42, 0x29, 0x88, 0xef, 0x01, 0x01,
+               0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,     0x01, 0x01, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00,
+               0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+               ] # 02 3f f7 82
+
         self.bfm_wait(1000)
         for i in range(10):
-            self.send_packet([0,1,2,3,4,5,6,7])
+            self.send_packet(pkt)
             self.gmii_bfm_wait(i+1)
             pass
         for i in range(10,1,-1):
@@ -288,7 +300,45 @@ class gbe_test_0(gbe_test_base):
                 (0x11100F0E,0xf,0),
                 (0x00001312,0x3,1),
                 ]
+        """
+        Start of packet length 18 ptr 254
+        ff ff ff ff ff ff 44 a8
+        42 29 88 ef 08 06 00 01
+        08 00 06 04 00 01 44 a8
+        42 29 88 ef 01 01 01 01
+        00 00 00 00 00 00 01 01
+        01 02 00 00 00 00 00 00
+        00 00 00 00 00 00 00 00
+        00 00 00 00 02 3f f7 82
+        """
+        pkt = [(0xffffffff, 0xf,0),
+               (0xa844ffff,0xf,0),
+               (0xef882942,0xf,0),
+               (0x01000608,0xf,0),
+               (0x04060008,0xf,0),
+               (0xa8440100,0xf,0),
+               (0xef882942,0xf,0),
+               (0x01010101,0xf,0),
+               (0x00000000,0xf,0),
+               (0x01010000,0xf,0),
+               (0x00000201,0xf,0),
+               (0x0,0xf,0),
+               (0x0,0xf,0),
+               (0x0,0xf,0),
+               (0x0,0xf,1),
+               ] # 02 3f f7 82
+        
         self.run_init()
+
+        self.sgmii_gasket_control__write_config.drive(1)
+        self.sgmii_gasket_control__write_address.drive(0)
+        self.sgmii_gasket_control__write_data.drive(3)
+        self.bfm_wait(1)
+        self.sgmii_gasket_control__write_config.drive(0)
+        self.bfm_wait(10)
+
+        self.bfm_wait(100)
+
         self.axi_bfm.axi4s("axi4s")
         self.axi4s.set("strb",0xf)
         self.axi4s.set("keep",0xf)
@@ -296,7 +346,7 @@ class gbe_test_0(gbe_test_base):
         self.axi4s.set("id",0)
         self.axi4s.set("dest",0)
         self.axi4s.set("last",0)
-        
+
         for i in range(2):
             for (d,s,l) in pkt:
                 self.axi4s.set("data",d)
@@ -306,7 +356,7 @@ class gbe_test_0(gbe_test_base):
                 pass
             self.bfm_wait(100)
             pass
-            self.sys_cfg.drive(i)
+            #self.sys_cfg.drive(i)
         self.bfm_wait(100)
         failures = 0
         if failures==0:

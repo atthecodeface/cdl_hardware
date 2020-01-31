@@ -197,6 +197,7 @@ generate the address for the SRAM request.
                 req_resp_state.data_valid <= 1;
             }
         } else {
+            // GJS DEC - can we remove this so we don't drive prdata and pready when we don't need to?
             if (access!=access_none) {
                 req_resp_state.access <= access;
             }

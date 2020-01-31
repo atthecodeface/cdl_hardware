@@ -54,7 +54,7 @@ constant integer num_dprintf_requesters=4;
  * Debug module for testing out HPS in the Cyclone-V FPGA
  *
  */
-module vcu108_riscv( clock clk,
+module vcu108_riscv_3( clock clk,
                      clock clk_50,
                      input bit reset_n,
 
@@ -114,8 +114,6 @@ module vcu108_riscv( clock clk,
     comb t_riscv_config riscv_config;
     net t_riscv_i32_trace riscv_trace;
     comb t_riscv_irqs       irqs;
-    net t_riscv_mem_access_req data_access_req;
-    net t_riscv_mem_access_resp data_access_resp;
     net t_sram_access_req  rv_sram_access_req;
     net t_sram_access_resp rv_sram_access_resp;
 
@@ -166,7 +164,7 @@ module vcu108_riscv( clock clk,
     subsystem_instance : {
         subsys_inputs = {*=0};
         subsys_inputs.i2c = vcu108_inputs.i2c;
-        subsys_inputs.uart_rx = vcu108_inputs.uart_rx;
+        subsys_inputs.uart_rx  = vcu108_inputs.uart_rx;
         subsys_inputs.switches[4;0] = vcu108_inputs.switches;
         analyzer_mux_control <= 0;
         vcu108_outputs.i2c     = subsys_outputs.i2c;
@@ -206,14 +204,14 @@ module vcu108_riscv( clock clk,
         riscv_config.i32c  = 1;
         irqs = {*=0};
         // irqs.mtip = timer_value.irq;
-        riscv_i32_minimal riscv( clk <- clk,
+        riscv_i32_minimal3 riscv(clk     <- clk,
                                  proc_reset_n <= reset_n & rv_sram_ctrl[0],
                                  reset_n <= reset_n,
-                                 irqs <= irqs,
-                                 data_access_req => data_access_req,
-                                 data_access_resp <= data_access_resp,
+                                 irqs         <= irqs,
                                  sram_access_req <= rv_sram_access_req,
                                  sram_access_resp => rv_sram_access_resp,
+                                      apb_request  => riscv_apb_request,
+                                      apb_response <= riscv_apb_response,
                                  debug_mst <= riscv_debug_mst,
                                  debug_tgt =>riscv_debug_tgt,
                                  riscv_config <= riscv_config,
@@ -223,13 +221,6 @@ module vcu108_riscv( clock clk,
                               reset_n <= reset_n,
                               riscv_clk_enable <= 1,
                               trace <= riscv_trace );
-
-        riscv_i32_minimal_apb rv_apb( clk <- clk,
-                                      reset_n <= reset_n,
-                                      data_access_req  <= data_access_req,
-                                      data_access_resp => data_access_resp,
-                                      apb_request  => riscv_apb_request,
-                                      apb_response <= riscv_apb_response );
         riscv_i32_debug rv_debug( clk <- clk, reset_n <= reset_n,
                                   apb_request  <= riscv_dbg_apb_request,
                                   apb_response =>  riscv_dbg_apb_response,

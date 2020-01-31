@@ -71,10 +71,10 @@ shm_vnc: ${SHM_VNC_OBJS}
 ifeq ($(OS),Darwin)
 SCRIPT ?= script regression.script
 else
-SCRIPT ?= script -ef
+SCRIPT ?= script -efc
 endif
 RP     ?= ${SCRIPT}
-REGRESS_ALL = ${RP} ./regress_all
+REGRESS_ALL = CYCLICITY=${CYCLICITY} ${RP} ./regress_all
 
 .PHONY: regression
 regression: non_bbc_roms

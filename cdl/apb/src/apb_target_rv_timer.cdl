@@ -25,6 +25,10 @@ include "types/apb.h"
 include "types/timer.h"
 include "clocking/clock_timer_modules.h"
 
+/*a Constants
+ */
+constant integer timer_control_out_enable = 1;
+
 /*a Types */
 /*t t_apb_address
  *
@@ -36,6 +40,8 @@ typedef enum [4] {
     apb_address_timer_upper       = 1  "Top 32 bits of timer value; writable unless control.block_writes is high",
     apb_address_comparator_lower  = 2  "Bottom 32 bits of comparator value",
     apb_address_comparator_upper  = 3  "Top 32 bits of comparator value",
+    apb_address_control_config    = 4  "Only if timer_control_out_enable=1, register for configuration side of timer_control_out",
+    apb_address_control_rate      = 5  "Only if timer_control_out_enable=1, register for rate of timer_control_out ",
 } t_apb_address;
 
 /*t t_access
@@ -52,7 +58,9 @@ typedef enum [4] {
     access_write_comparator_lower    "Write to bottom 32 bits of comparator",
     access_write_comparator_upper    "Write to top 32 bits of comparator",
     access_read_comparator_lower     "Read of bottom 32 bits of comparator",
-    access_read_comparator_upper     "Read of top 32 bits of comparator"
+    access_read_comparator_upper     "Read of top 32 bits of comparator",
+    access_write_control_config      "Only if timer_control_out_enable=1",
+    access_write_control_rate        "Only if timer_control_out_enable=1",
 } t_access;
 
 /*t t_timer_combs
@@ -75,6 +83,8 @@ typedef struct {
     bit     lower_eq               "Asserted if comparator_lower==timer_lower; pipelined by 1 cycle";
     bit     lower_ge               "Asserted if comparator_lower>=timer_lower; pipelined by 1 cycle";
     bit     comparator_exceeded    "Asserted if comparator>timer; pipelined by 2 cycles";
+
+    bit     timer_control_synchronize "Only if timer_control_out_enable=1; if set then the output synchronize values are set on APB writes of timer value";
 } t_timer_state;
 
 /*a Module */
@@ -85,7 +95,8 @@ module apb_target_rv_timer( clock clk             "System clock",
                             input  t_apb_request  apb_request  "APB request",
                             output t_apb_response apb_response "APB response",
 
-                            output t_timer_value  timer_value
+                            output t_timer_value  timer_value,
+                            output t_timer_control timer_control_out "Control from the timer, if configured"
     )
 """
 RISC-V compatible timer with an APB interface.
@@ -104,6 +115,7 @@ This is a monotonically increasing 64-bit timer with a 64-bit comparator.
     /*b Timer state */
     clocked t_timer_state timer_state= {*=0} "State of the timer and comparator";
     comb    t_timer_combs timer_combs        "Combinatorial decode of timer state and controls";
+    clocked t_timer_control timer_control_out = {*=0} "Timer control out, if configured";
 
     /*b APB interface */
     apb_interface_logic """
@@ -131,6 +143,16 @@ This is a monotonically increasing 64-bit timer with a 64-bit comparator.
         case apb_address_comparator_upper: {
             access <= apb_request.pwrite ? access_write_comparator_upper : access_read_comparator_upper;
         }
+        case apb_address_control_config: {
+            if (apb_request.pwrite && timer_control_out_enable) {
+                access <= access_write_control_config;
+            }
+        }
+        case apb_address_control_rate: {
+            if (apb_request.pwrite && timer_control_out_enable) {
+                access <= access_write_control_rate;
+            }
+        }
         }
         if (!apb_request.psel || apb_request.penable) {
             access <= access_none;
@@ -154,6 +176,42 @@ This is a monotonically increasing 64-bit timer with a 64-bit comparator.
         }
 
         /*b All done */
+    }
+
+    /*b Timer control out if configured */
+    timer_control_out_logic : {
+        timer_control_out.advance          <= 0;
+        timer_control_out.retard           <= 0;
+        timer_control_out.lock_window_lsb  <= 0;
+        timer_control_out.synchronize <= 0;
+        if (access==access_write_control_config) {
+            timer_control_out.reset_counter       <= apb_request.pwdata[0];
+            timer_control_out.enable_counter      <= apb_request.pwdata[1];
+            timer_control_out.lock_to_master      <= apb_request.pwdata[4];
+            timer_state.timer_control_synchronize <= apb_request.pwdata[5];
+            timer_control_out.block_writes        <= apb_request.pwdata[8];
+        }
+        if (access==access_write_control_rate) {
+            timer_control_out.fractional_adder      <= apb_request.pwdata[4;0];
+            timer_control_out.integer_adder         <= apb_request.pwdata[8;4];
+            timer_control_out.bonus_subfraction_add <= apb_request.pwdata[8;16];
+            timer_control_out.bonus_subfraction_sub <= apb_request.pwdata[8;24];
+        }
+        if (timer_state.timer_control_synchronize) {
+            if (access==access_write_timer_lower) {
+                timer_control_out.synchronize[0] <= 1;
+                timer_control_out.synchronize_value[32;0] <= apb_request.pwdata;
+            }
+            if (access==access_write_timer_upper) {
+                timer_control_out.synchronize[1] <= 1;
+                timer_control_out.synchronize_value[32;32] <= apb_request.pwdata;
+            }
+        }
+        
+        if (!timer_control_out_enable) {
+            timer_control_out <= {*=0};
+            timer_state.timer_control_synchronize <= 0;
+        }
     }
 
     /*b Handle the timer and comparator */
