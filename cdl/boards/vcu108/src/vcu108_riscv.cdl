@@ -133,7 +133,7 @@ module vcu108_riscv( clock clk,
     net t_sgmii_gasket_status sgmii_gasket_status;
     clocked bit eth_reset_n = 0;
 
-    clocked bit[32] analyzer_mux_control=0;
+    net bit[32] analyzer_mux_control;
     clocked bit[32] analyzer_trace = {*=0};
     clocked t_bit32[8] traces = {*=0};
     
@@ -168,7 +168,6 @@ module vcu108_riscv( clock clk,
         subsys_inputs.i2c = vcu108_inputs.i2c;
         subsys_inputs.uart_rx = vcu108_inputs.uart_rx;
         subsys_inputs.switches[4;0] = vcu108_inputs.switches;
-        analyzer_mux_control <= 0;
         vcu108_outputs.i2c     = subsys_outputs.i2c;
         vcu108_outputs.uart_tx = subsys_outputs.uart_tx;
         subsys_minimal subsys( clk <- clk,
@@ -195,6 +194,7 @@ module vcu108_riscv( clock clk,
                                rx_axi4s <= rx_axi4s,
                                rx_axi4s_tready => rx_axi4s_tready,
                                timer_control => timer_control,
+                               analyzer_mux_control => analyzer_mux_control,
                                analyzer_trace <= analyzer_trace
             );
     }

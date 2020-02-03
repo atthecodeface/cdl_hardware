@@ -47,6 +47,7 @@ extern module subsys_minimal( clock clk,
                        input t_axi4s32  rx_axi4s,
                        output bit       rx_axi4s_tready,
                        output t_timer_control timer_control,
+                       output bit[32] analyzer_mux_control,
                        input bit[32] analyzer_trace
     )
 {
