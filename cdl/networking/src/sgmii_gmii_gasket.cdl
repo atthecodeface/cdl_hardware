@@ -375,7 +375,7 @@ Last V in a burst must be on at an odd character.
 
 Link configuration (repeated C1,C2 pairs) are used to configure a link and for the response:
  C1 K28.5 D21.5 16-bit-config_reg-data
- C2 K28.5 D2.2 16-bit-config_reg-data
+ C2 K28.5 D2.2  16-bit-config_reg-data
 
 The message is always sent with both messages as the disparity after both messages is guaranteed
 to be the inverse of the start.
@@ -446,6 +446,9 @@ if (request) {
         }
         case gmii_an_fsm_restart: { // sending zero AN data
             gmii_an_combs.action = gmii_an_action_count;
+            if (gmii_an_combs.autonegotiation_disabled) {
+                gmii_an_combs.action = gmii_an_action_enter_data;
+            }
             if (gmii_an_combs.counter_expired) {
                 gmii_an_combs.action = gmii_an_action_ability_detect;
             }

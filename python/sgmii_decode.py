@@ -293,7 +293,9 @@ if len(sys.argv)>1:
     serial_hex = 0
     shf = 0
     for d in sys.argv[1:]:
-        serial_hex = serial_hex + ((int(d,16)<<shf))
+        d = d[:-1]
+        i = int(d,16)
+        serial_hex = serial_hex + (i<<shf)
         shf += 4*len(d)
         pass
     serial_hex = reverse_nybbles(serial_hex)
