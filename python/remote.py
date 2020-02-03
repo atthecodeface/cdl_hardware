@@ -135,13 +135,37 @@ class remote_operations:
     #f apbw
     def apbw(self, select, reg, data):
         if self.s_apbw is not None:
-            return self.s_apbw( address = (1<<20) | (select<<16) | (reg<<2), data=data )
+            return self.s_apbw( address = (4<<20) | (select<<16) | (reg<<2), data=data )
         raise Exception("No APBW method - is a server connected?")
 
     #f apbr
     def apbr(self, select, reg):
         if self.s_apbr is not None:
-            return self.s_apbr( address = (1<<20) | (select<<16) | (reg<<2) )
+            return self.s_apbr( address = (4<<20) | (select<<16) | (reg<<2) )
+        raise Exception("No APBR method - is a server connected?")
+
+    #f csrw
+    def csrw(self, select, reg, data):
+        if self.s_apbw is not None:
+            return self.s_apbw( address = (5<<20) | (select<<16) | (reg<<2), data=data )
+        raise Exception("No APBW method - is a server connected?")
+
+    #f csrr
+    def csrr(self, select, reg):
+        if self.s_apbr is not None:
+            return self.s_apbr( address = (5<<20) | (select<<16) | (reg<<2) )
+        raise Exception("No APBR method - is a server connected?")
+
+    #f csr_apbw
+    def csr_apbw(self, select, reg, data):
+        if self.s_apbw is not None:
+            return self.s_apbw( address = (5<<20) | (8<<16) | (select<<12) | (reg<<2), data=data )
+        raise Exception("No APBW method - is a server connected?")
+
+    #f csr_apbr
+    def csr_apbr(self, select, reg):
+        if self.s_apbr is not None:
+            return self.s_apbr( address = (5<<20) | (8<<16) | (select<<12) | (reg<<2) )
         raise Exception("No APBR method - is a server connected?")
 
     #f prod
@@ -336,6 +360,10 @@ class remote(cmd.Cmd):
     cmd_list = {
         "apbw":     ("iii", "Do an APB write"),
         "apbr":     ("ii",  "Do an APB read"),
+        "csrw":     ("iii", "Do a CSR write"),
+        "csrr":     ("ii",  "Do a CSR read"),
+        "csr_apbw":     ("iii", "Do a CSR => APB write"),
+        "csr_apbr":     ("ii",  "Do a CSR => APB read"),
         "prod":     ("i",   "Do a prod"),
         "sgmii_an": ("i",   "Invoke SGMII autonegotiation"),
         "anal_trigger_always": ("",   ""),

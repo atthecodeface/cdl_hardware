@@ -1,5 +1,6 @@
 import serial
 class server:
+    verbose = False
     #f get_apb_fns
     def get_apb_fns(self):
         return (self.apbr, self.apbw, self.prod)
@@ -24,7 +25,9 @@ class server:
     #f read_serial
     def read_serial(self, min_data=None):
         while self.serial.in_waiting>0:
-            self.read_buffer += self.serial.read(1)
+            c = self.serial.read(1)
+            self.read_buffer += c
+            if self.verbose: print "rx",c
             pass
         if min_data is not None:
             if len(self.read_buffer)<min_data:
@@ -117,14 +120,18 @@ class server:
         pass
     #f apbw
     def apbw(self, address, data):
-        self.serial.write("W%x %x\n"%((address&0xffffffff),(data&0xffffffff)))
+        s = "W%x %x\n"%((address&0xffffffff),(data&0xffffffff))
+        self.serial.write(s)
+        if self.verbose: print "Serial write",s
         self.add_expectation("W")
         self.wait_expectations()
         pass
     
     #f apbr
     def apbr(self, address):
-        self.serial.write("R%x\n"%((address&0xffffffff)))
+        s = "R%x\n"%((address&0xffffffff))
+        self.serial.write(s)
+        if self.verbose: print "Serial write",s
         self.add_expectation("R")
         self.wait_expectations()
         if len(self.read_data)==1:
