@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #a Imports
 import re
-import sys, inspect
+import sys, inspect, struct
 import elftools.elf.elffile
 
 #a Classes
@@ -209,6 +209,56 @@ class c_dump(object):
         print >>f, r
         print >>f, "};"
         pass
+    #f write_pxeboot
+    def write_pxeboot(self, f):
+        def write_u16(f,d):
+            f.write(struct.pack('<H', d))
+            pass
+        def write_u32(f,d):
+            f.write(struct.pack('<I', d))
+            pass
+        addresses = self.data.keys()
+        addresses.sort()
+        ranges = []
+        current_range = None
+        for a in addresses:
+            if current_range is None:
+                current_range = (a,a)
+                pass
+            elif current_range[1]+1==a:
+                current_range=(current_range[0],a)
+                pass
+            else:
+                ranges.append(current_range)
+                current_range = (a,a)
+                pass
+            pass
+        if current_range is not None:
+            ranges.append(current_range)
+            pass
+        for (start,end) in ranges:
+            length = (end-start+1)*4
+            address = start*4
+            while length>0:
+                block_length = length
+                if length>256:
+                    block_length = 256
+                    pass
+                write_u16(f,1)
+                write_u16(f,block_length)
+                write_u32(f,address)
+                for d in range(block_length/4):
+                    i = address/4 + d
+                    write_u32(f,self.data[i])
+                    pass
+                address += block_length
+                length -= block_length
+                pass
+            pass
+        write_u16(f,2)
+        write_u16(f,0)
+        write_u32(f,0)
+        pass
     #f All done
     pass
 #a Useful invocation function
@@ -218,12 +268,12 @@ def get_define_int(defines, k, default):
         pass
     return default
 
-def file_write(filename, fn):
+def file_write(filename, fn, mode="w"):
     if filename=='-':
         fn(sys.stdout)
         pass
     else:
-        f = open(filename,"w")
+        f = open(filename, mode)
         fn(f)
         f.close()
         pass
@@ -252,6 +302,8 @@ def dump_main(dump=None, allow_load=True, description='Generate MEM, MIF or C da
                     help='Output READMEMH filename')
     parser.add_argument('--c_data', type=str, default=None,
                     help='Output C data filename')
+    parser.add_argument('--pxeboot', type=str, default=None,
+                    help='Output pxeboot data filename')
     if allow_load:
         parser.add_argument('--load_mif', type=str, default=None,
                             help='MIF file to load')
@@ -272,9 +324,10 @@ def dump_main(dump=None, allow_load=True, description='Generate MEM, MIF or C da
     if dump is None:
         parse_args.print_help()
         pass
-    if args.mif    is not None: file_write(args.mif,    dump.write_mif)
-    if args.mem    is not None: file_write(args.mem,    dump.write_mem)
-    if args.c_data is not None: file_write(args.c_data, dump.write_c_data)
+    if args.mif     is not None: file_write(args.mif,     dump.write_mif)
+    if args.mem     is not None: file_write(args.mem,     dump.write_mem)
+    if args.c_data  is not None: file_write(args.c_data,  dump.write_c_data, mode="wb")
+    if args.pxeboot is not None: file_write(args.pxeboot, dump.write_pxeboot)
     pass
 
 if __name__ == "__main__":

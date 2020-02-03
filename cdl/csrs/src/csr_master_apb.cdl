@@ -178,6 +178,9 @@ chain.
             }
         }
 
+        if (apb_request.psel && apb_request.penable && apb_response.pready) {
+            apb_response <= { *=0, pready=1};
+        }
         full_switch (apb_action) {
         case apb_action_start_csr_request_write: {
             apb_response.pready <= 1;
