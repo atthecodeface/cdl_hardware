@@ -176,12 +176,17 @@ This module contains additionally APB targets, JTAG, and trace.
     }
 
     /*b RISC-V and SRAMs etc */
+    comb t_riscv_mem_access_resp data_access_resp;
+    net t_riscv_mem_access_req data_access_req;
     riscv_and_sram: {
         /*b RISC-V */
+        data_access_resp = {*=0};
         riscv_i32_minimal3 rv(clk     <- clk,
                                  reset_n <= reset_n,
                                  proc_reset_n <= reset_n,
                                  irqs         <= irqs,
+                               data_access_req => data_access_req,
+                               data_access_resp <= data_access_resp,
                                  sram_access_req  <= sram_access_req,
                                  sram_access_resp => sram_access_resp,
                                  apb_request      => rv_apb_request,

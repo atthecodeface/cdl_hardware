@@ -11,7 +11,7 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  *
- * @file   tb_riscv_i32c_minimal.cdl
+ * @file   tb_riscv_i32c_minimal3.cdl
  * @brief  Testbench for minimal RISC-V
  *
  */

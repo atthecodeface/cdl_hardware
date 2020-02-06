@@ -114,8 +114,6 @@ module vcu108_riscv_3( clock clk,
     comb t_riscv_config riscv_config;
     net t_riscv_i32_trace riscv_trace;
     comb t_riscv_irqs       irqs;
-    net t_riscv_mem_access_req data_access_req;
-    comb t_riscv_mem_access_resp data_access_resp;
     net t_sram_access_req  rv_sram_access_req;
     net t_sram_access_resp rv_sram_access_resp;
 
@@ -205,14 +203,11 @@ module vcu108_riscv_3( clock clk,
         riscv_config.e32   = 0;
         riscv_config.i32c  = 1;
         irqs = {*=0};
-        data_access_resp = {*=0};
         // irqs.mtip = timer_value.irq;
         riscv_i32_minimal3 riscv(clk     <- clk,
                                  proc_reset_n <= reset_n & rv_sram_ctrl[0],
                                  reset_n <= reset_n,
                                  irqs         <= irqs,
-                                 data_access_req => data_access_req,
-                                 data_access_resp <= data_access_resp,
                                  sram_access_req <= rv_sram_access_req,
                                  sram_access_resp => rv_sram_access_resp,
                                       apb_request  => riscv_apb_request,

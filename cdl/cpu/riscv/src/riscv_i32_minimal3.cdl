@@ -92,6 +92,8 @@ module riscv_i32_minimal3( clock clk,
                            input t_riscv_irqs       irqs               "Interrupts in to the CPU",
                            input  t_sram_access_req       sram_access_req,
                            output t_sram_access_resp      sram_access_resp,
+                           output t_riscv_mem_access_req  data_access_req,
+                           input  t_riscv_mem_access_resp data_access_resp,
                            output t_apb_request           apb_request,
                            input  t_apb_response          apb_response,
                            input  t_riscv_debug_mst       debug_mst,
@@ -151,6 +153,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
     net t_riscv_i32_coproc_controls  coproc_controls;
     net t_riscv_i32_coproc_response  coproc_response;
     net t_riscv_i32_coproc_response  pipeline_coproc_response;
+    clocked t_riscv_mem_access_req  data_access_req = {*=0} "Access for non-APB, non-SRAM";
 
     /*b SRAM and arbiter */
     sram_and_arbiter: {
@@ -289,10 +292,11 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
 
     }
 
-    /*b Data memory
+    /*b Data memory request decode and state
      */
-    data_memory: {
+    data_memory_request_decode: {
         /*b Decode data request */
+        data_access_req <= {*=0};
         data_combs.apb_request_valid       = 0;
         data_combs.sram_request.valid      = 0;
         data_combs.sram_request.read_not_write = (dmem_access_req.req_type != rv_mem_access_write);
@@ -304,6 +308,7 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
             if (dmem_access_req.address[12;20]!=0) { // 3h0xxxxxxx is SRAM, rest is APB
                 data_combs.sram_request.valid      = 0;
                 data_combs.apb_request_valid       = 1;
+                // data_combs.ext_request_valid       = 0;
             }
         }
 
@@ -331,6 +336,16 @@ Any access outside of the bottom 1MB is passed as a request out of this module.
                 }
             }
         }
+        // if (data_state.ext.pending) {
+        //    dmem_access_resp.ack             = 0;
+        //    dmem_access_resp.access_complete = 0;
+        //    dmem_access_resp.may_still_abort = 1;
+        //    data_state.apb.penable <= 1;
+        //    if (data_access_resp.valid) {
+        //        dmem_access_resp.ack             = 1;
+        //        dmem_access_resp.access_complete = 1;
+        //    }
+        // }
 
         /*b Update state */
         data_state.dmem_access_in_progress.valid <= 0;
