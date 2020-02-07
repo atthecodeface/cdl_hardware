@@ -92,9 +92,11 @@ module vcu108_riscv_generic( clock clk,
 
     comb t_apb_request rv_sram_apb_request;
     comb t_apb_request riscv_dbg_apb_request;
+    comb t_apb_request gbe_apb_request;
 
     net t_apb_response  rv_sram_apb_response;
     net t_apb_response  riscv_dbg_apb_response;
+    net t_apb_response  gbe_apb_response;
 
     net t_timer_control timer_control;
     net bit[32] rv_sram_ctrl;
@@ -121,14 +123,8 @@ module vcu108_riscv_generic( clock clk,
     net bit       rx_axi4s_tready;
     net t_axi4s32 tx_axi4s;
     net bit       tx_axi4s_tready;
-    comb t_tbi_valid tbi_rx;
     net bit[4] sgmii_txd_r;
-    net bit gmii_rx_enable;
-    net t_gmii_rx gmii_rx;
-    net t_gmii_tx gmii_tx;
-    net bit gmii_tx_enable;
-    clocked t_sgmii_gasket_control sgmii_gasket_control = {*=0};
-    net t_sgmii_gasket_status sgmii_gasket_status;
+    net  t_sgmii_transceiver_control sgmii_transceiver_control;
     clocked bit eth_reset_n = 0;
 
     net bit[32] analyzer_mux_control;
@@ -329,7 +325,13 @@ module vcu108_riscv_generic( clock clk,
         riscv_dbg_apb_request         = apb_request;
         riscv_dbg_apb_request.psel    = apb_request.psel && (apb_request_sel==1);
         
+        gbe_apb_request         = apb_request;
+        gbe_apb_request.psel    = apb_request.psel && (apb_request_sel==2);
+        
         apb_response = {*=0, pready=1};
+        apb_response |= gbe_apb_response;
+        apb_response.pready = 1;
+        apb_response.pready = apb_response.pready & gbe_apb_response.pready;
         if (apb_request_sel==0) { apb_response = rv_sram_apb_response; }
         if (apb_request_sel==1) { apb_response = riscv_dbg_apb_response; }
 
@@ -374,90 +376,50 @@ module vcu108_riscv_generic( clock clk,
     }
 
     /*b Ethernet */
-    net t_packet_stat tx_packet_stat;
-    net t_packet_stat rx_packet_stat;
+    clocked t_gmii_rx    gmii_rx  = {*=0};
+    clocked t_tbi_valid  tbi_rx   = {*=0};
     ethernet : {
-        gbe_axi4s32 gbe( tx_aclk <- clk,
-                         tx_areset_n <= reset_n,
-                         tx_axi4s    <= tx_axi4s,
-                         tx_axi4s_tready => tx_axi4s_tready,
-                         gmii_tx_enable <= gmii_tx_enable,
-                         gmii_tx        => gmii_tx,
+        gmii_rx <= {*=0};
+        tbi_rx <= {*=0};
+        gbe_single gbe( clk <- clk,
+                        reset_n <= reset_n,
 
-                         tx_packet_stat      => tx_packet_stat,
-                         tx_packet_stat_ack  <= 1,
+                        tx_axi4s    <= tx_axi4s,
+                        tx_axi4s_tready => tx_axi4s_tready,
+                        gmii_tx_enable <= 0,
+                        // gmii_tx        => gmii_tx,
+                        // tbi_tx         => tbi_tx,
 
-                         rx_aclk     <- clk,
-                         rx_areset_n <= reset_n,
-                         rx_axi4s    => rx_axi4s,
-                         rx_axi4s_tready <= rx_axi4s_tready,
-                         gmii_rx_enable <= gmii_rx_enable,
-                         gmii_rx <= gmii_rx,
+                        rx_axi4s    => rx_axi4s,
+                        rx_axi4s_tready <= rx_axi4s_tready,
+                        gmii_rx_enable <= 0,
+                        gmii_rx <= gmii_rx,
+                        tbi_rx <= tbi_rx,
 
-                         rx_packet_stat      => rx_packet_stat,
-                         rx_packet_stat_ack  <= 1,
-                         
-                         rx_timer_control  <= timer_control // rx clock domain
+                        timer_control  <= timer_control,
+
+                        apb_request  <= gbe_apb_request,
+                        apb_response => gbe_apb_response,
+
+                        sgmii_tx_clk     <- sgmii_tx_clk,
+                        sgmii_tx_reset_n <= sgmii_tx_reset_n,
+                        sgmii_txd => sgmii_txd_r,
+
+                        sgmii_rx_clk     <- sgmii_rx_clk,
+                        sgmii_rx_reset_n <= sgmii_rx_reset_n,
+
+                        sgmii_rxd <= bundle(sgmii_rxd[0],sgmii_rxd[1],sgmii_rxd[2],sgmii_rxd[3]),
+                        sgmii_transceiver_status <= sgmii_transceiver_status,
+                        sgmii_transceiver_control => sgmii_transceiver_control
+
             );
-
-        sgmii_gasket_control.write_config  <= rv_sram_ctrl[3];
-        sgmii_gasket_control.write_address <= rv_sram_ctrl[4;4];
-        sgmii_gasket_control.write_data    <= bundle(8b0,rv_sram_ctrl[24;8]);
-        sgmii_gmii_gasket sgg(tx_clk       <- clk,
-                              tx_reset_n   <= reset_n,
-                              tx_clk_312_5     <- sgmii_tx_clk,
-                              tx_reset_312_5_n <= sgmii_tx_reset_n,
-
-                              rx_clk       <- clk,
-                              rx_reset_n   <= reset_n,
-                              rx_clk_312_5     <- sgmii_rx_clk,
-                              rx_reset_312_5_n <= sgmii_rx_reset_n,
-                              
-                              gmii_tx <= gmii_tx,
-                              gmii_tx_enable => gmii_tx_enable,
-                              // tbi_tx => tbi_tx,
-                              sgmii_txd => sgmii_txd_r,
-
-                              sgmii_rxd <= bundle(sgmii_rxd[0],sgmii_rxd[1],sgmii_rxd[2],sgmii_rxd[3]),
-                              tbi_rx <= tbi_rx,
-                              gmii_rx => gmii_rx,
-                              gmii_rx_enable => gmii_rx_enable,
-                              sgmii_gasket_control <= sgmii_gasket_control,
-                              sgmii_gasket_status  => sgmii_gasket_status
-            );
-        tbi_rx = {*=0};
         sgmii_txd = bundle(sgmii_txd_r[0], sgmii_txd_r[1], sgmii_txd_r[2], sgmii_txd_r[3]);
     }
     
     /*b Analyzer trace */
-    net bit     trace_sgmii_txd_valid;
-    net bit[28] trace_sgmii_txd;
-    net bit     trace_sgmii_rxd_valid;
-    net bit[28] trace_sgmii_rxd;
     analyzer_trace : {
-        async_reduce2_4_28_r sgmii_rxd_trace_reduce( clk_in <- sgmii_rx_clk,
-                                                    clk_out <- clk,
-                                                    reset_n <= reset_n,
-                                                    valid_in <= 1,
-                                                    data_in <= bundle(sgmii_rxd[0],sgmii_rxd[1],sgmii_rxd[2],sgmii_rxd[3]),
-                                                    valid_out => trace_sgmii_rxd_valid,
-                                                    data_out  => trace_sgmii_rxd );
-        async_reduce2_4_28_r sgmii_txd_trace_reduce( clk_in <- sgmii_tx_clk,
-                                                    clk_out <- clk,
-                                                    reset_n <= reset_n,
-                                                    valid_in <= 1,
-                                                    data_in <= bundle(sgmii_txd[0],sgmii_txd[1],sgmii_txd[2],sgmii_txd[3]),
-                                                    valid_out => trace_sgmii_txd_valid,
-                                                    data_out  => trace_sgmii_txd );
-        
         traces[0] <= bundle( tx_axi4s.t.data[16;0], tx_axi4s.t.user[12;0], 1b0, tx_axi4s.t.last, tx_axi4s.valid, tx_axi4s_tready );
         traces[1] <= bundle( rx_axi4s.t.data[16;0], rx_axi4s.t.user[12;0], 1b0, rx_axi4s.t.last, rx_axi4s.valid, rx_axi4s_tready );
-        traces[2] <= bundle( 4b0, gmii_tx.txd, 1b0, gmii_tx.tx_er, gmii_tx.tx_en, gmii_tx_enable,
-                             4b0, gmii_rx.rxd, gmii_rx.rx_crs, gmii_rx.rx_er, gmii_rx.rx_dv, gmii_rx_enable );
-        traces[3] <= sgmii_gasket_status.an_state;
-        traces[4] <= bundle( sgmii_gasket_status.rx_symbols_since_sync[24;0], 6b0, sgmii_gasket_status.rx_sync_toggle, sgmii_gasket_status.rx_sync);
-        traces[5] <= bundle( trace_sgmii_txd, 3b0, trace_sgmii_txd_valid);
-        traces[6] <= bundle( trace_sgmii_rxd, 3b0, trace_sgmii_rxd_valid);
         analyzer_trace <= traces[0];
         full_switch (analyzer_mux_control) {
         case 0: { analyzer_trace <= traces[0]; }
@@ -506,12 +468,6 @@ module vcu108_riscv_generic( clock clk,
     
     /*b Stub out unused outputs and all done */
     stubs : {
-        if (!sgmii_gasket_status.rx_sync) { per_sec_counters[0] <= per_sec_counters[0] + (32h1<<28); }
-        per_sec_counters[0][16;0]  <= sgmii_gasket_status.an_config;
-        per_sec_counters[0][12;16] <= sgmii_gasket_status.an_state[12;0];
-        per_sec_counters[1] <= sgmii_data[32;0];
-        per_sec_counters[2] <= sgmii_data[32;32];
-            
         /*b Clock stuff */
         last_second_toggle <= second_toggle;
         divider_reset <= 0;
@@ -528,7 +484,7 @@ module vcu108_riscv_generic( clock clk,
         full_switch (vcu108_inputs.switches[2;1]) {
         case 0: { if (mux_dprintf_req[0].valid)         { counter <= counter + 1; } }
         case 1: { if (apb_request.psel)                 { counter <= counter + 1; } }
-        case 3: { if (gmii_rx_enable)                   { counter <= counter + 1; } }
+        case 3: { if (0)                   { counter <= counter + 1; } }
         }
 
         vcu108_outputs.i2c_reset_mux_n = subsys_outputs.gpio_output_enable[2] ? subsys_outputs.gpio_output[2] : 1;
@@ -545,7 +501,5 @@ module vcu108_riscv_generic( clock clk,
         vcu108_outputs.eth_reset_n = eth_reset_n;
         
         vcu108_outputs.leds = counter[8;0];
-
-        sgmii_transceiver_control  = {*=0};
     }
 }
