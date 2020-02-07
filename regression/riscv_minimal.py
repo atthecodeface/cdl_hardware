@@ -684,6 +684,32 @@ class riscv_i32mc_system_test_hw(riscv_base_hw):
               "clk":(0,1,1),
               }
     module_name = "tb_riscv_i32mc_system"
+    #f __init__
+    def __init__(self, test):
+        self.num_cycles = test.num_cycles
+        self.options    = test.options
+        self.th_forces = self.th_forces.copy()
+        mif_filename = test.get_image()
+        self.th_forces["mem.filename"] = mif_filename
+        self.add_th_forces_for_checkers(test, "")
+        riscv_base_hw.__init__(self,test)
+        pass
+    pass
+
+#c riscv_i32mc_minimal3_test_hw
+class riscv_i32mc_minimal3_test_hw(riscv_base_hw):
+    """
+    Instantiation of RISCV minimal3
+    """
+    loggers = {"itrace": {"verbose":0, "filename":"itrace.log", "modules":("dut.trace "),},
+               }
+    th_forces = { "th.clock":"clk",
+                  "th.inputs":("tdo"),
+                  "th.outputs":("jtag__ntrst jtag__tms jtag__tdi tck_enable" ),
+                  }
+    clocks = {"jtag_tck":(0,1,1),
+              "clk":(0,1,1),
+              }
     module_name = "tb_riscv_i32mc_minimal3"
     #f __init__
     def __init__(self, test):
@@ -804,6 +830,21 @@ class riscv_i32mc_pipeline3(riscv_base):
 class riscv_i32mc_system(riscv_base):
     supports = ["compressed", "muldiv", "jtag", "rv_timer"]
     hw = riscv_i32mc_system_test_hw
+    test_memory = "mem"
+    cycles_scale = 0.5
+    needs_jtag_startup = True
+    default_test_classes = {"":c_riscv_minimal_test_dump,
+                            "jtag_pause":c_riscv_minimal_test_dump_with_pauses}
+    def openocd(self):
+        test = c_riscv_minimal_test_jtag_server(100*1000*1000) #0*1000*1000)
+        hw = self.hw(test)
+        self.do_test_run(hw, hw.num_cycles)
+    pass
+
+#c riscv_i32mc_minimal3
+class riscv_i32mc_minimal3(riscv_base):
+    supports = ["compressed", "muldiv", "jtag", "rv_timer"]
+    hw = riscv_i32mc_minimal3_test_hw
     test_memory = "rv.mem"
     cycles_scale = 0.5
     needs_jtag_startup = True
@@ -819,7 +860,7 @@ class riscv_i32mc_system(riscv_base):
 class old_riscv_minimal_single_memory(riscv_base):
     pass
 
-#c Add tests to riscv_i32_minimal, riscv_i32c_minimal, riscv_i32c_pipeline3, riscv_i32mc_pipeline3
+#c Add tests to riscv_i32_minimal, riscv_i32c_minimal, riscv_i32c_pipeline3, riscv_i32mc_pipeline3, etc
 riscv_atcf_zephyr = {#"zephyr":("zephyr.dump",250*1000,[]),
 }
 riscv_jtag_regression_tests = {#"jtag_simple":("",10*1000,["jtag"],{}),
@@ -908,6 +949,7 @@ for (test_dir,tests) in [(riscv_zephyr_dir,riscv_atcf_zephyr),
                                        (riscv_i32mc_pipeline3, ""),
                                        (riscv_i32mc_pipeline3, "jtag_pause"),
                                        (riscv_i32mc_system,    ""),
+                                       (riscv_i32mc_minimal3,    ""),
         ]:
             can_do = True
             for t in tags:

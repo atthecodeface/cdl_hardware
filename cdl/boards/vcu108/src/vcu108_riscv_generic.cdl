@@ -54,7 +54,7 @@ constant integer num_dprintf_requesters=4;
  * Debug module for testing out HPS in the Cyclone-V FPGA
  *
  */
-module vcu108_riscv_3( clock clk,
+module vcu108_riscv_generic( clock clk,
                      clock clk_50,
                      input bit reset_n,
 
@@ -198,13 +198,16 @@ module vcu108_riscv_3( clock clk,
     }
     
     /*b RISC-V */
+    comb t_riscv_mem_access_resp data_access_resp;
+    net t_riscv_mem_access_req data_access_req;
     riscv_instance: {
         riscv_config = {*=0};
         riscv_config.e32   = 0;
         riscv_config.i32c  = 1;
         irqs = {*=0};
+        data_access_resp = {*=0};
         // irqs.mtip = timer_value.irq;
-        riscv_i32_minimal3 riscv(clk     <- clk,
+        riscv_i32_minimal_generic riscv( clk <- clk,
                                  proc_reset_n <= reset_n & rv_sram_ctrl[0],
                                  reset_n <= reset_n,
                                  irqs         <= irqs,
@@ -212,6 +215,8 @@ module vcu108_riscv_3( clock clk,
                                  sram_access_resp => rv_sram_access_resp,
                                       apb_request  => riscv_apb_request,
                                       apb_response <= riscv_apb_response,
+                               data_access_req => data_access_req,
+                               data_access_resp <= data_access_resp,
                                  debug_mst <= riscv_debug_mst,
                                  debug_tgt =>riscv_debug_tgt,
                                  riscv_config <= riscv_config,
