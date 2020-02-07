@@ -21,6 +21,7 @@
 
 /*a Includes */
 include "types/ethernet.h"
+include "types/apb.h"
 include "types/axi.h"
 include "types/timer.h"
 include "types/networking.h"
