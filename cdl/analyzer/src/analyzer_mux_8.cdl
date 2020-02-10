@@ -1,0 +1,184 @@
+/** @copyright (C) 2020,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   analyzer_mux_8.cdl
+ * @brief  Mux for 8 analyzer targets from one master
+ *
+
+ */
+
+/*a Includes
+ */
+include "types/analyzer.h"
+
+/*a Constants */
+constant integer analyzer_config_num_targets=8;
+
+/*a Types
+*/
+/*t t_analyzer_combs */
+typedef struct {
+    t_analyzer_tgt tgt;
+    bit[8]         mst_enable;
+} t_analyzer_combs;
+
+/*t t_analyzer_state */
+typedef struct {
+    bit    enabled;
+    bit    reset_all;
+    bit[8] enable_return;
+} t_analyzer_state;
+
+/*a Module
+ */
+/*m analyzer_mux_8
+ *
+ * 8 port analyzer mux
+ *
+ */
+module analyzer_mux_8( clock clk,
+                       input bit reset_n,
+                       input  t_analyzer_mst  analyzer_mst,
+                       output t_analyzer_tgt  analyzer_tgt,
+
+                       output  t_analyzer_mst  analyzer_mst_a,
+                       input   t_analyzer_tgt  analyzer_tgt_a,
+
+                       output  t_analyzer_mst  analyzer_mst_b,
+                       input   t_analyzer_tgt  analyzer_tgt_b,
+
+                       output  t_analyzer_mst  analyzer_mst_c,
+                       input   t_analyzer_tgt  analyzer_tgt_c,
+
+                       output  t_analyzer_mst  analyzer_mst_d,
+                       input   t_analyzer_tgt  analyzer_tgt_d,
+
+                       output  t_analyzer_mst  analyzer_mst_e,
+                       input   t_analyzer_tgt  analyzer_tgt_e,
+
+                       output  t_analyzer_mst  analyzer_mst_f,
+                       input   t_analyzer_tgt  analyzer_tgt_f,
+
+                       output  t_analyzer_mst  analyzer_mst_g,
+                       input   t_analyzer_tgt  analyzer_tgt_g,
+
+                       output  t_analyzer_mst  analyzer_mst_h,
+                       input   t_analyzer_tgt  analyzer_tgt_h
+
+    )
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b State and combs  */
+    comb     t_analyzer_combs   analyzer_combs;
+    clocked  t_analyzer_state   analyzer_state = {*=0};
+    clocked  t_analyzer_tgt     analyzer_tgt = {*=0};
+    clocked  t_analyzer_mst[8]  analyzer_mstrs = {*=0};
+    comb     t_analyzer_tgt[8]  analyzer_tgts;
+
+    /*b Manage ports */
+    ports : {
+        analyzer_tgts[0] = analyzer_tgt_a;
+        analyzer_tgts[1] = analyzer_tgt_b;
+        analyzer_tgts[2] = analyzer_tgt_c;
+        analyzer_tgts[3] = analyzer_tgt_d;
+        analyzer_tgts[4] = analyzer_tgt_e;
+        analyzer_tgts[5] = analyzer_tgt_f;
+        analyzer_tgts[6] = analyzer_tgt_g;
+        analyzer_tgts[7] = analyzer_tgt_h;
+        if (analyzer_config_num_targets<3) { analyzer_tgts[2] = {*=0}; }
+        if (analyzer_config_num_targets<4) { analyzer_tgts[3] = {*=0}; }
+        if (analyzer_config_num_targets<5) { analyzer_tgts[4] = {*=0}; }
+        if (analyzer_config_num_targets<6) { analyzer_tgts[5] = {*=0}; }
+        if (analyzer_config_num_targets<7) { analyzer_tgts[6] = {*=0}; }
+        if (analyzer_config_num_targets<8) { analyzer_tgts[7] = {*=0}; }
+
+        analyzer_mst_a = analyzer_mstrs[0];
+        analyzer_mst_b = analyzer_mstrs[1];
+        analyzer_mst_c = analyzer_mstrs[2];
+        analyzer_mst_d = analyzer_mstrs[3];
+        analyzer_mst_e = analyzer_mstrs[4];
+        analyzer_mst_f = analyzer_mstrs[5];
+        analyzer_mst_g = analyzer_mstrs[6];
+        analyzer_mst_h = analyzer_mstrs[7];
+        
+        /*b All done */
+    }
+
+    /*b Control side */
+    control : {
+        analyzer_combs.mst_enable[0] = analyzer_mst.enable;
+        for (i; 7) {
+            analyzer_combs.mst_enable[i+1] = analyzer_state.enable_return[i];
+        }
+
+        if (analyzer_state.reset_all) {
+            analyzer_combs.mst_enable = 0;
+        }
+        if (analyzer_mst.enable || analyzer_state.enabled) {
+            analyzer_state.enabled   <= analyzer_mst.enable;
+            analyzer_state.reset_all <= !analyzer_mst.enable;
+            for (i; 8) {
+                analyzer_mstrs[i].enable  <= analyzer_combs.mst_enable[i];
+                analyzer_mstrs[i].select  <= analyzer_mst.select;
+            }
+        }
+        
+        /*b Data and valid for all targets */
+        if (analyzer_state.enabled) {
+            for (i; 8) {
+                analyzer_mstrs[i].valid <= analyzer_mst.valid;
+                analyzer_mstrs[i].data  <= analyzer_mst.data;
+                analyzer_state.enable_return[i] <= analyzer_tgts[i].enable_return;
+            }
+        }
+        if (analyzer_state.reset_all) {
+            for (i; 8) {
+                analyzer_mstrs[i] <= {*=0};
+            }
+            analyzer_state.enable_return <= 0;
+        }
+
+        /*b Kill unused masters */
+        if (analyzer_config_num_targets<3) { analyzer_mstrs[2] <= {*=0}; }
+        if (analyzer_config_num_targets<4) { analyzer_mstrs[3] <= {*=0}; }
+        if (analyzer_config_num_targets<5) { analyzer_mstrs[4] <= {*=0}; }
+        if (analyzer_config_num_targets<6) { analyzer_mstrs[5] <= {*=0}; }
+        if (analyzer_config_num_targets<7) { analyzer_mstrs[6] <= {*=0}; }
+        if (analyzer_config_num_targets<8) { analyzer_mstrs[7] <= {*=0}; }
+        
+        /*b All done */
+    }
+
+    /*b Analyzer data */
+    data : {
+        analyzer_combs.tgt.selected = 0;
+        for (i; 8) {
+            if (analyzer_tgts[i].selected)  {
+                analyzer_combs.tgt.selected = 1;
+            }
+        }
+        analyzer_combs.tgt.enable_return = analyzer_state.enable_return[analyzer_config_num_targets-1];
+        analyzer_combs.tgt.data = {*=0};
+        for (i; 8) {
+            analyzer_combs.tgt.data |= analyzer_tgts[i].data;
+        }
+        analyzer_tgt     <= analyzer_combs.tgt;
+
+        /*b All done */
+    }
+
+    /*b All done */
+}

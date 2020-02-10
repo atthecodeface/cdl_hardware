@@ -19,6 +19,7 @@
 
 /*a Includes */
 include "types/apb.h"
+include "types/analyzer.h"
 include "types/video.h"
 include "types/csr.h"
 include "types/dprintf.h"
@@ -47,8 +48,8 @@ extern module subsys_minimal( clock clk,
                        input t_axi4s32  rx_axi4s,
                        output bit       rx_axi4s_tready,
                        output t_timer_control timer_control,
-                       output bit[32] analyzer_mux_control,
-                       input bit[32] analyzer_trace
+                       output t_analyzer_mst analyzer_mst,
+                       input t_analyzer_tgt analyzer_tgt
     )
 {
     timing to   rising clock clk master_apb_request, master_dprintf_req;
@@ -60,8 +61,8 @@ extern module subsys_minimal( clock clk,
     timing to   rising clock clk tx_axi4s_tready, rx_axi4s;
     timing from rising clock clk rx_axi4s_tready, tx_axi4s;
 
-    timing to   rising clock clk subsys_inputs, analyzer_trace;
-    timing from rising clock clk subsys_outputs, timer_control;
-
+    timing to   rising clock clk subsys_inputs, analyzer_tgt;
+    timing from rising clock clk subsys_outputs, timer_control, analyzer_mst;
+    
     timing from rising clock video_clk video_bus;
 }

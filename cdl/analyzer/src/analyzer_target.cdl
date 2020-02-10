@@ -1,0 +1,121 @@
+/** @copyright (C) 2020,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   analyzer_target.cdl
+ * @brief  Standard target for the analyzer bus
+ *
+
+ */
+
+/*a Includes
+ */
+include "types/analyzer.h"
+
+/*a Types
+*/
+/*t t_analyzer_combs */
+typedef struct {
+    bit enable_begin;
+    bit enable_end;
+    bit select_begin;
+    bit ready_begin;
+} t_analyzer_combs;
+
+/*t t_analyzer_state */
+typedef struct {
+    bit selected;
+    bit data_valid;
+    bit reset_all;
+    bit last_enable;
+    t_analyzer_ctl  ctl;
+    t_analyzer_data data;
+} t_analyzer_state;
+
+/*a Module
+ */
+/*m analyzer_target
+ *
+ * Standard analyzer target
+ *
+ */
+module analyzer_target( clock clk,
+                        input bit reset_n,
+
+                        input  t_analyzer_mst  analyzer_mst,
+                        output t_analyzer_tgt  analyzer_tgt,
+
+                        output t_analyzer_ctl analyzer_ctl,
+                        input t_analyzer_data analyzer_data
+    )
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b APB interface state  */
+    comb    t_analyzer_combs analyzer_combs;
+    clocked t_analyzer_state analyzer_state = {*=0};
+
+    /*b Blah */
+    blah : {
+        analyzer_combs.enable_begin =  analyzer_mst.enable && !analyzer_state.last_enable;
+        analyzer_combs.enable_end   = !analyzer_mst.enable &&  analyzer_state.last_enable;
+        analyzer_combs.select_begin = 0;
+        if (analyzer_combs.enable_begin && analyzer_mst.select) {
+            analyzer_combs.select_begin = 1;
+        }
+        analyzer_combs.ready_begin = 0;
+        if (analyzer_state.data_valid && analyzer_state.selected && !analyzer_mst.valid) {
+            analyzer_combs.ready_begin = 1;
+        }
+
+        if (analyzer_mst.enable || analyzer_state.last_enable) {
+            analyzer_state.last_enable <= !analyzer_mst.enable;
+        }
+        
+        if (analyzer_combs.enable_end) {
+            analyzer_state.reset_all <= 1;
+        }
+        
+        if (analyzer_mst.valid && analyzer_state.selected) {
+            analyzer_state.ctl.mux_control <= (analyzer_state.ctl.mux_control<<4);
+            analyzer_state.ctl.mux_control[4;0] <= analyzer_mst.data;
+            analyzer_state.data_valid <= 1;
+        }
+        if (analyzer_combs.ready_begin) {
+            analyzer_state.ctl.enable <= 1;
+        }
+        if (analyzer_state.ctl.enable) {
+            analyzer_state.data <= analyzer_data;
+        }
+        if (analyzer_state.reset_all) {
+            analyzer_state.selected    <= 0;
+            analyzer_state.ctl         <= {*=0};
+            analyzer_state.data        <= {*=0};
+        }
+
+        if (analyzer_combs.select_begin) {
+            analyzer_state.selected    <= 1;
+            analyzer_state.data_valid <= 0;
+        }
+
+        analyzer_ctl  = analyzer_state.ctl;
+        analyzer_tgt.data = analyzer_state.data;
+        analyzer_tgt.selected = analyzer_state.selected;
+        analyzer_tgt.enable_return = analyzer_state.last_enable;
+        
+        /*b All done */
+    }
+
+    /*b All done */
+}

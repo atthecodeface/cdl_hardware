@@ -35,6 +35,7 @@ include "csr/csr_targets.h"
 include "csr/csr_masters.h"
 include "utils/dprintf_modules.h"
 include "utils/async_reduce_modules.h"
+include "analyzer/analyzer_modules.h"
 include "led/led_modules.h"
 include "video/framebuffer_modules.h"
 include "networking/ethernet_modules.h"
@@ -123,11 +124,10 @@ module vcu108_riscv_generic( clock clk,
     net bit       rx_axi4s_tready;
     net t_axi4s32 tx_axi4s;
     net bit       tx_axi4s_tready;
-    net bit[4] sgmii_txd_r;
+    net bit[4]    sgmii_txd;
     net  t_sgmii_transceiver_control sgmii_transceiver_control;
     clocked bit eth_reset_n = 0;
 
-    net bit[32] analyzer_mux_control;
     clocked bit[32] analyzer_trace = {*=0};
     clocked t_bit32[8] traces = {*=0};
     
@@ -188,8 +188,8 @@ module vcu108_riscv_generic( clock clk,
                                rx_axi4s <= rx_axi4s,
                                rx_axi4s_tready => rx_axi4s_tready,
                                timer_control => timer_control,
-                               analyzer_mux_control => analyzer_mux_control,
-                               analyzer_trace <= analyzer_trace
+                               analyzer_mst => analyzer_mst,
+                               analyzer_tgt <= analyzer_tgt
             );
     }
     
@@ -403,25 +403,35 @@ module vcu108_riscv_generic( clock clk,
 
                         sgmii_tx_clk     <- sgmii_tx_clk,
                         sgmii_tx_reset_n <= sgmii_tx_reset_n,
-                        sgmii_txd => sgmii_txd_r,
+                        sgmii_txd => sgmii_txd,
 
                         sgmii_rx_clk     <- sgmii_rx_clk,
                         sgmii_rx_reset_n <= sgmii_rx_reset_n,
 
-                        sgmii_rxd <= bundle(sgmii_rxd[0],sgmii_rxd[1],sgmii_rxd[2],sgmii_rxd[3]),
+                        sgmii_rxd <= sgmii_rxd,
                         sgmii_transceiver_status <= sgmii_transceiver_status,
                         sgmii_transceiver_control => sgmii_transceiver_control
 
             );
-        sgmii_txd = bundle(sgmii_txd_r[0], sgmii_txd_r[1], sgmii_txd_r[2], sgmii_txd_r[3]);
     }
     
     /*b Analyzer trace */
+    net t_analyzer_mst analyzer_mst;
+    net t_analyzer_tgt analyzer_tgt;
+    net t_analyzer_ctl analyzer_ctl;
+    comb t_analyzer_data analyzer_data;
     analyzer_trace : {
+        analyzer_target atgt( clk <- clk, reset_n <= reset_n,
+                         analyzer_mst <= analyzer_mst,
+                         analyzer_tgt => analyzer_tgt,
+                         analyzer_ctl => analyzer_ctl,
+                         analyzer_data <= analyzer_data
+            );
         traces[0] <= bundle( tx_axi4s.t.data[16;0], tx_axi4s.t.user[12;0], 1b0, tx_axi4s.t.last, tx_axi4s.valid, tx_axi4s_tready );
         traces[1] <= bundle( rx_axi4s.t.data[16;0], rx_axi4s.t.user[12;0], 1b0, rx_axi4s.t.last, rx_axi4s.valid, rx_axi4s_tready );
-        analyzer_trace <= traces[0];
-        full_switch (analyzer_mux_control) {
+        analyzer_data.data_valid = 1;
+        analyzer_data.data[32;0] = traces[0];
+        full_switch (analyzer_ctl.mux_control[3;0]) {
         case 0: { analyzer_trace <= traces[0]; }
         case 1: { analyzer_trace <= traces[1]; }
         case 2: { analyzer_trace <= traces[2]; }

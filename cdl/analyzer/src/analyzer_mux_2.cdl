@@ -1,0 +1,70 @@
+/** @copyright (C) 2020,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   analyzer_mux_2.cdl
+ * @brief  Mux for 2 analyzer targets from one master
+ *
+
+ */
+
+/*a Includes
+ */
+include "types/analyzer.h"
+include "analyzer/analyzer_modules.h"
+
+/*a Module
+ */
+/*m analyzer_mux_2
+ *
+ * 2 port analyzer mux using a 2-enabled 8 port mux
+ *
+ */
+module analyzer_mux_2( clock clk,
+                       input bit reset_n,
+                       input  t_analyzer_mst  analyzer_mst,
+                       output t_analyzer_tgt  analyzer_tgt,
+
+                       output  t_analyzer_mst  analyzer_mst_a,
+                       input   t_analyzer_tgt  analyzer_tgt_a,
+
+                       output  t_analyzer_mst  analyzer_mst_b,
+                       input   t_analyzer_tgt  analyzer_tgt_b
+
+    )
+{
+    net t_analyzer_tgt  analyzer_tgt;
+    net t_analyzer_mst  analyzer_mst_a;
+    net t_analyzer_mst  analyzer_mst_b;
+    clocked clock clk reset active_low reset_n t_analyzer_tgt analyzer_tgt_zero = {*=0};
+    /*b Submodule */
+    submodule : {
+        analyzer_tgt_zero <= {*=0};
+        analyzer_mux_8    mux( clk <- clk, reset_n <= reset_n,
+                               analyzer_mst <= analyzer_mst,
+                               analyzer_tgt => analyzer_tgt,
+                               analyzer_mst_a => analyzer_mst_a,
+                               analyzer_mst_b => analyzer_mst_b,
+                               analyzer_tgt_a <= analyzer_tgt_a,
+                               analyzer_tgt_b <= analyzer_tgt_b,
+                               analyzer_tgt_c <= analyzer_tgt_zero,
+                               analyzer_tgt_d <= analyzer_tgt_zero,
+                               analyzer_tgt_e <= analyzer_tgt_zero,
+                               analyzer_tgt_f <= analyzer_tgt_zero,
+                               analyzer_tgt_g <= analyzer_tgt_zero,
+                               analyzer_tgt_h <= analyzer_tgt_zero );
+
+        /*b All done */
+    }
+
+    /*b All done */
+}

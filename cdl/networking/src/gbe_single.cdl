@@ -252,6 +252,11 @@ module gbe_single( clock clk,
 
         /*b APB interface response - use apb_state.access */
         part_switch (apb_state.access) {
+        case apb_access_read_sgmii_gasket_status: {
+            apb_response.prdata[16;  0] <= sgmii_gasket_status.an_config;
+            apb_response.prdata[15; 16] <= sgmii_gasket_status.an_state[15;0];
+            apb_response.prdata[31]     <= sgmii_gasket_status.rx_sync;
+        }
         case apb_access_read_clock_measure: {
             apb_response.prdata[9; 0] <= apb_state.sgmii_transceiver_status.measure_response.initial_delay;
             apb_response.prdata[9; 9] <= apb_state.sgmii_transceiver_status.measure_response.delay;
@@ -328,14 +333,14 @@ module gbe_single( clock clk,
                                                     clk_out <- clk,
                                                     reset_n <= reset_n,
                                                     valid_in <= 1,
-                                                    data_in <= bundle(sgmii_rxd[0],sgmii_rxd[1],sgmii_rxd[2],sgmii_rxd[3]),
+                                                     data_in <= sgmii_rxd,
                                                     valid_out => trace_sgmii_rxd_valid,
                                                     data_out  => trace_sgmii_rxd );
         async_reduce2_4_28_r sgmii_txd_trace_reduce( clk_in <- sgmii_tx_clk,
                                                     clk_out <- clk,
                                                     reset_n <= reset_n,
                                                     valid_in <= 1,
-                                                    data_in <= bundle(sgmii_txd[0],sgmii_txd[1],sgmii_txd[2],sgmii_txd[3]),
+                                                     data_in <= sgmii_txd,
                                                     valid_out => trace_sgmii_txd_valid,
                                                     data_out  => trace_sgmii_txd );
         
@@ -394,4 +399,6 @@ module gbe_single( clock clk,
         //vcu108_outputs.eth_reset_n = eth_reset_n;
         sgmii_transceiver_control  = {*=0};
     }
+
+    /*b All done */
 }

@@ -267,40 +267,6 @@ extern module apb_target_axi4s( clock clk         "System clock",
     timing to   rising clock clk rx_sram_access_resp, tx_sram_access_resp;
 }
 
-/*m apb_target_axi4s */
-extern module apb_target_analyzer( clock analyzer_clock,
-                            clock async_trace_read_clock,
-                            clock apb_clock,
-
-                            input bit reset_n,
-
-                            input  t_apb_request  apb_request  "APB request",
-                            output t_apb_response apb_response "APB response",
-
-                            output bit trace_ready,
-                            output bit trace_done,
-
-                            output bit[32]analyzer_mux_control,
-                            input bit[32]internal_signal_in,
-
-                            input bit ext_trigger_reset,
-                            input bit ext_trigger_enable,
-
-                            input bit async_trace_read_enable,
-                            output bit async_trace_valid_out,
-                            output bit[32] async_trace_out )
-{
-    timing to   rising clock apb_clock apb_request;
-    timing from rising clock apb_clock apb_response, analyzer_mux_control;
-
-    timing from rising clock analyzer_clock trace_ready, trace_done;
-    timing to   rising clock analyzer_clock internal_signal_in;
-    timing to   rising clock analyzer_clock ext_trigger_reset, ext_trigger_enable;
-
-    timing to   rising clock async_trace_read_clock async_trace_read_enable;
-    timing from rising clock async_trace_read_clock async_trace_valid_out, async_trace_out;
-}
-
 /*a Editor preferences and notes
 mode: c ***
 c-basic-offset: 4 ***

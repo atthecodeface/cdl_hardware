@@ -30,6 +30,7 @@
 /*a Includes
  */
 include "types/apb.h"
+include "types/analyzer.h"
 include "technology/sync_modules.h"
 include "srams.h"
 
@@ -112,8 +113,25 @@ typedef struct {
     bit unused;
 } t_apb_combs;
 
+/*t t_analyzer_control_fsm */
+typedef fsm {
+    actl_idle;
+    actl_enable;
+    actl_data;
+} t_analyzer_control_fsm;
+
+/*t t_analyzer_control */
+typedef struct {
+    bit enable;
+    bit write_data;
+    bit[3]  nybbles;
+    bit[24] data;
+    t_analyzer_control_fsm state;
+} t_analyzer_control;
+
 /*t t_apb_state */
 typedef struct {
+    t_analyzer_control control;
     t_access access;
     bit last_valid_sync;
     bit trace_req;
@@ -133,8 +151,8 @@ module apb_target_analyzer( clock analyzer_clock,
                             output bit trace_ready,
                             output bit trace_done,
 
-                            output bit[32]analyzer_mux_control,
-                            input bit[analyzer_signal_width]internal_signal_in,
+                            output  t_analyzer_mst  analyzer_mst,
+                            input t_analyzer_tgt  analyzer_tgt,
 
                             input bit ext_trigger_reset,
                             input bit ext_trigger_enable,
@@ -200,7 +218,6 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
     clocked clock apb_clock bit apb_trigger_reset = 0;
     clocked clock apb_clock bit apb_trigger_enable = 0;
     clocked clock apb_clock bit[analyzer_trigger_depth_log] apb_trigger_stage = 0;
-    clocked clock apb_clock bit[32] analyzer_mux_control = 0;
     clocked clock apb_clock bit apb_trace_readback = 0; // asserted if APB should read data from circular buffer
     clocked clock apb_clock bit[32] apb_trace_data = 0;
     clocked clock apb_clock bit apb_trace_valid = 0;
@@ -235,7 +252,9 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
 
     /*b Register incoming data and store in FIFO
      */
-    clocked bit[analyzer_signal_width] buffered_input = 0;
+    clocked t_analyzer_tgt analyzer_tgt_r =  {*=0};
+    clocked t_analyzer_mst analyzer_mst = {*=0};
+    comb bit[analyzer_signal_width] buffered_input;
     clocked bit[analyzer_ram_depth_log] write_ptr = 0;
 
     /*b Read out of FIFO
@@ -264,7 +283,49 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
     /*b Signal path logic
      */
     signal_path "Signal path logic": {
-        buffered_input <= internal_signal_in;
+        analyzer_tgt_r <= analyzer_tgt;
+        buffered_input = analyzer_tgt_r.data.data[32;0]; // for now...
+        full_switch (apb_state.control.state) {
+        case actl_idle: {
+            analyzer_mst.select <= 0;
+            if (apb_state.control.enable  && !analyzer_mst.enable) {
+                apb_state.control.state <= actl_enable;
+            }
+            if (!apb_state.control.enable && analyzer_mst.enable) {
+                analyzer_mst <= {*=0};
+            }
+            if (apb_state.control.write_data) {
+                apb_state.control.state <= actl_data;
+            }
+        }
+        case actl_enable: {
+            analyzer_mst.enable <= 1;
+            if (apb_state.control.data==0) {
+                analyzer_mst.select <= 1;
+                apb_state.control.state <= actl_idle;
+            } else {
+                apb_state.control.data <= apb_state.control.data - 1;
+            }
+        }
+        case actl_data: {
+            analyzer_mst.valid <= 1;
+            analyzer_mst.data <= apb_state.control.data[4;0];
+            apb_state.control.data <= apb_state.control.data>>4;
+            apb_state.control.nybbles <= apb_state.control.nybbles-1;
+            if (apb_state.control.nybbles==0) {
+                analyzer_mst.valid <= 0;
+                analyzer_mst.data <= 0;
+                apb_state.control.state <= actl_idle;
+                apb_state.control.write_data <= 0;
+            }
+        }            
+        }
+        if (apb_state.access==access_write_mux_control) {
+            apb_state.control.enable        <= apb_request.pwdata[0];
+            apb_state.control.write_data    <= apb_request.pwdata[1];
+            apb_state.control.nybbles       <= apb_request.pwdata[3;4];
+            apb_state.control.data          <= apb_request.pwdata[24;8];
+        }            
     }
 
     /*b Overall control
@@ -557,9 +618,6 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
         case access_write_compare: {
             trigger[ apb_trigger_stage ].compare <= apb_request.pwdata[ analyzer_trigger_signal_width; 0];
         }
-        case access_write_mux_control: {
-            analyzer_mux_control <= apb_request.pwdata;
-        }            
         }
 
         /*b Decode access */

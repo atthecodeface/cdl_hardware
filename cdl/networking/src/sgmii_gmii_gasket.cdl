@@ -324,13 +324,13 @@ module sgmii_gmii_gasket( clock tx_clk   "Transmit clock domain - must be at lea
                           input bit rx_reset_312_5_n,
 
                           input t_gmii_tx gmii_tx,
-                          output bit gmii_tx_enable "With a 2/5 tx_clk (i.e. at 125MHz) to tx_clk_312_5 this will never gap",
-                          output t_tbi_valid tbi_tx "Optional TBI instead of SGMII",
-                          output bit[4] sgmii_txd,
+                          output bit gmii_tx_enable  "With a 2/5 tx_clk (i.e. at 125MHz) to tx_clk_312_5 this will never gap",
+                          output t_tbi_valid tbi_tx  "Optional TBI instead of SGMII",
+                          output bit[4] sgmii_txd    "First bit to be transmitted in txd[0]",
 
-                          input bit[4] sgmii_rxd,
-                          input t_tbi_valid tbi_rx "Optional TBI instead of SGMII",
-                          output bit gmii_rx_enable "With a 2/5 rx_clk (i.e. at 125MHz) to rx_clk_312_5 this will never gap",
+                          input bit[4] sgmii_rxd     "Oldest bit in rxd[0]",
+                          input t_tbi_valid tbi_rx   "Optional TBI instead of SGMII",
+                          output bit gmii_rx_enable  "With a 2/5 rx_clk (i.e. at 125MHz) to rx_clk_312_5 this will never gap",
                           output t_gmii_rx gmii_rx,
                           input  t_sgmii_gasket_control sgmii_gasket_control "Control of gasket, on rx_clk",
                           output t_sgmii_gasket_status  sgmii_gasket_status  "Status from gasket, on rx_clk"
@@ -824,6 +824,8 @@ if (request) {
     /*b SGMII Tx side */
     comb     t_sgmii_tx_combs sgmii_tx_combs;
     clocked  clock tx_clk_312_5 reset active_low tx_reset_312_5_n t_sgmii_tx_state sgmii_tx_state = {*=0, fsm_state=sgmii_tx_fsm_init, rd_one_hot=1};
+
+    comb bit[4] sgmii_txd_r;
     net bit[4]         sgmii_tx_sync_toggle;
     tx_sgmii_logic: {
         /*b Serial state machine decode
@@ -924,7 +926,8 @@ if (request) {
             sgmii_tx_state.rd_one_hot           <= sgmii_tx_state.rd_one_hot<<1;
             sgmii_tx_state.rd_one_hot[0]        <= sgmii_tx_state.rd_one_hot[3];
         }
-        sgmii_txd = sgmii_tx_state.data_out[4;8];
+        sgmii_txd_r = sgmii_tx_state.data_out[4;8];
+        sgmii_txd   = bundle(sgmii_txd_r[0], sgmii_txd_r[1], sgmii_txd_r[2], sgmii_txd_r[3]);
 
         /*b All done */
     }
@@ -943,48 +946,50 @@ if (request) {
     net      t_8b10b_dec_data  gmii_rx_decoded_symbol;
 
     /*b Rx serial clock domain logic */
+    comb bit[4] sgmii_rxd_r;
     rx_serial : {
         /*b 4-bit domain - stack 8 bits and copy to four 10-bit output buffers.
           Output buffers are then valid for 40ns.
           Valid is asserted for 24ns and deasserted for 16ns
           When synchronized valid should have at least 1 125MHz clock tick low out of every 5.
          */
+        sgmii_rxd_r   = bundle(sgmii_rxd[0], sgmii_rxd[1], sgmii_rxd[2], sgmii_rxd[3]);
         sgmii_rx_state.wr_ptr <= sgmii_rx_state.wr_ptr+1;
         full_switch (sgmii_rx_state.wr_ptr) {
         case 0: {
-            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd;
+            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd_r;
             sgmii_rx_state.rx_valid[1]    <= 0; // valid[1] was held high for 6 ticks = 18ns > 2 slow clock periods
         }
-            case 1: {sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd;} // Now all 8 bits of rx_build are valid
+        case 1: {sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd_r;} // Now all 8 bits of rx_build are valid
         case 2: {
-            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd; // top 2 bits are not used
-            sgmii_rx_data[0]              <= bundle(sgmii_rx_state.rx_build[8;0], sgmii_rxd[2;2]);
+            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd_r; // top 2 bits are not used
+            sgmii_rx_data[0]              <= bundle(sgmii_rx_state.rx_build[8;0], sgmii_rxd_r[2;2]);
             sgmii_rx_state.rx_valid[0]    <= 1;
         }
         case 3: {
-            sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd; // now bits [6;0] are valid
+            sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd_r; // now bits [6;0] are valid
             sgmii_rx_state.rx_valid[2]    <= 0; // valid[2] was held high for 6 ticks = 18ns > 2 slow clock periods
         }
         case 4: {
-            sgmii_rx_data[1]           <= bundle(sgmii_rx_state.rx_build[6;0], sgmii_rxd);
+            sgmii_rx_data[1]           <= bundle(sgmii_rx_state.rx_build[6;0], sgmii_rxd_r);
             sgmii_rx_state.rx_valid[1] <= 1;
         }
         case 5: {
-            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd;
+            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd_r;
             sgmii_rx_state.rx_valid[3]    <= 0; // valid[3] was held high for 6 ticks = 18ns > 2 slow clock periods
         }
-        case 6: {sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd;} // Now all 8 bits of rx_build are valid
+        case 6: {sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd_r;} // Now all 8 bits of rx_build are valid
         case 7: {
-            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd; // top 2 bits are not used
-            sgmii_rx_data[2]              <= bundle(sgmii_rx_state.rx_build[8;0], sgmii_rxd[2;2]);
+            sgmii_rx_state.rx_build[4; 4] <= sgmii_rxd_r; // top 2 bits are not used
+            sgmii_rx_data[2]              <= bundle(sgmii_rx_state.rx_build[8;0], sgmii_rxd_r[2;2]);
             sgmii_rx_state.rx_valid[2]    <= 1;
         }
         case 8: {
-            sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd; // now bits [6;0] are valid
+            sgmii_rx_state.rx_build[4; 0] <= sgmii_rxd_r; // now bits [6;0] are valid
             sgmii_rx_state.rx_valid[0] <= 0; // valid[0] was held high for 6 ticks = 18ns > 2 slow clock periods
         }
         default: {
-            sgmii_rx_data[3]           <= bundle(sgmii_rx_state.rx_build[6;0], sgmii_rxd);
+            sgmii_rx_data[3]           <= bundle(sgmii_rx_state.rx_build[6;0], sgmii_rxd_r);
             sgmii_rx_state.rx_valid[3] <= 1;
             sgmii_rx_state.wr_ptr <= 0;            
         }

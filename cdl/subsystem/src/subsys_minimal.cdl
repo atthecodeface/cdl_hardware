@@ -20,6 +20,7 @@
 /*a Includes
  */
 include "types/video.h"
+include "types/analyzer.h"
 include "types/apb.h"
 include "types/csr.h"
 include "types/dprintf.h"
@@ -34,6 +35,7 @@ include "csr/csr_targets.h"
 include "csr/csr_masters.h"
 include "utils/dprintf_modules.h"
 include "utils/async_reduce_modules.h"
+include "analyzer/analyzer_modules.h"
 include "video/framebuffer_modules.h"
 
 typedef bit[32] t_bit32;
@@ -73,8 +75,8 @@ module subsys_minimal( clock clk,
                        input t_axi4s32  rx_axi4s,
                        output bit       rx_axi4s_tready,
                        output t_timer_control timer_control,
-                       output bit[32] analyzer_mux_control,
-                       input bit[32] analyzer_trace
+                       output t_analyzer_mst analyzer_mst,
+                       input t_analyzer_tgt analyzer_tgt
     )
 {
     /*b Clock and reset */
@@ -180,7 +182,7 @@ module subsys_minimal( clock clk,
     net bit[32] tx_sram_read_data;
     clocked t_sram_access_req  tx_current_sram_access={*=0}  "SRAM access request";
 
-    net bit[32] analyzer_mux_control;
+    net t_analyzer_mst analyzer_mst;
     
     /*b APB processor */
     apb_processor_instances: {
@@ -473,10 +475,10 @@ module subsys_minimal( clock clk,
                                           reset_n <= reset_n,
                                           apb_request  <= anal_apb_request,
                                           apb_response => anal_apb_response,
-                                          analyzer_mux_control => analyzer_mux_control,
 
                                           analyzer_clock <- clk,
-                                          internal_signal_in <= analyzer_trace,
+                                          analyzer_mst => analyzer_mst,
+                                          analyzer_tgt <= analyzer_tgt,
                              
                                           // trace_ready,
                                           // trace_done,
