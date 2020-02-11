@@ -58,6 +58,8 @@ typedef struct {
     bit[3] an_fsm  "Autonegotiation FSM state";
     bit[6] rx_config_data_match;
     bit[8] debug_count;
+    bit[10] comma_found;
+    bit[4]  rx_fsm;
     bit    seeking_comma;
     bit rx_sync;
     bit symbol_valid;

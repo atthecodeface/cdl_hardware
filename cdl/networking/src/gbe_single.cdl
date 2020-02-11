@@ -365,12 +365,14 @@ module gbe_single( clock clk,
         case 0: { analyzer_trace <= bundle( 4b0, gmii_tx.txd, 1b0, gmii_tx.tx_er, gmii_tx.tx_en, selected_gmii_tx_enable,
                                             4b0, selected_gmii_rx.rxd, selected_gmii_rx.rx_crs, selected_gmii_rx.rx_er, selected_gmii_rx.rx_dv, selected_gmii_rx_enable );
         }
-        case 1: { analyzer_trace <= bundle( sgmii_gasket_status.trace.debug_count,
+        case 1: { analyzer_trace <= bundle( sgmii_gasket_status.trace.debug_count, // 8
                                             sgmii_gasket_status.trace.rx_config_data_match[4;0],
                                             sgmii_gasket_status.trace.an_fsm,
                                             sgmii_gasket_status.trace.valid,
-                                            sgmii_gasket_status.trace.symbol_data,
-                                            1b0,
+
+                                            sgmii_gasket_status.trace.symbol_data, // 16
+                                                
+                                            sgmii_gasket_status.trace.seeking_comma,
                                             sgmii_gasket_status.trace.symbol_is_R,
                                             sgmii_gasket_status.trace.symbol_is_T,
                                             sgmii_gasket_status.trace.symbol_is_V,
@@ -379,7 +381,13 @@ module gbe_single( clock clk,
                                             sgmii_gasket_status.trace.symbol_is_control,
                                             sgmii_gasket_status.trace.symbol_valid );
         }
-        case 2: { analyzer_trace <= bundle( sgmii_gasket_status.rx_symbols_since_sync[24;0], 6b0, sgmii_gasket_status.rx_sync_toggle, sgmii_gasket_status.rx_sync);
+        case 2: { analyzer_trace <= bundle( sgmii_gasket_status.rx_symbols_since_sync[12;0],
+                                            2b0,
+                                            sgmii_gasket_status.trace.comma_found, // 10
+                                            sgmii_gasket_status.trace.rx_fsm, // 4
+                                            2b0,
+                                            sgmii_gasket_status.rx_sync_toggle,
+                                            sgmii_gasket_status.rx_sync);
         }
         case 3: { analyzer_trace <= bundle( trace_sgmii_txd, 3b0, trace_sgmii_txd_valid);
         }

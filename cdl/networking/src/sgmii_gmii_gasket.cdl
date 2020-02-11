@@ -1092,7 +1092,7 @@ if (request) {
         case gmii_rx_fsm_sync: { // awaiting comma sequence
             gmii_rx_combs.seeking_comma = 1;
             gmii_rx_combs.action = gmii_rx_action_resync;
-            if (gmii_rx_combs.comma_found) { // only asserted if data is valid
+            if (gmii_rx_combs.comma_found!=0) { // only asserted if data is valid
                 gmii_rx_combs.action = gmii_rx_action_comma_found;
             }
         }
@@ -1382,10 +1382,12 @@ if (request) {
         }
         sgmii_gasket_control_r.write_config <= sgmii_gasket_control.write_config;
 
-        sgmii_gasket_status.trace.valid      <= gmii_rx_enable;
-        sgmii_gasket_status.trace.an_fsm     <= gmii_an_state.fsm_state;
+        sgmii_gasket_status.trace.valid             <= gmii_rx_enable;
+        sgmii_gasket_status.trace.comma_found       <= gmii_rx_combs.comma_found;
+        sgmii_gasket_status.trace.rx_fsm            <= gmii_rx_state.fsm_state;
+        sgmii_gasket_status.trace.an_fsm            <= gmii_an_state.fsm_state;
         sgmii_gasket_status.trace.rx_config_data_match  <= gmii_rx_state.rx_config_data_match;
-        sgmii_gasket_status.trace.debug_count  <= gmii_rx_state.debug_count;
+        sgmii_gasket_status.trace.debug_count       <= gmii_rx_state.debug_count;
         sgmii_gasket_status.trace.seeking_comma     <= gmii_rx_combs.seeking_comma;
         sgmii_gasket_status.trace.rx_sync           <= sgmii_gasket_status.rx_sync;
         sgmii_gasket_status.trace.symbol_valid      <= gmii_rx_state.serial_data_valid;
