@@ -149,6 +149,7 @@ module analyzer_mux_8( clock clk,
                 analyzer_mstrs[i] <= {*=0};
             }
             analyzer_state.enable_return <= 0;
+            analyzer_state.reset_all <= 0 ;
         }
 
         /*b Kill unused masters */

@@ -30,8 +30,8 @@ typedef struct {
 
 /*t t_analyzer_data - Analyzer data */
 typedef struct {
-    bit     data_valid    "High if the data is valid from the target";
-    bit[64] data          "Analyzer data";
+    bit     valid    "High if the data is valid from the target";
+    bit[64] data     "Analyzer data";
 } t_analyzer_data;
 
 /*t t_analyzer_tgt - Target interface back towards master */

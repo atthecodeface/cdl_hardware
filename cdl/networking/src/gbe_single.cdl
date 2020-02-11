@@ -359,7 +359,7 @@ module gbe_single( clock clk,
                          analyzer_ctl => analyzer_ctl,
                          analyzer_data <= analyzer_data
             );
-        analyzer_data.data_valid = 1;
+        analyzer_data.valid = 1;
         analyzer_data.data[32;0] = analyzer_trace;
         full_switch (analyzer_ctl.mux_control) {
         case 0: { analyzer_trace <= bundle( 4b0, gmii_tx.txd, 1b0, gmii_tx.tx_er, gmii_tx.tx_en, selected_gmii_tx_enable,

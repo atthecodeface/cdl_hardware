@@ -440,7 +440,7 @@ module vcu108_riscv_generic( clock clk,
                          analyzer_ctl => analyzer_ctl,
                          analyzer_data <= analyzer_data
             );
-        analyzer_data.data_valid = 1;
+        analyzer_data.valid = 1;
         analyzer_data.data[32;0] = analyzer_trace;
         full_switch (analyzer_ctl.mux_control[3;0]) {
         default: { analyzer_trace <= bundle( tx_axi4s.t.data[16;0], tx_axi4s.t.user[12;0], 1b0, tx_axi4s.t.last, tx_axi4s.valid, tx_axi4s_tready );

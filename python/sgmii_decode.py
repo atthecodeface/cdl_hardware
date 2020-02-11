@@ -298,7 +298,7 @@ if len(sys.argv)>1:
         serial_hex = serial_hex + (i<<shf)
         shf += 4*len(d)
         pass
-    serial_hex = reverse_nybbles(serial_hex)
+    #serial_hex = reverse_nybbles(serial_hex)
     decode_hex(serial_hex, n=shf)
     pass
 else:

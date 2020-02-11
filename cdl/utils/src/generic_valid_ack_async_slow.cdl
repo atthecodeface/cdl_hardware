@@ -11,12 +11,15 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  *
- * @file   generic_valid_ack_mux.cdl
- * @brief  A generic valid/ack multiplexer to combine buses with valid/ack protocol
+ * @file   generic_valid_ack_async_slow.cdl
+ * @brief  A generic valid/ack clock domain crossing module
  *
- * CDL implementation of a module that takes a pair of input request
- * types, each of which has an individual @ack response signal, and it
- * combines them with a round-robin arbiter to a single request out.
+ * CDL implementation of a module that takes an input request type in
+ * one clock domain and transfers it to another.
+ *
+ * It is a *SLOW* crossing. It guarantees transfer at 3-4 source PLUS
+ * 3-4 destination clocks.
+ *
  */
 /*a Includes */
 include "technology/sync_modules.h"

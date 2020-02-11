@@ -323,7 +323,7 @@ module subsys_minimal( clock clk,
                               analyzer_tgt => analyzer_tgt_local,
                               analyzer_ctl => analyzer_ctl,
                               analyzer_data <= analyzer_data );
-        analyzer_data = {data_valid=1, data=0};
+        analyzer_data = {valid=1, data=0};
         full_switch (analyzer_ctl.mux_control[3;0]) {
         case 0: {
             analyzer_data.data[0] = apb_request.psel;

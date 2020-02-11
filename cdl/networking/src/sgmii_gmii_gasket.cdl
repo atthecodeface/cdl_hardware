@@ -928,6 +928,7 @@ if (request) {
         }
         sgmii_txd_r = sgmii_tx_state.data_out[4;8];
         sgmii_txd   = bundle(sgmii_txd_r[0], sgmii_txd_r[1], sgmii_txd_r[2], sgmii_txd_r[3]);
+        sgmii_txd   = sgmii_txd_r;
 
         /*b All done */
     }
@@ -954,6 +955,7 @@ if (request) {
           When synchronized valid should have at least 1 125MHz clock tick low out of every 5.
          */
         sgmii_rxd_r   = bundle(sgmii_rxd[0], sgmii_rxd[1], sgmii_rxd[2], sgmii_rxd[3]);
+        sgmii_rxd_r   = sgmii_rxd;
         sgmii_rx_state.wr_ptr <= sgmii_rx_state.wr_ptr+1;
         full_switch (sgmii_rx_state.wr_ptr) {
         case 0: {
