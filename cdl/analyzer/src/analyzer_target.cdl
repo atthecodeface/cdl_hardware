@@ -80,7 +80,7 @@ module analyzer_target( clock clk,
         }
 
         if (analyzer_mst.enable || analyzer_state.last_enable) {
-            analyzer_state.last_enable <= !analyzer_mst.enable;
+            analyzer_state.last_enable <= analyzer_mst.enable;
         }
         
         if (analyzer_combs.enable_end) {
@@ -99,14 +99,16 @@ module analyzer_target( clock clk,
             analyzer_state.data <= analyzer_data;
         }
         if (analyzer_state.reset_all) {
+            analyzer_state.reset_all   <= 0;
             analyzer_state.selected    <= 0;
+            analyzer_state.data_valid  <= 0;
             analyzer_state.ctl         <= {*=0};
             analyzer_state.data        <= {*=0};
         }
 
         if (analyzer_combs.select_begin) {
             analyzer_state.selected    <= 1;
-            analyzer_state.data_valid <= 0;
+            analyzer_state.data_valid  <= 0;
         }
 
         analyzer_ctl  = analyzer_state.ctl;

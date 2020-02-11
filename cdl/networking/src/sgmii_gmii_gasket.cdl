@@ -308,7 +308,7 @@ typedef struct {
     bit[6]  rx_config_data_match  "Shift register with all bits set if 3 consecutive cfg have produced the same cfg data";
     bit     rx_ability_match      "Asserted if rx_config_data_match had all bits set";
     bit     rx_acknowledge_match  "Asserted if rx_config_data_match had all bits set and rx_config_data[14] (ack) is set";
-bit[8] debug_count;
+    bit[8] debug_count;
 } t_gmii_rx_state;
 
 /*a Module
@@ -1373,16 +1373,27 @@ if (request) {
             }
         }
         sgmii_gasket_status.an_config <= gmii_rx_state.rx_config_data;
-        sgmii_gasket_status.an_config <= gmii_rx_state.rx_config_data;
-        sgmii_gasket_status.an_state[3;0]  <= gmii_an_state.fsm_state;
-        sgmii_gasket_status.an_state[6;3]  <= gmii_rx_state.rx_config_data_match;
-        sgmii_gasket_status.an_state[8;9]  <= gmii_rx_state.debug_count;
-
+        
         if (sgmii_gasket_control.write_config && !sgmii_gasket_control_r.write_config) {
             sgmii_gasket_control_r <= sgmii_gasket_control;
             sgmii_gasket_control_write_toggle <= !sgmii_gasket_control_write_toggle;
         }
         sgmii_gasket_control_r.write_config <= sgmii_gasket_control.write_config;
+
+        sgmii_gasket_status.trace.valid      <= gmii_rx_enable;
+        sgmii_gasket_status.trace.an_fsm     <= gmii_an_state.fsm_state;
+        sgmii_gasket_status.trace.rx_config_data_match  <= gmii_rx_state.rx_config_data_match;
+        sgmii_gasket_status.trace.debug_count  <= gmii_rx_state.debug_count;
+        sgmii_gasket_status.trace.seeking_comma     <= gmii_rx_combs.seeking_comma;
+        sgmii_gasket_status.trace.rx_sync           <= sgmii_gasket_status.rx_sync;
+        sgmii_gasket_status.trace.symbol_valid      <= gmii_rx_state.serial_data_valid;
+        sgmii_gasket_status.trace.symbol_is_control <= gmii_rx_decoded_symbol.is_control;
+        sgmii_gasket_status.trace.symbol_data       <= gmii_rx_decoded_symbol.data;
+        sgmii_gasket_status.trace.symbol_is_K       <= gmii_rx_state.serial_data_valid && gmii_rx_combs.symbol_is_K;
+        sgmii_gasket_status.trace.symbol_is_S       <= gmii_rx_state.serial_data_valid && gmii_rx_combs.symbol_is_S;
+        sgmii_gasket_status.trace.symbol_is_V       <= gmii_rx_state.serial_data_valid && gmii_rx_combs.symbol_is_V;
+        sgmii_gasket_status.trace.symbol_is_T       <= gmii_rx_state.serial_data_valid && gmii_rx_combs.symbol_is_T;
+        sgmii_gasket_status.trace.symbol_is_R       <= gmii_rx_state.serial_data_valid && gmii_rx_combs.symbol_is_R;
     }
     
     /*b Rx GMII domain logging */

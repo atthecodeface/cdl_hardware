@@ -29,10 +29,12 @@ include "types/sram.h"
 include "types/uart.h"
 include "types/memories.h"
 include "types/ethernet.h"
+include "types/analyzer.h"
 include "srams.h"
 include "apb/apb_targets.h"
 include "apb/apb_masters.h"
 include "utils/async_reduce_modules.h"
+include "analyzer/analyzer_modules.h"
 include "networking/ethernet_modules.h"
 include "networking/gmii_modules.h"
 
@@ -69,7 +71,7 @@ typedef enum[4] {
     apb_access_read_rx_okay_bytes,
     apb_access_read_rx_errored,
     apb_access_read_sgmii_gasket_status,
-    apb_access_write_mux_control,
+    apb_access_write_config,
     apb_access_write_sgmi_gasket_control,
 } t_apb_access;
 
@@ -78,6 +80,7 @@ typedef struct {
     t_apb_access access;
     t_sgmii_transceiver_control sgmii_transceiver_control;
     t_sgmii_transceiver_status  sgmii_transceiver_status;
+    bit[32] config_data;
 } t_apb_state;
 
 /*t t_apb_address */
@@ -130,7 +133,10 @@ module gbe_single( clock clk,
                    input bit[4] sgmii_rxd       "Oldest bit in rxd[0] - tie low if SGMII not being used",
 
                    input t_sgmii_transceiver_status    sgmii_transceiver_status   "Status from transceiver, on sgmii_rx_clk; wire low if SGMII not being used",
-                   output  t_sgmii_transceiver_control sgmii_transceiver_control  "Control of transceiver, on sgmii_rx_clk"
+                   output  t_sgmii_transceiver_control sgmii_transceiver_control  "Control of transceiver, on sgmii_rx_clk",
+                   input t_analyzer_mst   analyzer_mst,
+                   output t_analyzer_tgt  analyzer_tgt
+                   
     )
 {
     /*b Clock and reset */
@@ -160,36 +166,33 @@ module gbe_single( clock clk,
     net t_sgmii_gasket_status sgmii_gasket_status;
 
 //    clocked bit eth_reset_n = 0;
-
-    clocked bit[32] analyzer_mux_control={*=0};
     clocked bit[32] analyzer_trace = {*=0};
-    clocked t_bit32[8] traces = {*=0};
     
     /*b Ethernet */
     net t_packet_stat tx_packet_stat;
     net t_packet_stat rx_packet_stat;
     ethernet : {
-        gbe_axi4s32 gbe( tx_aclk <- clk,
-                         tx_areset_n <= reset_n,
-                         tx_axi4s    <= tx_axi4s,
-                         tx_axi4s_tready => tx_axi4s_tready,
-                         gmii_tx_enable <= selected_gmii_tx_enable,
-                         gmii_tx        => gmii_tx,
+        gbe_axi4s32 gbe( tx_aclk             <- clk,
+                         tx_areset_n         <= reset_n,
+                         tx_axi4s            <= tx_axi4s,
+                         tx_axi4s_tready     => tx_axi4s_tready,
+                         gmii_tx_enable      <= selected_gmii_tx_enable,
+                         gmii_tx             => gmii_tx,
 
                          tx_packet_stat      => tx_packet_stat,
                          tx_packet_stat_ack  <= tx_packet_stat.valid,
 
-                         rx_aclk     <- clk,
-                         rx_areset_n <= reset_n,
-                         rx_axi4s    => rx_axi4s,
-                         rx_axi4s_tready  <= rx_axi4s_tready,
-                         gmii_rx_enable   <= selected_gmii_rx_enable,
-                         gmii_rx          <= selected_gmii_rx,
+                         rx_aclk            <- clk,
+                         rx_areset_n        <= reset_n,
+                         rx_axi4s           => rx_axi4s,
+                         rx_axi4s_tready    <= rx_axi4s_tready,
+                         gmii_rx_enable     <= selected_gmii_rx_enable,
+                         gmii_rx            <= selected_gmii_rx,
 
-                         rx_packet_stat      => rx_packet_stat,
-                         rx_packet_stat_ack  <= rx_packet_stat.valid,
+                         rx_packet_stat     => rx_packet_stat,
+                         rx_packet_stat_ack <= rx_packet_stat.valid,
                          
-                         rx_timer_control  <= timer_control // rx clock domain
+                         rx_timer_control   <= timer_control // rx clock domain
             );
 
         sgmii_gmii_gasket sgg(tx_clk       <- clk,
@@ -197,8 +200,8 @@ module gbe_single( clock clk,
                               tx_clk_312_5     <- sgmii_tx_clk,
                               tx_reset_312_5_n <= sgmii_tx_reset_n,
 
-                              rx_clk       <- clk,
-                              rx_reset_n   <= reset_n,
+                              rx_clk           <- clk,
+                              rx_reset_n       <= reset_n,
                               rx_clk_312_5     <- sgmii_rx_clk,
                               rx_reset_312_5_n <= sgmii_rx_reset_n,
                               
@@ -211,8 +214,9 @@ module gbe_single( clock clk,
                               tbi_rx <= tbi_rx,
                               gmii_rx => sgmii_out_gmii_rx,
                               gmii_rx_enable => sgmii_out_gmii_rx_enable,
-                              sgmii_gasket_control <= sgmii_gasket_control,
-                              sgmii_gasket_status  => sgmii_gasket_status
+
+                              sgmii_gasket_control <= sgmii_gasket_control, // on rx_clk
+                              sgmii_gasket_status  => sgmii_gasket_status   // on rx_clk
             );
     }
 
@@ -225,7 +229,7 @@ module gbe_single( clock clk,
 
         /*b APB interface decode */
         part_switch (apb_request.paddr[4;0]) {
-        case apb_address_sgmii_status: {  apb_state.access  <= apb_request.pwrite ? apb_access_none : apb_access_read_sgmii_gasket_status; }
+        case apb_address_sgmii_status: {  apb_state.access  <= apb_request.pwrite ? apb_access_write_config : apb_access_read_sgmii_gasket_status; }
         case apb_address_sgmii_control: { apb_state.access  <= apb_request.pwrite ? apb_access_write_sgmi_gasket_control : apb_access_none; }
         case apb_address_clock_measure: { apb_state.access  <= apb_request.pwrite ? apb_access_none : apb_access_read_clock_measure; }
         case apb_address_eye_track: {     apb_state.access  <= apb_request.pwrite ? apb_access_none : apb_access_read_eye_tracking; }
@@ -254,7 +258,9 @@ module gbe_single( clock clk,
         part_switch (apb_state.access) {
         case apb_access_read_sgmii_gasket_status: {
             apb_response.prdata[16;  0] <= sgmii_gasket_status.an_config;
-            apb_response.prdata[15; 16] <= sgmii_gasket_status.an_state[15;0];
+            apb_response.prdata[3; 16]  <= sgmii_gasket_status.trace.an_fsm;
+            apb_response.prdata[8; 20]  <= sgmii_gasket_status.trace.debug_count;
+            apb_response.prdata[30]     <= sgmii_gasket_status.trace.seeking_comma;
             apb_response.prdata[31]     <= sgmii_gasket_status.rx_sync;
         }
         case apb_access_read_clock_measure: {
@@ -281,7 +287,7 @@ module gbe_single( clock clk,
         /*b APB write handling */
         sgmii_gasket_control.write_config  <= 0;
         part_switch (apb_state.access) {
-        case apb_access_write_mux_control: { analyzer_mux_control <= apb_request.pwdata; }
+        case apb_access_write_config: { apb_state.config_data <= apb_request.pwdata; }
         case apb_access_write_sgmi_gasket_control: {
             sgmii_gasket_control.write_config  <= 1;
             sgmii_gasket_control.write_address <= apb_request.pwdata[4;0];
@@ -328,6 +334,9 @@ module gbe_single( clock clk,
     net bit[28] trace_sgmii_txd;
     net bit     trace_sgmii_rxd_valid;
     net bit[28] trace_sgmii_rxd;
+    net t_analyzer_tgt analyzer_tgt;
+    net t_analyzer_ctl analyzer_ctl;
+    comb t_analyzer_data analyzer_data;
     analyzer_trace : {
         async_reduce2_4_28_r sgmii_rxd_trace_reduce( clk_in <- sgmii_rx_clk,
                                                     clk_out <- clk,
@@ -344,56 +353,56 @@ module gbe_single( clock clk,
                                                     valid_out => trace_sgmii_txd_valid,
                                                     data_out  => trace_sgmii_txd );
         
-        traces[0] <= bundle( tx_axi4s.t.data[16;0], tx_axi4s.t.user[12;0], 1b0, tx_axi4s.t.last, tx_axi4s.valid, tx_axi4s_tready );
-        traces[1] <= bundle( rx_axi4s.t.data[16;0], rx_axi4s.t.user[12;0], 1b0, rx_axi4s.t.last, rx_axi4s.valid, rx_axi4s_tready );
-        traces[2] <= bundle( 4b0, gmii_tx.txd, 1b0, gmii_tx.tx_er, gmii_tx.tx_en, gmii_tx_enable,
-                             4b0, gmii_rx.rxd, gmii_rx.rx_crs, gmii_rx.rx_er, gmii_rx.rx_dv, gmii_rx_enable );
-        traces[3] <= sgmii_gasket_status.an_state;
-        traces[4] <= bundle( sgmii_gasket_status.rx_symbols_since_sync[24;0], 6b0, sgmii_gasket_status.rx_sync_toggle, sgmii_gasket_status.rx_sync);
-        traces[5] <= bundle( trace_sgmii_txd, 3b0, trace_sgmii_txd_valid);
-        traces[6] <= bundle( trace_sgmii_rxd, 3b0, trace_sgmii_rxd_valid);
-        analyzer_trace <= traces[0];
-        full_switch (analyzer_mux_control) {
-        case 0: { analyzer_trace <= traces[0]; }
-        case 1: { analyzer_trace <= traces[1]; }
-        case 2: { analyzer_trace <= traces[2]; }
-        case 3: { analyzer_trace <= traces[3]; }
-        case 4: { analyzer_trace <= traces[4]; }
-        case 5: { analyzer_trace <= traces[5]; }
-        case 6: { analyzer_trace <= traces[6]; }
-        case 7: { analyzer_trace <= traces[7]; }
-        default: { analyzer_trace <= traces[0]; }
+        analyzer_target atgt( clk <- clk, reset_n <= reset_n,
+                         analyzer_mst <= analyzer_mst,
+                         analyzer_tgt => analyzer_tgt,
+                         analyzer_ctl => analyzer_ctl,
+                         analyzer_data <= analyzer_data
+            );
+        analyzer_data.data_valid = 1;
+        analyzer_data.data[32;0] = analyzer_trace;
+        full_switch (analyzer_ctl.mux_control) {
+        case 0: { analyzer_trace <= bundle( 4b0, gmii_tx.txd, 1b0, gmii_tx.tx_er, gmii_tx.tx_en, selected_gmii_tx_enable,
+                                            4b0, selected_gmii_rx.rxd, selected_gmii_rx.rx_crs, selected_gmii_rx.rx_er, selected_gmii_rx.rx_dv, selected_gmii_rx_enable );
+        }
+        case 1: { analyzer_trace <= bundle( sgmii_gasket_status.trace.debug_count,
+                                            sgmii_gasket_status.trace.rx_config_data_match[4;0],
+                                            sgmii_gasket_status.trace.an_fsm,
+                                            sgmii_gasket_status.trace.valid,
+                                            sgmii_gasket_status.trace.symbol_data,
+                                            1b0,
+                                            sgmii_gasket_status.trace.symbol_is_R,
+                                            sgmii_gasket_status.trace.symbol_is_T,
+                                            sgmii_gasket_status.trace.symbol_is_V,
+                                            sgmii_gasket_status.trace.symbol_is_S,
+                                            sgmii_gasket_status.trace.symbol_is_K,
+                                            sgmii_gasket_status.trace.symbol_is_control,
+                                            sgmii_gasket_status.trace.symbol_valid );
+        }
+        case 2: { analyzer_trace <= bundle( sgmii_gasket_status.rx_symbols_since_sync[24;0], 6b0, sgmii_gasket_status.rx_sync_toggle, sgmii_gasket_status.rx_sync);
+        }
+        case 3: { analyzer_trace <= bundle( trace_sgmii_txd, 3b0, trace_sgmii_txd_valid);
+        }
+        case 4: { analyzer_trace <= bundle( trace_sgmii_rxd, 3b0, trace_sgmii_rxd_valid);
+        }
+        case 5: { analyzer_trace <= bundle( 1b0, apb_state.sgmii_transceiver_status.eye_track_response.data_delay,
+                                            1b0, apb_state.sgmii_transceiver_status.eye_track_response.eye_center,
+                                            1b0, apb_state.sgmii_transceiver_status.eye_track_response.eye_width,
+                                            apb_state.sgmii_transceiver_status.eye_track_response.locked, 1b0);
+
+        }
+        case 6: { analyzer_trace <= bundle( 4b0, 3b0, apb_state.sgmii_transceiver_status.measure_response.initial_delay,
+                                            3b0, apb_state.sgmii_transceiver_status.measure_response.delay,
+                                            1b0, apb_state.sgmii_transceiver_status.measure_response.abort,
+                                            apb_state.sgmii_transceiver_status.measure_response.valid,
+                                            apb_state.sgmii_transceiver_status.measure_response.initial_value );
+
+        }
         }
     }
 
     /*b SGMII RX clock domain debug */
-    default clock sgmii_rx_clk;
-    default reset active_low sgmii_rx_reset_n;
-    clocked bit[64] sgmii_sr = 0;
-    //clocked bit[64] sgmii_data = 0;
-    //clocked bit[8] sgmii_divider_reset_delay = 0;
     sgmii_rx_debug : {
-        sgmii_sr       <= sgmii_sr>>4;
-        sgmii_sr[4;60] <= sgmii_rxd;
-        /*
-        if (sgmii_divider_reset_delay[0]) { // Capture data for display a number of clock ticks after reset so it is stable
-            full_switch (vcu108_inputs.switches[2;1]) {
-            case 0: { sgmii_data <= sgmii_sr; }
-            case 1: { sgmii_data <= sgmii_sr; }
-            case 2: { sgmii_data <= sgmii_sr; }
-            case 3: { sgmii_data <= sgmii_sr; }
-            }
-        }
-        sgmii_divider_reset_delay <= sgmii_divider_reset_delay>>1;
-        sgmii_divider_reset_delay[7] <= divider_reset;
-        */
-
-        //if (!sgmii_gasket_status.rx_sync) { per_sec_counters[0] <= per_sec_counters[0] + (32h1<<28); }
-        //per_sec_counters[0][16;0]  <= sgmii_gasket_status.an_config;
-        //per_sec_counters[0][12;16] <= sgmii_gasket_status.an_state[12;0];
-        //per_sec_counters[1] <= sgmii_data[32;0];
-        //per_sec_counters[2] <= sgmii_data[32;32];
-        
         //vcu108_outputs.mdio = { mdc=1, mdio=1, mdio_enable=0 };
         //eth_reset_n <= 1; // async reset to 0
         //vcu108_outputs.eth_reset_n = eth_reset_n;

@@ -587,7 +587,9 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
             apb_response.prdata[5] = trigger_enable;  // note not stable - need to fix
             apb_response.prdata[6] = trigger_done;    // note not stable - need to fix
             apb_response.prdata[7] = trigger_circular;
-            apb_response.prdata[analyzer_trigger_depth_log;8] = trigger_stage;  // note not stable - need to fix
+            apb_response.prdata[8] = analyzer_tgt_r.enable_return;
+            apb_response.prdata[9] = analyzer_tgt_r.selected;
+            apb_response.prdata[2;10] = trigger_stage;  // note not stable - need to fix
             apb_response.prdata[analyzer_trigger_counter_width;16] = trigger_residence;  // note not stable - need to fix
         }
         case access_read_trace_data: {

@@ -76,7 +76,7 @@ module subsys_minimal( clock clk,
                        output bit       rx_axi4s_tready,
                        output t_timer_control timer_control,
                        output t_analyzer_mst analyzer_mst,
-                       input t_analyzer_tgt analyzer_tgt
+                       input t_analyzer_tgt  analyzer_tgt
     )
 {
     /*b Clock and reset */
@@ -182,8 +182,6 @@ module subsys_minimal( clock clk,
     net bit[32] tx_sram_read_data;
     clocked t_sram_access_req  tx_current_sram_access={*=0}  "SRAM access request";
 
-    net t_analyzer_mst analyzer_mst;
-    
     /*b APB processor */
     apb_processor_instances: {
         apb_processor_request.address <= 0;
@@ -285,6 +283,81 @@ module subsys_minimal( clock clk,
         if (apb_request_sel==7) { apb_response = fb_sram_apb_response; }
     }
 
+    /*b Analyzer trace */
+    net t_analyzer_mst a_mst;
+    net t_analyzer_mst analyzer_mst;
+    net t_analyzer_mst analyzer_mst_local;
+    net t_analyzer_tgt a_tgt;
+    net t_analyzer_tgt analyzer_tgt_local;
+    net t_analyzer_ctl analyzer_ctl;
+    comb t_analyzer_data analyzer_data;
+    analyzer_trace : {
+        apb_target_analyzer apb_analyzer( apb_clock <- clk,
+                                          reset_n <= reset_n,
+                                          apb_request  <= anal_apb_request,
+                                          apb_response => anal_apb_response,
+
+                                          analyzer_clock <- clk,
+                                          analyzer_mst => a_mst,
+                                          analyzer_tgt <= a_tgt,
+                             
+                                          // trace_ready,
+                                          // trace_done,
+                                          ext_trigger_reset <= 0,
+                                          ext_trigger_enable <= 0,
+
+                                          async_trace_read_clock <- clk, // unused interface for now
+                                          async_trace_read_enable <= 0
+                                          // async_trace_valid_out,
+                                          // async_trace_out
+            );
+        analyzer_mux_2 amux( clk<-clk, reset_n<=reset_n,
+                             analyzer_mst <= a_mst,
+                             analyzer_tgt => a_tgt,
+                             analyzer_mst_a => analyzer_mst_local,
+                             analyzer_tgt_a <= analyzer_tgt_local,
+                             analyzer_mst_b => analyzer_mst,
+                             analyzer_tgt_b <= analyzer_tgt );
+        analyzer_target atgt( clk<-clk, reset_n<=reset_n,
+                              analyzer_mst <= analyzer_mst_local,
+                              analyzer_tgt => analyzer_tgt_local,
+                              analyzer_ctl => analyzer_ctl,
+                              analyzer_data <= analyzer_data );
+        analyzer_data = {data_valid=1, data=0};
+        full_switch (analyzer_ctl.mux_control[3;0]) {
+        case 0: {
+            analyzer_data.data[0] = apb_request.psel;
+            analyzer_data.data[1] = apb_request.penable;
+            analyzer_data.data[2] = apb_request.pwrite;
+            analyzer_data.data[4;4] = apb_request_sel;
+            analyzer_data.data[8;8] = apb_request.paddr[8;2];
+            analyzer_data.data[16;16] = apb_request.pwdata[16;0];
+        }
+        case 1: {
+            analyzer_data.data[0] = apb_request.psel;
+            analyzer_data.data[1] = apb_request.penable;
+            analyzer_data.data[2] = apb_request.pwrite;
+            analyzer_data.data[4;4] = apb_request_sel;
+            analyzer_data.data[8;8] = apb_request.paddr[8;2];
+            analyzer_data.data[16;16] = apb_response.prdata[16;0];
+        }
+        case 2: {
+            analyzer_data.data[0] = tx_axi4s_tready;
+            analyzer_data.data[1] = tx_axi4s.valid;
+            analyzer_data.data[2] = tx_axi4s.t.last;
+            analyzer_data.data[12;4] = tx_axi4s.t.user[12;0];
+            analyzer_data.data[16;16] = tx_axi4s.t.data[16;0];
+        }
+        case 3: {
+            analyzer_data.data[0] = rx_axi4s_tready;
+            analyzer_data.data[1] = rx_axi4s.valid;
+            analyzer_data.data[2] = rx_axi4s.t.last;
+            analyzer_data.data[12;4] = rx_axi4s.t.user[12;0];
+            analyzer_data.data[16;16] = rx_axi4s.t.data[16;0];
+        }
+        }
+    }
+    
     /*b Dprintf requesting */
     dprintf_requesting : {
         for (i; num_dprintf_requesters) {
@@ -470,26 +543,6 @@ module subsys_minimal( clock clk,
                                     rx_axi4s_tready => rx_axi4s_tready,
                                     tx_axi4s         => tx_axi4s,
                                     tx_axi4s_tready  <= tx_axi4s_tready );
-
-        apb_target_analyzer apb_analyzer( apb_clock <- clk,
-                                          reset_n <= reset_n,
-                                          apb_request  <= anal_apb_request,
-                                          apb_response => anal_apb_response,
-
-                                          analyzer_clock <- clk,
-                                          analyzer_mst => analyzer_mst,
-                                          analyzer_tgt <= analyzer_tgt,
-                             
-                                          // trace_ready,
-                                          // trace_done,
-                                          ext_trigger_reset <= 0,
-                                          ext_trigger_enable <= 0,
-
-                                          async_trace_read_clock <- clk, // unused interface for now
-                                          async_trace_read_enable <= 0
-                                          // async_trace_valid_out,
-                                          // async_trace_out
-            );
 
         csr_master_apb master( clk <- clk,
                                reset_n <= reset_n,

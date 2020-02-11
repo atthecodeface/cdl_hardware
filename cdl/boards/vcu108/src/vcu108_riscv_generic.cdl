@@ -129,7 +129,6 @@ module vcu108_riscv_generic( clock clk,
     clocked bit eth_reset_n = 0;
 
     clocked bit[32] analyzer_trace = {*=0};
-    clocked t_bit32[8] traces = {*=0};
     
     clocked t_vcu108_inputs vcu108_inputs_r = {*=0};
     clocked bit[16] counter=0;
@@ -410,7 +409,10 @@ module vcu108_riscv_generic( clock clk,
 
                         sgmii_rxd <= sgmii_rxd,
                         sgmii_transceiver_status <= sgmii_transceiver_status,
-                        sgmii_transceiver_control => sgmii_transceiver_control
+                         sgmii_transceiver_control => sgmii_transceiver_control,
+
+                         analyzer_mst <= analyzer_mst_gbe,
+                         analyzer_tgt => analyzer_tgt_gbe
 
             );
     }
@@ -418,29 +420,31 @@ module vcu108_riscv_generic( clock clk,
     /*b Analyzer trace */
     net t_analyzer_mst analyzer_mst;
     net t_analyzer_tgt analyzer_tgt;
+    net t_analyzer_mst analyzer_mst_gbe;
+    net t_analyzer_tgt analyzer_tgt_gbe;
+    net t_analyzer_mst analyzer_mst_local;
+    net t_analyzer_tgt analyzer_tgt_local;
     net t_analyzer_ctl analyzer_ctl;
     comb t_analyzer_data analyzer_data;
     analyzer_trace : {
+        analyzer_mux_2 amux( clk<-clk, reset_n<=reset_n,
+                             analyzer_mst <= analyzer_mst,
+                             analyzer_tgt => analyzer_tgt,
+                             analyzer_mst_a => analyzer_mst_local,
+                             analyzer_tgt_a <= analyzer_tgt_local,
+                             analyzer_mst_b => analyzer_mst_gbe,
+                             analyzer_tgt_b <= analyzer_tgt_gbe );
         analyzer_target atgt( clk <- clk, reset_n <= reset_n,
-                         analyzer_mst <= analyzer_mst,
-                         analyzer_tgt => analyzer_tgt,
+                         analyzer_mst <= analyzer_mst_local,
+                         analyzer_tgt => analyzer_tgt_local,
                          analyzer_ctl => analyzer_ctl,
                          analyzer_data <= analyzer_data
             );
-        traces[0] <= bundle( tx_axi4s.t.data[16;0], tx_axi4s.t.user[12;0], 1b0, tx_axi4s.t.last, tx_axi4s.valid, tx_axi4s_tready );
-        traces[1] <= bundle( rx_axi4s.t.data[16;0], rx_axi4s.t.user[12;0], 1b0, rx_axi4s.t.last, rx_axi4s.valid, rx_axi4s_tready );
         analyzer_data.data_valid = 1;
-        analyzer_data.data[32;0] = traces[0];
+        analyzer_data.data[32;0] = analyzer_trace;
         full_switch (analyzer_ctl.mux_control[3;0]) {
-        case 0: { analyzer_trace <= traces[0]; }
-        case 1: { analyzer_trace <= traces[1]; }
-        case 2: { analyzer_trace <= traces[2]; }
-        case 3: { analyzer_trace <= traces[3]; }
-        case 4: { analyzer_trace <= traces[4]; }
-        case 5: { analyzer_trace <= traces[5]; }
-        case 6: { analyzer_trace <= traces[6]; }
-        case 7: { analyzer_trace <= traces[7]; }
-        default: { analyzer_trace <= traces[0]; }
+        default: { analyzer_trace <= bundle( tx_axi4s.t.data[16;0], tx_axi4s.t.user[12;0], 1b0, tx_axi4s.t.last, tx_axi4s.valid, tx_axi4s_tready );
+        }
         }
     }
     /*b Second divider and second_toggle - on clk_50MHz which won't change frequency */

@@ -52,13 +52,31 @@ typedef struct {
     bit valid;
     bit[10] data;
 } t_tbi_valid;
+/*t t_sgmii_gasket_trace */
+typedef struct {
+    bit    valid;
+    bit[3] an_fsm  "Autonegotiation FSM state";
+    bit[6] rx_config_data_match;
+    bit[8] debug_count;
+    bit    seeking_comma;
+    bit rx_sync;
+    bit symbol_valid;
+    bit symbol_is_control;
+    bit symbol_is_K;
+    bit symbol_is_S;
+    bit symbol_is_V;
+    bit symbol_is_T;
+    bit symbol_is_R;
+    bit[8] symbol_data;
+} t_sgmii_gasket_trace;
+
 /*t t_sgmii_gasket_status */
 typedef struct {
     bit rx_sync;
     bit rx_sync_toggle;
     bit[32] rx_symbols_since_sync;
     bit[16] an_config "Autonegotiation configuration";
-    bit[32] an_state;
+    t_sgmii_gasket_trace trace;
 } t_sgmii_gasket_status;
 
 /*t t_sgmii_gasket_control */
