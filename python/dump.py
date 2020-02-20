@@ -27,6 +27,7 @@ class c_dump(object):
     def reset(self):
         self.labels = {}
         self.data   = {}
+        self.entry_point = 0
         pass
     #f load
     def load(self, f, base_address=0, address_mask=0xffffffff):
@@ -68,6 +69,7 @@ class c_dump(object):
     def load_elf(self, f, base_address=0, address_mask=0xffffffff):
         self.reset()
         elf = elftools.elf.elffile.ELFFile(f)
+        self.entry_point = elf.header.e_entry
         for i in elf.iter_sections():
             #print i.name, i.header
             if i.header.sh_type=='SHT_SYMTAB':   self.load_elf_symtab_section(i, base_address, address_mask)
@@ -257,7 +259,7 @@ class c_dump(object):
             pass
         write_u16(f,2)
         write_u16(f,0)
-        write_u32(f,0)
+        write_u32(f,self.entry_point)
         pass
     #f All done
     pass
