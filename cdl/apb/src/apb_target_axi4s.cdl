@@ -64,6 +64,7 @@ typedef fsm {
  */
 typedef enum [5] {
     rx_action_none               "No change to RX FSM",
+    rx_action_reset              "Move FSM to reset state",
     rx_action_sop                "First AXI data ready",
     rx_action_wait               "Wait for AXI data",
     rx_action_new_data           "AXI data ready",
@@ -82,6 +83,8 @@ typedef enum [5] {
 
 /*t t_rx_combs */
 typedef struct {
+    bit start_init;
+    bit start_reset;
     bit           sram_available;
     t_rx_action   action                  "Action for RX FSM to perform";
     bit[16]       write_ptr_plus_one;
@@ -93,7 +96,6 @@ typedef struct {
     bit[32]       user                   "User data value taken from RX AXI data";
     bit[32]       axi_data               "Qualify with @a axi_data_valid - RX AXI data";
     bit consumes_axi4s                   "If asserted and then the RX AXI data buffer will be consumed";
-    bit start_init;
     bit apb_rx_from_sram "Asserted if SRAM response for RX has data for rx_data_ptr";
 
     bit[16] pkt_ptr_diff;
@@ -110,7 +112,6 @@ typedef struct {
     bit[16]   read_ptr;
     bit[16]   buffer_end;
     bit[32]   pkt_status;
-    bit       init_requested;
     bit       apb_rx_requested;
     t_sram_access_req sram_access_req;
 } t_rx_state;
@@ -118,7 +119,7 @@ typedef struct {
 /*t t_tx_fsm */
 typedef fsm {
     tx_fsm_reset  {
-        tx_fsm_init
+        tx_fsm_idle
             } "Post reset - waiting for initialization request";
     tx_fsm_idle  {
         tx_fsm_sop
@@ -132,9 +133,6 @@ typedef fsm {
     tx_fsm_eop  {
         tx_fsm_idle
             } "Reading packet status for next packet";
-    tx_fsm_init  {
-        tx_fsm_idle
-            } "Resetting pointers ";
 } t_tx_fsm;
 
 /*t t_tx_action
@@ -144,6 +142,7 @@ typedef fsm {
  */
 typedef enum [5] {
     tx_action_none               "No change to TX FSM",
+    tx_action_reset              "Move FSM to reset state",
     tx_action_init_state         "Initialize state in Tx",
     tx_action_poll               "Poll count decrement for Tx status",
     tx_action_read_pkt_status    "Read pkt status at tx read ptr",
@@ -163,6 +162,8 @@ typedef enum [3] {
 
 /*t t_tx_combs */
 typedef struct {
+    bit start_init;
+    bit start_reset;
     t_tx_action   action                  "Action for TX FSM to perform";
     bit[16]       read_ptr_plus_one;
     bit       consume_axi_credit "Asserted if AXI credit is consumed by a TX SRAM read";
@@ -196,11 +197,13 @@ typedef struct {
  *
  */
 typedef enum [4] {
-    apb_address_rx_config      = 0   "Receive configuration",
-    apb_address_rx_data_ptr    = 1   "Receive data pointer",
-    apb_address_rx_data        = 2   "Receive data",
-    apb_address_rx_data_next   = 3   "Receive data and move on",
-    apb_address_rx_commit      = 4   "Mark current receive data pointer as head of read",
+    apb_address_config      = 0   "Global configuration",
+    apb_address_debug       = 1   "Global configuration",
+    apb_address_rx_config      = 2   "Receive configuration",
+    apb_address_rx_data_ptr    = 3   "Receive data pointer",
+    apb_address_rx_data        = 4   "Receive data",
+    apb_address_rx_data_next   = 5   "Receive data and move on",
+    apb_address_rx_commit      = 6   "Mark current receive data pointer as head of read",
     apb_address_tx_config      = 8   "Transmit configuration",
     apb_address_tx_data_ptr    = 9   "Transmit data pointer",
     apb_address_tx_data        = 10  "Transmit data",
@@ -212,8 +215,11 @@ typedef enum [4] {
  * APB access that is in progress; a decode of psel and paddr
  *
  */
-typedef enum [4] {
+typedef enum [5] {
     access_none                   "No access being performed",
+    access_write_config           "Write global config",
+    access_read_config            "Read global config",
+    access_read_debug             "Read debug",
     access_write_rx_config        "Write RX config",
     access_read_rx_config         "Read RX config",
     access_write_rx_data_ptr      "Write RX data ptr",
@@ -229,9 +235,16 @@ typedef enum [4] {
     access_write_tx_data_next     "Write TX data then move on ptr - will delay until data can be taken",
 } t_access;
 
+/*t t_config */
+typedef struct {
+    bit rx_reset;
+    bit rx_init;
+    bit tx_reset;
+    bit tx_init;
+} t_config;
+
 /*t t_apb_combs */
 typedef struct {
-    bit request_init;
     bit rx_commit;
     bit[16]       rx_data_ptr_plus_one;
     bit[16]       tx_data_ptr_plus_one;
@@ -239,6 +252,7 @@ typedef struct {
 
 /*t t_apb_state */
 typedef struct {
+    t_config global_config;
     t_access access;
     bit[16] rx_data_ptr;
     bit     rx_data_valid;
@@ -297,7 +311,7 @@ and the word at the write pointer is zeroed.
     comb    t_rx_combs  rx_combs;
     clocked t_rx_state  rx_state = {*=0, fsm_state=rx_fsm_reset};
     comb    t_tx_combs  tx_combs;
-    clocked t_tx_state  tx_state = {*=0};
+    clocked t_tx_state  tx_state = {*=0, fsm_state=tx_fsm_reset};
     net     bit         tx_fifo_axi4s_ready "Asserted if TX FIFO can take more data";
     net     t_axi4s32   tx_axi4s;
 
@@ -325,8 +339,21 @@ and the word at the write pointer is zeroed.
         /*b Handle APB read data - may affect pready */
         apb_response = {*=0, pready=1};
         part_switch (apb_state.access) {
+        case access_read_config: {
+            apb_response.prdata[0] = apb_state.global_config.rx_reset;
+            apb_response.prdata[1] = apb_state.global_config.rx_init;
+            apb_response.prdata[2] = apb_state.global_config.tx_reset;
+            apb_response.prdata[3] = apb_state.global_config.tx_init;
+        }
+        case access_read_debug: {
+            apb_response.prdata[16; 0] = rx_state.pkt_ptr;
+            apb_response.prdata[16;16] = tx_state.read_ptr;
+        }
         case access_read_rx_config: {
-            apb_response.prdata = 0;
+            apb_response.prdata[16;0] = rx_state.buffer_end;
+        }
+        case access_read_tx_config: {
+            apb_response.prdata[16;0] = tx_state.buffer_end;
         }
         case access_read_rx_data_ptr: {
             apb_response.prdata = bundle(16b0, apb_state.rx_data_ptr);
@@ -349,11 +376,17 @@ and the word at the write pointer is zeroed.
         }
 
         /*b Handle APB writes - may affect pready */
-        apb_combs.request_init = 0;
         apb_combs.rx_commit = 0;
         part_switch (apb_state.access) {
+        case access_write_config: {
+            apb_state.global_config <= {
+                rx_reset = apb_request.pwdata[0],
+                rx_init  = apb_request.pwdata[1],
+                tx_reset = apb_request.pwdata[2],
+                tx_init  = apb_request.pwdata[3]
+            };
+        }
         case access_write_rx_config: {
-            apb_combs.request_init = 1;
             rx_state.buffer_end <= apb_request.pwdata[16;0];
         }
         case access_write_rx_data_ptr: {
@@ -364,7 +397,6 @@ and the word at the write pointer is zeroed.
             apb_combs.rx_commit = 1;
         }
         case access_write_tx_config: {
-            apb_combs.request_init = 1;
             tx_state.buffer_end <= apb_request.pwdata[16;0];
         }
         case access_write_tx_data_ptr: {
@@ -389,7 +421,13 @@ and the word at the write pointer is zeroed.
         }
         /*b Decode access */
         apb_state.access <= access_none;
-        part_switch (apb_request.paddr[4;0]) {
+        part_switch (apb_request.paddr[5;0]) {
+        case apb_address_config: {
+            apb_state.access <= apb_request.pwrite ? access_write_config : access_read_config;
+        }
+        case apb_address_debug: {
+            apb_state.access <= apb_request.pwrite ? access_none : access_read_debug;
+        }
         case apb_address_rx_config: {
             apb_state.access <= apb_request.pwrite ? access_write_rx_config : access_read_rx_config;
         }
@@ -493,7 +531,8 @@ and the word at the write pointer is zeroed.
         if (rx_combs.write_ptr_plus_one == rx_state.read_ptr) {
             rx_combs.fifo_overflow = 1;
         }
-        rx_combs.start_init = rx_state.init_requested;
+        rx_combs.start_reset = apb_state.global_config.rx_reset;
+        rx_combs.start_init  = apb_state.global_config.rx_init;
 
         rx_combs.pkt_ptr_diff = rx_state.write_ptr - rx_state.pkt_ptr;
         rx_combs.pkt_words    = rx_combs.pkt_ptr_diff;
@@ -513,6 +552,9 @@ and the word at the write pointer is zeroed.
         full_switch (rx_state.fsm_state) {
         case rx_fsm_reset: { // kicked out by init ONLY
             rx_combs.action = rx_action_none;
+            if (rx_combs.start_init) {
+                rx_combs.action = rx_action_start_init;
+            }
         }
         case rx_fsm_idle: {
             assert( ( ((rx_state.pkt_ptr+1)==rx_state.write_ptr) ||
@@ -583,8 +625,8 @@ and the word at the write pointer is zeroed.
             }
         }
         }
-        if (rx_combs.start_init) {
-            rx_combs.action = rx_action_start_init;
+        if (rx_combs.start_reset) {
+            rx_combs.action = rx_action_reset;
         }
 
         /*b Decode action into state update */
@@ -600,12 +642,14 @@ and the word at the write pointer is zeroed.
                 rx_state.sram_access_req.id               <= 1;
             }
         }
+        case rx_action_reset:{
+            rx_state.fsm_state <= rx_fsm_reset;
+        }
         case rx_action_idle:{
             rx_state.fsm_state <= rx_fsm_idle;
         }
         case rx_action_start_init:{
             rx_state.fsm_state <= rx_fsm_init;
-            rx_state.init_requested <= 0;
         }
         case rx_action_wait:{
             rx_state.fsm_state <= rx_fsm_wait_for_data;
@@ -691,9 +735,6 @@ and the word at the write pointer is zeroed.
             rx_state.write_ptr <= rx_combs.write_ptr_plus_one; // reset write ptr to point just after pkt for first data
         }
         }
-        if (apb_combs.request_init) {
-            rx_state.init_requested <= 1;
-        }
         rx_combs.apb_rx_from_sram = 0;
         if (rx_sram_access_resp.valid && rx_sram_access_resp.id[0]) {
             rx_state.apb_rx_requested <= 0;
@@ -708,6 +749,8 @@ and the word at the write pointer is zeroed.
     tx_handling_logic """
     """: {
         /*b Decodes */
+        tx_combs.start_reset = apb_state.global_config.tx_reset;
+        tx_combs.start_init = apb_state.global_config.tx_init;
         if (tx_sram_access_resp.ack && tx_state.sram_access_req.valid) {
             tx_state.sram_access_req.valid <= 0;
         }
@@ -745,10 +788,13 @@ and the word at the write pointer is zeroed.
         tx_combs.poll_pkt_status = (tx_state.count==0);
 
         /*b Decode FSM state */
-        tx_combs.action = rx_action_none;
+        tx_combs.action = tx_action_none;
         full_switch (tx_state.fsm_state) {
         case tx_fsm_reset: { // kicked out by init ONLY
-            tx_combs.action = rx_action_none;
+            tx_combs.action = tx_action_none;
+            if (tx_combs.start_init) {
+                tx_combs.action = tx_action_init_state;
+            }
         }
         case tx_fsm_idle: {
             tx_combs.action = tx_action_poll;
@@ -775,17 +821,17 @@ and the word at the write pointer is zeroed.
         case tx_fsm_eop: {
             tx_combs.action = tx_action_read_pkt_status;
         }
-        case tx_fsm_init: {
-            tx_combs.action = tx_action_init_state;
         }
-        }
-        if (rx_combs.start_init) {
-            tx_combs.action = tx_action_init_state;
+        if (tx_combs.start_reset) {
+            tx_combs.action = tx_action_reset;
         }
 
         /*b Decode FSM state */
         tx_combs.consume_axi_credit = 0;
         full_switch (tx_combs.action) {
+        case tx_action_reset:{
+            tx_state.fsm_state <= tx_fsm_reset;
+        }
         case tx_action_none:{
             tx_state.fsm_state <= tx_state.fsm_state;
         }
@@ -855,10 +901,6 @@ and the word at the write pointer is zeroed.
             tx_sram_access_req         = tx_state.sram_access_req;
         }
         
-        if (0 /*writeitn to tx_state.pkt_ptr*/) {
-            tx_state.pkt_status <= 0;
-            tx_state.pkt_status_valid <= 0;
-        }
         tx_state.axi4s.valid <= 0;
         if (tx_sram_access_resp.valid) {
             if (tx_sram_access_resp.id[3;0] == tx_id_pkt_status) {
